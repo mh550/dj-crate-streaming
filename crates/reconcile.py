@@ -3,8 +3,9 @@ whether the library file is crate-worthy or must be sourced.
 
 This is deliberately *read-only against Navidrome* except for one optional thing:
 mirroring the crate flag into the playlist comment (`#crate`) so any Subsonic client
-shows it — and so you can toggle a crate from Symfonium/Amperfy just by editing the
-comment. The store is the source of truth when the two disagree on a toggle made here.
+shows it. Toggling from another client works two ways: edit the comment (where the
+client allows it) or rename the playlist with a marker ("… [crate]" / "🎛 …"), which
+every client can do. The store wins when the two disagree on a toggle made here.
 """
 from __future__ import annotations
 
@@ -16,10 +17,23 @@ from subsonic.client import Playlist, Song, SubsonicClient
 from .store import CrateStore
 
 CRATE_TAG = "#crate"
+# Name markers, for clients that can rename a playlist but not edit its comment
+# (most phone apps). "Disco Edits [crate]" or "🎛 Disco Edits" both count.
+NAME_MARKERS = ("[crate]", "🎛")
 
 
 def has_crate_tag(comment: str | None) -> bool:
     return CRATE_TAG in (comment or "").lower()
+
+
+def has_name_marker(name: str | None) -> bool:
+    n = (name or "").strip().lower()
+    return any(n.startswith(m) or n.endswith(m) for m in NAME_MARKERS)
+
+
+def is_marked(name: str | None, comment: str | None) -> bool:
+    """A playlist is marked as a crate from *outside this app* by comment or by name."""
+    return has_crate_tag(comment) or has_name_marker(name)
 
 
 def with_crate_tag(comment: str | None, on: bool) -> str:
@@ -107,9 +121,9 @@ class Reconciler:
         known = {c.playlist_id: c for c in self.store.all()}
         for p in playlists:
             c = known.get(p.id)
-            tagged = has_crate_tag(p.comment)
-            # A #crate comment added outside this app turns the crate on; removing it turns it off
-            # — but only if the comment was how it got enabled (don't fight an in-app toggle).
+            tagged = is_marked(p.name, p.comment)
+            # A #crate comment or a name marker added outside this app turns the crate on; removing
+            # it turns it off — but only if that is how it got enabled (don't fight an in-app toggle).
             if tagged and not (c and c.enabled):
                 self.store.set_enabled(p.id, p.name, True, source="comment")
                 rep.toggled_from_comment.append(p.name)

@@ -1,6 +1,6 @@
 import pytest
 
-from crates.reconcile import Reconciler, judge, with_crate_tag, has_crate_tag
+from crates.reconcile import Reconciler, judge, with_crate_tag, has_crate_tag, has_name_marker, is_marked
 from crates.store import CrateStore
 from sourcing.policy import QualityPolicy
 from subsonic.client import Song, SubsonicClient
@@ -96,3 +96,20 @@ def test_store_persists(tmp_path):
     p = tmp_path / "c.db"
     CrateStore(p).set_enabled("pl-9", "Nine", True)
     assert CrateStore(p).get("pl-9").enabled
+
+
+def test_name_marker_helpers():
+    assert has_name_marker("Disco Edits [crate]") and has_name_marker("🎛 Disco Edits") and has_name_marker("Late Night [CRATE]")
+    assert not has_name_marker("crate digging") and not has_name_marker("")
+    assert is_marked("x", "#crate") and is_marked("x [crate]", None) and not is_marked("x", "")
+
+
+def test_rename_from_any_client_toggles_crate(env):
+    srv, client, store, rec = env
+    client.update_playlist("pl-3", name="Sunday Listening [crate]")
+    rep = rec.run()
+    assert "Sunday Listening [crate]" in rep.toggled_from_comment
+    assert store.get("pl-3").enabled and store.get("pl-3").source == "comment"
+    client.update_playlist("pl-3", name="Sunday Listening")
+    rec.run()
+    assert not store.get("pl-3").enabled

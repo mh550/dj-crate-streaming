@@ -30,6 +30,8 @@ from .reconcile import Reconciler
 from .store import CrateStore
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+mimetypes.add_type("application/manifest+json", ".webmanifest")
+mimetypes.add_type("image/svg+xml", ".svg")
 STREAM_CLIENT_NAME = "dj-crates-web"   # its own Navidrome Player → its own transcoding profile
 
 

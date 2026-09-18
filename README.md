@@ -62,7 +62,9 @@ phone browser ──/api/*──▶ crates.service ──Subsonic──▶ Navid
 
 - **A crate is a playlist plus a promise.** The toggle lives in our SQLite store; we
   also mirror it as `#crate` in the Navidrome playlist comment so every Subsonic
-  client shows it — and editing that comment in Symfonium/Amperfy toggles the crate.
+  client shows it. From any other client you can toggle a crate by renaming the
+  playlist with a marker (`Disco Edits [crate]` or `🎛 Disco Edits`), or by editing
+  the comment where the client allows it.
 - **Judging** uses only what Subsonic reports (suffix, bitRate, samplingRate,
   bitDepth) against `sourcing/policy.py`. Deep checks (fake FLAC, duration) run in
   `sourcing/verify.py` once we hold the bytes.
@@ -70,6 +72,16 @@ phone browser ──/api/*──▶ crates.service ──Subsonic──▶ Navid
   per-request signed Navidrome URL under its own client name (`dj-crates-web`), so
   Navidrome gives it its own Player and you set its transcoding profile in
   Navidrome → Settings → Players like any other device.
+
+## On the phone
+
+The web client is installable: open it over Tailscale in Safari → Share → **Add to
+Home Screen**. It runs full-screen as its own app. Use it for crate work and casual
+playback; for daily listening on iOS use Amperfy or play:Sub against the same
+Navidrome — see `../ideas/dj-crate-streaming/phase0-options.md` §1.4 for why.
+
+Container build for the Compose stack: `docker build -t crates .` (see the
+`crates` service in the Phase 0 compose skeleton).
 
 ## Not done yet
 
