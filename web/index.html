@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<title>Crates</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%230f1115%27/%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%2710%27 fill=%27%23f5c451%27/%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%273%27 fill=%27%230f1115%27/%3E%3C/svg%3E">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <div class="brand">Crates</div>
+  <div id="server" class="muted">connecting…</div>
+  <button id="btn-reconcile" class="ghost" title="Re-read every playlist from Navidrome and re-judge each track">reconcile</button>
+</header>
+
+<nav class="tabs">
+  <button data-tab="playlists" class="active">Playlists</button>
+  <button data-tab="wanted">Wanted <span id="wanted-count" class="pill"></span></button>
+  <button data-tab="search">Search</button>
+  <button data-tab="log">Log</button>
+</nav>
+
+<main>
+  <section id="tab-playlists" class="tab active">
+    <ul id="playlists" class="list"></ul>
+    <div id="detail" class="detail hidden">
+      <div class="detail-head">
+        <button id="back" class="ghost">‹ back</button>
+        <h2 id="detail-name"></h2>
+        <label class="switch" title="Toggle crate: every track must have a crate-quality file, analysis, stems, and a place on your DJ devices">
+          <input type="checkbox" id="detail-crate"><span class="slider"></span><span class="switch-label">crate</span>
+        </label>
+      </div>
+      <div id="detail-summary" class="muted"></div>
+      <ol id="tracks" class="list tracks"></ol>
+    </div>
+  </section>
+
+  <section id="tab-wanted" class="tab">
+    <p class="muted">Tracks in crates whose library file doesn't meet the crate policy. This is the queue the Soulseek sourcer works through.</p>
+    <ul id="wanted" class="list"></ul>
+  </section>
+
+  <section id="tab-search" class="tab">
+    <form id="search-form"><input id="q" type="search" placeholder="search the library" autocomplete="off"><button>go</button></form>
+    <ul id="results" class="list"></ul>
+  </section>
+
+  <section id="tab-log" class="tab">
+    <ul id="events" class="list log"></ul>
+  </section>
+</main>
+
+<footer id="player" class="player hidden">
+  <div class="np">
+    <div id="np-title" class="np-title">—</div>
+    <div id="np-sub" class="muted"></div>
+  </div>
+  <select id="quality" title="How Navidrome should send this stream to this device">
+    <option value="">player default</option>
+    <option value="opus:96">opus 96k</option>
+    <option value="opus:160">opus 160k</option>
+    <option value="mp3:320">mp3 320k</option>
+    <option value="raw">original (raw)</option>
+  </select>
+  <audio id="audio" controls preload="none"></audio>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
