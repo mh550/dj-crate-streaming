@@ -1,0 +1,35 @@
+[
+  {"username": "vinylhead77", "hasFreeUploadSlot": true, "queueLength": 0, "uploadSpeed": 3500000, "fileCount": 8, "lockedFileCount": 0,
+   "files": [
+     {"filename": "@@music\\Chic\\Risqué (1979) [FLAC]\\03 - Good Times.flac", "size": 55219000, "extension": "flac", "bitRate": 880, "sampleRate": 44100, "bitDepth": 16, "length": 501, "isLocked": false, "code": 1},
+     {"filename": "@@music\\Chic\\Risqué (1979) [FLAC]\\01 - My Forbidden Lover.flac", "size": 30000000, "extension": "flac", "bitRate": 900, "sampleRate": 44100, "bitDepth": 16, "length": 266, "isLocked": false, "code": 1}
+   ]},
+  {"username": "mp3guy", "hasFreeUploadSlot": true, "queueLength": 2, "uploadSpeed": 900000, "fileCount": 1, "lockedFileCount": 0,
+   "files": [
+     {"filename": "C:\\Downloads\\Chic - Good Times.mp3", "size": 12000000, "extension": "mp3", "bitRate": 320, "sampleRate": 44100, "length": 500, "isLocked": false, "code": 1}
+   ]},
+  {"username": "lowbit", "hasFreeUploadSlot": false, "queueLength": 120, "uploadSpeed": 100000, "fileCount": 1, "lockedFileCount": 0,
+   "files": [
+     {"filename": "share\\misc\\chic good times.mp3", "size": 4800000, "extension": "mp3", "bitRate": 128, "sampleRate": 44100, "length": 300, "isLocked": false, "code": 1}
+   ]},
+  {"username": "fakeflac", "hasFreeUploadSlot": true, "queueLength": 0, "uploadSpeed": 5000000, "fileCount": 1, "lockedFileCount": 0,
+   "files": [
+     {"filename": "share\\Chic - Good Times (1979).flac", "size": 14000000, "extension": "flac", "bitRate": 224, "sampleRate": 44100, "bitDepth": 16, "length": 501, "isLocked": false, "code": 1}
+   ]},
+  {"username": "editversion", "hasFreeUploadSlot": true, "queueLength": 0, "uploadSpeed": 2500000, "fileCount": 3, "lockedFileCount": 0,
+   "files": [
+     {"filename": "@@share\\Disco\\Chic\\Good Times (7in Edit).flac", "size": 24000000, "extension": "flac", "bitRate": 850, "sampleRate": 44100, "bitDepth": 16, "length": 225, "isLocked": false, "code": 1}
+   ]},
+  {"username": "wrongsong", "hasFreeUploadSlot": true, "queueLength": 0, "uploadSpeed": 2500000, "fileCount": 1, "lockedFileCount": 0,
+   "files": [
+     {"filename": "@@share\\INXS\\Good Times (with Jimmy Barnes).flac", "size": 40000000, "extension": "flac", "bitRate": 900, "sampleRate": 44100, "bitDepth": 16, "length": 230, "isLocked": false, "code": 1}
+   ]},
+  {"username": "locked", "hasFreeUploadSlot": true, "queueLength": 0, "uploadSpeed": 2500000, "fileCount": 1, "lockedFileCount": 1,
+   "files": [
+     {"filename": "@@private\\Chic\\Good Times.flac", "size": 55000000, "extension": "flac", "bitRate": 880, "sampleRate": 44100, "bitDepth": 16, "length": 501, "isLocked": true, "code": 1}
+   ]},
+  {"username": "hires", "hasFreeUploadSlot": true, "queueLength": 5, "uploadSpeed": 1500000, "fileCount": 12, "lockedFileCount": 0,
+   "files": [
+     {"filename": "@@share\\Chic\\Risque (2018 Remaster) [24-96]\\03. Good Times.flac", "size": 160000000, "extension": "flac", "bitRate": 2550, "sampleRate": 96000, "bitDepth": 24, "length": 502, "isLocked": false, "code": 1}
+   ]}
+]
