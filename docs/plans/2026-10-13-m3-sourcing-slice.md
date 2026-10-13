@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Status:** implemented 2026-10-13 (tasks 1–6; see git log `sourcing/`), whole-branch review pending/below.
+
 **Goal:** One CLI command takes one wanted track all the way from `needs_source` to `ok` in the crate store, fully tested against an in-process fake slskd and the existing fake Navidrome; without `--approve` it stops after scoring and prints the pick.
 
 **Architecture:** A new `sourcing/fetch.py` orchestrates existing pieces (`scorer.rank`, `verify.verify`, `SlskdClient`, `SubsonicClient`, `CrateStore`) plus two small new ones: `sourcing/organize.py` (file a verified download into `Artist/Album (Year)/NN - Title.ext`, collision-safe) and `sourcing/fake_slskd.py` (an HTTP fake mirroring `subsonic/fake_server.py`). The crate store gains an `external_wanted` table so a Spotify playlist can seed the queue for tracks that aren't in Navidrome at all. Status flow uses the store's existing names: `needs_source → sourcing → verify → ok | failed`.

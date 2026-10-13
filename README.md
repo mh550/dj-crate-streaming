@@ -14,17 +14,24 @@ crates/     the orchestration layer: playlist → crate
   service.py        HTTP API + serves web/ ; only this process holds Navidrome credentials
   cli.py            status | playlists | toggle | reconcile | wanted | serve | demo
 web/        the client: stream + toggle crates from the same screen (vanilla JS, phone-first)
-sourcing/   Phase 1: Soulseek sourcing — rank slskd results for a wanted track, verify downloads
-  policy.py  scorer.py  verify.py  slskd_client.py  cli.py
+sourcing/   Phase 1: Soulseek sourcing — one wanted track from search to a file Navidrome serves
+  policy.py  scorer.py  verify.py  slskd_client.py   rank + check (unchanged)
+  fetch.py          the slice: search → score → (approved) download → verify → file → rescan → crate ok
+  organize.py       Artist/Album (Year)/NN - Title.ext from the wanted record, never overwrites
+  fake_slskd.py     in-process slskd for tests/demos
+  spotify_csv.py    public Spotify playlist → rows, no API credentials (embed page)
+  cli.py            rank | verify | fetch --wanted <id> [--approve] | seed-spotify <url>
+scripts/    one-off library tooling: library_map.py (folder + audio-hash map), folders_to_playlists.py
+deploy/     compose.yml (+ .env.example), beets.yaml — /srv/docker/compose.yml symlinks here
 fixtures/   slskd-shaped search responses covering the failure modes
-tests/      35 tests, no network, ~10 s
+tests/      75 tests, no network, ~25 s
 ```
 
 ## Try it now (no server needed)
 
 ```bash
 cd ~/projects/dj-crate-streaming
-python3 -m pytest -q
+pytest -q                             # pytest comes from pipx on the box (~/.local/bin)
 python3 -m crates.cli demo            # fake Navidrome + crate service → http://127.0.0.1:4580
 ```
 
@@ -38,6 +45,20 @@ Sourcing prototype, offline:
 python3 -m sourcing.cli rank --fixture fixtures/search_responses.sample.json \
   --artist Chic --title "Good Times" --album "Risqué" --duration 501 --year 1979
 ```
+
+Against a live slskd (M4) with `SLSKD_URL`/`SLSKD_API_KEY` set, plus the `SUBSONIC_*` vars below:
+
+```bash
+python3 -m sourcing.cli seed-spotify https://open.spotify.com/playlist/...   # → ext-N wanted rows
+python3 -m sourcing.cli fetch --wanted s4             # search + score, prints the pick, no download
+python3 -m sourcing.cli fetch --wanted s4 --approve   # download → verify → /srv/music → rescan → crate ok
+```
+
+Without `--approve` nothing is transferred (rule: Soulseek downloads are Michael's call). `fetch`
+walks the crate row `needs_source → sourcing → verify → ok | failed`, swaps the new song into every
+crate that held the old one, and reconciles; a file Navidrome can't match stays `verify` with the
+filed path in the reason. `MUSIC_ROOT` (default `/srv/music`) and `DOWNLOADS_ROOT` (default
+`/srv/incoming`, where the slskd container writes) are overridable.
 
 ## Against the real box (Phase 0 done)
 
@@ -85,8 +106,8 @@ Container build for the Compose stack: `docker build -t crates .` (see the
 
 ## Not done yet
 
-- Sourcing jobs driven automatically from the wanted queue (today: CLI hand-off),
-  status transitions `sourcing → verify → ok`, tag + move into `/srv/music`, rescan.
+- Background jobs that run `fetch` automatically from the wanted queue (today: one track per
+  command, downloads only with `--approve`). Checking Navidrome for a good copy *before* searching.
 - Expected-duration lookup (MusicBrainz / SpotiFLAC) instead of trusting the library's.
 - AcoustID fingerprint verification (`fpcalc`).
 - Analysis (BPM/key → Serato GEOB), stems, device sync — Phases 2–4.
