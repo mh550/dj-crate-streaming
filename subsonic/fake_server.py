@@ -187,9 +187,9 @@ def make_handler(state: FakeState):
             self._send(_resp({"song": dict(s, isDir=False, type="music")}))
 
         def m_search3(self, q, m):
-            needle = q.get("query", "").lower().strip('"')
+            words = q.get("query", "").lower().strip('"').split()      # Navidrome: every word must match somewhere
             hits = [dict(s, isDir=False, type="music") for s in state.songs.values()
-                    if needle in f"{s['title']} {s['artist']} {s['album']}".lower()]
+                    if all(w in f"{s['title']} {s['artist']} {s['album']}".lower() for w in words)]
             n, off = int(q.get("songCount", 20)), int(q.get("songOffset", 0))
             self._send(_resp({"searchResult3": {"song": hits[off:off + n]}}))
 

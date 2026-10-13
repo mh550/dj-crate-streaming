@@ -55,6 +55,11 @@ CREATE TABLE IF NOT EXISTS external_wanted (
 STATUSES = ("ok", "needs_source", "sourcing", "verify", "failed", "removed")
 
 
+def _loose(s: str | None) -> str:
+    import re
+    return re.sub(r"[^\w]+", "", (s or "").casefold())
+
+
 @dataclass
 class Crate:
     playlist_id: str
@@ -160,9 +165,33 @@ class CrateStore:
         ext = self.db.execute("SELECT * FROM external_wanted WHERE status IN ('needs_source','failed') ORDER BY id")
         return list(out.values()) + [self._ext_row(r) for r in ext]
 
+    def find_wanted(self, song_id: str) -> dict | None:
+        """One wanted-shaped row for this id whatever its status (crate rows: first enabled crate holding it)."""
+        if song_id.startswith("ext-"):
+            return self.external(song_id)
+        rows = self.db.execute(
+            "SELECT t.*, c.name AS crate_name FROM crate_tracks t JOIN crates c USING(playlist_id) "
+            "WHERE c.enabled=1 AND t.song_id=? AND t.status!='removed' ORDER BY c.name", (song_id,)).fetchall()
+        if not rows:
+            return None
+        d = dict(rows[0]); d["crates"] = [r["crate_name"] for r in rows]; d.pop("crate_name", None)
+        return d
+
     # --- external wanted (not in Navidrome at all; seeded from Spotify etc.)
+    def find_external(self, artist: str, title: str) -> dict | None:
+        """A live (not failed) external row for the same artist/title, ignoring case and punctuation."""
+        key = _loose(artist) + "|" + _loose(title)
+        for r in self.db.execute("SELECT * FROM external_wanted WHERE status!='failed'"):
+            if _loose(r["artist"]) + "|" + _loose(r["title"]) == key:
+                return self._ext_row(r)
+        return None
+
     def add_external_wanted(self, artist: str, title: str, album: str | None = None, duration_s: float | None = None,
                             year: int | None = None, source: str | None = None) -> str:
+        """Returns the existing id when the same artist/title is already queued (re-running a seed is a no-op)."""
+        existing = self.find_external(artist, title)
+        if existing:
+            return existing["song_id"]
         now = time.time()
         cur = self.db.execute(
             "INSERT INTO external_wanted(artist,title,album,year,duration,source,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",

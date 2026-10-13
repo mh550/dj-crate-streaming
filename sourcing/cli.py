@@ -1,4 +1,4 @@
-"""CLI: rank candidates for a wanted track, from a fixture file or a live slskd.
+r"""CLI: rank candidates for a wanted track, from a fixture file or a live slskd.
 
   python -m sourcing.cli rank --fixture fixtures/search_responses.sample.json --artist Chic --title "Good Times" --duration 501
   python -m sourcing.cli rank --slskd http://server:5030 --api-key $SLSKD_KEY --artist Chic --title "Good Times" [--download]
@@ -56,12 +56,17 @@ def main(argv: list[str] | None = None) -> int:
         from crates.service import Config
         from crates.store import CrateStore
         from .spotify_csv import rows
-        store = CrateStore(Config.from_env().db_path)
-        n = 0
+        db = Config.from_env().db_path
+        Path(db).parent.mkdir(parents=True, exist_ok=True)
+        store = CrateStore(db)
+        added = dup = 0
         for r in rows(fetch_entity(a.url)):          # dicts: {"Artist", "Title", "Length"} (seconds)
-            store.add_external_wanted(r["Artist"], r["Title"], duration_s=r["Length"], source=a.url); n += 1
+            if store.find_external(r["Artist"], r["Title"]):
+                dup += 1
+            else:
+                store.add_external_wanted(r["Artist"], r["Title"], duration_s=r["Length"], source=a.url); added += 1
         store.commit()
-        print(f"{n} added to the wanted queue from {a.url}")
+        print(f"{added} added, {dup} already queued ({a.url})")
         return 0
 
     if a.cmd == "fetch":
@@ -76,6 +81,7 @@ def main(argv: list[str] | None = None) -> int:
         cfg = Config.from_env()
         if not cfg.username:
             print("set SUBSONIC_USER / SUBSONIC_PASS (and SUBSONIC_URL)", file=sys.stderr); return 1
+        Path(cfg.db_path).parent.mkdir(parents=True, exist_ok=True)
         store = CrateStore(cfg.db_path)
         nav = SubsonicClient(cfg.subsonic_url, cfg.username, cfg.password)
         r = fetch(a.wanted, store=store, slskd=SlskdClient(a.slskd, a.api_key), navidrome=nav,
@@ -85,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
         if r.pick:
             print(f"pick: {r.pick.username}: {r.pick.basename}  (score {r.pick.score:.2f})")
         print(f"{r.status}: {r.reason}" + (f"  → {r.filed}" if r.filed else ""))
-        return 0 if r.status in ("ok", "needs_source") else 2
+        return 0 if r.status in ("ok", "needs_source", "sourcing") else 2
 
     if a.cmd == "verify":
         vd = verify(Path(a.path), a.duration)

@@ -18,23 +18,47 @@ def test_search_round_trip_serves_fixture_responses(tmp_path):
         c.delete_search(sid)
 
 
-def test_enqueue_writes_file_and_reports_completed(tmp_path):
+def test_enqueue_writes_file_under_remote_folder_and_reports_nested(tmp_path):
+    """slskd lands files at <downloads>/<remote parent folder>/<basename> and reports transfers as
+    {username, directories:[{directory, files:[{id, filename, state, size}]}]} per user."""
     with FakeSlskdServer(RESPONSES, tmp_path, files={GOOD: b"FLACBYTES"}) as srv:
         c = SlskdClient(srv.url, "k")
         c.enqueue("vinylhead77", [{"filename": GOOD, "size": 9}])
         assert srv.enqueued == [("vinylhead77", GOOD)]
-        landed = tmp_path / "vinylhead77" / "03 - Good Times.flac"
+        landed = tmp_path / "Risqué (1979) [FLAC]" / "03 - Good Times.flac"
         assert landed.read_bytes() == b"FLACBYTES"
-        d = c.downloads()
-        assert d[0]["state"] == "Completed, Succeeded" and d[0]["filename"] == GOOD
+        u = c.downloads("vinylhead77")
+        assert u["username"] == "vinylhead77"
+        f = u["directories"][0]["files"][0]
+        assert f["state"] == "Completed, Succeeded" and f["filename"] == GOOD and f["id"]
+        assert c.downloads()[0]["username"] == "vinylhead77"      # all-users form is a list of the same objects
 
 
 def test_incomplete_mode_never_finishes(tmp_path):
     with FakeSlskdServer(RESPONSES, tmp_path, files={GOOD: b"x"}, complete=False) as srv:
         c = SlskdClient(srv.url, "k")
         c.enqueue("vinylhead77", [{"filename": GOOD, "size": 1}])
-        assert c.downloads()[0]["state"] == "InProgress"
-        assert not (tmp_path / "vinylhead77").exists()
+        assert c.downloads("vinylhead77")["directories"][0]["files"][0]["state"] == "InProgress"
+        assert list(tmp_path.iterdir()) == []
+
+
+def test_remove_download_deletes_the_record(tmp_path):
+    with FakeSlskdServer(RESPONSES, tmp_path, files={GOOD: b"x"}) as srv:
+        c = SlskdClient(srv.url, "k")
+        c.enqueue("vinylhead77", [{"filename": GOOD, "size": 1}])
+        tid = c.downloads("vinylhead77")["directories"][0]["files"][0]["id"]
+        c.remove_download("vinylhead77", tid)
+        assert c.downloads("vinylhead77")["directories"] == []
+
+
+def test_fail_enqueue_mode_returns_500(tmp_path):
+    import urllib.error
+    with FakeSlskdServer(RESPONSES, tmp_path, files={GOOD: b"x"}, fail_enqueue=True) as srv:
+        try:
+            SlskdClient(srv.url, "k").enqueue("vinylhead77", [{"filename": GOOD, "size": 1}])
+            assert False, "expected HTTPError"
+        except urllib.error.HTTPError as e:
+            assert e.code == 500
 
 
 def test_wrong_api_key_is_401(tmp_path):

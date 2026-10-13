@@ -6,8 +6,10 @@ API shape (slskd v0.2x, verified against the official python wrapper + soularr):
   GET  /api/v0/searches/{id}/responses        [ {username, hasFreeUploadSlot, queueLength, uploadSpeed, files:[...]} ]
   DELETE /api/v0/searches/{id}
   POST /api/v0/transfers/downloads/{username} [ {"filename": ..., "size": ...} ]
-  GET  /api/v0/transfers/downloads/{username}
-  GET  /api/v0/transfers/downloads            (all)
+  GET  /api/v0/transfers/downloads/{username} → {username, directories:[{directory, files:[{id, filename, state, ...}]}]}
+  GET  /api/v0/transfers/downloads            (all users, list of the same objects)
+  DELETE /api/v0/transfers/downloads/{username}/{id}   (forget a completed transfer)
+Downloads land at <downloads>/<remote parent folder>/<basename>.
 Auth: X-API-Key header (configure an API key in slskd.yml under web.authentication.api_keys).
 """
 from __future__ import annotations
@@ -65,3 +67,12 @@ class SlskdClient:
 
     def downloads(self, username: str | None = None) -> object:
         return self._req("GET", "/transfers/downloads" + (f"/{urllib.parse.quote(username)}" if username else ""))
+
+    def remove_download(self, username: str, transfer_id: str) -> None:
+        self._req("DELETE", f"/transfers/downloads/{urllib.parse.quote(username)}/{transfer_id}")
+
+
+def transfer_files(downloads_response: object) -> list[dict]:
+    """Flatten slskd's per-user {directories:[{files:[...]}]} shape (or a list of them) into transfer records."""
+    users = downloads_response if isinstance(downloads_response, list) else [downloads_response or {}]
+    return [f for u in users if isinstance(u, dict) for d in u.get("directories", []) for f in d.get("files", [])]

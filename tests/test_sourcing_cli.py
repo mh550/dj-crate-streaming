@@ -32,3 +32,5 @@ def test_seed_spotify_adds_external_rows(tmp_path, monkeypatch, capsys):
     w = CrateStore(db).wanted()
     assert len(w) == 1 and w[0]["artist"] == "Chic" and w[0]["title"] == "Good Times" and w[0]["duration"] == 501
     assert "1 added" in capsys.readouterr().out
+    assert cli.main(["seed-spotify", "https://open.spotify.com/playlist/abc"]) == 0      # idempotent
+    assert len(CrateStore(db).wanted()) == 1 and "0 added, 1 already queued" in capsys.readouterr().out
