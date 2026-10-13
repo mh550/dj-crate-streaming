@@ -14,8 +14,11 @@ stdlib + ffmpeg (for the hash).
 from __future__ import annotations
 
 import csv
+import os
+import re
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable, Iterable
 
@@ -41,9 +44,13 @@ def audio_md5(path: Path) -> str:
     return "" if h == EMPTY_MD5 else h
 
 
+def _ext(p: Path) -> str:
+    return p.suffix.lower().lstrip(".")
+
+
 def audio_files(root: Path) -> Iterable[Path]:
     for p in sorted(root.rglob("*")):
-        if not p.is_file() or p.suffix.lower().lstrip(".") not in AUDIO_EXT:
+        if _ext(p) not in AUDIO_EXT or not p.is_file():
             continue
         rel = p.relative_to(root)
         if any(part in SKIP_DIRS for part in rel.parts):
@@ -51,24 +58,29 @@ def audio_files(root: Path) -> Iterable[Path]:
         yield rel
 
 
+def _hash_all(root: Path, rels: list[Path], hasher: Hasher) -> list[str]:
+    """One ffmpeg per file is process-bound, so threads parallelise it; order is preserved."""
+    with ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 1)) as ex:
+        return list(ex.map(hasher, (root / r for r in rels)))
+
+
 def build_rows(root: Path, hasher: Hasher = audio_md5) -> list[dict]:
-    rows = []
-    for rel in audio_files(root):
-        rows.append({
-            "original_path": rel.as_posix(),
-            "folder": rel.parent.as_posix() if rel.parent != Path(".") else "",
-            "ext": rel.suffix.lower().lstrip("."),
-            "size": str((root / rel).stat().st_size),
-            "audio_md5": hasher(root / rel),
-            "new_path": "",
-            "other_copies": "",
-        })
-    return rows
+    rels = list(audio_files(root))
+    return [{
+        "original_path": rel.as_posix(),
+        "folder": "/".join(rel.parts[:-1]),
+        "ext": _ext(rel),
+        "size": str((root / rel).stat().st_size),
+        "audio_md5": h,
+        "new_path": "",
+        "other_copies": "",
+    } for rel, h in zip(rels, _hash_all(root, rels, hasher))]
 
 
 def _copy_rank(rel: str) -> tuple:
-    """Prefer the properly filed copy: no beets '.1' uniquifier, not a catch-all folder, then alphabetical."""
-    import re
+    """Prefer the properly filed copy: no beets '.1' uniquifier, not a catch-all folder, then alphabetical.
+    The folder names mirror `paths:` in deploy/beets.yaml (comp → Compilations/, no album → Singles/,
+    empty albumartist → beets' `_`); change them together."""
     uniquified = bool(re.search(r"\.\d+\.[A-Za-z0-9]+$", rel))
     catch_all = rel.startswith(("Compilations/", "_/")) or "/Singles/" in rel
     return (uniquified, catch_all, rel)
@@ -76,8 +88,8 @@ def _copy_rank(rel: str) -> tuple:
 
 def fill_rows(rows: list[dict], music_root: Path, hasher: Hasher = audio_md5) -> dict:
     copies: dict[str, list[str]] = {}
-    for rel in audio_files(music_root):
-        h = hasher(music_root / rel)
+    rels = list(audio_files(music_root))
+    for rel, h in zip(rels, _hash_all(music_root, rels, hasher)):
         if h:
             copies.setdefault(h, []).append(rel.as_posix())
     for lst in copies.values():
@@ -85,7 +97,7 @@ def fill_rows(rows: list[dict], music_root: Path, hasher: Hasher = audio_md5) ->
     report = {"matched": 0, "unmatched_originals": [], "unmatched_new": [], "collapsed_duplicates": [], "extra_copies": []}
     seen: set[str] = set()
     for r in rows:
-        lst = copies.get(r["audio_md5"], []) if r["audio_md5"] else []
+        lst = copies.get(r["audio_md5"], [])
         r["new_path"] = lst[0] if lst else ""
         r["other_copies"] = "|".join(lst[1:])
         if not lst:
