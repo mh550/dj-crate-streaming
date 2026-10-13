@@ -3,6 +3,7 @@
 # State (library.db, import log) lives in /srv/docker/beets, outside the repo.
 directory: /srv/music
 library: /srv/docker/beets/library.db
+statefile: /srv/docker/beets/state.pickle   # incremental history + resume state
 
 import:
   copy: yes            # never move: /srv/incoming/library-import stays untouched
@@ -11,8 +12,9 @@ import:
   log: /srv/docker/beets/import.log
   quiet_fallback: asis # unmatched albums go in on their existing tags (-q runs)
   duplicate_action: skip
-  resume: ask
-  incremental: yes     # re-running skips directories already imported
+  resume: yes          # never prompt: these runs are unattended
+  incremental: yes     # re-running skips directories already seen — including skipped ones,
+                       # so new files must land in a fresh /srv/incoming/<batch>/ dir (or use -I)
 
 paths:
   # Artist/Album (Year)/NN - Title; %if drops "(0000)" when the year is unknown and files no-album tracks under Singles/

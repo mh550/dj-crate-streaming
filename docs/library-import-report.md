@@ -48,7 +48,7 @@ _Run 2026-10-13 04:14–05:05, `beet import -q -c -P` (copy mode; source untouch
 | beets items / albums | 859 / 358 |
 | Distinct audio streams in the source | 831 |
 | Redundant copies now in `/srv/music` (same audio, different tags/folders) | 28 |
-| Originals mapped to a new path in `library-map.csv` | 917 / 917 |
+| Originals mapped to a new path in `library-map.csv` | 917 / 917 (`other_copies` lists the 28 redundant files) |
 
 **Pass 1 (album mode, `duplicate_action: skip`):** 455 groups as-is, 2 MusicBrainz matches, 87 groups
 skipped as duplicates. Quiet mode only auto-applies *strong* matches, and most groups are
@@ -71,3 +71,10 @@ decision, not an overnight one.
 **Hand-fix list for Michael:** everything else is as-is — see `/srv/docker/beets/import.log`
 (`asis` lines) and the "Loose groups" table above; the 4 files missing title/artist tags
 landed under `Singles/` or an empty artist. `docs/library-map.csv` says where each file came from.
+
+## Folders → playlists
+
+`scripts/folders_to_playlists.py` recreated the genre/vibe folders as **35 Navidrome playlists, 907 entries**
+(one per folder that holds tracks; nested folders as `Parent / Child`; Artist/Album dirs inside a
+folder are not playlists). The 10 tracks that sat loose at the library root are in no playlist.
+None are flagged as crates — that's a per-playlist choice in the crate UI.

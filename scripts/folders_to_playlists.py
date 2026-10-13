@@ -24,6 +24,7 @@ import unicodedata
 from pathlib import Path
 
 PLACEHOLDERS = {"unknown artist", "various artists", "unknown album", "va"}
+_PLACEHOLDER_NORMS = set()  # filled after _norm is defined
 
 
 def _norm(s: str) -> str:
@@ -34,22 +35,44 @@ def _norm(s: str) -> str:
 
 def _matches(part: str, candidates: list[str]) -> bool:
     p = _norm(part)
-    if not p or p in {_norm(x) for x in PLACEHOLDERS}:
-        return True
-    return any(p == _norm(c) or (len(p) > 3 and (p in _norm(c) or _norm(c) in p)) for c in candidates if c)
+    if not p or p in _PLACEHOLDER_NORMS:
+        return True                       # "Unknown Artist/" style dirs are never curation
+    ncs = [n for n in (_norm(c) for c in candidates) if n and n not in _PLACEHOLDER_NORMS]
+    return any(p == n or (len(p) > 3 and p in n) for n in ncs)   # folder name inside the tag, not the reverse
+
+
+_PLACEHOLDER_NORMS.update(_norm(x) for x in PLACEHOLDERS)
 
 
 def playlist_name(folder: str, album: str | None, artists: list[str],
-                  album_dir=lambda f: False, has_audio=lambda f: True) -> str | None:
-    """album_dir(folder): the source folder looks like an album (cover art inside);
-    has_audio(folder): some track sits directly in that folder (from the map)."""
+                  album_dir=lambda f: False, has_audio=lambda f: True,
+                  albums_in=lambda f: None) -> str | None:
+    """Strip the non-curation tail of a folder path and join the rest with " / ".
+
+    album_dir(folder): the source folder looks like an album (cover art inside);
+    has_audio(folder): some track sits directly in that folder (from the map);
+    albums_in(folder): distinct album tags among the tracks directly in it (None = unknown).
+
+    A leaf is an album dir when it holds one album and is named after it, has cover art,
+    or sits at depth >= 3 under a parent with no audio of its own (and isn't named after
+    the artist); its parent then goes too when it is the artist or holds no audio. Else a
+    leaf named after the artist is an artist dir (pop once). A folder holding several
+    albums is curation whatever its name.
+    """
     parts = [p for p in folder.split("/") if p]
-    if not parts:
-        return None
-    was_album = False
-    if len(parts) > 1 and (_matches(parts[-1], [album or ""]) or album_dir("/".join(parts))):
-        parts.pop(); was_album = True
-    if len(parts) > 1 and (_matches(parts[-1], artists) or (was_album and not has_audio("/".join(parts)))):
+    if len(parts) <= 1:
+        return parts[0] if parts else None
+    leaf = "/".join(parts); parent = "/".join(parts[:-1])
+    n_albums = albums_in(leaf)
+    leaf_is_artist = _matches(parts[-1], artists)
+    structurally_album = len(parts) >= 3 and n_albums == 1 and not has_audio(parent) and not leaf_is_artist
+    leaf_is_album = (n_albums is None or n_albums <= 1) and (
+        _matches(parts[-1], [album or ""]) or album_dir(leaf) or structurally_album)
+    if leaf_is_album:                      # checked first so a self-titled album pops both levels
+        parts.pop()
+        if len(parts) > 1 and (_matches(parts[-1], artists) or not has_audio(parent)):
+            parts.pop()
+    elif leaf_is_artist:
         parts.pop()
     return " / ".join(parts)
 
@@ -57,13 +80,21 @@ def playlist_name(folder: str, album: str | None, artists: list[str],
 def plan(rows: list[dict], songs_by_path: dict[str, dict], source: Path | None = None) -> tuple[dict[str, list[str]], list[str]]:
     """songs_by_path: new_path → {"id", "album", "artists"}. Returns ({playlist: [song ids]}, skipped originals)."""
     folders_with_audio = {r["folder"] for r in rows}
+    albums_in_folder: dict[str, set[str]] = {}
+    for r in rows:
+        song = songs_by_path.get(r["new_path"]) if r["new_path"] else None
+        if song:
+            albums_in_folder.setdefault(r["folder"], set()).add(_norm(song["album"]))
     def album_dir(folder: str) -> bool:
         return bool(source) and any(next((source / folder).glob(ext), None) for ext in ("*.jpg", "*.jpeg", "*.png"))
+    def albums_in(folder: str):
+        a = albums_in_folder.get(folder); return None if a is None else len(a)
     out: dict[str, list[str]] = {}
     skipped: list[str] = []
     for r in sorted(rows, key=lambda r: r["original_path"].casefold()):
         song = songs_by_path.get(r["new_path"]) if r["new_path"] else None
-        name = playlist_name(r["folder"], song["album"], song["artists"], album_dir, folders_with_audio.__contains__) if song else None
+        name = playlist_name(r["folder"], song["album"], song["artists"], album_dir,
+                             folders_with_audio.__contains__, albums_in) if song else None
         if not song or not name:
             skipped.append(r["original_path"])
             continue
@@ -75,7 +106,7 @@ def plan(rows: list[dict], songs_by_path: dict[str, dict], source: Path | None =
 
 def _load_songs(navidrome_db: Path) -> dict[str, dict]:
     import sqlite3
-    con = sqlite3.connect(f"file:{navidrome_db}?mode=ro", uri=True)
+    con = sqlite3.connect(navidrome_db.resolve().as_uri() + "?mode=ro", uri=True)
     rows = con.execute("select id, path, album, artist, album_artist from media_file").fetchall()
     con.close()
     return {path: {"id": sid, "album": album or "", "artists": [artist or "", album_artist or ""]}
@@ -83,28 +114,39 @@ def _load_songs(navidrome_db: Path) -> dict[str, dict]:
 
 
 def main(argv: list[str]) -> int:
-    if not argv:
-        print(__doc__); return 2
-    apply = "--apply" in argv
-    db = Path(argv[argv.index("--navidrome-db") + 1]) if "--navidrome-db" in argv else Path("/srv/docker/navidrome/navidrome.db")
-    source = Path(argv[argv.index("--source") + 1]) if "--source" in argv else None
-    rows = list(csv.DictReader(Path(argv[0]).open(newline="")))
+    import argparse
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("csv", type=Path)
+    ap.add_argument("--apply", action="store_true", help="create the playlists (default: print the plan)")
+    ap.add_argument("--navidrome-db", type=Path, default=Path("/srv/docker/navidrome/navidrome.db"))
+    ap.add_argument("--source", type=Path, help="original library root, for the cover-art check")
+    a = ap.parse_args(argv)
+    if not (os.environ.get("SUBSONIC_USER") and os.environ.get("SUBSONIC_PASS")):
+        print("set SUBSONIC_USER / SUBSONIC_PASS (and SUBSONIC_URL)", file=sys.stderr); return 2
+    rows = list(csv.DictReader(a.csv.open(newline="")))
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from subsonic.client import SubsonicClient
     client = SubsonicClient(os.environ.get("SUBSONIC_URL", "http://127.0.0.1:4533"),
                             os.environ["SUBSONIC_USER"], os.environ["SUBSONIC_PASS"])
-    songs = _load_songs(db)
-    todo, skipped = plan(rows, songs, source)
-    existing = {p.name for p in client.playlists()}
+    songs = _load_songs(a.navidrome_db)
+    missing = [r["original_path"] for r in rows if r["new_path"] and r["new_path"] not in songs]
+    if missing:
+        print(f"{len(missing)} mapped files are not in Navidrome yet (scan pending?); refusing to plan:", file=sys.stderr)
+        for m in missing[:10]: print(f"  {m}", file=sys.stderr)
+        return 1
+    if a.apply and client.scan_status().get("scanning"):
+        print("Navidrome is scanning; try again when it finishes", file=sys.stderr); return 1
+    todo, skipped = plan(rows, songs, a.source)
+    existing = {p.name for p in client.playlists()}   # this Subsonic user's playlists (+ public ones)
     for name, ids in sorted(todo.items(), key=lambda kv: kv[0].casefold()):
-        flag = "exists, skipped" if name in existing else ("created" if apply else "would create")
-        if apply and name not in existing:
+        flag = "exists, skipped" if name in existing else ("created" if a.apply else "would create")
+        if a.apply and name not in existing:
             client.create_playlist(name, ids)
         print(f"{len(ids):4d}  {name}  [{flag}]")
     print(f"{len(todo)} playlists, {sum(len(v) for v in todo.values())} entries; "
-          f"{len(skipped)} originals not in any playlist (root files / unmapped)")
-    for s in skipped:
-        print(f"  skipped: {s}")
+          f"{len(skipped)} originals not in any playlist (root files)")
+    for sk in skipped:
+        print(f"  skipped: {sk}")
     return 0
 
 

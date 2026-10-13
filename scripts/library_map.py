@@ -21,18 +21,24 @@ from typing import Callable, Iterable
 
 AUDIO_EXT = {"flac", "mp3", "m4a", "wav", "aiff", "aif", "ogg", "opus", "alac", "wma"}
 SKIP_DIRS = ("_Serato_", "_Serato_Backup")
-FIELDS = ["original_path", "folder", "ext", "size", "audio_md5", "new_path"]
+FIELDS = ["original_path", "folder", "ext", "size", "audio_md5", "new_path", "other_copies"]
+EMPTY_MD5 = "d41d8cd98f00b204e9800998ecf8427e"   # what an empty/undecodable stream hashes to
 
 Hasher = Callable[[Path], str]
 
 
 def audio_md5(path: Path) -> str:
     """MD5 of the raw audio packets (no container metadata/tags)."""
-    out = subprocess.run(
-        ["ffmpeg", "-v", "error", "-i", str(path), "-map", "0:a:0", "-c", "copy", "-f", "md5", "-"],
-        capture_output=True, text=True, check=True,
-    ).stdout.strip()
-    return out.removeprefix("MD5=")
+    try:
+        out = subprocess.run(
+            ["ffmpeg", "-v", "error", "-i", str(path), "-map", "0:a:0", "-c", "copy", "-f", "md5", "-"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+    except subprocess.CalledProcessError as e:
+        print(f"  ffmpeg failed: {path}: {e.stderr.strip()[:120]}", file=sys.stderr)
+        return ""
+    h = out.removeprefix("MD5=")
+    return "" if h == EMPTY_MD5 else h
 
 
 def audio_files(root: Path) -> Iterable[Path]:
@@ -40,7 +46,7 @@ def audio_files(root: Path) -> Iterable[Path]:
         if not p.is_file() or p.suffix.lower().lstrip(".") not in AUDIO_EXT:
             continue
         rel = p.relative_to(root)
-        if rel.parts and rel.parts[0] in SKIP_DIRS:
+        if any(part in SKIP_DIRS for part in rel.parts):
             continue
         yield rel
 
@@ -55,29 +61,43 @@ def build_rows(root: Path, hasher: Hasher = audio_md5) -> list[dict]:
             "size": str((root / rel).stat().st_size),
             "audio_md5": hasher(root / rel),
             "new_path": "",
+            "other_copies": "",
         })
     return rows
 
 
+def _copy_rank(rel: str) -> tuple:
+    """Prefer the properly filed copy: no beets '.1' uniquifier, not a catch-all folder, then alphabetical."""
+    import re
+    uniquified = bool(re.search(r"\.\d+\.[A-Za-z0-9]+$", rel))
+    catch_all = rel.startswith(("Compilations/", "_/")) or "/Singles/" in rel
+    return (uniquified, catch_all, rel)
+
+
 def fill_rows(rows: list[dict], music_root: Path, hasher: Hasher = audio_md5) -> dict:
-    by_hash: dict[str, str] = {}
+    copies: dict[str, list[str]] = {}
     for rel in audio_files(music_root):
-        by_hash.setdefault(hasher(music_root / rel), rel.as_posix())
+        h = hasher(music_root / rel)
+        if h:
+            copies.setdefault(h, []).append(rel.as_posix())
+    for lst in copies.values():
+        lst.sort(key=_copy_rank)
+    report = {"matched": 0, "unmatched_originals": [], "unmatched_new": [], "collapsed_duplicates": [], "extra_copies": []}
     seen: set[str] = set()
-    report = {"matched": 0, "unmatched_originals": [], "unmatched_new": [], "collapsed_duplicates": []}
-    used: set[str] = set()
     for r in rows:
-        new = by_hash.get(r["audio_md5"], "")
-        r["new_path"] = new
-        if not new:
+        lst = copies.get(r["audio_md5"], []) if r["audio_md5"] else []
+        r["new_path"] = lst[0] if lst else ""
+        r["other_copies"] = "|".join(lst[1:])
+        if not lst:
             report["unmatched_originals"].append(r["original_path"])
             continue
         report["matched"] += 1
-        used.add(new)
         if r["audio_md5"] in seen:
             report["collapsed_duplicates"].append(r["original_path"])
         seen.add(r["audio_md5"])
-    report["unmatched_new"] = sorted(set(by_hash.values()) - used)
+    known = {r["audio_md5"] for r in rows}
+    report["unmatched_new"] = sorted(p for h, lst in copies.items() if h not in known for p in lst)
+    report["extra_copies"] = sorted(p for h, lst in copies.items() if h in known for p in lst[1:])
     return report
 
 
@@ -106,8 +126,9 @@ def main(argv: list[str]) -> int:
         print(f"matched {report['matched']}/{len(rows)}; "
               f"unmatched originals {len(report['unmatched_originals'])}; "
               f"new files with no origin {len(report['unmatched_new'])}; "
-              f"duplicates collapsed {len(report['collapsed_duplicates'])}")
-        for k in ("unmatched_originals", "unmatched_new", "collapsed_duplicates"):
+              f"duplicates collapsed {len(report['collapsed_duplicates'])}; "
+              f"extra copies in the library {len(report['extra_copies'])}")
+        for k in ("unmatched_originals", "unmatched_new", "collapsed_duplicates", "extra_copies"):
             for item in report[k]:
                 print(f"  {k}: {item}")
         return 0
