@@ -41,37 +41,41 @@ services:
     depends_on: [navidrome]
     restart: unless-stopped
 
-  # --- Phase 1: Soulseek, only ever through the VPN (M4 uncomments) ---
-  # gluetun:
-  #   image: qmcgaw/gluetun
-  #   cap_add: [NET_ADMIN]
-  #   devices: ["/dev/net/tun:/dev/net/tun"]
-  #   ports: ["127.0.0.1:5030:5030"]          # slskd UI, published on gluetun (shared netns)
-  #   environment:
-  #     VPN_SERVICE_PROVIDER: protonvpn
-  #     VPN_TYPE: wireguard
-  #     WIREGUARD_PRIVATE_KEY: ${WG_KEY}        # Proton WireGuard config generated WITH "NAT-PMP (Port Forwarding)"
-  #     SERVER_COUNTRIES: Netherlands
-  #     VPN_PORT_FORWARDING: "on"
-  #     PORT_FORWARD_ONLY: "on"
-  #     HTTP_CONTROL_SERVER_ENABLE: "on"
-  #     HTTP_CONTROL_SERVER_AUTH_DEFAULT_ROLE: '{"auth":"apikey","apikey":"${GLUETUN_KEY}"}'
-  #   volumes: ["/srv/docker/gluetun:/gluetun"]
-  #   restart: unless-stopped
-  # slskd:
-  #   image: slskd/slskd:latest
-  #   network_mode: "service:gluetun"
-  #   depends_on: [gluetun]
-  #   environment:
-  #     SLSKD_REMOTE_CONFIGURATION: "true"
-  #     SLSKD_SLSK_USERNAME: ${SLSK_USER}
-  #     SLSKD_SLSK_PASSWORD: ${SLSK_PASS}
-  #     SLSKD_VPN: "true"
-  #     SLSKD_VPN_PORT_FORWARDING: "true"
-  #     SLSKD_VPN_GLUETUN_URL: http://localhost:8000
-  #     SLSKD_VPN_GLUETUN_API_KEY: ${GLUETUN_KEY}
-  #   volumes:
-  #     - /srv/docker/slskd:/app
-  #     - /srv/incoming:/app/downloads
-  #     - /srv/music:/app/shared:ro
-  #   restart: unless-stopped
+  # --- Phase 1: Soulseek, only ever through the VPN (brought up in M4) ---
+  gluetun:
+    image: qmcgaw/gluetun
+    cap_add: [NET_ADMIN]
+    devices: ["/dev/net/tun:/dev/net/tun"]
+    ports: ["127.0.0.1:5030:5030"]          # slskd UI, published on gluetun (shared netns)
+    environment:
+      VPN_SERVICE_PROVIDER: protonvpn
+      VPN_TYPE: wireguard
+      WIREGUARD_PRIVATE_KEY: ${WG_KEY}        # Proton WireGuard config generated WITH "NAT-PMP (Port Forwarding)"
+      SERVER_COUNTRIES: Netherlands
+      VPN_PORT_FORWARDING: "on"
+      PORT_FORWARD_ONLY: "on"
+      HTTP_CONTROL_SERVER_ENABLE: "on"
+      HTTP_CONTROL_SERVER_AUTH_DEFAULT_ROLE: '{"auth":"apikey","apikey":"${GLUETUN_KEY}"}'
+    volumes: ["/srv/docker/gluetun:/gluetun"]
+    restart: unless-stopped
+  slskd:
+    image: slskd/slskd:latest
+    user: "1000:1000"
+    network_mode: "service:gluetun"
+    depends_on: [gluetun]
+    environment:
+      SLSKD_API_KEY: ${SLSKD_API_KEY}            # what sourcing.cli / fetch authenticate with (X-API-Key)
+      SLSKD_SLSK_USERNAME: ${SLSK_USER}
+      SLSKD_SLSK_PASSWORD: ${SLSK_PASS}
+      SLSKD_VPN: "true"
+      SLSKD_VPN_PORT_FORWARDING: "true"
+      SLSKD_VPN_GLUETUN_URL: http://localhost:8000
+      SLSKD_VPN_GLUETUN_API_KEY: ${GLUETUN_KEY}
+      SLSKD_DOWNLOADS_DIR: /app/downloads
+      SLSKD_INCOMPLETE_DIR: /app/downloads/.incomplete
+      SLSKD_SHARED_DIR: /app/shared
+    volumes:
+      - /srv/docker/slskd:/app
+      - /srv/incoming:/app/downloads
+      - /srv/music:/app/shared:ro
+    restart: unless-stopped
