@@ -1,0 +1,27 @@
+# beets config for the one-time library import (and later sourcing hand-offs).
+#   beet -c ~/projects/dj-crate-streaming/deploy/beets.yaml import --pretend /srv/incoming/library-import
+# State (library.db, import log) lives in /srv/docker/beets, outside the repo.
+directory: /srv/music
+library: /srv/docker/beets/library.db
+
+import:
+  copy: yes            # never move: /srv/incoming/library-import stays untouched
+  move: no
+  write: yes           # tags are written to the *copy* in /srv/music
+  log: /srv/docker/beets/import.log
+  quiet_fallback: asis # unmatched albums go in on their existing tags (-q runs)
+  duplicate_action: skip
+  resume: ask
+  incremental: yes     # re-running skips directories already imported
+
+paths:
+  # Artist/Album (Year)/NN - Title; %if drops "(0000)" when the year is unknown and files no-album tracks under Singles/
+  default: $albumartist/%if{$album,%if{$year,$album ($year),$album},Singles}/$track - $title
+  comp: Compilations/%if{$year,$album ($year),$album}/$track - $title
+  singleton: $artist/Singles/$title
+
+ignore: ['.*', '*~', 'System Volume Information', 'lost+found', '_Serato_', '_Serato_Backup']
+ignore_hidden: yes
+asciify_paths: no
+per_disc_numbering: no
+threaded: yes
