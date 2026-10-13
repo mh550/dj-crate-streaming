@@ -25,8 +25,11 @@ services:
     restart: unless-stopped
 
   crates:                                    # crate service + web client (this repo)
+    user: "1000:1000"
     build:
-      context: ${CRATES_SRC:-..}             # repo root; override when the project dir isn't deploy/
+      # Compose resolves relative paths against the directory of the compose file *as given*
+      # (/srv/docker via the symlink), so a relative default would point at /srv. Require it.
+      context: ${CRATES_SRC:?set CRATES_SRC=<repo checkout> in /srv/docker/.env}
     ports: ["127.0.0.1:4580:4580"]
     environment:
       SUBSONIC_URL: http://navidrome:4533
