@@ -113,3 +113,25 @@ def test_rename_from_any_client_toggles_crate(env):
     client.update_playlist("pl-3", name="Sunday Listening")
     rec.run()
     assert not store.get("pl-3").enabled
+
+
+def test_external_wanted_rows_join_the_queue():
+    store = CrateStore()
+    ext = store.add_external_wanted("Chic", "Good Times", album="Risqué", duration_s=501, year=1979, source="spotify:abc")
+    assert ext.startswith("ext-")
+    w = store.wanted()
+    assert [x["song_id"] for x in w] == [ext]
+    assert w[0]["external"] is True and w[0]["crates"] == [] and w[0]["duration"] == 501
+    store.set_external_status(ext, "sourcing")
+    assert store.external(ext)["status"] == "sourcing"
+    assert store.wanted() == []                      # in flight → not offered again
+    store.set_external_status(ext, "failed", "download timed out")
+    assert store.wanted()[0]["reason"] == "download timed out"
+
+
+def test_external_status_names_are_validated():
+    store = CrateStore()
+    ext = store.add_external_wanted("A", "B")
+    import pytest
+    with pytest.raises(AssertionError):
+        store.set_external_status(ext, "verifying")

@@ -5,6 +5,7 @@ Tables
   crates        one row per playlist we have ever looked at as a crate
   crate_tracks  per (crate, song): last-seen library facts + provisioning status
   events        append-only log so the UI can show "what did the reconciler do"
+  external_wanted  tracks wanted that aren't in Navidrome at all (seeded from Spotify etc.)
 """
 from __future__ import annotations
 
@@ -40,6 +41,14 @@ CREATE TABLE IF NOT EXISTS crate_tracks (
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ts REAL NOT NULL, playlist_id TEXT, song_id TEXT, kind TEXT NOT NULL, detail TEXT
+);
+CREATE TABLE IF NOT EXISTS external_wanted (
+  id          INTEGER PRIMARY KEY,
+  artist      TEXT NOT NULL, title TEXT NOT NULL, album TEXT, year INTEGER, duration INTEGER,
+  source      TEXT,                               -- e.g. spotify playlist URL
+  status      TEXT NOT NULL DEFAULT 'needs_source',
+  reason      TEXT,
+  created_at  REAL NOT NULL, updated_at REAL NOT NULL
 );
 """
 
@@ -148,7 +157,35 @@ class CrateStore:
             else:
                 d["crates"] = [d.pop("crate_name")]
                 out[d["song_id"]] = d
-        return list(out.values())
+        ext = self.db.execute("SELECT * FROM external_wanted WHERE status IN ('needs_source','failed') ORDER BY id")
+        return list(out.values()) + [self._ext_row(r) for r in ext]
+
+    # --- external wanted (not in Navidrome at all; seeded from Spotify etc.)
+    def add_external_wanted(self, artist: str, title: str, album: str | None = None, duration_s: float | None = None,
+                            year: int | None = None, source: str | None = None) -> str:
+        now = time.time()
+        cur = self.db.execute(
+            "INSERT INTO external_wanted(artist,title,album,year,duration,source,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
+            (artist, title, album, year, int(duration_s) if duration_s else None, source, now, now))
+        self.log(None, f"ext-{cur.lastrowid}", "wanted", f"{artist} — {title}")
+        return f"ext-{cur.lastrowid}"
+
+    def external(self, ext_id: str) -> dict | None:
+        r = self.db.execute("SELECT * FROM external_wanted WHERE id=?", (int(ext_id.split('-', 1)[1]),)).fetchone()
+        return self._ext_row(r) if r else None
+
+    def set_external_status(self, ext_id: str, status: str, reason: str | None = None) -> None:
+        assert status in STATUSES, status
+        self.db.execute("UPDATE external_wanted SET status=?, reason=?, updated_at=? WHERE id=?",
+                        (status, reason, time.time(), int(ext_id.split('-', 1)[1])))
+        self.log(None, ext_id, "status", status)
+
+    @staticmethod
+    def _ext_row(r: sqlite3.Row) -> dict:
+        d = dict(r)
+        d["song_id"] = f"ext-{d.pop('id')}"
+        d["crates"], d["external"] = [], True
+        return d
 
     # --- events
     def log(self, playlist_id: str | None, song_id: str | None, kind: str, detail: str | None = None) -> None:
