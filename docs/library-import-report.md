@@ -40,5 +40,34 @@ _Generated 2026-10-13 from `beet import --pretend` with `deploy/beets.yaml`. Sou
 
 ## Real import
 
-_Pending — filled in after `beet import -q`._
+_Run 2026-10-13 04:14–05:05, `beet import -q -c -P` (copy mode; source untouched, verified by mtime)._
 
+| | |
+|---|---:|
+| Files in `/srv/music` | **859** |
+| beets items / albums | 859 / 358 |
+| Distinct audio streams in the source | 831 |
+| Redundant copies now in `/srv/music` (same audio, different tags/folders) | 28 |
+| Originals mapped to a new path in `library-map.csv` | 917 / 917 |
+
+**Pass 1 (album mode, `duplicate_action: skip`):** 455 groups as-is, 2 MusicBrainz matches, 87 groups
+skipped as duplicates. Quiet mode only auto-applies *strong* matches, and most groups are
+one track of a multi-track album, so MusicBrainz tagging essentially didn't happen; the
+library is on Michael's existing tags. Fine for Navidrome; Picard/`beet import -t` later
+if he wants canonical tags.
+
+**Why 87 duplicate-skips:** beets dedupes by album artist + album *tag*, so a second
+folder holding the same album (byte-identical copies filed in two playlists) is skipped —
+correct — but so is a *different* track whose tags collide with one already imported
+(e.g. several `Unknown Artist` albums). 52 files were real misses.
+
+**Pass 2 (those 52 files only, singleton mode, `duplicate_action: keep`):** all 52 imported
+(17 flagged duplicate-keep, 1 MusicBrainz match). Nothing from the source is
+missing. The 28 redundant copies are a later `beet duplicates` / taste
+decision, not an overnight one.
+
+**MusicBrainz-tagged albums:** `started Tue Oct 13 04:11:45 2026`, `started Tue Oct 13 04:14:23 2026`, `started Tue Oct 13 05:06:54 2026`.
+
+**Hand-fix list for Michael:** everything else is as-is — see `/srv/docker/beets/import.log`
+(`asis` lines) and the "Loose groups" table above; the 4 files missing title/artist tags
+landed under `Singles/` or an empty artist. `docs/library-map.csv` says where each file came from.
