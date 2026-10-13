@@ -3,6 +3,8 @@
   python -m sourcing.cli rank --fixture fixtures/search_responses.sample.json --artist Chic --title "Good Times" --duration 501
   python -m sourcing.cli rank --slskd http://server:5030 --api-key $SLSKD_KEY --artist Chic --title "Good Times" [--download]
   python -m sourcing.cli verify /srv/incoming/03\ -\ Good\ Times.flac --duration 501
+  python -m sourcing.cli fetch --wanted s4 [--approve]        # one wanted track, end to end (see fetch.py)
+  python -m sourcing.cli seed-spotify https://open.spotify.com/playlist/...   # queue tracks not in Navidrome
 """
 from __future__ import annotations
 
@@ -14,6 +16,7 @@ from pathlib import Path
 
 from .scorer import Wanted, rank, explain
 from .policy import DEFAULT_POLICY
+from .spotify_csv import fetch_entity
 from .verify import verify
 
 
@@ -38,7 +41,51 @@ def main(argv: list[str] | None = None) -> int:
     v.add_argument("path")
     v.add_argument("--duration", type=float)
 
+    f = sub.add_parser("fetch", help="take one wanted track through search → score → (approve) download → verify → file → ok")
+    f.add_argument("--wanted", required=True, help="song id from `crates.cli wanted` (or ext-N from seed-spotify)")
+    f.add_argument("--approve", action="store_true", help="actually download; without it, stop after scoring")
+    f.add_argument("--slskd", default=os.environ.get("SLSKD_URL", "http://127.0.0.1:5030"))
+    f.add_argument("--api-key", default=os.environ.get("SLSKD_API_KEY"))
+
+    s = sub.add_parser("seed-spotify", help="add every track of a public Spotify playlist/album to the wanted queue")
+    s.add_argument("url")
+
     a = ap.parse_args(argv)
+
+    if a.cmd == "seed-spotify":
+        from crates.service import Config
+        from crates.store import CrateStore
+        from .spotify_csv import rows
+        store = CrateStore(Config.from_env().db_path)
+        n = 0
+        for r in rows(fetch_entity(a.url)):          # dicts: {"Artist", "Title", "Length"} (seconds)
+            store.add_external_wanted(r["Artist"], r["Title"], duration_s=r["Length"], source=a.url); n += 1
+        store.commit()
+        print(f"{n} added to the wanted queue from {a.url}")
+        return 0
+
+    if a.cmd == "fetch":
+        if not a.api_key:
+            print("need --api-key or $SLSKD_API_KEY", file=sys.stderr); return 1
+        from crates.reconcile import Reconciler
+        from crates.service import Config
+        from crates.store import CrateStore
+        from subsonic.client import SubsonicClient
+        from .fetch import fetch
+        from .slskd_client import SlskdClient
+        cfg = Config.from_env()
+        if not cfg.username:
+            print("set SUBSONIC_USER / SUBSONIC_PASS (and SUBSONIC_URL)", file=sys.stderr); return 1
+        store = CrateStore(cfg.db_path)
+        nav = SubsonicClient(cfg.subsonic_url, cfg.username, cfg.password)
+        r = fetch(a.wanted, store=store, slskd=SlskdClient(a.slskd, a.api_key), navidrome=nav,
+                  reconciler=Reconciler(nav, store), music_root=Path(os.environ.get("MUSIC_ROOT", "/srv/music")),
+                  downloads_root=Path(os.environ.get("DOWNLOADS_ROOT", "/srv/incoming")), approve=a.approve)
+        print(r.explain)
+        if r.pick:
+            print(f"pick: {r.pick.username}: {r.pick.basename}  (score {r.pick.score:.2f})")
+        print(f"{r.status}: {r.reason}" + (f"  → {r.filed}" if r.filed else ""))
+        return 0 if r.status in ("ok", "needs_source") else 2
 
     if a.cmd == "verify":
         vd = verify(Path(a.path), a.duration)
