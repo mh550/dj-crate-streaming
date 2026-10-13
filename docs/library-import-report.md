@@ -74,7 +74,7 @@ landed under `Singles/` or an empty artist. `docs/library-map.csv` says where ea
 
 ## Folders → playlists
 
-`scripts/folders_to_playlists.py` recreated the genre/vibe folders as **35 Navidrome playlists, 907 entries**
+`scripts/folders_to_playlists.py` recreated the genre/vibe folders as **35 Navidrome playlists, 908 entries**
 (one per folder that holds tracks; nested folders as `Parent / Child`; Artist/Album dirs inside a
-folder are not playlists). The 10 tracks that sat loose at the library root are in no playlist.
+folder are not playlists). The 9 tracks that sat loose at the library root are in no playlist.
 None are flagged as crates — that's a per-playlist choice in the crate UI.
