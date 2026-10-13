@@ -1,12 +1,12 @@
-import json
 from pathlib import Path
 
 from crates.store import CrateStore
 from sourcing import cli
 from sourcing.fake_slskd import FakeSlskdServer
 from subsonic.fake_server import FakeSubsonicServer
+from tests.helpers import load_responses
 
-RESPONSES = json.loads(Path("fixtures/search_responses.sample.json").read_text())
+RESPONSES = load_responses()
 
 
 def test_fetch_without_approve_prints_pick(tmp_path, monkeypatch, capsys):

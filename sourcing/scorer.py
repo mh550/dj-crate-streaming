@@ -22,6 +22,13 @@ from difflib import SequenceMatcher
 from .policy import QualityPolicy, DEFAULT_POLICY
 
 
+def split_remote(filename: str) -> tuple[str, str]:
+    """A Soulseek remote path (either slash) → (immediate parent folder, basename).
+    slskd lands downloads at <downloads>/<parent folder>/<basename>, so both sides use this."""
+    parts = re.split(r"[\\/]", filename)
+    return (parts[-2] if len(parts) > 1 else ""), parts[-1]
+
+
 @dataclass
 class Wanted:
     artist: str
@@ -52,12 +59,11 @@ class Candidate:
 
     @property
     def basename(self) -> str:
-        return re.split(r"[\\/]", self.filename)[-1]
+        return split_remote(self.filename)[1]
 
     @property
     def folder(self) -> str:
-        parts = re.split(r"[\\/]", self.filename)
-        return parts[-2] if len(parts) > 1 else ""
+        return split_remote(self.filename)[0]
 
 
 # ---------- text normalization ----------

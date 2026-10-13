@@ -1,6 +1,14 @@
 """Shared test helpers (plain functions, no pytest fixtures)."""
+import json
 import struct
 from pathlib import Path
+
+FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
+
+
+def load_responses() -> list[dict]:
+    """The slskd-shaped search responses fixture; [0]["files"][0] is vinylhead77's Good Times FLAC."""
+    return json.loads((FIXTURES / "search_responses.sample.json").read_text())
 
 
 def make_flac(path: Path, sr=44100, bps=16, ch=2, total=44100 * 300, pad_bytes=0) -> Path:

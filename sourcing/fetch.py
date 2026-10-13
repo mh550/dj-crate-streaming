@@ -32,7 +32,7 @@ from .scorer import Candidate, Wanted, explain, rank
 from .slskd_client import SlskdClient, transfer_files
 from .verify import verify
 
-_FILED = re.compile(r"filed as (.+?) but Navidrome")
+_FILED = re.compile(r"filed as (.+?) but Navidrome")   # the filed path rides in the reason until a jobs table exists (M4)
 
 
 @dataclass
@@ -43,14 +43,6 @@ class FetchResult:
     filed: Path | None = None
     new_song_id: str | None = None
     explain: str = ""
-
-
-def _norm(s: str | None) -> str:
-    return re.sub(r"[^\w]+", "", (s or "").casefold())
-
-
-def _filed_reason(music_root: Path, filed: Path) -> str:
-    return f"filed as {filed.relative_to(music_root)} but Navidrome has not picked it up yet"
 
 
 def _find_landed(downloads_root: Path, best: Candidate) -> Path | None:
@@ -75,14 +67,11 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
     external = bool(row.get("external"))
 
     def set_status(status: str, reason: str | None = None) -> None:
-        if external:
-            store.set_external_status(wanted_id, status, reason)
-        else:
-            for crate in store.all(enabled_only=True):
-                cur = store.track_status_map(crate.playlist_id).get(wanted_id)
-                if cur and cur["status"] != "removed":
-                    store.set_track_status(crate.playlist_id, wanted_id, status, reason)
-        store.commit()
+        store.set_wanted_status(wanted_id, status, reason)
+
+    def fail(why: str, best: Candidate | None, text: str) -> FetchResult:
+        set_status("failed", why)
+        return FetchResult("failed", why, best, explain=text)
 
     wanted = Wanted(row.get("artist") or "", row["title"], row.get("album"), row.get("duration"), row.get("year"))
 
@@ -91,15 +80,16 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         t0 = time.time()
         while navidrome.scan_status().get("scanning") and time.time() - t0 < scan_timeout_s:
             time.sleep(poll_s)
-        ext, size = filed.suffix.lstrip(".").lower(), filed.stat().st_size
+        ext, size, rel = filed.suffix.lstrip(".").lower(), filed.stat().st_size, filed.relative_to(music_root).as_posix()
         hits = [s for s in navidrome.search_songs(f"{wanted.artist} {wanted.title}".strip(), count=50)
-                if (s.suffix or "").lower() == ext]
-        return next((s for s in hits if s.size == size), None)            # size is the real key; tags may differ
+                if (s.suffix or "").lower() == ext and s.size == size]   # size is the key: tags may differ, and
+        # Navidrome's Subsonic `path` is synthesised from tags, so it only serves as a tie-break
+        return next((s for s in hits if (s.path or "").endswith(rel)), hits[0] if hits else None)
 
     def finish(filed: Path, best: Candidate | None, text: str) -> FetchResult:
         new = locate_in_navidrome(filed)
         if new is None:
-            why = _filed_reason(music_root, filed)
+            why = f"filed as {filed.relative_to(music_root)} but Navidrome has not picked it up yet"
             set_status("verify", why)
             return FetchResult("verify", why, best, filed, explain=text)
         if external:
@@ -125,8 +115,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         m = _FILED.search(row.get("reason") or "")
         if m and (music_root / m.group(1)).exists():
             return finish(music_root / m.group(1), None, "")
-        set_status("failed", f"verify row without a filed path (reason was: {row.get('reason')!r})")
-        return FetchResult("failed", "verify row without a filed path", explain="")
+        return fail(f"verify row without a filed path (reason was: {row.get('reason')!r})", None, "")
     if status == "sourcing" and time.time() - (row.get("updated_at") or 0) < download_timeout_s:
         return FetchResult("sourcing", "in flight (started less than the download timeout ago)")
 
@@ -157,21 +146,19 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
                 if landed:
                     break
                 why = f"slskd reports success but {best.basename} is not under {downloads_root}"
-                set_status("failed", why)
-                return FetchResult("failed", why, best, explain=text)
-            if state.startswith("Completed") or time.time() - t0 > download_timeout_s:
-                why = f"download ended: {state}" if state.startswith("Completed") else "download timed out"
-                set_status("failed", why)
-                return FetchResult("failed", why, best, explain=text)
-            time.sleep(poll_s)
+            elif state.startswith("Completed"):
+                why = f"download ended: {state}"
+            elif time.time() - t0 > download_timeout_s:
+                why = "download timed out"
+            else:
+                time.sleep(poll_s)
+                continue
+            return fail(why, best, text)
 
-        set_status("verify", "checking the file")
-        vd = verify(landed, wanted.duration_s)
+        vd = verify(landed, wanted.duration_s)                  # still `sourcing`: the bytes aren't ours yet
         if not vd.ok:
-            why = "; ".join(vd.problems)
             landed.unlink(missing_ok=True)                      # our own download, not library material
-            set_status("failed", why)
-            return FetchResult("failed", why, best, explain=text)
+            return fail("; ".join(vd.problems), best, text)
 
         track = row.get("track") if external else navidrome.song(wanted_id).track
         filed = file_into(landed, music_root, artist=wanted.artist, title=wanted.title,

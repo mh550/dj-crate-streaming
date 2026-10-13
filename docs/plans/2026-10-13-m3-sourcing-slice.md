@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** implemented 2026-10-13 (tasks 1–6; see git log `sourcing/`), whole-branch review pending/below.
+**Status:** done 2026-10-13 — tasks 1–6, fresh-context review (3 critical / 5 important fixed, 4 minors deferred) and a /simplify pass applied; 80 tests. Follow-up recorded in README "Not done yet": a `sourcing_jobs` table before any background runner.
 
 **Goal:** One CLI command takes one wanted track all the way from `needs_source` to `ok` in the crate store, fully tested against an in-process fake slskd and the existing fake Navidrome; without `--approve` it stops after scoring and prints the pick.
 

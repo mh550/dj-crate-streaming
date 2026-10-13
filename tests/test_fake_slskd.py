@@ -1,10 +1,10 @@
-import json
 from pathlib import Path
 
 from sourcing.fake_slskd import FakeSlskdServer
 from sourcing.slskd_client import SlskdClient
+from tests.helpers import load_responses
 
-RESPONSES = json.loads(Path("fixtures/search_responses.sample.json").read_text())
+RESPONSES = load_responses()
 GOOD = RESPONSES[0]["files"][0]["filename"]          # vinylhead77's Good Times FLAC
 
 

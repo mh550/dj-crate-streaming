@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 
 import pytest
@@ -10,9 +9,9 @@ from sourcing.fetch import fetch
 from sourcing.slskd_client import SlskdClient
 from subsonic.client import SubsonicClient
 from subsonic.fake_server import FakeSubsonicServer
-from tests.helpers import make_flac
+from tests.helpers import load_responses, make_flac
 
-RESPONSES = json.loads(Path("fixtures/search_responses.sample.json").read_text())
+RESPONSES = load_responses()
 GOOD = RESPONSES[0]["files"][0]["filename"]      # Chic — Good Times FLAC, 501 s
 
 

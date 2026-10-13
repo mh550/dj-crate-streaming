@@ -10,6 +10,7 @@ Tables
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import time
 from dataclasses import dataclass
@@ -56,8 +57,11 @@ STATUSES = ("ok", "needs_source", "sourcing", "verify", "failed", "removed")
 
 
 def _loose(s: str | None) -> str:
-    import re
     return re.sub(r"[^\w]+", "", (s or "").casefold())
+
+
+def _ext_pk(ext_id: str) -> int:
+    return int(ext_id[4:])          # "ext-<rowid>"
 
 
 @dataclass
@@ -149,33 +153,37 @@ class CrateStore:
         out["total"] = sum(out.values())
         return out
 
-    def wanted(self) -> list[dict]:
-        """Every track across enabled crates that still needs a file — the sourcing queue.
-        One entry per song even if it sits in several crates (`crates` lists them)."""
+    def _crate_wanted(self, where: str, params: tuple = ()) -> list[dict]:
+        """Crate rows grouped per song (a song in several crates is one entry with `crates` listed)."""
         out: dict[str, dict] = {}
         for r in self.db.execute(
                 "SELECT t.*, c.name AS crate_name FROM crate_tracks t JOIN crates c USING(playlist_id) "
-                "WHERE c.enabled=1 AND t.status IN ('needs_source','failed') ORDER BY c.name, t.position"):
-            d = dict(r)
-            if d["song_id"] in out:
-                out[d["song_id"]]["crates"].append(d["crate_name"])
-            else:
-                d["crates"] = [d.pop("crate_name")]
-                out[d["song_id"]] = d
+                f"WHERE c.enabled=1 AND {where} ORDER BY c.name, t.position", params):
+            d = dict(r); name = d.pop("crate_name")
+            out.setdefault(d["song_id"], {**d, "crates": []})["crates"].append(name)
+        return list(out.values())
+
+    def wanted(self) -> list[dict]:
+        """Every track across enabled crates that still needs a file, plus external rows — the sourcing queue."""
         ext = self.db.execute("SELECT * FROM external_wanted WHERE status IN ('needs_source','failed') ORDER BY id")
-        return list(out.values()) + [self._ext_row(r) for r in ext]
+        return self._crate_wanted("t.status IN ('needs_source','failed')") + [self._ext_row(r) for r in ext]
 
     def find_wanted(self, song_id: str) -> dict | None:
-        """One wanted-shaped row for this id whatever its status (crate rows: first enabled crate holding it)."""
+        """One wanted-shaped row for this id whatever its status."""
         if song_id.startswith("ext-"):
             return self.external(song_id)
-        rows = self.db.execute(
-            "SELECT t.*, c.name AS crate_name FROM crate_tracks t JOIN crates c USING(playlist_id) "
-            "WHERE c.enabled=1 AND t.song_id=? AND t.status!='removed' ORDER BY c.name", (song_id,)).fetchall()
-        if not rows:
-            return None
-        d = dict(rows[0]); d["crates"] = [r["crate_name"] for r in rows]; d.pop("crate_name", None)
-        return d
+        return (self._crate_wanted("t.song_id=? AND t.status!='removed'", (song_id,)) or [None])[0]
+
+    def set_wanted_status(self, song_id: str, status: str, reason: str | None = None) -> None:
+        """Status for a wanted id: the external row, or every live row of that song in an enabled crate."""
+        if song_id.startswith("ext-"):
+            self.set_external_status(song_id, status, reason)
+        else:
+            for (pl,) in self.db.execute(
+                    "SELECT t.playlist_id FROM crate_tracks t JOIN crates c USING(playlist_id) "
+                    "WHERE c.enabled=1 AND t.song_id=? AND t.status!='removed' ORDER BY c.name", (song_id,)).fetchall():
+                self.set_track_status(pl, song_id, status, reason)
+        self.commit()
 
     # --- external wanted (not in Navidrome at all; seeded from Spotify etc.)
     def find_external(self, artist: str, title: str) -> dict | None:
@@ -192,6 +200,9 @@ class CrateStore:
         existing = self.find_external(artist, title)
         if existing:
             return existing["song_id"]
+        return self._insert_external(artist, title, album, duration_s, year, source)
+
+    def _insert_external(self, artist, title, album, duration_s, year, source) -> str:
         now = time.time()
         cur = self.db.execute(
             "INSERT INTO external_wanted(artist,title,album,year,duration,source,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
@@ -199,14 +210,17 @@ class CrateStore:
         self.log(None, f"ext-{cur.lastrowid}", "wanted", f"{artist} — {title}")
         return f"ext-{cur.lastrowid}"
 
+    def external_count(self) -> int:
+        return self.db.execute("SELECT COUNT(*) FROM external_wanted").fetchone()[0]
+
     def external(self, ext_id: str) -> dict | None:
-        r = self.db.execute("SELECT * FROM external_wanted WHERE id=?", (int(ext_id.split('-', 1)[1]),)).fetchone()
+        r = self.db.execute("SELECT * FROM external_wanted WHERE id=?", (_ext_pk(ext_id),)).fetchone()
         return self._ext_row(r) if r else None
 
     def set_external_status(self, ext_id: str, status: str, reason: str | None = None) -> None:
         assert status in STATUSES, status
         self.db.execute("UPDATE external_wanted SET status=?, reason=?, updated_at=? WHERE id=?",
-                        (status, reason, time.time(), int(ext_id.split('-', 1)[1])))
+                        (status, reason, time.time(), _ext_pk(ext_id)))
         self.log(None, ext_id, "status", status)
 
     @staticmethod

@@ -107,7 +107,10 @@ Container build for the Compose stack: `docker build -t crates .` (see the
 ## Not done yet
 
 - Background jobs that run `fetch` automatically from the wanted queue (today: one track per
-  command, downloads only with `--approve`). Checking Navidrome for a good copy *before* searching.
+  command, downloads only with `--approve`). First step before any runner: a `sourcing_jobs`
+  table keyed once per wanted id (status, filed path, slskd transfer) so job progress stops
+  riding on `crate_tracks.status` fan-out and on the free-text reason. Then: check Navidrome for
+  a good copy *before* searching; tag the file (or hand it to beets) so Navidrome's view matches.
 - Expected-duration lookup (MusicBrainz / SpotiFLAC) instead of trusting the library's.
 - AcoustID fingerprint verification (`fpcalc`).
 - Analysis (BPM/key → Serato GEOB), stems, device sync — Phases 2–4.

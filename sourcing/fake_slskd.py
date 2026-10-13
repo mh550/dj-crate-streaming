@@ -20,6 +20,8 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from .scorer import split_remote
+
 
 class FakeSlskdServer:
     def __init__(self, responses: list[dict], downloads_dir: Path, files: dict[str, bytes],
@@ -45,11 +47,6 @@ class FakeSlskdServer:
         self.httpd.shutdown()
         self.httpd.server_close()
 
-    @staticmethod
-    def _split(filename: str) -> tuple[str, str]:
-        parts = re.split(r"[\\/]", filename)
-        return (parts[-2] if len(parts) > 1 else ""), parts[-1]
-
     def seed_transfer(self, username: str, filename: str, state: str) -> dict:
         """Pretend an earlier attempt left this record behind (slskd keeps completed transfers)."""
         t = {"id": str(uuid.uuid4()), "username": username, "filename": filename, "size": 0, "state": state}
@@ -60,7 +57,7 @@ class FakeSlskdServer:
         self.enqueued.append((username, filename))
         t = {"id": str(uuid.uuid4()), "username": username, "filename": filename, "size": size, "state": "InProgress"}
         if self.complete:
-            folder, base = self._split(filename)
+            folder, base = split_remote(filename)
             dest = self.downloads_dir / folder / base
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(self.files.get(filename, b""))
@@ -72,7 +69,7 @@ class FakeSlskdServer:
         dirs: dict[str, list[dict]] = {}
         for t in self.transfers:
             if t["username"] == username:
-                dirs.setdefault(self._split(t["filename"])[0], []).append(t)
+                dirs.setdefault(split_remote(t["filename"])[0], []).append(t)
         return {"username": username, "directories": [{"directory": d, "files": fs} for d, fs in dirs.items()]}
 
     def _handler(self):
