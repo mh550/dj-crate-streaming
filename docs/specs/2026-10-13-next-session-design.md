@@ -1,6 +1,6 @@
 # Next session: quality tiers, naming convention, library hygiene, sharing, network posture
 
-**Status:** revision 3, 2026-10-13, after Michael's second round (Amperfy naming, Spotify playlists, upload cap 0.6 MB/s). Decisions in §0
+**Status:** revision 4, 2026-10-13 evening: D10 recommendation, download validation (§3a), Spotify URLs, branch policy. Implemented by `~/projects/OVERNIGHT-2.md`. Decisions in §0
 are his unless marked *default*. Nothing here is implemented. A future `/loop` session
 turns §7 into `docs/plans/` plans (writing-plans → executing-plans), bounded tasks first.
 
@@ -62,7 +62,8 @@ turns §7 into `docs/plans/` plans (writing-plans → executing-plans), bounded 
 | D8 | External search sources: Spotify public embed data + MusicBrainz first; SoundCloud deferred (official API needs Artist Pro). | *default* |
 | D9 | Quality tiers are **sourcing tiers** (what the Soulseek getter chooses), with the stream transcode following the same name. Definitions in §1. | Michael |
 | D11 | **Playlists come from Spotify, not from folders.** The 35 folder playlists are a stopgap "quick genre reclassification"; the real playlists are Michael's Spotify playlists. Selected ones are ported into Navidrome (and so into the crate UI) and can be toggled to crates. Folder playlists stay until the Spotify ones replace them. | Michael |
-| D10 | A low-tier file in the library is **provisional**: it is upgraded when the track joins a crate or when Michael raises the tier, and the inferior copy goes to trash after the better one is verified. This replaces "store lossless once" from 2026-09-18 with "store the best copy we have, upgrade in place". | *default*, from D2 + D9 |
+| D10 | A low-tier file is **provisional**: when a crate claims the track or Michael raises the tier, the better file replaces it and the old one goes to `/srv/_trash/` (never auto-emptied). Michael asked whether to *keep* the low copy as a streaming option; recommendation is no: Navidrome transcodes every stream tier from the best file on hand and caches the result (3 GB cache), so a 64 kbps source can only make streams worse, while a second copy confuses playlists, dedupe and the Soulseek share (sharing upscales is bad etiquette). The trash folder is the "keep it just in case". | *recommended default*, Michael undecided |
+| D12 | **Branch policy:** `overnight/2026-10-13` was merged into `main` in both repos on 2026-10-13 evening. Every overnight run branches from `main`, and the review conversation after a run ends by merging that run's branch into `main` before any new branch is cut. | Michael |
 
 ---
 
@@ -138,9 +139,12 @@ crate then works through the existing mechanism (every entry gets the crate tier
 - **Idempotent:** re-running the same playlist updates in place (same rules as
   `folders_to_playlists.py`): never duplicates entries, never deletes a track Michael
   added by hand in Navidrome.
-- **The `sockseek/*` folders:** no tracklist exists on disk, so these need the Spotify
-  URL (make the playlist public for a minute, or Exportify). Michael names which ones
-  matter first; `secondset` is his example.
+- **The `sockseek/*` folders:** no tracklist exists on disk. Michael supplied the URLs
+  (2026-10-13 evening, public, verified readable): **Tea tent** = playlist
+  `0wPBj1mjvAJcmr6zdaz228` (99 tracks) **plus** `1NzQAjrmZjW01Vibt4b1tR` (27, named
+  "Tea tent2222" on Spotify, split only because of the old downloader's 100-song cap) →
+  one Navidrome playlist "Tea tent" in that order, so `import-playlist` takes several
+  URLs for one `--name`. **secondset** = `77cVGze44N3VVE3SPnJOGk` (68 tracks).
 - **Visibility:** playlists are created as `michael` and set `public`, so the
   `amperfy` test user and any future user sees them. The 35 folder playlists should be
   made public the same way now (one `updatePlaylist` call each; blocked for Claude
@@ -186,6 +190,36 @@ Various-Artists albums), then `beet move` re-files them under the artist. Every 
 is logged to `docs/tag-cleanup-report.md` and reversible from the original files in
 `/srv/incoming/library-import`. Run MusicBrainz matching (`beet import -L` re-import
 of the library) only after that, so titles are clean enough to match.
+
+## 3a. Download validation — what careful Soulseek users check, done by code
+
+Today `sourcing/verify.py` checks the FLAC header, implied bitrate and duration. That
+misses the classic Soulseek failure: a lossy file re-encoded as FLAC or as "320", a
+16-bit file padded to 24-bit, a truncated or clipped rip, or the wrong recording under
+the right name. Common practice (spectrogram in Spek, `flac -t`, length against
+Discogs/MusicBrainz, a listen to the first and last seconds, bit-depth sanity, tag and
+art check) becomes a checklist in code. Tools already on the box: `ffmpeg`/`ffprobe`,
+`flac`/`metaflac`, `fpcalc`. No `sox`.
+
+| Check | How | Verdict |
+|---|---|---|
+| Integrity | `ffmpeg -v error -i f -f null -` has no output; FLAC also `flac -t` (verifies the decoded-audio MD5 in STREAMINFO) | hard fail, every tier |
+| Transcode / upscale | band energy from ffmpeg: RMS above 16, 18, 19, 20 kHz vs full-band RMS (`highpass` + `astats`); estimate the cutoff. Lossless or ≥320 kbps content normally has energy to 19–20 kHz; a cutoff ≤16 kHz means it came from ≤128 kbps | hard fail for `crate` when the file claims lossless/≥320; flag otherwise. Old mono or lo-fi recordings can legitimately lack highs, so the message says what was measured |
+| Fake 24-bit / fake 96 kHz | 24-bit: decode to s32 and check the low 8 bits are not all zero; >48 kHz: energy above 22 kHz exists | hard fail for `crate`, flag otherwise |
+| Right recording | `fpcalc` fingerprint; when upgrading an existing library copy, compare the two fingerprints (bit-error rate over the overlap) — no network; AcoustID lookup only if Michael registers a free key | hard fail when a reference exists and they differ |
+| Length | duration vs the wanted record ±4 s (exists); vs MusicBrainz editions once that plan lands | hard fail, every tier |
+| Truncation / silence | container duration vs decoded duration; `silencedetect` > 3 s at start or end | hard fail if truncated; flag silence |
+| Clipping | `astats` peak at 0 dBFS with a high flat factor | flag |
+| Tags and art | artist/title present and match the wanted row loosely; embedded art or folder image | flag; beets fixes tags at filing |
+
+Design: `verify(path, expected_duration, tier, reference=None) -> Verdict` with
+`problems` (hard) and `warnings` (soft) and a `measurements` dict (cutoff kHz, peak,
+bit depth seen, fingerprint match) that is stored on the wanted row and shown in the
+web client. Test fixtures are generated with ffmpeg from seeded white noise: a true
+FLAC, a 128 kbps mp3 decoded back to FLAC (cutoff ≈16 kHz), a 16-bit file padded to
+24-bit, a truncated file. Noise has energy at every frequency, so the cutoff test is
+deterministic. Shared uploads are only ever `/srv/music`, so what passes here is also
+what Michael shares.
 
 ## 4. Library hygiene: playlists on disk, dedupe, garbage collection (D2, D3)
 
@@ -265,6 +299,7 @@ nothing we run needs it; turn it off.
 3. §3 tag cleanup backfill (fixes what Amperfy shows).
 4. §4.1 playlist export, §4.2 dedupe.
 5. §1 tiers in `policy.py` + scorer + CLI `--tier`, web selector renamed.
+5a. §3a download validation in `verify.py` (ffmpeg fixtures).
 6. §3 beets-based filing in `fetch` + name reconciliation (retires `organize.py`).
 7. §4.3 GC at ingest + §1 upgrade path.
 8. §5 `genres.yaml` seed + folder backfill (after Michael edits the seed tree).
