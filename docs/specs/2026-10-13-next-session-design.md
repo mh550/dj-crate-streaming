@@ -1,6 +1,6 @@
 # Next session: quality tiers, naming convention, library hygiene, sharing, network posture
 
-**Status:** revision 2, 2026-10-13, after Michael's answers to revision 1. Decisions in §0
+**Status:** revision 3, 2026-10-13, after Michael's second round (Amperfy naming, Spotify playlists, upload cap 0.6 MB/s). Decisions in §0
 are his unless marked *default*. Nothing here is implemented. A future `/loop` session
 turns §7 into `docs/plans/` plans (writing-plans → executing-plans), bounded tasks first.
 
@@ -19,8 +19,24 @@ turns §7 into `docs/plans/` plans (writing-plans → executing-plans), bounded 
 - Michael's 35 genre/playlist folders exist as Navidrome playlists (908 entries), DB
   only — no playlist files on disk.
 - slskd 0.26.1 logged in through gluetun/ProtonVPN; shares `/srv/music` read-only
-  (859 files / 670 folders, scan complete); upload settings are slskd defaults
-  (10 slots, no speed cap). Zero downloads so far.
+  (859 files / 670 folders, scan complete). **Upload cap applied 2026-10-13:** 5 slots,
+  586 KiB/s (0.6 MB/s) in `/srv/docker/slskd/slskd.yml` (backup `slskd.yml.bak-2026-10-13`),
+  verified live after a container restart. Zero downloads so far.
+- **What Amperfy shows is tags, not paths.** The path convention holds for all 859
+  files, but 440 import groups went in "as is" with whatever tags the downloaders
+  wrote: 92 titles carry a ` - ` suffix or a `Artist - 'Title' (Album)` pattern
+  (sockseek style), 366 files sit under `Compilations` because their album artist is
+  "Various", 16 have no album, 4 no artist. That is the inconsistency Michael saw.
+- **Spotify playlist definitions survive partially.** The `playlists/<name>/` folders
+  each hold a SpotiFLAC download report (`<name>.txt`, Spotify order, every track
+  attempted, 265 successes): perfect songs 114, skate three unofficial soundtrack 52,
+  the world is beautiful… 50, shakori 47, nothin to it 7, funk todos 5, and three
+  with one entry (dance, jazz bar, whats sacking mac pack). The `sockseek/<name>/`
+  folders (secondset 58, Tea tent 71, shakori 87, shakori2 14, freedom 14, …) have no
+  tracklist: only the files that downloaded, in no order.
+- Navidrome users: `michael` (admin, owns all 35 playlists, none public) and `amperfy`
+  (test user, created by Michael's other session). A non-owner sees only public
+  playlists, so `amperfy` currently sees none.
 - `sourcing/policy.py` has one `QualityPolicy` (crate grade: lossless preferred, lossy
   floor 320 kbps, fake-FLAC check). `sourcing/scorer.py` already reads each peer's
   `uploadSpeed`, `queueLength`, `hasFreeUploadSlot` and the file size, so a speed-first
@@ -41,10 +57,11 @@ turns §7 into `docs/plans/` plans (writing-plans → executing-plans), bounded 
 | D3 | The 28 current duplicates: second copy → `/srv/_trash/<date>/`, playlists repointed. | Michael |
 | D4 | Genre is a **hierarchy of tags** (House → Jungle…), grown with the library, applied to incoming music with little or no friction, no redundant or obsolete tags. Representation decided now (§5), implementation deferred. | Michael, deferred |
 | D5 | One **naming convention**, defined once, applied to new downloads and backfilled over the existing library; the crate's name for a track and Navidrome's name must agree (§3). | Michael |
-| D6 | Soulseek upload cap **1.2 MB/s, 5 slots**. *(Note: Spectrum's 300 plan is usually 10 Mbit/s up = 1.25 MB/s, so this cap is close to the whole uplink; a speed test decides whether to drop it to ~0.6 MB/s.)* | Michael |
+| D6 | Soulseek upload cap **0.6 MB/s (586 KiB/s), 5 slots** — applied. | Michael, done |
 | D7 | Automatic downloads only after Michael has approved at least one manual download and said go. | *default* |
 | D8 | External search sources: Spotify public embed data + MusicBrainz first; SoundCloud deferred (official API needs Artist Pro). | *default* |
 | D9 | Quality tiers are **sourcing tiers** (what the Soulseek getter chooses), with the stream transcode following the same name. Definitions in §1. | Michael |
+| D11 | **Playlists come from Spotify, not from folders.** The 35 folder playlists are a stopgap "quick genre reclassification"; the real playlists are Michael's Spotify playlists. Selected ones are ported into Navidrome (and so into the crate UI) and can be toggled to crates. Folder playlists stay until the Spotify ones replace them. | Michael |
 | D10 | A low-tier file in the library is **provisional**: it is upgraded when the track joins a crate or when Michael raises the tier, and the inferior copy goes to trash after the better one is verified. This replaces "store lossless once" from 2026-09-18 with "store the best copy we have, upgrade in place". | *default*, from D2 + D9 |
 
 ---
@@ -97,6 +114,43 @@ Acceptance: a track absent from Navidrome appears from Spotify's public data, la
 `external_wanted` idempotently with its tier, and `fetch --wanted ext-N` reports a
 scored pick under that tier.
 
+## 2a. Porting Spotify playlists (D11)
+
+Goal: `python3 -m sourcing.cli import-playlist <spotify-url | report.txt> [--name N]`
+creates or updates a Navidrome playlist with the tracks the library already has, in
+Spotify order, and queues the rest as wanted rows that remember their playlist and
+position, so a later `fetch` inserts each one in place. Toggling that playlist to a
+crate then works through the existing mechanism (every entry gets the crate tier).
+
+- **Inputs, in order of preference:** (1) a Spotify playlist URL — public playlists via
+  the existing `spotify_csv.fetch_entity` (embed page, no account, 100-track cap);
+  (2) an Exportify CSV for private or long playlists (Michael exports from the phone
+  and drops it in `/srv/incoming/playlists/`); (3) the SpotiFLAC report files already on
+  disk, parsed as `Title - Artist` lines in order (covers the nine `playlists/*` folders
+  today). SpotiFLAC itself is a downloader (Tidal/Qobuz/Deezer backends), not a
+  playlist exporter; its reports are the useful by-product. Not adopted for sourcing.
+- **Matching a Spotify row to a library track:** Navidrome `search3` on `artist
+  title`, word-wise, then pick by duration within ±4 s when the playlist row has a
+  length (URL and Exportify do; reports do not), else by exact normalised title +
+  lead artist. Ambiguous or missing → wanted row (`external_wanted` gains
+  `playlist_id`, `position`). Report file inputs have no duration, so expect more
+  "needs review" rows there; the client shows them for a one-tap pick.
+- **Idempotent:** re-running the same playlist updates in place (same rules as
+  `folders_to_playlists.py`): never duplicates entries, never deletes a track Michael
+  added by hand in Navidrome.
+- **The `sockseek/*` folders:** no tracklist exists on disk, so these need the Spotify
+  URL (make the playlist public for a minute, or Exportify). Michael names which ones
+  matter first; `secondset` is his example.
+- **Visibility:** playlists are created as `michael` and set `public`, so the
+  `amperfy` test user and any future user sees them. The 35 folder playlists should be
+  made public the same way now (one `updatePlaylist` call each; blocked for Claude
+  by the permission classifier on 2026-10-13, so Michael or his other session does it).
+
+Acceptance: `import-playlist` on the perfect-songs report yields a Navidrome playlist
+with ≥ 100 matched entries in report order and the unmatched ones as wanted rows with
+positions; running it twice changes nothing; a fake-server test covers URL, CSV and
+report inputs.
+
 ## 3. Naming convention and name reconciliation (D5)
 
 **Convention (decide once, in `deploy/beets.yaml`, already in force for the 859):**
@@ -122,10 +176,16 @@ Navidrome's values and logs the rename (`reason: "renamed: X → Y"`). A track s
 `verify` only when Navidrome cannot find the file at all. Soulseek/slskd does not
 rename or retag, so this is ours.
 
-**Backfill:** the library already follows the convention (beets wrote it). Remaining
-offenders are the untagged ones (`Unknown Artist`, `Singles` with bare titles): a
-`beet ls -p` report lists them; fixing their tags is a tagging task, not a renaming
-task, and `beet move` re-files them automatically. Folded into §5's first task.
+**Backfill (what Amperfy made visible):** the paths follow the convention; the tags
+do not. A bounded `scripts/tag_cleanup.py` (or `beet modify` rules) handles the known
+patterns: strip ` - Remastered`, ` - Live`, ` - <year> Remaster` style suffixes from
+titles into a `version`/comment field; split sockseek's `Artist - 'Title' (Album)`
+titles back into artist/title/album; set `albumartist` from `artist` for the 366
+"Compilations" files that are not real compilations (Michael's folders are not
+Various-Artists albums), then `beet move` re-files them under the artist. Every change
+is logged to `docs/tag-cleanup-report.md` and reversible from the original files in
+`/srv/incoming/library-import`. Run MusicBrainz matching (`beet import -L` re-import
+of the library) only after that, so titles are clean enough to match.
 
 ## 4. Library hygiene: playlists on disk, dedupe, garbage collection (D2, D3)
 
@@ -200,14 +260,16 @@ nothing we run needs it; turn it off.
 
 ## 7. Suggested session order (all on an `overnight/<date>` branch, test-first)
 
-1. §6 slskd settings (smallest, immediate etiquette win).
-2. §4.1 playlist export, §4.2 dedupe.
-3. §1 tiers in `policy.py` + scorer + CLI `--tier`, web selector renamed.
-4. §3 beets-based filing in `fetch` + name reconciliation (retires `organize.py`).
-5. §4.3 GC at ingest + §1 upgrade path.
-6. §5 `genres.yaml` seed + folder backfill (after Michael edits the seed tree).
-7. §2 external search (own spec section first).
-8. Runner (`sourcing_jobs` table) — after D7.
+1. ~~§6 slskd settings~~ done 2026-10-13; the description and share filter remain.
+2. §2a `import-playlist` from the nine report files + the Spotify URLs Michael names, playlists public.
+3. §3 tag cleanup backfill (fixes what Amperfy shows).
+4. §4.1 playlist export, §4.2 dedupe.
+5. §1 tiers in `policy.py` + scorer + CLI `--tier`, web selector renamed.
+6. §3 beets-based filing in `fetch` + name reconciliation (retires `organize.py`).
+7. §4.3 GC at ingest + §1 upgrade path.
+8. §5 `genres.yaml` seed + folder backfill (after Michael edits the seed tree).
+9. §2 external search (own spec section first).
+10. Runner (`sourcing_jobs` table) — after D7.
 
 ## Not in scope
 
