@@ -56,3 +56,65 @@ def test_match_retries_with_title_only_words():
         assert ip.match(c, Row(1, "Why You Wanna See My Bad Side", "Smokey Robinson", 224)).song_id == "m1"
         assert ip.match(c, Row(2, "Why You Wanna See My Bad Side", "William Robinson Jr.", 224)).song_id == "m1"   # artist words miss → title-only retry
         assert ip.match(c, Row(3, "Piano Joint", "Michael Kiwanuka", 232)).status == "missing"
+
+
+from crates.store import CrateStore
+
+
+def _lib(srv):
+    s = srv.state.songs
+    s["w1"] = dict(s["s1"], id="w1", title="The Weasil", artist="Donald Byrd", duration=540, path="Donald Byrd/Fancy Free (1970)/01 - The Weasil.flac")
+    s["w2"] = dict(s["s1"], id="w2", title="The Weasil", artist="Donald Byrd", duration=538, path="Compilations/Tea tent/01 - The Weasil.flac")
+    s["k1"] = dict(s["s1"], id="k1", title="Bag Lady", artist="Erykah Badu", duration=347)
+    s["t1"] = dict(s["s1"], id="t1", title="The Magician", artist="Twain", duration=353, album="Rare Feeling")
+    s["t2"] = dict(s["s1"], id="t2", title="The Magician", artist="Twain", duration=300, album="Live")
+
+
+ROWS = [Row(1, "The Weasil", "Donald Byrd", 541, "sp1"), Row(2, "Piano Joint (This Kind Of Love)", "Michael Kiwanuka", 232, "sp2"),
+        Row(3, "Bag Lady", "Erykah Badu", 347, "sp3"), Row(4, "The Magician", "Twain", None, "sp4")]
+
+
+def test_import_creates_public_playlist_in_order_and_queues_the_rest():
+    with FakeSubsonicServer() as srv:
+        _lib(srv)
+        c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
+        rep = ip.import_playlist("Tea tent", ROWS, c, store, source="https://open.spotify.com/playlist/x")
+        assert rep.created and rep.matched == 2 and rep.wanted == 1 and rep.ambiguous == 1 and rep.added == 2
+        pl = c.playlist(rep.playlist_id)
+        assert pl.name == "Tea tent" and pl.public is True and [e.id for e in pl.entries] == ["w1", "k1"]
+        ext = store.external_for_playlist(rep.playlist_id)
+        assert [(r["artist"], r["title"], r["position"], r["status"]) for r in ext] == [
+            ("Michael Kiwanuka", "Piano Joint (This Kind Of Love)", 2, "needs_source"),
+            ("Twain", "The Magician", 4, "verify")]
+        assert ext[1]["reason"].startswith("ambiguous: ") and set(ext[1]["reason"][11:].split(", ")) == {"t1", "t2"}
+        assert ext[0]["source"] == "https://open.spotify.com/playlist/x" and ext[0]["duration"] == 232
+        assert "matched" in rep.table() and "The Weasil" in rep.table()
+
+
+def test_import_is_idempotent_and_never_removes_or_duplicates():
+    with FakeSubsonicServer() as srv:
+        _lib(srv)
+        c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
+        first = ip.import_playlist("Tea tent", ROWS, c, store, source="s")
+        # Michael removes one entry and adds his own by hand
+        c.update_playlist(first.playlist_id, remove_indexes=[1], add_song_ids=["s5"])
+        second = ip.import_playlist("Tea tent", ROWS, c, store, source="s")
+        assert not second.created and second.playlist_id == first.playlist_id and second.added == 1
+        assert [e.id for e in c.playlist(first.playlist_id).entries] == ["w1", "s5", "k1"]   # s5 kept, k1 re-added once
+        assert store.external_count() == 2
+        third = ip.import_playlist("Tea tent", ROWS, c, store, source="s")
+        assert third.added == 0 and [e.id for e in c.playlist(first.playlist_id).entries] == ["w1", "s5", "k1"]
+
+
+def test_import_makes_an_existing_private_playlist_public_and_dry_run_touches_nothing():
+    with FakeSubsonicServer() as srv:
+        _lib(srv)
+        c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
+        existing = c.create_playlist("Tea tent", ["k1"])
+        dry = ip.import_playlist("Tea tent", ROWS, c, store, source="s", dry_run=True)
+        assert dry.playlist_id == existing.id and dry.matched == 2 and dry.added == 1   # what it *would* add
+        assert [e.id for e in c.playlist(existing.id).entries] == ["k1"] and c.playlist(existing.id).public is False
+        assert store.external_count() == 0
+        rep = ip.import_playlist("Tea tent", ROWS, c, store, source="s")
+        assert rep.playlist_id == existing.id and c.playlist(existing.id).public is True
+        assert [e.id for e in c.playlist(existing.id).entries] == ["k1", "w1"]

@@ -12,6 +12,7 @@ from __future__ import annotations
 import unicodedata
 from dataclasses import dataclass, field
 
+from crates.store import CrateStore
 from subsonic.client import Song, SubsonicClient
 from .playlist_sources import Row, lead_artist
 
@@ -79,3 +80,72 @@ def match(client: SubsonicClient, row: Row) -> Match:
         title_only = " ".join(query_words(row.title))
         hits = client.search_songs(title_only, count=20) if title_only else []
     return choose(row, hits)
+
+
+@dataclass
+class Report:
+    name: str
+    playlist_id: str | None
+    created: bool
+    matches: list[Match]
+    added: int                  # entries appended this run (or that a dry run would append)
+
+    def _count(self, status: str) -> int:
+        return sum(1 for m in self.matches if m.status == status)
+
+    @property
+    def matched(self) -> int:
+        return self._count("matched")
+
+    @property
+    def wanted(self) -> int:
+        return self._count("missing")
+
+    @property
+    def ambiguous(self) -> int:
+        return self._count("ambiguous")
+
+    def table(self) -> str:
+        lines = []
+        for m in self.matches:
+            tail = f"→ {m.song_id}" if m.song_id else (f"? {', '.join(m.candidates)}" if m.candidates else "")
+            lines.append(f"{m.row.position:4d}  {m.status:<9}  {m.row.artist} — {m.row.title}  {tail}".rstrip())
+        lines.append(f"{self.name}: {self.matched} matched, {self.wanted} wanted, {self.ambiguous} ambiguous"
+                     + (f"; {self.added} added to playlist {self.playlist_id}" if self.playlist_id else ""))
+        return "\n".join(lines)
+
+
+def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: CrateStore,
+                    source: str, dry_run: bool = False) -> Report:
+    """Create or update the playlist `name`: matched tracks in row order (appending only what is
+    missing on a re-run, never removing), public; everything else becomes an external_wanted row
+    that remembers the playlist and position. Ambiguous rows are parked as `verify` with the ids."""
+    matches = [match(client, r) for r in rows]
+    ordered: list[str] = []
+    for m in matches:
+        if m.status == "matched" and m.song_id not in ordered:
+            ordered.append(m.song_id)
+    existing = next((p for p in client.playlists() if p.name == name), None)
+    if existing is None:
+        new_ids, playlist_id = ordered, None
+    else:
+        have = {e.id for e in client.playlist(existing.id).entries}
+        new_ids, playlist_id = [i for i in ordered if i not in have], existing.id
+    if not dry_run:
+        if existing is None:
+            playlist_id = client.create_playlist(name, new_ids).id
+            client.update_playlist(playlist_id, public=True)              # spec §2a: visible to every user
+        else:
+            if new_ids:
+                client.update_playlist(existing.id, add_song_ids=new_ids)
+            if not existing.public:
+                client.update_playlist(existing.id, public=True)
+        for m in matches:
+            if m.status == "matched":
+                continue
+            ext = store.add_external_wanted(lead_artist(m.row), m.row.title, album=m.row.album, duration_s=m.row.duration_s,
+                                            source=source, playlist_id=playlist_id, position=m.row.position)
+            if m.status == "ambiguous":
+                store.set_external_status(ext, "verify", "ambiguous: " + ", ".join(m.candidates))
+        store.commit()
+    return Report(name, playlist_id, existing is None, matches, len(new_ids))
