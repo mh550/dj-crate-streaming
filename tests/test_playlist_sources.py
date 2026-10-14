@@ -84,3 +84,21 @@ def test_lead_artist_resolves_commas_via_track_embed_and_semicolons_locally():
     assert ps.lead_artist(ps.Row(1, "t", "Earth, Wind & Fire", 278, spotify_id="abc"), resolve=resolve) == "Earth, Wind & Fire"
     assert calls == ["abc"]
     assert ps.lead_artist(ps.Row(1, "t", "Roy Ayers, Dee Dee Bridgewater", 1, spotify_id="z"), resolve=lambda s: None) == "Roy Ayers"   # lookup failed → first segment
+
+
+def test_report_rows_keep_comma_band_names_whole():
+    # Live run 2026-10-14: "[SUCCESS] After the Love Has Gone - Earth, Wind & Fire" produced lead artist "Earth".
+    # Report rows separate artists with ';', so a comma there is part of one name.
+    row = ps.rows_from_report("[SUCCESS] After the Love Has Gone - Earth, Wind & Fire\n")[0]
+    assert ps.lead_artist(row, resolve=lambda sid: (_ for _ in ()).throw(AssertionError("no lookup for report rows"))) == "Earth, Wind & Fire"
+
+
+def test_report_error_entry_strips_nested_album_parenthetical():
+    # Live run 2026-10-14: nested parens in the album were not stripped, so the artist became
+    # "Digable Planets (Reachin' (A New Refutation Of Time And Space))".
+    text = ("1. Where I'm From - Digable Planets (Reachin' (A New Refutation Of Time And Space))\n"
+            "   Error: x\n   ID: 2GJMHPV3vqakgxdZXsGyfd\n"
+            "2. Free - Deniece Williams (This Is Niecy (Expanded Edition))\n   Error: y\n   ID: 1eY5skETdGlVupvvx1X2V0\n")
+    rows = ps.rows_from_report(text)
+    assert (rows[0].artist, rows[0].album) == ("Digable Planets", "Reachin' (A New Refutation Of Time And Space)")
+    assert (rows[1].artist, rows[1].title, rows[1].album) == ("Deniece Williams", "Free", "This Is Niecy (Expanded Edition)")

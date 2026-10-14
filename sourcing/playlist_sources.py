@@ -45,7 +45,21 @@ def rows_from_spotify(entity: dict) -> list[Row]:
 
 _STATUS = re.compile(r"^\[(SUCCESS|SKIPPED)\] (.*)$")
 _ERROR = re.compile(r"^\d+\. (.*)$")
-_ALBUM = re.compile(r"^(.*) \(([^()]*)\)$")           # "Title - Artist (Album)" → the LAST parenthetical
+
+
+def _strip_album(body: str) -> tuple[str, str | None]:
+    """'Title - Artist (Album)' → ('Title - Artist', 'Album'); the album may itself hold parentheses
+    ("Reachin' (A New Refutation Of Time And Space)"), so walk back to the '(' that balances the final ')'."""
+    if not body.endswith(")"):
+        return body, None
+    depth = 0
+    for i in range(len(body) - 1, -1, -1):
+        depth += {")": 1, "(": -1}.get(body[i], 0)
+        if depth == 0:
+            if i > 0 and body[i - 1] == " ":
+                return body[: i - 1], body[i + 1:-1]
+            break
+    return body, None
 
 
 def _split_title_artist(s: str) -> tuple[str, str]:
@@ -63,10 +77,7 @@ def rows_from_report(text: str) -> list[Row]:
             continue
         m = _ERROR.match(line)
         if m:
-            body, album = m.group(1), None
-            am = _ALBUM.match(body)
-            if am:
-                body, album = am.group(1), am.group(2)
+            body, album = _strip_album(m.group(1))
             title, artist = _split_title_artist(body)
             rows.append(Row(len(rows) + 1, title, artist, None, album=album, note="error"))
             continue
@@ -121,11 +132,12 @@ def _track_lead(spotify_id: str) -> str | None:
 
 
 def lead_artist(row: Row, resolve=_track_lead) -> str:
-    """Report rows separate artists with ';' so the first segment is exact. Spotify/Exportify join
-    with ', ', which mangles 'Earth, Wind & Fire' — ask the track's own embed when we have its id."""
+    """Report rows separate artists with ';' so the first segment is exact (and a lone comma is part
+    of the name). Spotify/Exportify join with ', ', which mangles 'Earth, Wind & Fire' — ask the
+    track's own embed when we have its id."""
     if ";" in row.artist:
         return row.artist.split(";")[0].strip()
-    if "," not in row.artist:
+    if "," not in row.artist or row.note is not None:      # report rows use ';' between artists: a comma is part of one name
         return row.artist
     if row.spotify_id:
         got = resolve(row.spotify_id)
