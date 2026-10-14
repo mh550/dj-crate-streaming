@@ -54,7 +54,9 @@ def test_match_retries_with_title_only_words():
         srv.state.songs["m1"] = dict(srv.state.songs["s1"], id="m1", title="Smokey Robinson - Why You Wanna See My Bad Side.mp3", artist="100 - Smokey Robinson", duration=224)
         c = SubsonicClient(srv.url, "demo", "demo")
         assert ip.match(c, Row(1, "Why You Wanna See My Bad Side", "Smokey Robinson", 224)).song_id == "m1"
-        assert ip.match(c, Row(2, "Why You Wanna See My Bad Side", "William Robinson Jr.", 224)).song_id == "m1"   # artist words miss → title-only retry
+        assert ip.match(c, Row(2, "Why You Wanna See My Bad Side", "William Robinson Jr.", 224)).status == "missing"   # title-only retry still needs the lead artist
+        srv.state.songs["m2"] = dict(srv.state.songs["s1"], id="m2", title="Catendé - Live", artist="Vinícius de Moraes • Maria Creuza", duration=302)
+        assert ip.match(c, Row(4, "Catendé - Live", "Vinicius de Moraes; Toquinho", 302)).song_id == "m2"    # retry finds it; lead artist present
         assert ip.match(c, Row(3, "Piano Joint", "Michael Kiwanuka", 232)).status == "missing"
 
 
@@ -106,18 +108,73 @@ def test_import_is_idempotent_and_never_removes_or_duplicates():
         assert third.added == 0 and [e.id for e in c.playlist(first.playlist_id).entries] == ["w1", "s5", "k1"]
 
 
-def test_import_makes_an_existing_private_playlist_public_and_dry_run_touches_nothing():
+def test_import_refuses_a_foreign_playlist_unless_merge_and_never_publishes_it():
+    # Live 2026-10-14: "Tea tent" silently merged into last night's folder playlist and flipped it public.
+    import pytest
     with FakeSubsonicServer() as srv:
         _lib(srv)
         c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
-        existing = c.create_playlist("Tea tent", ["k1"])
-        dry = ip.import_playlist("Tea tent", ROWS, c, store, source="s", dry_run=True)
+        existing = c.create_playlist("Tea tent", ["k1"])                 # made by hand: no marker in its comment
+        with pytest.raises(ip.NameCollision) as e:
+            ip.import_playlist("Tea tent", ROWS, c, store, source="s")
+        assert e.value.playlist_id == existing.id
+        assert [x.id for x in c.playlist(existing.id).entries] == ["k1"] and store.external_count() == 0
+        dry = ip.import_playlist("Tea tent", ROWS, c, store, source="s", dry_run=True, merge=True)
         assert dry.playlist_id == existing.id and dry.matched == 2 and dry.added == 1   # what it *would* add
-        assert [e.id for e in c.playlist(existing.id).entries] == ["k1"] and c.playlist(existing.id).public is False
-        assert store.external_count() == 0
+        assert [x.id for x in c.playlist(existing.id).entries] == ["k1"] and store.external_count() == 0
+        rep = ip.import_playlist("Tea tent", ROWS, c, store, source="s", merge=True)
+        assert rep.playlist_id == existing.id and [x.id for x in c.playlist(existing.id).entries] == ["k1", "w1"]
+        assert c.playlist(existing.id).public is False                   # not ours: visibility is left alone
+
+
+def test_import_marks_its_playlists_so_reruns_need_no_merge_flag():
+    with FakeSubsonicServer() as srv:
+        _lib(srv)
+        c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
+        first = ip.import_playlist("Tea tent", ROWS, c, store, source="s")
+        assert "#imported" in (c.playlist(first.playlist_id).comment or "") and c.playlist(first.playlist_id).public is True
+        again = ip.import_playlist("Tea tent", ROWS, c, store, source="s")       # no merge flag needed
+        assert again.playlist_id == first.playlist_id and again.added == 0
+
+
+def test_rerun_does_not_reset_an_ambiguous_row_michael_resolved():
+    with FakeSubsonicServer() as srv:
+        _lib(srv)
+        c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
         rep = ip.import_playlist("Tea tent", ROWS, c, store, source="s")
-        assert rep.playlist_id == existing.id and c.playlist(existing.id).public is True
-        assert [e.id for e in c.playlist(existing.id).entries] == ["k1", "w1"]
+        twain = next(r for r in store.external_for_playlist(rep.playlist_id) if r["artist"] == "Twain")
+        assert twain["status"] == "verify"
+        store.set_external_status(twain["song_id"], "ok", "picked t1 by hand"); store.commit()
+        ip.import_playlist("Tea tent", ROWS, c, store, source="s")
+        assert store.external(twain["song_id"])["status"] == "ok"
+
+
+def test_degenerate_queries_never_match_by_duration_alone():
+    with FakeSubsonicServer() as srv:
+        c = SubsonicClient(srv.url, "demo", "demo")
+        assert ip.build_query(Row(1, "!!", "?", 501)) == ""
+        assert ip.match(c, Row(1, "!!", "?", 501)).status == "missing"            # empty query must not list everything
+        assert ip.match(c, Row(2, "!!", "Chic", 501)).status == "missing"         # artist-only query: s1 has the length but not the title
+
+
+def test_match_reads_past_the_first_twenty_hits():
+    with FakeSubsonicServer() as srv:
+        for i in range(25):
+            srv.state.songs[f"L{i}"] = dict(srv.state.songs["s1"], id=f"L{i}", title="Love", artist="Someone", duration=100 + i)
+        c = SubsonicClient(srv.url, "demo", "demo")
+        assert ip.match(c, Row(1, "Love", "Someone", 124)).song_id == "L24"
+
+
+def test_unresolved_comma_artist_is_noted_and_resolution_happens_before_any_write():
+    with FakeSubsonicServer() as srv:
+        _lib(srv)
+        c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
+        rows = [Row(1, "Nope", "Earth, Wind & Fire", 100, "sp9")]
+        rep = ip.import_playlist("EWF", rows, c, store, source="s", resolve=lambda sid: None)
+        assert store.external_for_playlist(rep.playlist_id)[0]["artist"] == "Earth"
+        assert any("Earth, Wind & Fire" in n and "Earth" in n for n in rep.notes) and rep.notes[0] in rep.table()
+        rep2 = ip.import_playlist("EWF2", rows, c, store, source="s", resolve=lambda sid: "Earth, Wind & Fire")
+        assert rep2.notes == []
 
 
 def test_table_says_whether_the_playlist_was_created_or_already_existed():

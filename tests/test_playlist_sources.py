@@ -102,3 +102,19 @@ def test_report_error_entry_strips_nested_album_parenthetical():
     rows = ps.rows_from_report(text)
     assert (rows[0].artist, rows[0].album) == ("Digable Planets", "Reachin' (A New Refutation Of Time And Space)")
     assert (rows[1].artist, rows[1].title, rows[1].album) == ("Deniece Williams", "Free", "This Is Niecy (Expanded Edition)")
+
+
+def test_csv_with_utf8_bom_still_parses(tmp_path):
+    # Excel / Windows Exportify exports start with a BOM; the first header must still be recognised.
+    f = tmp_path / "x.csv"; f.write_text("\ufeff" + EXPORTIFY, encoding="utf-8")
+    name, rows = ps.load(str(f))
+    assert rows[0].spotify_id == "4qZ1OgsTZMAgZA776w3USt"
+    f2 = tmp_path / "y.csv"; f2.write_bytes(("\ufeff" + SOCKSEEK).encode("utf-8"))
+    assert ps.load(str(f2))[1] == [ps.Row(1, "Good Times", "Chic", 501)]
+
+
+def test_track_lead_swallows_network_errors(monkeypatch):
+    import urllib.error
+    def boom(path): raise urllib.error.URLError("no route")
+    monkeypatch.setattr(ps, "_next_data", boom)
+    assert ps._track_lead("abc") is None

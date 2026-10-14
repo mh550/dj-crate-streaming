@@ -77,3 +77,23 @@ def test_import_playlist_rejects_two_sources_without_name_and_bad_url(tmp_path, 
         assert cli.main(["import-playlist", "https://open.spotify.com/playlist/private"]) == 1
         assert "private playlist" in capsys.readouterr().err
         assert len(nd.state.playlists) == 3 and not db.exists()
+
+
+def test_import_playlist_bad_csv_header_exits_cleanly(tmp_path, monkeypatch, capsys):
+    db = tmp_path / "crates.db"
+    bad = tmp_path / "weird.csv"; bad.write_text("Song,Who\nGood Times,Chic\n")
+    with FakeSubsonicServer() as nd:
+        _env(monkeypatch, nd, db)
+        assert cli.main(["import-playlist", str(bad)]) == 1
+        assert "weird.csv" in capsys.readouterr().err and not db.exists()
+
+
+def test_import_playlist_name_collision_needs_merge(tmp_path, monkeypatch, capsys):
+    db = tmp_path / "crates.db"
+    report = tmp_path / "Disco Edits.txt"; report.write_text("[SUCCESS] Good Times - Chic\n")
+    with FakeSubsonicServer() as nd:
+        _env(monkeypatch, nd, db)
+        assert cli.main(["import-playlist", str(report)]) == 1                     # "Disco Edits" exists in the fake, not ours
+        assert "--merge" in capsys.readouterr().err
+        assert cli.main(["import-playlist", "--merge", str(report)]) == 0
+        assert "updated existing playlist" in capsys.readouterr().out

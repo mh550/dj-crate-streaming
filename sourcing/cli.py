@@ -58,6 +58,7 @@ def main(argv: list[str] | None = None) -> int:
     ip.add_argument("sources", nargs="+", help="several sources concatenate in order into one playlist (needs --name)")
     ip.add_argument("--name", help="playlist name (default: the source's own name; required with several sources)")
     ip.add_argument("--dry-run", action="store_true", help="match and report, write nothing")
+    ip.add_argument("--merge", action="store_true", help="add to a same-named playlist this tool did not create (adopts it)")
 
     a = ap.parse_args(argv)
 
@@ -65,7 +66,7 @@ def main(argv: list[str] | None = None) -> int:
         from crates.service import Config
         from crates.store import CrateStore
         from subsonic.client import SubsonicClient
-        from .import_playlist import import_playlist
+        from .import_playlist import NameCollision, import_playlist
         from .playlist_sources import concat, load
         if len(a.sources) > 1 and not a.name:
             print("several sources make one playlist: say which with --name", file=sys.stderr); return 1
@@ -76,14 +77,17 @@ def main(argv: list[str] | None = None) -> int:
         for src in a.sources:
             try:
                 src_name, rows = load(src, fetch=fetch_entity)
-            except (SystemExit, OSError) as e:          # private playlist, no network, missing file: nothing written
+            except (SystemExit, OSError, KeyError, ValueError) as e:   # private playlist, no network, missing file, odd CSV: nothing written
                 print(f"{src}: {e}", file=sys.stderr); return 1
             groups.append(rows); name = name or src_name
         rows = concat(groups)
         Path(cfg.db_path).parent.mkdir(parents=True, exist_ok=True)
         store = CrateStore(cfg.db_path)                 # opened only after every source loaded
-        rep = import_playlist(name, rows, SubsonicClient(cfg.subsonic_url, cfg.username, cfg.password), store,
-                              source=" ".join(a.sources), dry_run=a.dry_run)
+        try:
+            rep = import_playlist(name, rows, SubsonicClient(cfg.subsonic_url, cfg.username, cfg.password), store,
+                                  source=" ".join(a.sources), dry_run=a.dry_run, merge=a.merge)
+        except NameCollision as e:
+            print(f"{e}; re-run with --merge to add to it, or pick another --name", file=sys.stderr); return 1
         print(rep.table())
         if a.dry_run:
             print("(dry run: nothing written)")

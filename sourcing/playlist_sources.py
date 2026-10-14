@@ -91,7 +91,7 @@ def rows_from_report(text: str) -> list[Row]:
 
 
 def rows_from_csv(text: str) -> list[Row]:
-    reader = csv.DictReader(io.StringIO(text))
+    reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff")))      # Excel/Windows exports carry a BOM
     out = []
     for i, r in enumerate(reader, 1):
         if "Track Name" in r:                                  # Exportify
@@ -118,7 +118,7 @@ def load(src: str, fetch=fetch_entity) -> tuple[str, list[Row]]:
         entity = fetch(src)
         return entity["name"].strip(), rows_from_spotify(entity)
     p = Path(src)
-    text = p.read_text(encoding="utf-8")
+    text = p.read_text(encoding="utf-8-sig")
     if p.suffix.lower() == ".csv":
         return p.stem, rows_from_csv(text)
     return p.stem, rows_from_report(text)
@@ -127,7 +127,7 @@ def load(src: str, fetch=fetch_entity) -> tuple[str, list[Row]]:
 def _track_lead(spotify_id: str) -> str | None:
     try:
         return _next_data(f"track/{spotify_id}")["artists"][0]["name"]
-    except (SystemExit, KeyError, IndexError, TypeError):
+    except Exception:            # SystemExit from _next_data, network errors, odd JSON: the caller falls back
         return None
 
 
