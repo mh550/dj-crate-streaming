@@ -185,3 +185,14 @@ def test_table_says_whether_the_playlist_was_created_or_already_existed():
         assert "created playlist" in ip.import_playlist("Tea tent", ROWS, c, store, source="s").table()
         again = ip.import_playlist("Tea tent", ROWS, c, store, source="s").table()
         assert "updated existing playlist" in again and "2 entries were already there" in again
+
+
+def test_title_only_retry_accepts_an_untagged_artist_when_the_length_fits():
+    # Live 2026-10-14: "[Unknown Artist]/[Unknown Album]/The Good Wine.mp3" (125 s) is Alabaster DePlume's
+    # 126 s track; a placeholder artist is no evidence against the match, but the length must agree.
+    with FakeSubsonicServer() as srv:
+        srv.state.songs["u1"] = dict(srv.state.songs["s1"], id="u1", title="The Good Wine", artist="[Unknown Artist]", album="[Unknown Album]", duration=125)
+        c = SubsonicClient(srv.url, "demo", "demo")
+        assert ip.match(c, Row(1, "The Good Wine", "Alabaster DePlume", 126)).song_id == "u1"
+        assert ip.match(c, Row(2, "The Good Wine", "Alabaster DePlume", None)).status == "missing"
+        assert ip.match(c, Row(3, "The Good Wine", "Alabaster DePlume", 200)).status == "missing"

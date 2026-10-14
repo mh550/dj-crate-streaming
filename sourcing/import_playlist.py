@@ -58,6 +58,12 @@ def _key(s: Song) -> str:
     return norm(s.artist) + "|" + norm(s.title)
 
 
+def _untagged(artist: str | None) -> bool:
+    """… unless the file has no artist at all ("[Unknown Artist]", "Various"): no evidence against a
+    match, so the length decides (the no-length fallback still demands the artist)."""
+    return norm(artist) in ("", "unknownartist", "various", "variousartists", "unknown")
+
+
 def _title_fits(row: Row, hit: Song) -> bool:
     """The row's title appears in the hit, or the hit's title in the row's ("Fascination" vs
     "Fascination - 2012 Remaster"). Guards the duration branch against artist-only queries."""
@@ -69,8 +75,8 @@ def choose(row: Row, hits: list[Song], require_artist: bool = False) -> Match:
     if not hits:
         return Match(row, "missing")
     lead = norm(lead_artist(row, resolve=lambda sid: None))
-    if require_artist:                                   # title-only retry: the artist must still be there
-        hits = [h for h in hits if lead and lead in norm(f"{h.artist} {h.title}")]
+    if require_artist:                                   # title-only retry: the artist must still be there …
+        hits = [h for h in hits if lead and (lead in norm(f"{h.artist} {h.title}") or _untagged(h.artist))]
     fit: list[Song] = []
     if row.duration_s is not None:
         fit = [h for h in hits if h.duration is not None and abs(h.duration - row.duration_s) <= TOLERANCE_S and _title_fits(row, h)]
