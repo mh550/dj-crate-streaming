@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS external_wanted (
   source      TEXT,                               -- e.g. spotify playlist URL
   status      TEXT NOT NULL DEFAULT 'needs_source',
   reason      TEXT,
+  playlist_id TEXT, position INTEGER,             -- import-playlist: where a later fetch inserts the track
   created_at  REAL NOT NULL, updated_at REAL NOT NULL
 );
 """
@@ -88,6 +89,15 @@ class CrateStore:
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA journal_mode=WAL") if self.path != ":memory:" else None
         self.db.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Add columns introduced after a DB was created (CREATE IF NOT EXISTS does not alter)."""
+        have = {r[1] for r in self.db.execute("PRAGMA table_info(external_wanted)")}
+        for col, typ in (("playlist_id", "TEXT"), ("position", "INTEGER")):
+            if col not in have:
+                self.db.execute(f"ALTER TABLE external_wanted ADD COLUMN {col} {typ}")
+        self.db.commit()
 
     # --- crates
     def get(self, playlist_id: str) -> Crate | None:
@@ -195,20 +205,30 @@ class CrateStore:
         return None
 
     def add_external_wanted(self, artist: str, title: str, album: str | None = None, duration_s: float | None = None,
-                            year: int | None = None, source: str | None = None) -> str:
-        """Returns the existing id when the same artist/title is already queued (re-running a seed is a no-op)."""
+                            year: int | None = None, source: str | None = None,
+                            playlist_id: str | None = None, position: int | None = None) -> str:
+        """Returns the existing id when the same artist/title is already queued (re-running a seed is a no-op);
+        a playlist position, when given, is (re)recorded on that row."""
         existing = self.find_external(artist, title)
         if existing:
+            if playlist_id is not None:
+                self.db.execute("UPDATE external_wanted SET playlist_id=?, position=?, updated_at=? WHERE id=?",
+                                (playlist_id, position, time.time(), _ext_pk(existing["song_id"])))
             return existing["song_id"]
-        return self._insert_external(artist, title, album, duration_s, year, source)
+        return self._insert_external(artist, title, album, duration_s, year, source, playlist_id, position)
 
-    def _insert_external(self, artist, title, album, duration_s, year, source) -> str:
+    def _insert_external(self, artist, title, album, duration_s, year, source, playlist_id=None, position=None) -> str:
         now = time.time()
         cur = self.db.execute(
-            "INSERT INTO external_wanted(artist,title,album,year,duration,source,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
-            (artist, title, album, year, int(duration_s) if duration_s else None, source, now, now))
+            "INSERT INTO external_wanted(artist,title,album,year,duration,source,playlist_id,position,created_at,updated_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (artist, title, album, year, int(duration_s) if duration_s else None, source, playlist_id, position, now, now))
         self.log(None, f"ext-{cur.lastrowid}", "wanted", f"{artist} — {title}")
         return f"ext-{cur.lastrowid}"
+
+    def external_for_playlist(self, playlist_id: str) -> list[dict]:
+        return [self._ext_row(r) for r in self.db.execute(
+            "SELECT * FROM external_wanted WHERE playlist_id=? ORDER BY position, id", (playlist_id,))]
 
     def external_count(self) -> int:
         return self.db.execute("SELECT COUNT(*) FROM external_wanted").fetchone()[0]
