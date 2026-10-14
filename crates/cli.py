@@ -33,6 +33,7 @@ def main(argv: list[str] | None = None) -> int:
     t = sub.add_parser("toggle"); t.add_argument("playlist_id"); t.add_argument("state", choices=["on", "off"])
     sub.add_parser("reconcile")
     w = sub.add_parser("wanted"); w.add_argument("--json", action="store_true")
+    p = sub.add_parser("publish", help="make playlists visible to every Navidrome user (public)"); p.add_argument("names", nargs="*", help="playlist names (default: all)")
     s = sub.add_parser("serve"); s.add_argument("--bind"); s.add_argument("--port", type=int)
     d = sub.add_parser("demo"); d.add_argument("--port", type=int, default=4580)
     a = ap.parse_args(argv)
@@ -79,6 +80,14 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{t['artist']} — {t['title']}  [{t['album'] or '?'} {t['year'] or ''}]  {fmt_dur(t['duration'])}  ←{t['reason']}  in {', '.join(t['crates'])}")
             if not items:
                 print("nothing to source")
+    elif a.cmd == "publish":
+        for pl in app.api.playlists():
+            if a.names and pl.name not in a.names:
+                continue
+            if pl.public:
+                print(f"public already  {pl.name}")
+            else:
+                app.api.update_playlist(pl.id, public=True); print(f"made public     {pl.name}")
     elif a.cmd == "serve":
         srv = CrateServer(app, a.bind, a.port)
         print(f"crate service on {srv.url} → Navidrome {cfg.subsonic_url} as {cfg.username}")

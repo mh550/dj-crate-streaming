@@ -34,3 +34,46 @@ def test_seed_spotify_adds_external_rows(tmp_path, monkeypatch, capsys):
     assert "1 added" in capsys.readouterr().out
     assert cli.main(["seed-spotify", "https://open.spotify.com/playlist/abc"]) == 0      # idempotent
     assert len(CrateStore(db).wanted()) == 1 and "0 added, 1 already queued" in capsys.readouterr().out
+
+
+def _env(monkeypatch, nd, db):
+    monkeypatch.setenv("SUBSONIC_URL", nd.url); monkeypatch.setenv("SUBSONIC_USER", "demo"); monkeypatch.setenv("SUBSONIC_PASS", "demo")
+    monkeypatch.setenv("CRATES_DB", str(db))
+
+
+def test_import_playlist_from_report_and_two_urls(tmp_path, monkeypatch, capsys):
+    db = tmp_path / "crates.db"
+    report = tmp_path / "nothin to it.txt"
+    report.write_text("Download Report - x\n---\n\n[SUCCESS] Good Times - Chic\n[SUCCESS] Nope - Nobody\n")
+    with FakeSubsonicServer() as nd:
+        _env(monkeypatch, nd, db)
+        rc = cli.main(["import-playlist", str(report)])
+        out = capsys.readouterr().out
+        assert rc == 0 and "nothin to it: 1 matched, 1 wanted, 0 ambiguous" in out
+        from subsonic.client import SubsonicClient
+        c = SubsonicClient(nd.url, "demo", "demo")
+        pl = next(p for p in c.playlists() if p.name == "nothin to it")
+        assert pl.public and [e.id for e in c.playlist(pl.id).entries] == ["s1"]
+        w = CrateStore(db).external_for_playlist(pl.id)
+        assert [(x["title"], x["position"]) for x in w] == [("Nope", 2)]
+
+        e1 = {"name": "Tea tent", "trackList": [{"title": "I Feel Love", "subtitle": "Donna Summer", "duration": 356_000, "uri": "spotify:track:a"}]}
+        e2 = {"name": "Tea tent2222", "trackList": [{"title": "Strings of Life", "subtitle": "Rhythim Is Rhythim", "duration": 480_000, "uri": "spotify:track:b"}]}
+        monkeypatch.setattr(cli, "fetch_entity", lambda url: e1 if url.endswith("/one") else e2)
+        rc = cli.main(["import-playlist", "--name", "Tea tent", "https://open.spotify.com/playlist/one", "https://open.spotify.com/playlist/two"])
+        assert rc == 0 and "Tea tent: 2 matched, 0 wanted, 0 ambiguous" in capsys.readouterr().out
+        pl = next(p for p in c.playlists() if p.name == "Tea tent")
+        assert [e.id for e in c.playlist(pl.id).entries] == ["s2", "s5"]
+
+
+def test_import_playlist_rejects_two_sources_without_name_and_bad_url(tmp_path, monkeypatch, capsys):
+    db = tmp_path / "crates.db"
+    with FakeSubsonicServer() as nd:
+        _env(monkeypatch, nd, db)
+        assert cli.main(["import-playlist", "a.txt", "b.txt"]) == 1
+        assert "--name" in capsys.readouterr().err
+        def boom(url): raise SystemExit("embed page had no __NEXT_DATA__ (private playlist, or Spotify changed the page)")
+        monkeypatch.setattr(cli, "fetch_entity", boom)
+        assert cli.main(["import-playlist", "https://open.spotify.com/playlist/private"]) == 1
+        assert "private playlist" in capsys.readouterr().err
+        assert len(nd.state.playlists) == 3 and not db.exists()

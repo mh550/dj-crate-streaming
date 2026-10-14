@@ -5,6 +5,7 @@ r"""CLI: rank candidates for a wanted track, from a fixture file or a live slskd
   python -m sourcing.cli verify /srv/incoming/03\ -\ Good\ Times.flac --duration 501
   python -m sourcing.cli fetch --wanted s4 [--approve]        # one wanted track, end to end (see fetch.py)
   python -m sourcing.cli seed-spotify https://open.spotify.com/playlist/...   # queue tracks not in Navidrome
+  python -m sourcing.cli import-playlist <spotify-url|report.txt|exportify.csv>... [--name N] [--dry-run]   # D11: Spotify playlists → public Navidrome playlist + wanted rows
 """
 from __future__ import annotations
 
@@ -53,7 +54,40 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("seed-spotify", help="add every track of a public Spotify playlist/album to the wanted queue")
     s.add_argument("url")
 
+    ip = sub.add_parser("import-playlist", help="Spotify URL / Exportify CSV / SpotiFLAC report → public Navidrome playlist; the rest become wanted rows")
+    ip.add_argument("sources", nargs="+", help="several sources concatenate in order into one playlist (needs --name)")
+    ip.add_argument("--name", help="playlist name (default: the source's own name; required with several sources)")
+    ip.add_argument("--dry-run", action="store_true", help="match and report, write nothing")
+
     a = ap.parse_args(argv)
+
+    if a.cmd == "import-playlist":
+        from crates.service import Config
+        from crates.store import CrateStore
+        from subsonic.client import SubsonicClient
+        from .import_playlist import import_playlist
+        from .playlist_sources import concat, load
+        if len(a.sources) > 1 and not a.name:
+            print("several sources make one playlist: say which with --name", file=sys.stderr); return 1
+        cfg = Config.from_env()
+        if not (cfg.username and cfg.password):
+            print("set SUBSONIC_USER / SUBSONIC_PASS (and SUBSONIC_URL)", file=sys.stderr); return 2
+        groups, name = [], a.name
+        for src in a.sources:
+            try:
+                src_name, rows = load(src, fetch=fetch_entity)
+            except (SystemExit, OSError) as e:          # private playlist, no network, missing file: nothing written
+                print(f"{src}: {e}", file=sys.stderr); return 1
+            groups.append(rows); name = name or src_name
+        rows = concat(groups)
+        Path(cfg.db_path).parent.mkdir(parents=True, exist_ok=True)
+        store = CrateStore(cfg.db_path)                 # opened only after every source loaded
+        rep = import_playlist(name, rows, SubsonicClient(cfg.subsonic_url, cfg.username, cfg.password), store,
+                              source=" ".join(a.sources), dry_run=a.dry_run)
+        print(rep.table())
+        if a.dry_run:
+            print("(dry run: nothing written)")
+        return 0
 
     if a.cmd == "seed-spotify":
         from crates.service import Config

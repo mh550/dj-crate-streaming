@@ -153,7 +153,8 @@ crate then works through the existing mechanism (every entry gets the crate tier
 Acceptance: `import-playlist` on the perfect-songs report yields a Navidrome playlist
 with ≥ 100 matched entries in report order and the unmatched ones as wanted rows with
 positions; running it twice changes nothing; a fake-server test covers URL, CSV and
-report inputs.
+report inputs. **Implemented 2026-10-13** (`sourcing/playlist_sources.py`,
+`sourcing/import_playlist.py`, `sourcing.cli import-playlist`, `crates.cli publish`).
 
 ## 3. Naming convention and name reconciliation (D5)
 

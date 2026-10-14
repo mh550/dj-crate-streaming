@@ -20,7 +20,7 @@ sourcing/   Phase 1: Soulseek sourcing — one wanted track from search to a fil
   organize.py       Artist/Album (Year)/NN - Title.ext from the wanted record, never overwrites
   fake_slskd.py     in-process slskd for tests/demos
   spotify_csv.py    public Spotify playlist → rows, no API credentials (embed page)
-  cli.py            rank | verify | fetch --wanted <id> [--approve] | seed-spotify <url>
+  cli.py            rank | verify | fetch --wanted <id> [--approve] | seed-spotify <url> | import-playlist <src>... [--name N]
 scripts/    one-off library tooling: library_map.py (folder + audio-hash map), folders_to_playlists.py
 deploy/     compose.yml (+ .env.example), beets.yaml — /srv/docker/compose.yml symlinks here
 fixtures/   slskd-shaped search responses covering the failure modes
@@ -50,6 +50,8 @@ Against a live slskd (M4) with `SLSKD_URL`/`SLSKD_API_KEY` set, plus the `SUBSON
 
 ```bash
 python3 -m sourcing.cli seed-spotify https://open.spotify.com/playlist/...   # → ext-N wanted rows
+python3 -m sourcing.cli import-playlist <spotify-url|report.txt|exportify.csv>... [--name N] [--dry-run]
+    # D11: Spotify playlist → public Navidrome playlist (library matches, in order) + wanted rows with playlist/position
 python3 -m sourcing.cli fetch --wanted s4             # search + score, prints the pick, no download
 python3 -m sourcing.cli fetch --wanted s4 --approve   # download → verify → /srv/music → rescan → crate ok
 ```
@@ -69,6 +71,7 @@ python3 -m crates.cli status
 python3 -m crates.cli playlists
 python3 -m crates.cli toggle <playlist-id> on
 python3 -m crates.cli wanted                     # → feed each line to sourcing.cli rank --slskd ...
+python3 -m crates.cli publish [NAME ...]         # make playlists visible to every Navidrome user
 python3 -m crates.cli serve                      # 127.0.0.1:4580 → front with `tailscale serve`
 ```
 

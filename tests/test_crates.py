@@ -162,3 +162,15 @@ def test_store_migrates_old_external_wanted_table(tmp_path):
     con.commit(); con.close()
     store = CrateStore(db)                      # must add the two columns without losing the row
     assert store.external("ext-1")["playlist_id"] is None and store.external_count() == 1
+
+
+def test_publish_makes_playlists_public(env, monkeypatch, tmp_path, capsys):
+    srv, _, _, _ = env
+    monkeypatch.setenv("SUBSONIC_URL", srv.url); monkeypatch.setenv("SUBSONIC_USER", "demo"); monkeypatch.setenv("SUBSONIC_PASS", "demo")
+    monkeypatch.setenv("CRATES_DB", str(tmp_path / "c.db"))
+    from crates.cli import main
+    assert main(["publish", "Disco Edits"]) == 0
+    st = srv.state.playlists
+    assert st["pl-1"]["public"] is True and st["pl-2"]["public"] is False
+    assert main(["publish"]) == 0 and all(p["public"] for p in st.values())
+    assert "public already" in capsys.readouterr().out
