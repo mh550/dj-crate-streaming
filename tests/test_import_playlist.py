@@ -118,3 +118,13 @@ def test_import_makes_an_existing_private_playlist_public_and_dry_run_touches_no
         rep = ip.import_playlist("Tea tent", ROWS, c, store, source="s")
         assert rep.playlist_id == existing.id and c.playlist(existing.id).public is True
         assert [e.id for e in c.playlist(existing.id).entries] == ["k1", "w1"]
+
+
+def test_table_says_whether_the_playlist_was_created_or_already_existed():
+    # Live 2026-10-14: "Tea tent" silently merged into last night's folder playlist of the same name.
+    with FakeSubsonicServer() as srv:
+        _lib(srv)
+        c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
+        assert "created playlist" in ip.import_playlist("Tea tent", ROWS, c, store, source="s").table()
+        again = ip.import_playlist("Tea tent", ROWS, c, store, source="s").table()
+        assert "updated existing playlist" in again and "2 entries were already there" in again

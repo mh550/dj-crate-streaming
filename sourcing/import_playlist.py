@@ -89,6 +89,7 @@ class Report:
     created: bool
     matches: list[Match]
     added: int                  # entries appended this run (or that a dry run would append)
+    kept: int = 0               # entries the existing playlist already had before this run
 
     def _count(self, status: str) -> int:
         return sum(1 for m in self.matches if m.status == status)
@@ -112,6 +113,9 @@ class Report:
             lines.append(f"{m.row.position:4d}  {m.status:<9}  {m.row.artist} — {m.row.title}  {tail}".rstrip())
         lines.append(f"{self.name}: {self.matched} matched, {self.wanted} wanted, {self.ambiguous} ambiguous"
                      + (f"; {self.added} added to playlist {self.playlist_id}" if self.playlist_id else ""))
+        if self.playlist_id:
+            lines.append(f"created playlist {self.name!r}" if self.created else
+                         f"updated existing playlist {self.name!r}: {self.kept} entries were already there (kept, not reordered)")
         return "\n".join(lines)
 
 
@@ -126,11 +130,12 @@ def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: C
         if m.status == "matched" and m.song_id not in ordered:
             ordered.append(m.song_id)
     existing = next((p for p in client.playlists() if p.name == name), None)
+    kept = 0
     if existing is None:
         new_ids, playlist_id = ordered, None
     else:
         have = {e.id for e in client.playlist(existing.id).entries}
-        new_ids, playlist_id = [i for i in ordered if i not in have], existing.id
+        new_ids, playlist_id, kept = [i for i in ordered if i not in have], existing.id, len(have)
     if not dry_run:
         if existing is None:
             playlist_id = client.create_playlist(name, new_ids).id
@@ -148,4 +153,4 @@ def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: C
             if m.status == "ambiguous":
                 store.set_external_status(ext, "verify", "ambiguous: " + ", ".join(m.candidates))
         store.commit()
-    return Report(name, playlist_id, existing is None, matches, len(new_ids))
+    return Report(name, playlist_id, existing is None, matches, len(new_ids), kept)
