@@ -547,9 +547,11 @@ def test_choose_is_ambiguous_when_two_different_tracks_fit():
     row = Row(1, "The Magician", "Twain", None)                  # report row: no duration
     hits = [song("t1", "The Magician", "Twain", 353, album="Rare Feeling"), song("t2", "The Magician (Live)", "Twain", 300)]
     assert ip.choose(row, hits).status == "matched" and ip.choose(row, hits).song_id == "t1"   # exact normalised title wins
-    hits[1].title = "The Magician"; hits[1].album = "Live at X"
+    hits[1].title = "The Magician"; hits[1].album = "Live at X"      # same name, 353 s vs 300 s: two recordings
     m = ip.choose(row, hits)
     assert m.status == "ambiguous" and set(m.candidates) == {"t1", "t2"}
+    hits[1].duration = 351                                             # within ±4 s of each other → one track, two copies
+    assert ip.choose(row, hits).status == "matched"
 
 
 def test_choose_without_duration_needs_title_and_lead_artist():
@@ -581,8 +583,8 @@ Run: `~/.local/bin/pytest -q tests/test_import_playlist.py` → `ModuleNotFoundE
 Matching, in order: search3 on artist+title words (Navidrome ignores case, accents and punctuation;
 every word must hit) → keep hits within ±4 s when the row has a duration → else hits whose normalised
 title and lead artist both appear in the hit's normalised "artist title" → nearest duration →
-redundant copies (same normalised artist|title) collapse to the one outside Compilations/ →
-still >1 distinct → ambiguous. No hits at all → retry with the title words only (library titles
+redundant copies (same normalised artist|title, lengths within ±4 s of each other) collapse to the
+one outside Compilations/ → still >1 distinct track → ambiguous. No hits at all → retry with the title words only (library titles
 sometimes carry the artist, e.g. "A Change Is Gonna Come - Jennifer Lara").
 """
 from __future__ import annotations
@@ -644,7 +646,10 @@ def choose(row: Row, hits: list[Song]) -> Match:
     if not fit:
         return Match(row, "missing", candidates=[h.id for h in hits])
     distinct = {_key(h) for h in fit}
-    if len(distinct) > 1:
+    durs = [h.duration for h in fit if h.duration is not None]
+    # Same artist|title twice is a redundant copy only when the lengths agree; "The Magician" 353 s
+    # vs 300 s are two recordings, and without a row duration we cannot pick → ambiguous.
+    if len(distinct) > 1 or (durs and max(durs) - min(durs) > TOLERANCE_S):
         return Match(row, "ambiguous", candidates=[h.id for h in fit])
     fit.sort(key=lambda h: (h.path or "").startswith("Compilations/"))      # the properly filed copy first
     return Match(row, "matched", fit[0].id, [h.id for h in fit], fit[0])
