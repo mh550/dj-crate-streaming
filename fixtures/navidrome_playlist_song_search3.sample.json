@@ -1,0 +1,440 @@
+{
+ "getPlaylists_count": 35,
+ "getPlaylists_sample": [
+  {
+   "id": "7rUoCLiTL4MlGSQYAzUksj",
+   "name": "ambient",
+   "songCount": 1,
+   "duration": 116,
+   "owner": "michael",
+   "created": "2026-10-13T09:35:24.110426292Z",
+   "changed": "2026-10-13T09:35:24.11078993Z",
+   "coverArt": "pl-7rUoCLiTL4MlGSQYAzUksj_b473b09c958db28a",
+   "readonly": false
+  },
+  {
+   "id": "16WVh2psWEpsnvxegfQqDO",
+   "name": "disco-fonk-daft-punk / disco",
+   "songCount": 2,
+   "duration": 865,
+   "owner": "michael",
+   "created": "2026-10-13T09:35:24.112673481Z",
+   "changed": "2026-10-13T09:35:24.11303444Z",
+   "coverArt": "pl-16WVh2psWEpsnvxegfQqDO_25555af76e9f5849",
+   "readonly": false
+  }
+ ],
+ "getPlaylist": {
+  "status": "ok",
+  "version": "1.16.1",
+  "type": "navidrome",
+  "serverVersion": "0.64.2 (10114574)",
+  "openSubsonic": true,
+  "playlist": {
+   "id": "0pu8YefHIYmgrIhZBybasP",
+   "name": "playlists / funk todos",
+   "songCount": 3,
+   "duration": 787,
+   "owner": "michael",
+   "created": "2026-10-13T09:35:24.160430857Z",
+   "changed": "2026-10-13T09:35:24.160987205Z",
+   "coverArt": "pl-0pu8YefHIYmgrIhZBybasP_86d153180a6fe0f9",
+   "readonly": false,
+   "entry": [
+    {
+     "id": "3MpGGojO8fh2tkqeOfW9EC",
+     "parent": "6oSasK1H8uPH2apXPSFcSR",
+     "isDir": false,
+     "title": "Cherry-coloured Funk",
+     "album": "Heaven or Las Vegas",
+     "artist": "Cocteau Twins",
+     "track": 1,
+     "year": 1990,
+     "coverArt": "mf-3MpGGojO8fh2tkqeOfW9EC",
+     "size": 23234185,
+     "contentType": "audio/flac",
+     "suffix": "flac",
+     "duration": 192,
+     "bitRate": 962,
+     "path": "Cocteau Twins/Heaven or Las Vegas/01-01 - Cherry-coloured Funk.flac",
+     "discNumber": 1,
+     "created": "2026-10-13T08:23:02.299211929Z",
+     "albumId": "6oSasK1H8uPH2apXPSFcSR",
+     "artistId": "45y9xrLLKpQovuMPMPo6bI",
+     "type": "music",
+     "bpm": 0,
+     "comment": "https://open.spotify.com/track/37pKTyMwalomKCZjxTc2QZ",
+     "sortName": "cherry-coloured funk",
+     "mediaType": "song",
+     "musicBrainzId": "",
+     "isrc": [
+      "GBAFL9000062"
+     ],
+     "genres": [],
+     "replayGain": {},
+     "channelCount": 2,
+     "samplingRate": 44100,
+     "bitDepth": 16,
+     "moods": [],
+     "artists": [
+      {
+       "id": "45y9xrLLKpQovuMPMPo6bI",
+       "name": "Cocteau Twins"
+      }
+     ],
+     "displayArtist": "Cocteau Twins",
+     "albumArtists": [
+      {
+       "id": "45y9xrLLKpQovuMPMPo6bI",
+       "name": "Cocteau Twins"
+      }
+     ],
+     "displayAlbumArtist": "Cocteau Twins",
+     "contributors": [
+      {
+       "role": "composer",
+       "artist": {
+        "id": "739YzUOnWJfY5wxmhbTGha",
+        "name": "Elizabeth Fraser"
+       }
+      },
+      {
+       "role": "composer",
+       "artist": {
+        "id": "6cRaS8y3c68aXSWsZqi5BL",
+        "name": "Robin Guthrie"
+       }
+      },
+      {
+       "role": "composer",
+       "artist": {
+        "id": "5kl2BBtUBbqTaQiuuxqsyJ",
+        "name": "Simon Raymonde"
+       }
+      }
+     ],
+     "displayComposer": "Elizabeth Fraser • Robin Guthrie • Simon Raymonde",
+     "explicitStatus": "",
+     "groupings": [],
+     "works": [],
+     "movements": []
+    },
+    {
+     "id": "0UEsSnL1WS04xZYir0aXnd",
+     "parent": "4BWg0jVAtQFzokp9km4dL8",
+     "isDir": false,
+     "title": "Behind The Rain",
+     "album": "Rise",
+     "artist": "Herb Alpert",
+     "track": 3,
+     "year": 1979,
+     "coverArt": "mf-0UEsSnL1WS04xZYir0aXnd",
+     "size": 35502107,
+     "contentType": "audio/flac",
+     "suffix": "flac",
+     "duration": 335,
+     "bitRate": 841,
+     "path": "Herb Alpert/Rise/01-03 - Behind The Rain.flac",
+     "discNumber": 1,
+     "created": "2026-10-13T08:18:05.463226544Z",
+     "albumId": "4BWg0jVAtQFzokp9km4dL8",
+     "artistId": "6v9VS5Qr6aJrzDw037NDmM",
+     "type": "music",
+     "bpm": 0,
+     "comment": "https://open.spotify.com/track/5v2XUCK6EdiX1tZbumlvo7",
+     "sortName": "behind the rain",
+     "mediaType": "song",
+     "musicBrainzId": "",
+     "isrc": [
+      "QM4221500410"
+     ],
+     "genres": [],
+     "replayGain": {},
+     "channelCount": 2,
+     "samplingRate": 44100,
+     "bitDepth": 16,
+     "moods": [],
+     "artists": [
+      {
+       "id": "6v9VS5Qr6aJrzDw037NDmM",
+       "name": "Herb Alpert"
+      }
+     ],
+     "displayArtist": "Herb Alpert",
+     "albumArtists": [
+      {
+       "id": "6v9VS5Qr6aJrzDw037NDmM",
+       "name": "Herb Alpert"
+      }
+     ],
+     "displayAlbumArtist": "Herb Alpert",
+     "contributors": [
+      {
+       "role": "composer",
+       "artist": {
+        "id": "6v9VS5Qr6aJrzDw037NDmM",
+        "name": "Herb Alpert"
+       }
+      }
+     ],
+     "displayComposer": "Herb Alpert",
+     "explicitStatus": "",
+     "groupings": [],
+     "works": [],
+     "movements": []
+    },
+    {
+     "id": "0KjKMGvenJacEmf36MSFiC",
+     "parent": "3i5pW6KBBmrC1nYyZIXLz2",
+     "isDir": false,
+     "title": "Canto De Ossanha",
+     "album": "Feedback",
+     "artist": "Jurassic 5",
+     "track": 15,
+     "year": 2006,
+     "coverArt": "mf-0KjKMGvenJacEmf36MSFiC_4faa33a2006a4296",
+     "size": 28762977,
+     "contentType": "audio/flac",
+     "suffix": "flac",
+     "duration": 259,
+     "bitRate": 883,
+     "path": "Jurassic 5/Feedback/01-15 - Canto De Ossanha.flac",
+     "discNumber": 1,
+     "created": "2026-10-13T08:18:52.803990762Z",
+     "albumId": "3i5pW6KBBmrC1nYyZIXLz2",
+     "artistId": "3LAxQ3hzesRbF0Jca34cMF",
+     "type": "music",
+     "bpm": 0,
+     "comment": "https://open.spotify.com/track/2Mw9lHRbSkcIgSk0DZUzeY",
+     "sortName": "canto de ossanha",
+     "mediaType": "song",
+     "musicBrainzId": "",
+     "isrc": [
+      "USUM70604512"
+     ],
+     "genres": [],
+     "replayGain": {},
+     "channelCount": 2,
+     "samplingRate": 44100,
+     "bitDepth": 16,
+     "moods": [],
+     "artists": [
+      {
+       "id": "3LAxQ3hzesRbF0Jca34cMF",
+       "name": "Jurassic 5"
+      }
+     ],
+     "displayArtist": "Jurassic 5",
+     "albumArtists": [
+      {
+       "id": "3LAxQ3hzesRbF0Jca34cMF",
+       "name": "Jurassic 5"
+      }
+     ],
+     "displayAlbumArtist": "Jurassic 5",
+     "contributors": [
+      {
+       "role": "composer",
+       "artist": {
+        "id": "6qtCQjKaoUg8Z5q9Jzxwmi",
+        "name": "Baden Powell"
+       }
+      },
+      {
+       "role": "composer",
+       "artist": {
+        "id": "5p3w8cteKs4HLASDcQaq0V",
+        "name": "Vinícius de Moraes"
+       }
+      }
+     ],
+     "displayComposer": "Baden Powell • Vinícius de Moraes",
+     "explicitStatus": "",
+     "groupings": [],
+     "works": [],
+     "movements": []
+    }
+   ]
+  }
+ },
+ "getSong": {
+  "status": "ok",
+  "version": "1.16.1",
+  "type": "navidrome",
+  "serverVersion": "0.64.2 (10114574)",
+  "openSubsonic": true,
+  "song": {
+   "id": "3MpGGojO8fh2tkqeOfW9EC",
+   "parent": "6oSasK1H8uPH2apXPSFcSR",
+   "isDir": false,
+   "title": "Cherry-coloured Funk",
+   "album": "Heaven or Las Vegas",
+   "artist": "Cocteau Twins",
+   "track": 1,
+   "year": 1990,
+   "coverArt": "mf-3MpGGojO8fh2tkqeOfW9EC",
+   "size": 23234185,
+   "contentType": "audio/flac",
+   "suffix": "flac",
+   "duration": 192,
+   "bitRate": 962,
+   "path": "Cocteau Twins/Heaven or Las Vegas/01-01 - Cherry-coloured Funk.flac",
+   "discNumber": 1,
+   "created": "2026-10-13T08:23:02.299211929Z",
+   "albumId": "6oSasK1H8uPH2apXPSFcSR",
+   "artistId": "45y9xrLLKpQovuMPMPo6bI",
+   "type": "music",
+   "bpm": 0,
+   "comment": "https://open.spotify.com/track/37pKTyMwalomKCZjxTc2QZ",
+   "sortName": "cherry-coloured funk",
+   "mediaType": "song",
+   "musicBrainzId": "",
+   "isrc": [
+    "GBAFL9000062"
+   ],
+   "genres": [],
+   "replayGain": {},
+   "channelCount": 2,
+   "samplingRate": 44100,
+   "bitDepth": 16,
+   "moods": [],
+   "artists": [
+    {
+     "id": "45y9xrLLKpQovuMPMPo6bI",
+     "name": "Cocteau Twins"
+    }
+   ],
+   "displayArtist": "Cocteau Twins",
+   "albumArtists": [
+    {
+     "id": "45y9xrLLKpQovuMPMPo6bI",
+     "name": "Cocteau Twins"
+    }
+   ],
+   "displayAlbumArtist": "Cocteau Twins",
+   "contributors": [
+    {
+     "role": "composer",
+     "artist": {
+      "id": "739YzUOnWJfY5wxmhbTGha",
+      "name": "Elizabeth Fraser"
+     }
+    },
+    {
+     "role": "composer",
+     "artist": {
+      "id": "6cRaS8y3c68aXSWsZqi5BL",
+      "name": "Robin Guthrie"
+     }
+    },
+    {
+     "role": "composer",
+     "artist": {
+      "id": "5kl2BBtUBbqTaQiuuxqsyJ",
+      "name": "Simon Raymonde"
+     }
+    }
+   ],
+   "displayComposer": "Elizabeth Fraser • Robin Guthrie • Simon Raymonde",
+   "explicitStatus": "",
+   "groupings": [],
+   "works": [],
+   "movements": []
+  }
+ },
+ "search3": {
+  "query": "Cocteau Twins Cherry-coloured Funk",
+  "response": {
+   "status": "ok",
+   "version": "1.16.1",
+   "type": "navidrome",
+   "serverVersion": "0.64.2 (10114574)",
+   "openSubsonic": true,
+   "searchResult3": {
+    "song": [
+     {
+      "id": "3MpGGojO8fh2tkqeOfW9EC",
+      "parent": "6oSasK1H8uPH2apXPSFcSR",
+      "isDir": false,
+      "title": "Cherry-coloured Funk",
+      "album": "Heaven or Las Vegas",
+      "artist": "Cocteau Twins",
+      "track": 1,
+      "year": 1990,
+      "coverArt": "mf-3MpGGojO8fh2tkqeOfW9EC",
+      "size": 23234185,
+      "contentType": "audio/flac",
+      "suffix": "flac",
+      "duration": 192,
+      "bitRate": 962,
+      "path": "Cocteau Twins/Heaven or Las Vegas/01-01 - Cherry-coloured Funk.flac",
+      "discNumber": 1,
+      "created": "2026-10-13T08:23:02.299211929Z",
+      "albumId": "6oSasK1H8uPH2apXPSFcSR",
+      "artistId": "45y9xrLLKpQovuMPMPo6bI",
+      "type": "music",
+      "bpm": 0,
+      "comment": "https://open.spotify.com/track/37pKTyMwalomKCZjxTc2QZ",
+      "sortName": "cherry-coloured funk",
+      "mediaType": "song",
+      "musicBrainzId": "",
+      "isrc": [
+       "GBAFL9000062"
+      ],
+      "genres": [],
+      "replayGain": {},
+      "channelCount": 2,
+      "samplingRate": 44100,
+      "bitDepth": 16,
+      "moods": [],
+      "artists": [
+       {
+        "id": "45y9xrLLKpQovuMPMPo6bI",
+        "name": "Cocteau Twins"
+       }
+      ],
+      "displayArtist": "Cocteau Twins",
+      "albumArtists": [
+       {
+        "id": "45y9xrLLKpQovuMPMPo6bI",
+        "name": "Cocteau Twins"
+       }
+      ],
+      "displayAlbumArtist": "Cocteau Twins",
+      "contributors": [
+       {
+        "role": "composer",
+        "artist": {
+         "id": "739YzUOnWJfY5wxmhbTGha",
+         "name": "Elizabeth Fraser"
+        }
+       },
+       {
+        "role": "composer",
+        "artist": {
+         "id": "6cRaS8y3c68aXSWsZqi5BL",
+         "name": "Robin Guthrie"
+        }
+       },
+       {
+        "role": "composer",
+        "artist": {
+         "id": "5kl2BBtUBbqTaQiuuxqsyJ",
+         "name": "Simon Raymonde"
+        }
+       }
+      ],
+      "displayComposer": "Elizabeth Fraser • Robin Guthrie • Simon Raymonde",
+      "explicitStatus": "",
+      "groupings": [],
+      "works": [],
+      "movements": []
+     }
+    ]
+   }
+  }
+ },
+ "public_flags": [
+  null
+ ]
+}

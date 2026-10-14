@@ -1,0 +1,591 @@
+{
+ "type": "playlist",
+ "name": "Tea tent2222",
+ "uri": "spotify:playlist:1NzQAjrmZjW01Vibt4b1tR",
+ "id": "1NzQAjrmZjW01Vibt4b1tR",
+ "title": "Tea tent2222",
+ "subtitle": "michaelherron7",
+ "authors": null,
+ "coverArt": {
+  "sources": [
+   {
+    "height": 640,
+    "width": 640,
+    "url": "https://mosaic.scdn.co/640/ab67616d00001e02120bda930735d1effbd964ecab67616d00001e023d0bdc59a47cf5b39a5d68a9ab67616d00001e0260ada139840fb439d6750f27ab67616d00001e02b591b5acb5029e39f2ead915"
+   },
+   {
+    "height": 300,
+    "width": 300,
+    "url": "https://mosaic.scdn.co/300/ab67616d00001e02120bda930735d1effbd964ecab67616d00001e023d0bdc59a47cf5b39a5d68a9ab67616d00001e0260ada139840fb439d6750f27ab67616d00001e02b591b5acb5029e39f2ead915"
+   },
+   {
+    "height": 60,
+    "width": 60,
+    "url": "https://mosaic.scdn.co/60/ab67616d00001e02120bda930735d1effbd964ecab67616d00001e023d0bdc59a47cf5b39a5d68a9ab67616d00001e0260ada139840fb439d6750f27ab67616d00001e02b591b5acb5029e39f2ead915"
+   }
+  ]
+ },
+ "releaseDate": null,
+ "duration": 0,
+ "isPlayable": true,
+ "playabilityReason": "UNKNOWN",
+ "isExplicit": false,
+ "hasVideo": false,
+ "relatedEntityUri": "spotify:playlist:1NzQAjrmZjW01Vibt4b1tR",
+ "trackList": [
+  {
+   "uri": "spotify:track:1I44zWi6wdcWcnd2B68Hio",
+   "uid": "b64c9b3d971cb3fa",
+   "title": "Piano Joint (This Kind Of Love)",
+   "subtitle": "Michael Kiwanuka",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 231586,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/5bf1d713ce8753be5b0e21a80bbb45325499e9b2"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:29h7Mur4Urml85JkCEMaMO",
+   "uid": "29a046d13188fb99",
+   "title": "Interlude (Loving The People)",
+   "subtitle": "Michael Kiwanuka",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 162480,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/04b825391a732d86c17b1f4ecd86a929fa3027d7"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:6p5QJBr5iE2xvHatGebTbR",
+   "uid": "32a4e4eae228fa8a",
+   "title": "Asa Branca",
+   "subtitle": "Rosinha De Valença",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 252413,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/ad58360a5eddfd44d93b1bfbc0b2ad9a8d1680e0"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:2tdHkfe4uT3xuITyGOkvN0",
+   "uid": "0e1ecc344d213e39",
+   "title": "Zen",
+   "subtitle": "Philippe Sarde, Toots Thielemans, Larry Coryell",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 63160,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/e32b01aae680a9f6d0b884a83d0d5b66b006a9d0"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:3afeZ81GDy59tATovKyH6Z",
+   "uid": "ae3bb0d59630196c",
+   "title": "I Know You Know",
+   "subtitle": "Esperanza Spalding",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 225200,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/8d511a6849f4a4c6dfe77f94ea4009e9268554b6"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:2bwxqGKS5GPXfNanAIRe2p",
+   "uid": "753e66ea069f0a91",
+   "title": "Seven Days in Sunny June",
+   "subtitle": "Jamiroquai",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 237866,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/1dada2a15fcfd7147011ebd4760f793be3537514"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:12Y1GaS44vga0G3rUtjFAY",
+   "uid": "938a5e23c14925f3",
+   "title": "The Miseducation of Lauryn Hill",
+   "subtitle": "Ms. Lauryn Hill",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 235466,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/d60c89aab58d563ac24ce4f3c2a34b983322fbcc"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:1nLU0aUyHaza8hZm1Jp6lu",
+   "uid": "58974e2837001b5b",
+   "title": "Dream State",
+   "subtitle": "Kamasi Washington, André 3000",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 519603,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/1af6b659ca6b708c30375e53a9018c4738be9e27"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:5JooSnjnObABe51JobUGnY",
+   "uid": "67771b9d4dd5a6d9",
+   "title": "Love Juice",
+   "subtitle": "Wendell Harrison",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 287000,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/b27fd4454cb766a738e6bba4452d4ded76231ba7"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:5TJH5R1zfOtJLU4AVfQ6Xc",
+   "uid": "15b85f938999e72e",
+   "title": "Touch in Mine (fingers)",
+   "subtitle": "Esperanza Spalding",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 293146,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/30d153ef1bb4f942712bf5fc3b7cc56e8cfbd5d7"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:688gyFidwu5UGzlcIiqWWG",
+   "uid": "0b0c0d96ddb322cf",
+   "title": "Jasmim Parte 1",
+   "subtitle": "Gabriel da Rosa",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 199693,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/7386031c80997173e4d7e7d0ccad512111138333"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:0awkbRckovADB30AEGao25",
+   "uid": "cbe406edf33ac775",
+   "title": "So You Can See Me",
+   "subtitle": "Gabriel da Rosa",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 213694,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/97390fde39aaf4546d045a32acfb117e9f763d2c"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:0K8xwzpW6hYmfDTMlsZOhp",
+   "uid": "1dff3806ee4e2606",
+   "title": "Zum-Zum",
+   "subtitle": "Edu Lobo",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 170666,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/bf7ff9efaede2e1bdd761434a791237956dc844f"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:4ER4wjup2235bo63RU4KvS",
+   "uid": "ba1d2e7ef5daf77d",
+   "title": "Adam Lives In Theory - Live",
+   "subtitle": "Ms. Lauryn Hill",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 446133,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/49e23225fe1e3d3ef310fe242e407446012d1cac"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:4RflGBhUpxjrs2fMJD0QVX",
+   "uid": "3c140235cf2f3710",
+   "title": "Come On, Come Over",
+   "subtitle": "Jaco Pastorius",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 233200,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/81b5bb7ba46ec8bf2b98bbe6a3240f3218f38b61"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:5t74NZUEHOTjBqv4IjPLe8",
+   "uid": "2b730e63f1f6f462",
+   "title": "Continuum",
+   "subtitle": "Jaco Pastorius",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 273333,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/eb71b04be950312ca8e2ef2a7136eec5b4074986"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:3CCxSc5jjcer0Ym0rt0aEx",
+   "uid": "c4ee8b23f7069296",
+   "title": "Overture",
+   "subtitle": "Average White Band",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 134866,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/1bf3999361d4c2ea906371e30ba3165145352036"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:5oKVfOxe81Z9ZZDsiPd4tZ",
+   "uid": "876065e4510d4b50",
+   "title": "Love Your Life",
+   "subtitle": "Average White Band",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 291933,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/c7b6ebb6bc5d9323c6d9583461a561120de0dcdd"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:6r6IDa7RMMA2qYzrZVbZu2",
+   "uid": "63afecaf2c5bda1c",
+   "title": "I'm the One",
+   "subtitle": "Average White Band",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 261026,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/4709335f9dfddd1400d86c08ecaded0fb768d479"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:3pbAV1Q2j1mNW78wqegBGt",
+   "uid": "38755c67f8f0aa16",
+   "title": "A Love of Your Own",
+   "subtitle": "Average White Band",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 336038,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/2b7028212be6e47185f5545e40f01c2684c02fb5"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:6Z4DwTHV87Go5CO6Yn0dd8",
+   "uid": "daa34dd28fc748d9",
+   "title": "Queen of My Soul",
+   "subtitle": "Average White Band",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 361613,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/eae40f883affb353611dd0ec7a9e40d3b9da9a29"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:4mYSnfnYL0foKuDj24lafP",
+   "uid": "56e8e3530ee82aa6",
+   "title": "Soul Searching",
+   "subtitle": "Average White Band",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 196440,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/3cd31b924443c7511c43e882bc871bbff8ff79cc"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:5gqrtETO8O4jm44kwQNyzv",
+   "uid": "9b3ba3610f1829c5",
+   "title": "Goin' Home",
+   "subtitle": "Average White Band",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 280306,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/2c20f944ccca5660302c52aa932d14d07cf2e7cf"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:1tfAb9CWJjIQ0On7EoZ2BB",
+   "uid": "2232113f480e992e",
+   "title": "Everybody's Darling",
+   "subtitle": "Average White Band",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 212226,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/6648b2befc74d6b330d6213c675753e8461442c6"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:7lDL7uxyNx0Mw4rNpgy8dB",
+   "uid": "076ad51d1c3c2244",
+   "title": "Would You Stay",
+   "subtitle": "Average White Band",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 334240,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/dc9d6a3f977822264c2db05265147b300e625db6"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:2amI9jhDHWIH1kuQzf8OuZ",
+   "uid": "1018551225af711c",
+   "title": "Sunny Days (Make Me Think of You)",
+   "subtitle": "Average White Band",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 199773,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/afc4fa238b5ef6d8b910cfd669a71ed604672c83"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:45FJazBwk98zYV83Ltf0aE",
+   "uid": "68a6f68643aa5ae4",
+   "title": "Digging Deeper (Finale)",
+   "subtitle": "Average White Band",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 161666,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/7521fdbfa39d8ab46ac31c1cd7b940c82fc8a145"
+   },
+   "entityType": "track"
+  }
+ ],
+ "visualIdentity": {
+  "backgroundBase": {
+   "alpha": 255,
+   "blue": 48,
+   "green": 0,
+   "red": 157
+  },
+  "backgroundTintedBase": {
+   "alpha": 255,
+   "blue": 20,
+   "green": 0,
+   "red": 97
+  },
+  "textBase": {
+   "alpha": 255,
+   "blue": 255,
+   "green": 255,
+   "red": 255
+  },
+  "textBrightAccent": {
+   "alpha": 255,
+   "blue": 255,
+   "green": 255,
+   "red": 255
+  },
+  "textSubdued": {
+   "alpha": 255,
+   "blue": 195,
+   "green": 188,
+   "red": 255
+  },
+  "image": [
+   {
+    "url": "https://mosaic.scdn.co/300/ab67616d00001e02120bda930735d1effbd964ecab67616d00001e023d0bdc59a47cf5b39a5d68a9ab67616d00001e0260ada139840fb439d6750f27ab67616d00001e02b591b5acb5029e39f2ead915",
+    "maxHeight": 0,
+    "maxWidth": 0
+   }
+  ]
+ },
+ "attributes": [],
+ "format": ""
+}
