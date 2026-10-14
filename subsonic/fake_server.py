@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 import threading
+import unicodedata
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -21,8 +22,8 @@ API_VERSION = "1.16.1"
 
 
 def _fold(s: str) -> str:
-    """Navidrome's full-text search is case-, accent- and punctuation-insensitive; so is the fake."""
-    import unicodedata
+    """Navidrome's full-text search is case-, accent- and punctuation-insensitive; so is the fake.
+    Deliberately a copy of sourcing.import_playlist.query_words' fold: the fake stays an independent oracle."""
     s = unicodedata.normalize("NFKD", s or "")
     return "".join(ch if ch.isalnum() or ch.isspace() else " " for ch in s if not unicodedata.combining(ch)).casefold()
 

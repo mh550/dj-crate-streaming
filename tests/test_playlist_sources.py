@@ -78,7 +78,7 @@ def test_load_dispatches_and_names(tmp_path):
 
 def test_lead_artist_resolves_commas_via_track_embed_and_semicolons_locally():
     assert ps.lead_artist(ps.Row(1, "t", "Donald Byrd", None)) == "Donald Byrd"
-    assert ps.lead_artist(ps.Row(1, "t", "Tyler, The Creator; Roy Ayers", None)) == "Tyler, The Creator"   # report: ';' is the separator
+    assert ps.lead_artist(ps.Row(1, "t", "Tyler, The Creator; Roy Ayers", None, sep="; ")) == "Tyler, The Creator"   # report: ';' is the separator
     calls = []
     def resolve(sid): calls.append(sid); return "Earth, Wind & Fire"
     assert ps.lead_artist(ps.Row(1, "t", "Earth, Wind & Fire", 278, spotify_id="abc"), resolve=resolve) == "Earth, Wind & Fire"
@@ -115,6 +115,7 @@ def test_csv_with_utf8_bom_still_parses(tmp_path):
 
 def test_track_lead_swallows_network_errors(monkeypatch):
     import urllib.error
+    from sourcing import spotify_csv
     def boom(path): raise urllib.error.URLError("no route")
-    monkeypatch.setattr(ps, "_next_data", boom)
-    assert ps._track_lead("abc") is None
+    monkeypatch.setattr(spotify_csv, "_next_data", boom)
+    assert ps.track_lead("abc") is None

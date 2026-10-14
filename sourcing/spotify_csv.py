@@ -48,15 +48,20 @@ def fetch_entity(url):
     return _next_data(f"{kind}/{sid}")
 
 
+def track_lead(spotify_id):
+    """The lead artist from a track's own embed page, or None when it cannot be read."""
+    try:
+        return _next_data(f"track/{spotify_id}")["artists"][0]["name"]
+    except Exception:            # SystemExit from _next_data, network errors, odd JSON: the caller falls back
+        return None
+
+
 def lead_artist(track):
     """The playlist embed only has "A, B" as one string, which mangles bands like
     "Earth, Wind & Fire". When there's a comma, ask the track's own embed for real artists."""
     if "," not in track["subtitle"]:
         return track["subtitle"].strip()
-    try:
-        return _next_data(f"track/{track['uri'].split(':')[-1]}")["artists"][0]["name"]
-    except (SystemExit, KeyError, IndexError):
-        return track["subtitle"].split(",")[0].strip()
+    return track_lead(track["uri"].split(":")[-1]) or track["subtitle"].split(",")[0].strip()
 
 
 def rows(entity):

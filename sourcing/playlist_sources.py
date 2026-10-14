@@ -17,10 +17,11 @@ from __future__ import annotations
 import csv
 import io
 import re
-from dataclasses import dataclass
 from pathlib import Path
 
-from .spotify_csv import URL as SPOTIFY_URL, _next_data, fetch_entity
+from dataclasses import dataclass, replace
+
+from .spotify_csv import URL as SPOTIFY_URL, fetch_entity, track_lead
 
 
 @dataclass
@@ -31,7 +32,8 @@ class Row:
     duration_s: int | None
     spotify_id: str | None = None
     album: str | None = None
-    note: str | None = None
+    note: str | None = None    # report rows: "success" | "skipped" | "error: <message>"
+    sep: str = ", "            # how the source joins several artists: ", " (Spotify, Exportify) or "; " (reports)
 
 
 def rows_from_spotify(entity: dict) -> list[Row]:
@@ -54,7 +56,10 @@ def _strip_album(body: str) -> tuple[str, str | None]:
         return body, None
     depth = 0
     for i in range(len(body) - 1, -1, -1):
-        depth += {")": 1, "(": -1}.get(body[i], 0)
+        if body[i] == ")":
+            depth += 1
+        elif body[i] == "(":
+            depth -= 1
         if depth == 0:
             if i > 0 and body[i - 1] == " ":
                 return body[: i - 1], body[i + 1:-1]
@@ -73,13 +78,13 @@ def rows_from_report(text: str) -> list[Row]:
         m = _STATUS.match(line)
         if m:
             title, artist = _split_title_artist(m.group(2))
-            rows.append(Row(len(rows) + 1, title, artist, None, note=m.group(1).lower()))
+            rows.append(Row(len(rows) + 1, title, artist, None, note=m.group(1).lower(), sep="; "))
             continue
         m = _ERROR.match(line)
         if m:
             body, album = _strip_album(m.group(1))
             title, artist = _split_title_artist(body)
-            rows.append(Row(len(rows) + 1, title, artist, None, album=album, note="error"))
+            rows.append(Row(len(rows) + 1, title, artist, None, album=album, note="error", sep="; "))
             continue
         if rows and rows[-1].note and rows[-1].note.startswith("error") and line.startswith("   "):
             key, _, val = line.strip().partition(": ")
@@ -106,11 +111,7 @@ def rows_from_csv(text: str) -> list[Row]:
 
 
 def concat(groups: list[list[Row]]) -> list[Row]:
-    out = []
-    for g in groups:
-        for r in g:
-            out.append(Row(len(out) + 1, r.title, r.artist, r.duration_s, r.spotify_id, r.album, r.note))
-    return out
+    return [replace(r, position=i) for i, r in enumerate((r for g in groups for r in g), 1)]
 
 
 def load(src: str, fetch=fetch_entity) -> tuple[str, list[Row]]:
@@ -124,23 +125,11 @@ def load(src: str, fetch=fetch_entity) -> tuple[str, list[Row]]:
     return p.stem, rows_from_report(text)
 
 
-def _track_lead(spotify_id: str) -> str | None:
-    try:
-        return _next_data(f"track/{spotify_id}")["artists"][0]["name"]
-    except Exception:            # SystemExit from _next_data, network errors, odd JSON: the caller falls back
-        return None
-
-
-def lead_artist(row: Row, resolve=_track_lead) -> str:
-    """Report rows separate artists with ';' so the first segment is exact (and a lone comma is part
-    of the name). Spotify/Exportify join with ', ', which mangles 'Earth, Wind & Fire' — ask the
-    track's own embed when we have its id."""
-    if ";" in row.artist:
-        return row.artist.split(";")[0].strip()
-    if "," not in row.artist or row.note is not None:      # report rows use ';' between artists: a comma is part of one name
-        return row.artist
-    if row.spotify_id:
-        got = resolve(row.spotify_id)
-        if got:
-            return got
-    return row.artist.split(",")[0].strip()
+def lead_artist(row: Row, resolve=track_lead) -> str:
+    """Report rows join artists with "; ", so the first segment is exact (a comma is part of the
+    name). Spotify/Exportify join with ", ", which mangles "Earth, Wind & Fire": when there is a
+    comma and a track id, ask the track's own embed (`resolve`; None = never look up)."""
+    first = row.artist.split(row.sep.strip())[0].strip()
+    if row.sep.strip() == ";" or "," not in row.artist:
+        return first
+    return (resolve(row.spotify_id) if resolve and row.spotify_id else None) or first

@@ -56,7 +56,7 @@ def test_match_retries_with_title_only_words():
         assert ip.match(c, Row(1, "Why You Wanna See My Bad Side", "Smokey Robinson", 224)).song_id == "m1"
         assert ip.match(c, Row(2, "Why You Wanna See My Bad Side", "William Robinson Jr.", 224)).status == "missing"   # title-only retry still needs the lead artist
         srv.state.songs["m2"] = dict(srv.state.songs["s1"], id="m2", title="Catendé - Live", artist="Vinícius de Moraes • Maria Creuza", duration=302)
-        assert ip.match(c, Row(4, "Catendé - Live", "Vinicius de Moraes; Toquinho", 302)).song_id == "m2"    # retry finds it; lead artist present
+        assert ip.match(c, Row(4, "Catendé - Live", "Vinicius de Moraes; Toquinho", 302, sep="; ")).song_id == "m2"    # retry finds it; lead artist present
         assert ip.match(c, Row(3, "Piano Joint", "Michael Kiwanuka", 232)).status == "missing"
 
 
