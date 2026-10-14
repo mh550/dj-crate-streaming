@@ -19,6 +19,13 @@ from urllib.parse import parse_qs, urlparse
 
 API_VERSION = "1.16.1"
 
+
+def _fold(s: str) -> str:
+    """Navidrome's full-text search is case-, accent- and punctuation-insensitive; so is the fake."""
+    import unicodedata
+    s = unicodedata.normalize("NFKD", s or "")
+    return "".join(ch if ch.isalnum() or ch.isspace() else " " for ch in s if not unicodedata.combining(ch)).casefold()
+
 # A small library that exercises the crate policy: lossless, hi-res, 320 mp3, 128 mp3.
 SAMPLE_SONGS = [
     {"id": "s1", "title": "Good Times", "artist": "Chic", "album": "Risqué", "year": 1979, "track": 3,
@@ -73,8 +80,10 @@ class FakeState:
     def playlist_json(self, p: dict, with_entries: bool) -> dict:
         songs = [self.songs[s] for s in p["songs"] if s in self.songs]
         d = {"id": p["id"], "name": p["name"], "comment": p.get("comment", ""), "owner": p["owner"],
-             "public": p["public"], "songCount": len(songs), "duration": sum(s["duration"] for s in songs),
+             "songCount": len(songs), "duration": sum(s["duration"] for s in songs),
              "created": "2026-09-17T00:00:00Z", "changed": "2026-09-17T00:00:00Z"}
+        if p.get("public"):            # Navidrome omits the key when false (fixture: getPlaylists_sample)
+            d["public"] = True
         if with_entries:
             d["entry"] = [dict(s, isDir=False, type="music") for s in songs]
         return d
@@ -187,9 +196,9 @@ def make_handler(state: FakeState):
             self._send(_resp({"song": dict(s, isDir=False, type="music")}))
 
         def m_search3(self, q, m):
-            words = q.get("query", "").lower().strip('"').split()      # Navidrome: every word must match somewhere
+            words = _fold(q.get("query", "")).split()      # Navidrome: every word must match somewhere
             hits = [dict(s, isDir=False, type="music") for s in state.songs.values()
-                    if all(w in f"{s['title']} {s['artist']} {s['album']}".lower() for w in words)]
+                    if all(w in _fold(f"{s['title']} {s['artist']} {s['album']}") for w in words)]
             n, off = int(q.get("songCount", 20)), int(q.get("songOffset", 0))
             self._send(_resp({"searchResult3": {"song": hits[off:off + n]}}))
 
