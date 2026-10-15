@@ -52,7 +52,7 @@ def track_lead(spotify_id):
     """The lead artist from a track's own embed page, or None when it cannot be read."""
     try:
         return _next_data(f"track/{spotify_id}")["artists"][0]["name"]
-    except Exception:            # SystemExit from _next_data, network errors, odd JSON: the caller falls back
+    except (SystemExit, Exception):   # _next_data reports failures via sys.exit(); network errors, odd JSON: caller falls back
         return None
 
 

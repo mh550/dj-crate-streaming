@@ -87,8 +87,9 @@ def test_import_creates_public_playlist_in_order_and_queues_the_rest():
         ext = store.external_for_playlist(rep.playlist_id)
         assert [(r["artist"], r["title"], r["position"], r["status"]) for r in ext] == [
             ("Michael Kiwanuka", "Piano Joint (This Kind Of Love)", 2, "needs_source"),
-            ("Twain", "The Magician", 4, "verify")]
-        assert ext[1]["reason"].startswith("ambiguous: ") and set(ext[1]["reason"][11:].split(", ")) == {"t1", "t2"}
+            ("Twain", "The Magician", 4, "review")]
+        why, _, ids = ext[1]["reason"].partition("): ")
+        assert why == "ambiguous (several versions" and set(ids.split(", ")) == {"t1", "t2"}
         assert ext[0]["source"] == "https://open.spotify.com/playlist/x" and ext[0]["duration"] == 232
         assert "matched" in rep.table() and "The Weasil" in rep.table()
 
@@ -98,14 +99,14 @@ def test_import_is_idempotent_and_never_removes_or_duplicates():
         _lib(srv)
         c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
         first = ip.import_playlist("Tea tent", ROWS, c, store, source="s")
-        # Michael removes one entry and adds his own by hand
+        # Michael removes one entry and adds his own by hand: both edits must survive every re-run
         c.update_playlist(first.playlist_id, remove_indexes=[1], add_song_ids=["s5"])
         second = ip.import_playlist("Tea tent", ROWS, c, store, source="s")
-        assert not second.created and second.playlist_id == first.playlist_id and second.added == 1
-        assert [e.id for e in c.playlist(first.playlist_id).entries] == ["w1", "s5", "k1"]   # s5 kept, k1 re-added once
+        assert not second.created and second.playlist_id == first.playlist_id and second.added == 0
+        assert [e.id for e in c.playlist(first.playlist_id).entries] == ["w1", "s5"]        # k1 stays removed
         assert store.external_count() == 2
         third = ip.import_playlist("Tea tent", ROWS, c, store, source="s")
-        assert third.added == 0 and [e.id for e in c.playlist(first.playlist_id).entries] == ["w1", "s5", "k1"]
+        assert third.added == 0 and [e.id for e in c.playlist(first.playlist_id).entries] == ["w1", "s5"]
 
 
 def test_import_refuses_a_foreign_playlist_unless_merge_and_never_publishes_it():
@@ -143,7 +144,7 @@ def test_rerun_does_not_reset_an_ambiguous_row_michael_resolved():
         c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
         rep = ip.import_playlist("Tea tent", ROWS, c, store, source="s")
         twain = next(r for r in store.external_for_playlist(rep.playlist_id) if r["artist"] == "Twain")
-        assert twain["status"] == "verify"
+        assert twain["status"] == "review"
         store.set_external_status(twain["song_id"], "ok", "picked t1 by hand"); store.commit()
         ip.import_playlist("Tea tent", ROWS, c, store, source="s")
         assert store.external(twain["song_id"])["status"] == "ok"
@@ -196,3 +197,71 @@ def test_title_only_retry_accepts_an_untagged_artist_when_the_length_fits():
         assert ip.match(c, Row(1, "The Good Wine", "Alabaster DePlume", 126)).song_id == "u1"
         assert ip.match(c, Row(2, "The Good Wine", "Alabaster DePlume", None)).status == "missing"
         assert ip.match(c, Row(3, "The Good Wine", "Alabaster DePlume", 200)).status == "missing"
+
+
+
+def test_title_must_be_the_same_song_not_a_substring():
+    # Opus review 2026-10-14 (proved): "Love" matched "Love and Happiness".
+    assert ip.choose(Row(1, "Love", "Al Green", None, sep="; "), [song("h", "Love and Happiness", "Al Green", 300)]).status == "ambiguous"
+    m = ip.choose(Row(1, "Love", "Al Green", None, sep="; "), [song("h", "Love and Happiness", "Al Green", 300)])
+    assert m.why == "title differs" and m.candidates == ["h"]
+
+
+def test_noise_that_does_not_change_the_recording_still_matches():
+    cases = [
+        (Row(1, "Fascination", "Everything But The Girl", None), song("f", "Fascination - 2012 Remaster", "Everything But The Girl", 200)),
+        (Row(1, "Arrow Through Me", "Wings", None), song("a", "Arrow Through Me - Remastered 1993", "Wings", 200)),
+        (Row(1, "Why You Wanna See My Bad Side", "Smokey Robinson", None),
+         song("m", "100 - Smokey Robinson - Why You Wanna See My Bad Side.mp3", "100 - Smokey Robinson - Why You Wanna See My Bad Side.mp3", 224)),
+        (Row(1, "A Change Is Gonna Come", "Jennifer Lara", None), song("j", "A Change Is Gonna Come - Jennifer Lara", "Studio One", 145)),
+        (Row(1, "Vem Menina", "Pepe Link", None), song("p", "Pepe Link - Vem Menina", "Pepe Link", 300)),
+        (Row(1, "Dudley Boyz", "Your Old Droog", None), song("d", "Dudley Boyz (feat. Action Bronson)", "Your Old Droog", 150)),
+    ]
+    for row, hit in cases:
+        assert ip.choose(row, [hit]).status == "matched", hit.title
+
+
+def test_known_length_far_off_is_not_a_match():
+    # Opus review (proved): a 210 s row matched a 612 s copy through the title fallback.
+    m = ip.choose(Row(1, "Good Times", "Chic", 210), [song("g", "Good Times", "Chic", 612)])
+    assert m.status == "ambiguous" and m.why == "length differs" and m.candidates == ["g"]
+    assert ip.choose(Row(1, "Good Times", "Chic", 210), [song("x", "Le Freak", "Chic", 210)]).status == "missing"
+
+
+def test_rerun_respects_a_playlist_michael_made_private():
+    with FakeSubsonicServer() as srv:
+        _lib(srv)
+        c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
+        first = ip.import_playlist("Tea tent", ROWS, c, store, source="s")
+        c.update_playlist(first.playlist_id, public=False)
+        ip.import_playlist("Tea tent", ROWS, c, store, source="s")
+        assert c.playlist(first.playlist_id).public is False
+
+
+def test_a_later_match_retires_the_wanted_row():
+    with FakeSubsonicServer() as srv:
+        _lib(srv)
+        c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
+        first = ip.import_playlist("Tea tent", ROWS, c, store, source="s")
+        kiwa = next(r for r in store.external_for_playlist(first.playlist_id) if r["artist"] == "Michael Kiwanuka")
+        srv.state.songs["kw"] = dict(srv.state.songs["s1"], id="kw", title="Piano Joint (This Kind Of Love)", artist="Michael Kiwanuka", duration=232)
+        again = ip.import_playlist("Tea tent", ROWS, c, store, source="s")
+        assert again.added == 1 and "kw" in [e.id for e in c.playlist(first.playlist_id).entries]
+        row = store.external(kiwa["song_id"])
+        assert row["status"] == "ok" and row["reason"] == "in library: kw"
+
+
+def test_fetch_leaves_review_rows_alone():
+    # Opus review (proved): fetch on an ambiguous row failed it, and it re-entered the wanted queue.
+    from pathlib import Path
+    from sourcing.fetch import fetch
+    with FakeSubsonicServer() as srv:
+        _lib(srv)
+        c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
+        rep = ip.import_playlist("Tea tent", ROWS, c, store, source="s")
+        twain = next(r for r in store.external_for_playlist(rep.playlist_id) if r["artist"] == "Twain")
+        r = fetch(twain["song_id"], store=store, slskd=None, navidrome=c, reconciler=None,
+                  music_root=Path("/nonexistent"), downloads_root=Path("/nonexistent"), approve=False)
+        assert r.status == "review" and "pick" in r.reason
+        assert store.external(twain["song_id"])["status"] == "review"
+        assert twain["song_id"] not in [w["song_id"] for w in store.wanted()]

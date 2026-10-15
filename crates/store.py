@@ -52,9 +52,13 @@ CREATE TABLE IF NOT EXISTS external_wanted (
   playlist_id TEXT, position INTEGER,             -- import-playlist: where a later fetch inserts the track
   created_at  REAL NOT NULL, updated_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS imported_entries (     -- every song import-playlist ever added to a playlist,
+  playlist_id TEXT NOT NULL, song_id TEXT NOT NULL, -- so a track Michael removes by hand is never re-added
+  PRIMARY KEY (playlist_id, song_id)
+);
 """
 
-STATUSES = ("ok", "needs_source", "sourcing", "verify", "failed", "removed")
+STATUSES = ("ok", "needs_source", "sourcing", "verify", "failed", "removed", "review")   # review: a person must pick a version
 
 
 def _loose(s: str | None) -> str:
@@ -157,7 +161,7 @@ class CrateStore:
         return {t["song_id"]: t for t in self.tracks(playlist_id, include_removed=True)}
 
     def summary(self, playlist_id: str) -> dict[str, int]:
-        out = {s: 0 for s in STATUSES if s != "removed"}
+        out = {s: 0 for s in STATUSES if s not in ("removed", "review")}   # review is for imported wanted rows only
         for r in self.db.execute("SELECT status, COUNT(*) n FROM crate_tracks WHERE playlist_id=? AND status!='removed' GROUP BY status", (playlist_id,)):
             out[r["status"]] = r["n"]
         out["total"] = sum(out.values())
@@ -225,6 +229,13 @@ class CrateStore:
             (artist, title, album, year, int(duration_s) if duration_s else None, source, playlist_id, position, now, now))
         self.log(None, f"ext-{cur.lastrowid}", "wanted", f"{artist} — {title}")
         return f"ext-{cur.lastrowid}"
+
+    def imported(self, playlist_id: str) -> set[str]:
+        return {r[0] for r in self.db.execute("SELECT song_id FROM imported_entries WHERE playlist_id=?", (playlist_id,))}
+
+    def mark_imported(self, playlist_id: str, song_ids) -> None:
+        self.db.executemany("INSERT OR IGNORE INTO imported_entries(playlist_id, song_id) VALUES(?,?)",
+                            [(playlist_id, s) for s in song_ids])
 
     def external_for_playlist(self, playlist_id: str) -> list[dict]:
         return [self._ext_row(r) for r in self.db.execute(

@@ -17,7 +17,7 @@ def test_spotify_rows_keep_order_duration_and_id():
 def test_spotify_subtitle_nbsp_is_normalised():
     entity = json.loads((FIXTURES / "spotify_embed_secondset.json").read_text())
     r = ps.rows_from_spotify(entity)[0]
-    assert r.artist == "Roy Ayers, Dee Dee Bridgewater, Wayne Garfield"     # fixture has ",\xa0"
+    assert r.artist == "Roy Ayers; Dee Dee Bridgewater; Wayne Garfield" and r.sep == "; "   # fixture has ",\xa0" between artists
 
 
 def test_report_rows_cover_success_skipped_and_errors():
@@ -55,7 +55,7 @@ def test_csv_exportify_and_sockseek_shapes():
     rows = ps.rows_from_csv(EXPORTIFY)
     assert rows[0] == ps.Row(1, "The Weasil", "Donald Byrd", 541, "4qZ1OgsTZMAgZA776w3USt", "Fancy Free")
     assert rows[1].artist == "Earth, Wind & Fire" and rows[1].duration_s == 278
-    assert ps.rows_from_csv(SOCKSEEK) == [ps.Row(1, "Good Times", "Chic", 501)]
+    assert ps.rows_from_csv(SOCKSEEK) == [ps.Row(1, "Good Times", "Chic", 501, sep="; ")]
 
 
 def test_concat_renumbers_positions():
@@ -70,7 +70,7 @@ def test_load_dispatches_and_names(tmp_path):
     name, rows = ps.load(str(rep))
     assert name == "nothin to it" and len(rows) == 7
     csv_path = tmp_path / "secondset.csv"; csv_path.write_text(SOCKSEEK)
-    assert ps.load(str(csv_path)) == ("secondset", [ps.Row(1, "Good Times", "Chic", 501)])
+    assert ps.load(str(csv_path)) == ("secondset", [ps.Row(1, "Good Times", "Chic", 501, sep="; ")])
     entity = json.loads((FIXTURES / "spotify_embed_tea-tent-1.json").read_text())
     name, rows = ps.load("https://open.spotify.com/playlist/0wPBj1mjvAJcmr6zdaz228", fetch=lambda url: entity)
     assert name == "Tea tent" and len(rows) == 99 and rows[0].title == "The Weasil"
@@ -110,7 +110,7 @@ def test_csv_with_utf8_bom_still_parses(tmp_path):
     name, rows = ps.load(str(f))
     assert rows[0].spotify_id == "4qZ1OgsTZMAgZA776w3USt"
     f2 = tmp_path / "y.csv"; f2.write_bytes(("\ufeff" + SOCKSEEK).encode("utf-8"))
-    assert ps.load(str(f2))[1] == [ps.Row(1, "Good Times", "Chic", 501)]
+    assert ps.load(str(f2))[1] == [ps.Row(1, "Good Times", "Chic", 501, sep="; ")]
 
 
 def test_track_lead_swallows_network_errors(monkeypatch):
@@ -119,3 +119,29 @@ def test_track_lead_swallows_network_errors(monkeypatch):
     def boom(path): raise urllib.error.URLError("no route")
     monkeypatch.setattr(spotify_csv, "_next_data", boom)
     assert ps.track_lead("abc") is None
+
+
+def test_spotify_band_commas_survive_without_a_lookup():
+    # fixtures/spotify_embed_ewf_artist.json (live 2026-10-14): a band name keeps a plain ", ",
+    # separate artists are joined with ",\xa0". So the lead artist needs no per-track request.
+    entity = json.loads((FIXTURES / "spotify_embed_ewf_artist.json").read_text())
+    rows = {r.title: r for r in ps.rows_from_spotify(entity)}
+    no_net = lambda sid: (_ for _ in ()).throw(AssertionError("no lookup needed"))
+    assert ps.lead_artist(rows["September"], resolve=no_net) == "Earth, Wind & Fire"
+    assert ps.lead_artist(rows["Boogie Wonderland (with The Emotions)"], resolve=no_net) == "Earth, Wind & Fire"
+
+
+def test_lead_only_csv_keeps_comma_band_names_whole():
+    # spotify_csv / sockseek CSVs hold one lead artist per row: a comma there is part of the name.
+    rows = ps.rows_from_csv('Artist,Title,Length\n"Earth, Wind & Fire",September,215\n')
+    assert ps.lead_artist(rows[0], resolve=None) == "Earth, Wind & Fire"
+
+
+def test_track_lead_survives_sys_exit_from_next_data(monkeypatch):
+    # _next_data reports "unreachable" and "no __NEXT_DATA__" with sys.exit(); one bad track page
+    # must not abort a whole import (Opus review 2026-10-14, proved).
+    from sourcing import spotify_csv
+    def boom(path): raise SystemExit("embed page had no __NEXT_DATA__ (private playlist, or Spotify changed the page)")
+    monkeypatch.setattr(spotify_csv, "_next_data", boom)
+    assert ps.track_lead("abc") is None
+    assert spotify_csv.lead_artist({"subtitle": "Earth, Wind & Fire", "uri": "spotify:track:x"}) == "Earth"

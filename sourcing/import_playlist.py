@@ -1,15 +1,20 @@
 """Spotify/report playlist rows → Navidrome playlist + wanted rows (spec §2a, D11).
 
-Matching, in order: search3 on artist+title words (Navidrome ignores case, accents and punctuation;
-every word must hit) → keep hits within ±4 s when the row has a duration → else hits whose normalised
-title and lead artist both appear in the hit's normalised "artist title" → nearest duration →
-redundant copies (same normalised artist|title, lengths within ±4 s of each other) collapse to the
-one outside Compilations/ → still >1 distinct track → ambiguous. No hits at all → retry with the
-title words only (library titles sometimes carry the artist, e.g. "A Change Is Gonna Come - Jennifer Lara"),
-keeping only hits that name the artist or have no artist tag at all.
+Matching: search3 on artist+title words (Navidrome ignores case, accents and punctuation; every
+word must hit). Then:
+  * row has a length → hits within ±4 s whose title fits; if none, hits with the right artist and
+    title but another length are a different edit → `ambiguous (length differs)`, never a match;
+  * no length → hits with the lead artist and the *same* title, after dropping noise that does not
+    change the recording (file extension, track-number prefix, the artist's name glued on,
+    " - 2012 Remaster", "(feat. X)"); a title that only *contains* the row's is `ambiguous (title differs)`.
+Redundant copies (same artist|title, lengths within ±4 s of each other) collapse to one match;
+different versions are `ambiguous (several versions)`. Ambiguous rows become `review` wanted rows
+for a person to pick. No hits at all → retry with the title words only, keeping hits that name the
+artist or have no artist tag (library titles sometimes carry it: "A Change Is Gonna Come - Jennifer Lara").
 """
 from __future__ import annotations
 
+import re
 import unicodedata
 from dataclasses import dataclass, field
 
@@ -55,6 +60,7 @@ class Match:
     status: str                 # "matched" | "ambiguous" | "missing"
     song_id: str | None = None
     candidates: list[str] = field(default_factory=list)   # ids considered (ambiguous → the tie; matched → the copies)
+    why: str | None = None      # ambiguous: "several versions" | "title differs" | "length differs"
 
 
 def _blob(h: Song) -> str:
@@ -86,6 +92,31 @@ def _artist_gate(hits: list[Song], lead: str) -> list[Song]:
     return [h for h in hits if lead and (lead in _blob(h) or _untagged(h.artist))]
 
 
+# Decorations that do not change the recording, stripped before titles are compared.
+_NOISE = [re.compile(p, re.I) for p in (
+    r"(\.(mp3|flac|m4a|wav))+$",                                            # file names used as titles
+    r"^\d{1,3}\s*-\s*",                                                     # "100 - Smokey Robinson - …"
+    r"\s+-\s+(\d{4}\s+)?(digital(ly)?\s+)?remaster(ed)?(\s+(version|\d{4}))?\s*$",   # " - 2012 Remaster"
+    r"\s*[(\[](\d{4}\s+)?(digital(ly)?\s+)?remaster(ed)?[^)\]]*[)\]]\s*$",       # "(Remastered 2011)"
+    r"\s*[(\[](feat|ft|with)\.?\s[^)\]]*[)\]]",                               # "(feat. Action Bronson)"
+)]
+
+
+def _core(title: str | None, lead: str) -> str:
+    t = title or ""
+    for _ in range(3):                                   # decorations stack: "04 - 122 - X - Y.mp3.mp3"
+        for p in _NOISE:
+            t = p.sub("", t)
+    n = norm(t)
+    if lead and n != lead:                               # "Pepe Link - Vem Menina", "… - Jennifer Lara"
+        n = n[len(lead):] if n.startswith(lead) else n[:-len(lead)] if n.endswith(lead) else n
+    return n
+
+
+def _same_title(row: Row, hit: Song, lead: str) -> bool:
+    return bool(norm(row.title)) and _core(hit.title, lead) == _core(row.title, lead)
+
+
 def _by_length(row: Row, hits: list[Song]) -> list[Song]:
     def d(h: Song) -> int:
         return abs(h.duration - row.duration_s)
@@ -96,26 +127,39 @@ def _by_length(row: Row, hits: list[Song]) -> list[Song]:
     return [h for h in fit if d(h) == best]
 
 
-def _by_title(row: Row, hits: list[Song], lead: str) -> list[Song]:
+def _by_title(row: Row, hits: list[Song], lead: str) -> tuple[list[Song], list[Song]]:
+    """(same title, title only contains the row's) among hits that name the lead artist."""
     title = norm(row.title)
-    fit = [h for h in hits if title and lead and title in _blob(h) and lead in _blob(h)]
-    exact = [h for h in fit if norm(h.title) == title or norm(h.title).endswith(title + lead)]
-    return exact or fit
+    named = [h for h in hits if title and lead and title in _blob(h) and lead in _blob(h)]
+    same = [h for h in named if _same_title(row, h, lead)]
+    return same, [h for h in named if h not in same]
+
+
+def _decide(row: Row, fit: list[Song]) -> Match:
+    durs = [h.duration for h in fit if h.duration is not None]
+    # Same artist|title twice is a redundant copy only when the lengths agree; "The Magician" 353 s
+    # vs 300 s are two recordings, and without a row duration we cannot pick → ambiguous.
+    if len({_key(h) for h in fit}) > 1 or (durs and max(durs) - min(durs) > TOLERANCE_S):
+        return Match(row, "ambiguous", candidates=[h.id for h in fit], why="several versions")
+    fit.sort(key=lambda h: (h.path or "").startswith("Compilations/"))      # the properly filed copy first
+    return Match(row, "matched", fit[0].id, [h.id for h in fit])
 
 
 def choose(row: Row, hits: list[Song]) -> Match:
     if not hits:
         return Match(row, "missing")
-    fit = (_by_length(row, hits) if row.duration_s is not None else []) or _by_title(row, hits, _lead(row))
-    if not fit:
-        return Match(row, "missing", candidates=[h.id for h in hits])
-    durs = [h.duration for h in fit if h.duration is not None]
-    # Same artist|title twice is a redundant copy only when the lengths agree; "The Magician" 353 s
-    # vs 300 s are two recordings, and without a row duration we cannot pick → ambiguous.
-    if len({_key(h) for h in fit}) > 1 or (durs and max(durs) - min(durs) > TOLERANCE_S):
-        return Match(row, "ambiguous", candidates=[h.id for h in fit])
-    fit.sort(key=lambda h: (h.path or "").startswith("Compilations/"))      # the properly filed copy first
-    return Match(row, "matched", fit[0].id, [h.id for h in fit])
+    same, near = _by_title(row, hits, _lead(row))
+    if row.duration_s is not None:
+        fit = _by_length(row, hits)
+        if fit:
+            return _decide(row, fit)
+        if same or near:                                 # right song name, another length: another edit
+            return Match(row, "ambiguous", candidates=[h.id for h in same + near], why="length differs")
+    elif same:
+        return _decide(row, same)
+    elif near:
+        return Match(row, "ambiguous", candidates=[h.id for h in near], why="title differs")
+    return Match(row, "missing", candidates=[h.id for h in hits])
 
 
 def _search_all(client: SubsonicClient, query: str) -> list[Song]:
@@ -169,6 +213,7 @@ class Report:
         lines = []
         for m in self.matches:
             tail = f"→ {m.song_id}" if m.song_id else (f"? {', '.join(m.candidates)}" if m.candidates else "")
+            tail += f"  ({m.why})" if m.why else ""
             lines.append(f"{m.row.position:4d}  {m.status:<9}  {m.row.artist} — {m.row.title}  {tail}".rstrip())
         lines.append(f"{self.name}: {self.matched} matched, {self.wanted} wanted, {self.ambiguous} ambiguous"
                      + (f"; {self.added} added to playlist {self.playlist_id}" if self.playlist_id else ""))
@@ -194,10 +239,11 @@ def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: C
     if existing is not None and not ours and not merge:
         raise NameCollision(name, existing.id)
     have = {e.id for e in client.playlist(existing.id).entries} if existing else set()
-    new_ids = [i for i in ordered if i not in have]
+    added_before = store.imported(existing.id) if existing else set()
+    new_ids = [i for i in ordered if i not in have and i not in added_before]   # a track Michael removed stays removed
     playlist_id = existing.id if existing else None
     # Resolve lead artists (may ask Spotify) before touching anything, so a failure leaves nothing half-written.
-    notes, failed = [], set()
+    failed = set()
 
     def _resolve(sid):
         got = resolve(sid)
@@ -212,14 +258,19 @@ def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: C
         if existing is None:
             playlist_id = client.create_playlist(name, new_ids).id
             client.update_playlist(playlist_id, public=True, comment=MARKER)      # spec §2a: visible to every user
-        else:
+        else:                                       # visibility is set once, at creation: Michael may change it
             client.update_playlist(existing.id, add_song_ids=new_ids,
-                                   public=True if ours and not existing.public else None,
                                    comment=None if ours else ((existing.comment or "") + " " + MARKER).strip())
+        store.mark_imported(playlist_id, ordered)
+        queued = {r["position"]: r for r in store.external_for_playlist(playlist_id)}
+        for m in matches:                           # a wanted row whose track is now in the library is done
+            r = queued.get(m.row.position)
+            if m.status == "matched" and r and norm(r["title"]) == norm(m.row.title) and r["status"] in ("needs_source", "review", "failed"):
+                store.set_external_status(r["song_id"], "ok", f"in library: {m.song_id}")
         for m, lead in pending:
             ext = store.add_external_wanted(lead, m.row.title, album=m.row.album, duration_s=m.row.duration_s,
                                             source=source, playlist_id=playlist_id, position=m.row.position)
-            if m.status == "ambiguous" and store.external(ext)["status"] in ("needs_source", "verify"):
-                store.set_external_status(ext, "verify", "ambiguous: " + ", ".join(m.candidates))
+            if m.status == "ambiguous" and store.external(ext)["status"] in ("needs_source", "review"):
+                store.set_external_status(ext, "review", f"ambiguous ({m.why}): " + ", ".join(m.candidates))
         store.commit()
     return Report(name, playlist_id, existing is None, matches, len(new_ids), len(have), notes)

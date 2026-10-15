@@ -39,9 +39,11 @@ class Row:
 def rows_from_spotify(entity: dict) -> list[Row]:
     out = []
     for i, t in enumerate(entity["trackList"], 1):
-        artist = re.sub(r",\s*", ", ", t["subtitle"].replace("\xa0", " ")).strip()
+        # The embed joins separate artists with ",\xa0" and keeps a band's own comma as ", "
+        # ("Earth, Wind & Fire"; fixtures/spotify_embed_ewf_artist.json), so the split is exact offline.
+        artist = "; ".join(a.strip() for a in t["subtitle"].split(",\xa0"))
         sid = t.get("uri", "").split(":")[-1] or None
-        out.append(Row(i, t["title"].strip(), artist, round(t["duration"] / 1000), sid))
+        out.append(Row(i, t["title"].strip(), artist, round(t["duration"] / 1000), sid, sep="; "))
     return out
 
 
@@ -106,7 +108,8 @@ def rows_from_csv(text: str) -> list[Row]:
                            round(int(ms) / 1000) if ms.isdigit() else None, sid, (r.get("Album Name") or None)))
         else:                                                  # sockseek / spotify_csv: Artist,Title,Length
             length = (r.get("Length") or "").strip()
-            out.append(Row(i, r["Title"].strip(), r["Artist"].strip(), int(float(length)) if length else None))
+            out.append(Row(i, r["Title"].strip(), r["Artist"].strip(), int(float(length)) if length else None,
+                           sep="; "))                  # one lead artist per row: a comma is part of the name
     return out
 
 

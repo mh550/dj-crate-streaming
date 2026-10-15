@@ -111,6 +111,8 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
     status = row.get("status")
     if status == "ok":
         return FetchResult("ok", "already ok; nothing to do")
+    if status == "review":                                       # import-playlist: several library versions fit
+        return FetchResult("review", f"needs a pick first ({row.get('reason')}); nothing searched")
     if status == "verify":
         m = _FILED.search(row.get("reason") or "")
         if m and (music_root / m.group(1)).exists():
