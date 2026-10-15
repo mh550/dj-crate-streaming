@@ -66,6 +66,16 @@ def write_minimal(path, changes: dict) -> None:
     for k, v in changes.items():
         setattr(m, k, (True if v else None) if k == "comp" else (v if v != "" else None))
     m.save()
+    if "albumartist" in changes:                         # TXXX:ALBUM ARTIST aliases would keep the old value next to TPE2
+        try:
+            id3 = mutagen.id3.ID3(path)
+        except Exception:
+            return
+        stale = [k for k in id3.keys() if k.lower().replace(" ", "").replace("_", "") in ("txxx:albumartist",)]
+        if stale:
+            for k in stale:
+                del id3[k]
+            id3.save(path, v2_version=3 if v23 else 4)
 
 
 class NotScanned(Exception):

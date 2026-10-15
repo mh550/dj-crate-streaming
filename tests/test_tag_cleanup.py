@@ -297,3 +297,15 @@ def test_restore_works_for_mp3_whose_type_comes_from_the_extension(tmp_path):
              "after": {"title": "Vem Menina", "artist": "", "albumartist": "", "album": "", "comp": False, "comments": ""}}
     tc.restore(entry, original, music_root=tmp_path / "music", trash_root=tmp_path / "trash")
     assert MediaFile(str(current)).title == "Vem Menina" and not list(current.parent.glob(".*"))
+
+
+def test_setting_albumartist_drops_txxx_album_artist_aliases(tmp_path):
+    # Live 2026-10-15: two mp3s kept TXXX:ALBUM ARTIST = "VA" next to the TPE2 we set; Navidrome showed "X • VA".
+    from mutagen.id3 import TXXX
+    m = tmp_path / "x.mp3"; _audio(m)
+    id3 = ID3(m); id3.add(TPE1(encoding=3, text="Robert Palmer")); id3.add(TXXX(encoding=3, desc="Album Artist", text="VA"))
+    id3.add(TXXX(encoding=3, desc="Catalog", text="196587")); id3.save(m, v2_version=3)
+    tc.write_minimal(m, {"albumartist": "Robert Palmer"})
+    t = ID3(m)
+    assert str(t["TPE2"]) == "Robert Palmer" and not [k for k in t.keys() if k.lower() in ("txxx:album artist", "txxx:albumartist")]
+    assert str(t["TXXX:Catalog"]) == "196587"
