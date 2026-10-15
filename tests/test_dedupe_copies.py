@@ -48,7 +48,7 @@ def world(tmp_path):
         m = MediaFile(str(music / rel)); m.title = title; m.save()
     nd = tmp_path / "navidrome.db"
     con = sqlite3.connect(nd)
-    con.executescript("""CREATE TABLE media_file (id text primary key, path text, title text, missing bool default false);
+    con.executescript("""CREATE TABLE media_file (id text primary key, path text, title text, album_artist text, year integer, missing bool default false);
         CREATE TABLE playlist (id text primary key, name text);
         CREATE TABLE playlist_tracks (id integer, playlist_id text, media_file_id text);""")
     con.executemany("INSERT INTO media_file(id,path,title) VALUES(?,?,?)", [(i, rel, t) for rel, (i, t) in files.items()])
@@ -115,3 +115,24 @@ def test_trash_refuses_while_referenced_then_moves_logs_and_updates_the_map(worl
     rows = list(csv.DictReader(lm.open()))
     assert rows[0]["new_path"] == "Barry White/Staying Power (1999)/01 - Staying Power.flac" and rows[0]["other_copies"] == ""
     assert dc.trash(plan, music, trash, nd, lm, config=None) == []           # already done
+
+
+@pytest.mark.parametrize("keep, other", [
+    # (path, album artist as Navidrome shows it, year) — real pairs from the live dry run, 2026-10-15
+    (("Butcher Brown/Solar Music (2023)/03 - I Can Say To You.flac", "Butcher Brown", 2023),
+     ("Jamiroquai/Virtual Insanity (Bklava Remix) (2022)/03 - I Can Say To You.flac", "Butcher Brown", 2023)),   # folder ≠ its own tag
+    (("Chloé Caillet/Doudou (Edit) (2022)/01 - Doudou (Edit).flac", "Chloé Caillet", 2022),
+     ("Chloé Caillet Kassav' Jean-Claude Naimro/Doudou (Edit) (2022)/01 - Doudou - Edit.flac", "Chloé Caillet Kassav' Jean-Claude Naimro", 2022)),
+    (("Idris Muhammad/Could Heaven (2022)/01 - x.flac", "Idris Muhammad • Walker & Royce • Chris Lorenzo", 2022),
+     ("Idris Muhammad Walker & Royce Chris Lorenzo/Could Heaven (2022)/01 - x.flac", "Idris Muhammad Walker & Royce Chris Lorenzo", 2022)),
+    (("Marvin Gaye/Midnight Love (1982)/02 - Sexual Healing.flac", "Marvin Gaye", 1982),
+     ("Marvin Gaye/Gold (2005)/15 - Sexual Healing.flac", "Marvin Gaye", 2005)),                                   # the original release
+    (("Dawn Penn/Vintage 2 (2012)/02 - Chilling.flac", "Dawn Penn", 2012),
+     ("Dawn Penn/Vintage 2/00 - Chilling.flac", "Dawn Penn", 0)),                                                    # unknown year last
+    (("Barry White/Staying Power (1999)/01 - Staying Power.flac", "Barry White", 1999),
+     ("Compilations/Intuition (1981)/01 - Staying Power.flac", "Barry White", 1999)),                              # catch-all folder last
+    (("Durand Jones & The Indications/Private Space (2021)/02 - Witchoo.flac", "Durand Jones & The Indications", 2021),
+     ("Durand Jones & The Indications/Private Space (2021)/02 - Witchoo.1.flac", "Durand Jones & The Indications", 2021)),  # beets' .1 last
+])
+def test_keep_rank_prefers_the_properly_filed_copy(keep, other):
+    assert dc.keep_rank(*keep) < dc.keep_rank(*other)

@@ -8,7 +8,7 @@
 A group from docs/library-map.csv (`new_path` + `other_copies`) is deduped automatically only when every
 file decodes to the same audio (a *decoded* md5: the library map's stream hash moves when an mp3's
 ID3v1 tag changes) and the titles agree; anything else is listed for a person. The kept copy is the
-properly filed one (library_map._copy_rank). Every move is logged with its reverse `mv`. Trash is
+properly filed one (keep_rank). Every move is logged with its reverse `mv`. Trash is
 never emptied by these scripts.
 """
 from __future__ import annotations
@@ -51,6 +51,18 @@ def _norm(s) -> str:
     return re.sub(r"\W+", "", str(s or "").casefold())
 
 
+def keep_rank(path: str, album_artist: str | None, year: int | None) -> tuple:
+    """Which copy of identical audio to keep (smallest wins), after library_map._copy_rank's rules
+    (no beets ".1", not Compilations/Singles/_): the copy filed under its own album artist (a folder
+    that disagrees with the file's tag is mis-filed); then the shorter artist folder (the main artist,
+    not a credit string glued together); then the earliest known year (the original release); then
+    alphabetical. Navidrome shows several album artists as "A • B": the first one counts."""
+    uniquified, catch_all, _ = _copy_rank(path)
+    folder = path.split("/", 1)[0]
+    own = (album_artist or "").split(" • ")[0]
+    return (uniquified, catch_all, _norm(folder) != _norm(own), len(folder), year or 9999, path)
+
+
 def remap(entries: list[str], replace: dict[str, str]) -> list[str]:
     """Each copy becomes its kept song in place; dropped instead when the kept song is already there."""
     out: list[str] = []
@@ -76,7 +88,8 @@ def _groups(map_rows: list[dict]) -> list[list[str]]:
 def plan(library_map, music, navidrome_db, plan_path, report_path) -> dict:
     music = Path(music)
     with closing(open_ro(navidrome_db)) as con:
-        songs = {p: (i, t) for i, p, t in con.execute("SELECT id, path, title FROM media_file WHERE NOT missing")}
+        songs = {p: (i, t, aa, y) for i, p, t, aa, y in con.execute(
+            "SELECT id, path, title, album_artist, year FROM media_file WHERE NOT missing")}
         playlists = []
         for pid, name in con.execute("SELECT id, name FROM playlist ORDER BY name").fetchall():
             ids = [m for (m,) in con.execute("SELECT media_file_id FROM playlist_tracks WHERE playlist_id = ? ORDER BY id", (pid,))]
@@ -91,7 +104,7 @@ def plan(library_map, music, navidrome_db, plan_path, report_path) -> dict:
         if not (same_audio and same_title):
             person.append(paths)
             continue
-        keep = min(paths, key=_copy_rank)
+        keep = min(paths, key=lambda p: keep_rank(p, songs[p][2], songs[p][3]))
         for p in paths:
             if p != keep:
                 trash.append({"path": p, "id": songs[p][0], "keep_path": keep, "keep_id": songs[keep][0]})
