@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from sourcing.policy import DEFAULT_TIER, check_tier
+from sourcing.verify import finite
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS crates (
@@ -215,7 +216,7 @@ class CrateStore:
     def set_verification(self, song_id: str, result: dict) -> None:
         """Keep the last download check for a wanted id (crate or external), replacing the previous one."""
         self.db.execute("INSERT INTO verifications(song_id, result, ts) VALUES(?,?,?) ON CONFLICT(song_id) DO UPDATE "
-                        "SET result=excluded.result, ts=excluded.ts", (song_id, json.dumps(result), time.time()))
+                        "SET result=excluded.result, ts=excluded.ts", (song_id, json.dumps(finite(result)), time.time()))
         self.commit()
 
     def verification(self, song_id: str) -> dict | None:

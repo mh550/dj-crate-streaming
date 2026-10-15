@@ -147,10 +147,12 @@ def parse_ffmpeg(stderr: str, edges: list[int]) -> dict:
         elif silences:
             silences[-1] = (silences[-1][0], float(t))
     bits = full.get("Bit depth", "").split("/")
+    complete = len(order) == len(edges) + 1          # else a band branch printed nothing: don't shift the rest
     return {
         "errors": re.findall(r"^(?:\[[^\]]*\] )?\[(?:error|fatal)\] (.*)$", stderr, re.M),
         "full_db": num(full, "RMS level dB"),
-        "bands_db": {e: num(d, "RMS level dB") for e, d in zip(edges, order[1:])},
+        "bands_db": {e: num(d, "RMS level dB") for e, d in zip(edges, order[1:])} if complete else {},
+        "complete": complete,
         "peak_db": num(full, "Peak level dB"),
         "flat_factor": num(full, "Flat factor"),
         "bits_used": int(bits[1]) if len(bits) > 1 else None,
@@ -159,8 +161,15 @@ def parse_ffmpeg(stderr: str, edges: list[int]) -> dict:
     }
 
 
-def analyse(path: Path, sample_rate: int | None) -> dict:
-    """One ffmpeg decode: full band (astats + silencedetect) and one brick-wall highpass per band edge."""
+TEXT = {"text": True, "encoding": "utf-8", "errors": "replace"}   # ffmpeg echoes tags in whatever code page they're in
+MAX_DECODE_NOISE = 10    # fewer ffmpeg errors than this, with the audio all there, is a junk frame or a tag: a warning
+
+
+def analyse(path: Path, sample_rate: int | None, duration_s: float | None = None) -> dict:
+    """One ffmpeg decode: full band (astats + silencedetect) and one brick-wall highpass per band edge; plus
+    `flac -t` (the MD5 of the decoded audio) for FLAC. The timeout grows with length × rate (≈20 ms per second
+    of 44.1 kHz audio on this box), never under 10 minutes."""
+    timeout = max(600.0, 60 + 2 * (duration_s or 0) * max(1.0, (sample_rate or 44100) / 44100))
     edges = band_edges(sample_rate)
     n = len(edges) + 1
     chains = [f"[x0]astats=measure_perchannel=none,{SILENCE}[o0]"]
@@ -171,20 +180,21 @@ def analyse(path: Path, sample_rate: int | None) -> dict:
     cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-nostats", "-loglevel", "level+info", "-i", str(path), "-filter_complex", graph]
     for i in range(n):
         cmd += ["-map", f"[o{i}]", "-f", "null", "-"]
-    run = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=600)
+    run = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout, **TEXT)
     m = parse_ffmpeg(run.stderr, edges)
     if run.returncode and not m["errors"]:
         m["errors"] = [run.stderr.strip().splitlines()[-1] if run.stderr.strip() else f"ffmpeg exit {run.returncode}"]
+    m["flac_t"] = None
     if path.suffix.lower() == ".flac" and shutil.which("flac"):
-        t = subprocess.run(["flac", "-t", "-s", str(path)], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=600)
+        t = subprocess.run(["flac", "-t", "-s", str(path)], stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout, **TEXT)
         if t.returncode:
-            m["errors"].append("flac -t: " + (t.stderr.strip().splitlines() or ["failed"])[-1].strip())
+            m["flac_t"] = (t.stderr.strip().splitlines() or ["failed"])[-1].strip()
     return m
 
 
 def fingerprint(path: Path) -> list[int] | None:
     run = subprocess.run(["fpcalc", "-raw", "-json", "-length", "120", str(path)], stdin=subprocess.DEVNULL,
-                         capture_output=True, text=True, timeout=300)
+                         capture_output=True, timeout=300, **TEXT)
     try:
         return json.loads(run.stdout)["fingerprint"]
     except (ValueError, KeyError):
@@ -240,7 +250,10 @@ def verify(path: Path, expected_duration_s: float | None = None, tier: str | Non
         findings.append(("skipped", "ffmpeg not on PATH: decoded checks skipped (integrity, cutoff, bit depth, "
                                     "truncation, silence, clipping)"))
     else:
-        _decoded_checks(path, info, analyse(path, info.sample_rate), findings, m)
+        try:
+            _decoded_checks(path, info, analyse(path, info.sample_rate, info.duration_s), findings, m)
+        except subprocess.TimeoutExpired as e:
+            findings.append(("skipped", f"decoded checks timed out after {e.timeout:.0f}s and were skipped"))
         if m.get("bands_db") and m["cutoff_khz"] == max(m["bands_db"]):   # the measured spectrum outranks the
             findings[:] = [("low_kbps", f"{msg}, but the full spectrum is there: quiet or simple material")
                            if check == "implied_kbps" else (check, msg) for check, msg in findings]   # size guess
@@ -248,7 +261,10 @@ def verify(path: Path, expected_duration_s: float | None = None, tier: str | Non
         if not shutil.which("fpcalc"):
             findings.append(("skipped", "fpcalc not on PATH: recording check skipped"))
         else:
-            a, b = fingerprint(path), fingerprint(Path(reference))
+            try:
+                a, b = fingerprint(path), fingerprint(Path(reference))
+            except subprocess.TimeoutExpired:
+                a = b = None
             if a and b:
                 m["fingerprint_ber"] = ber = round(fingerprint_ber(a, b), 3)
                 if ber > 0.20:
@@ -256,28 +272,47 @@ def verify(path: Path, expected_duration_s: float | None = None, tier: str | Non
                                                   f"(fingerprint bit-error rate {ber:.2f}; same audio is under 0.20)"))
             else:
                 findings.append(("skipped", "fpcalc could not fingerprint one of the files: recording check skipped"))
+    m.update({k: finite(v) for k, v in m.items()})
     return verdict(info)
 
 
+def finite(v):
+    """JSON has no -inf/NaN (astats says -inf for silence): None instead, inside dicts too."""
+    if isinstance(v, dict):
+        return {k: finite(x) for k, x in v.items()}
+    return None if isinstance(v, float) and not math.isfinite(v) else v
+
+
 def _decoded_checks(path: Path, info: AudioInfo, a: dict, findings: list, m: dict) -> None:
-    if a["errors"]:
-        findings.append(("integrity", "decode errors: " + "; ".join(a["errors"][:3])))
+    # Integrity. `flac -t` is the authority for FLAC (it checks the MD5 of the audio). ffmpeg also logs metadata
+    # it can't parse (a webp cover, an odd ID3 frame) and skipped junk frames as [error]: a handful with the
+    # audio all there is a warning; lost audio shows up as truncation below.
+    if a.get("flac_t"):
+        findings.append(("integrity", f"flac -t: {a['flac_t']}"))
     if a["samples"] is None or a["full_db"] is None:
-        if not a["errors"]:
-            findings.append(("integrity", "ffmpeg decoded no audio"))
+        findings.append(("integrity", "could not decode" + (": " + "; ".join(a["errors"][:3]) if a["errors"] else " any audio")))
         return
+    if len(a["errors"]) >= MAX_DECODE_NOISE:
+        findings.append(("integrity", f"{len(a['errors'])} decode errors: " + "; ".join(a["errors"][:3])))
+    elif a["errors"]:
+        findings.append(("decode_noise", "ffmpeg reported: " + "; ".join(a["errors"][:3])))
+    if a["full_db"] == -math.inf:
+        findings.append(("integrity", "no signal: the file is digital silence"))
     sr = info.sample_rate or 44100
     m["decoded_s"] = decoded = round(a["samples"] / sr, 2)
     if info.duration_s and info.duration_s - decoded > 1.0:
         findings.append(("truncated", f"truncated: the header says {info.duration_s:.1f}s, only {decoded:.1f}s decodes"))
+    if not a.get("complete", True):
+        findings.append(("skipped", "the band analysis came back incomplete: cutoff checks skipped"))
     m["bands_db"] = {e: round(v, 1) for e, v in a["bands_db"].items()}
     m["cutoff_khz"] = cutoff = estimate_cutoff(a["full_db"], a["bands_db"])
     top = max(a["bands_db"]) if a["bands_db"] else 0
     claims_lossless = (info.codec or "") in LOSSLESS_CODECS or (info.codec or "").startswith("pcm_")
     claims_hq = claims_lossless or (m.get("kbps") or 0) >= 315
     claim = "lossless" if claims_lossless else f"{m.get('kbps')} kbps"
-    if claims_hq and cutoff <= 16:
-        findings.append(("transcode", f"cutoff ≈{cutoff} kHz (energy stops above {cutoff} kHz) for a {claim} file: "
+    where = f"cutoff ≈{cutoff} kHz (energy stops above {cutoff} kHz)" if cutoff else "nothing above 11 kHz"
+    if claims_hq and a["bands_db"] and cutoff <= 16:
+        findings.append(("transcode", f"{where} for a {claim} file: "
                                       f"lossless or 320 kbps reaches 19–20 kHz, so this likely came from ≤128 kbps"))
     elif claims_hq and cutoff <= 18 and top >= 19:
         findings.append(("maybe_lossy", f"cutoff ≈{cutoff} kHz for a {claim} file: may come from a ≤192 kbps source "

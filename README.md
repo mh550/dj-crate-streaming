@@ -100,7 +100,7 @@ phone browser ──/api/*──▶ crates.service ──Subsonic──▶ Navid
   bitDepth) against `sourcing/policy.py`. Deep checks run in `sourcing/verify.py` once we
   hold the bytes (spec §3a, `docs/download-validation.md`): one ffmpeg decode measures the
   spectral cutoff, bits used, truncation, silence and clipping, `flac -t` checks the MD5, and
-  `fpcalc` compares against a reference copy. The tier decides what is a hard failure.
+  `fpcalc` compares against a reference copy (CLI `--reference`; `fetch` doesn't pass one yet). The tier decides what is a hard failure.
   `python3 -m sourcing.cli verify <file> --tier crate [--reference old.flac]` on the host
   (the crates image has no ffmpeg); `fetch` keeps the last result per wanted row (`verify`
   in `/api/wanted`, shown in the web client).

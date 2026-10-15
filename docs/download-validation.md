@@ -4,7 +4,9 @@ A file on Soulseek is whatever someone says it is. The file name says "FLAC", "2
 inside may be a 128 kbps mp3 re-encoded as FLAC, a CD padded out to 24 bits, a rip cut off halfway, or a
 different recording that shares the title. Careful downloaders check every file by hand before it goes into
 their library. `sourcing/verify.py` does the same checks by code, and every download `fetch` makes goes
-through it.
+through it at the wanted row's tier. One exception: `fetch` doesn't yet pass the library copy as a reference, so
+the right-recording check only runs from the CLI with `--reference` (it needs the real library path, which M6's
+beets filing provides).
 
 ## What people do by hand
 
@@ -32,7 +34,7 @@ check run there warns that it skipped the audio checks. The command decodes the 
 | You'd do by hand | The code | Hard fail when |
 |---|---|---|
 | Spectrogram (Spek) | The energy above 11, 13, 15, 16, 17, 18, 19 and 20 kHz, compared with the whole signal. Music fades out gradually, but an encoder's cutoff shows as a **sudden drop of 15 dB or more** between two neighbouring bands. The estimated cutoff is the last band before that drop. | `crate`, and the file claims lossless or ≥320 kbps, but the cutoff is ≤16 kHz (it came from ≤128 kbps). A cutoff of 17–18 kHz is a warning only ("may come from ≤192 kbps"). |
-| `flac -t` | `flac -t` plus a full ffmpeg decode that must report no errors | Every tier |
+| `flac -t` | `flac -t` (the authority for FLAC) plus a full ffmpeg decode. ffmpeg also complains about things that don't affect the audio, such as a webp cover (69 of the 534 pictures in your library), an odd ID3 frame or one junk mp3 frame. A few complaints are a warning; 10 or more, audio that won't decode, or digital silence fail. | Every tier |
 | Length vs MusicBrainz | Within ±4 s of the length on the wanted record (from Spotify or MusicBrainz) | Every tier |
 | Cut-off ending | The length in the header compared with the length that actually decodes | Every tier (more than 1 s missing) |
 | First/last seconds | Silence longer than 3 s at the start or end (quieter than −60 dB) | Never: a warning |
