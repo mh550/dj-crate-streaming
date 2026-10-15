@@ -51,6 +51,16 @@ def _norm(s) -> str:
     return re.sub(r"\W+", "", str(s or "").casefold())
 
 
+def free_path(target: Path) -> Path:
+    """`target`, or "name (2).ext", "name (3).ext"…: trash never overwrites what it already holds."""
+    target, n = Path(target), 2
+    candidate = target
+    while candidate.exists():
+        candidate = target.with_name(f"{target.stem} ({n}){target.suffix}")
+        n += 1
+    return candidate
+
+
 def keep_rank(path: str, album_artist: str | None, year: int | None) -> tuple:
     """Which copy of identical audio to keep (smallest wins), after library_map._copy_rank's rules
     (no beets ".1", not Compilations/Singles/_): the copy filed under its own album artist (a folder
@@ -169,9 +179,10 @@ def trash(p: dict, music, trash_root, navidrome_db, library_map, config) -> list
         raise StillReferenced(f"{len(still)} copies are still in a playlist: run repoint, wait for the scan, then trash")
     moved = []
     for t in p["trash"]:
-        src, dst = music / t["path"], trash_root / t["path"]
+        src = music / t["path"]
         if not src.exists():
             continue
+        dst = free_path(trash_root / t["path"])
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(src, dst)
         with (trash_root / "MOVES.txt").open("a", encoding="utf-8") as log:   # logged before the next move

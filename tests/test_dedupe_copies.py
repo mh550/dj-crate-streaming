@@ -136,3 +136,25 @@ def test_trash_refuses_while_referenced_then_moves_logs_and_updates_the_map(worl
 ])
 def test_keep_rank_prefers_the_properly_filed_copy(keep, other):
     assert dc.keep_rank(*keep) < dc.keep_rank(*other)
+
+
+def test_trash_never_overwrites_what_is_already_there(tmp_path):
+    # Live 2026-10-15: M2's repair had kept damaged copies at the same trash paths; 18 were overwritten.
+    trash = tmp_path / "trash"
+    (trash / "A").mkdir(parents=True)
+    (trash / "A/x.flac").write_text("older")
+    t = dc.free_path(trash / "A/x.flac")
+    assert t == trash / "A/x (2).flac"
+    t.write_text("newer")
+    assert dc.free_path(trash / "A/x.flac") == trash / "A/x (3).flac" and (trash / "A/x.flac").read_text() == "older"
+
+
+def test_restore_keeps_an_existing_trash_copy(tmp_path):
+    from mutagen.flac import FLAC
+    from scripts import tag_repair as trp
+    original, current = tmp_path / "orig/x.flac", tmp_path / "music/A/x.flac"
+    _audio(original); current.parent.mkdir(parents=True); current.write_bytes(original.read_bytes())
+    (tmp_path / "trash/A").mkdir(parents=True); (tmp_path / "trash/A/x.flac").write_text("already here")
+    entry = {"path_before": str(current), "before": {"title": ""}, "after": {"title": "T"}}
+    trp.restore(entry, original, music_root=tmp_path / "music", trash_root=tmp_path / "trash")
+    assert (tmp_path / "trash/A/x.flac").read_text() == "already here" and (tmp_path / "trash/A/x (2).flac").is_file()

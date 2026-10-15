@@ -21,10 +21,12 @@ from contextlib import closing
 from pathlib import Path
 
 try:
-    from scripts.export_playlists import open_ro                         # python3 -m scripts.tag_repair
+    from scripts.dedupe_copies import free_path                          # python3 -m scripts.tag_repair
+    from scripts.export_playlists import open_ro
     from scripts.library_map import audio_md5, read_csv
     from scripts.tag_cleanup import DEFAULT_MANIFEST, REPO, MediaFile, _norm, _save_manifest, write_minimal
 except ImportError:                                                      # python3 scripts/tag_repair.py
+    from dedupe_copies import free_path
     from export_playlists import open_ro
     from library_map import audio_md5, read_csv
     from tag_cleanup import DEFAULT_MANIFEST, REPO, MediaFile, _norm, _save_manifest, write_minimal
@@ -40,7 +42,7 @@ def restore(entry: dict, original, music_root, trash_root) -> None:
     changes = {k: v for k, v in entry["after"].items() if entry["before"].get(k) != v}
     if changes:
         write_minimal(tmp, changes)
-    kept = Path(trash_root) / cur.relative_to(music_root)
+    kept = free_path(Path(trash_root) / cur.relative_to(music_root))
     kept.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(cur, kept)
     os.replace(tmp, cur)
