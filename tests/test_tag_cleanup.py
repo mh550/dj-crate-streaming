@@ -22,6 +22,7 @@ FILES = {   # relative path → tags as the downloaders left them (what Navidrom
     f"{PSC}/00 - September - Ostavi Trag.mp3": dict(title="September - Ostavi Trag", artist="", albumartist="", album="", year=0, track=0),
     f"{PSC}/04 - 122 - Wendell Harrison - Peace Of Mind.mp3.mp3": dict(title="122 - Wendell Harrison - Peace Of Mind.mp3",
                                                 artist="122 - Wendell Harrison - Peace Of Mind.mp3", albumartist="", album="Organic Dream", year=1981, track=4),
+    f"{PSC}/08 - The Jacksons.mp3": dict(title="The Jacksons", artist="08", albumartist="", album="Le Top De La Disco", year=1989, track=8),
     "Prince/Graffiti (1987)/01 - Baby's Gone - Remastered 1999.flac": dict(title="Baby's Gone - Remastered 1999", artist="Prince",
                                                 albumartist="Prince", album="Graffiti", year=1987, track=1),
 }
@@ -78,8 +79,10 @@ def test_plan_reports_every_change_and_touches_nothing(lib, tmp_path):
     text = report.read_text(encoding="utf-8")
     for want in ("Pepe Link/Balearic Biscuits, Vol. 4 (2024)/16 - Vem Menina.mp3", "September/Singles/Ostavi Trag.mp3",
                  "Wendell Harrison/Organic Dream (1981)/04 - Peace Of Mind.mp3", "Prince/Graffiti (1987)/01 - Baby's Gone.flac",
-                 "version: Remastered 1999", "| junk, compilation |", "| split, compilation |", "| prefix, compilation |"):
+                 "version: Remastered 1999", "| junk, compilation |", "| split, compilation |", "| prefix, compilation |",
+                 "## Left in Compilations", f"{PSC}/08 - The Jacksons.mp3"):
         assert want in text, want
+    assert p.left == [f"{PSC}/08 - The Jacksons.mp3"]
     assert p.moves == 4 and p.collisions == [] and p.counts["compilation"] == 3 and p.counts["remaster"] == 1
 
 
@@ -92,6 +95,7 @@ def test_retag_writes_tags_in_place_and_is_idempotent(lib):
     m = MediaFile(str(music / "Prince/Graffiti (1987)/01 - Baby's Gone - Remastered 1999.flac"))
     assert m.title == "Baby's Gone" and "version: Remastered 1999" in m.comments
     assert all((music / rel).exists() for rel in FILES)                    # nothing moved in pass 1
+    assert MediaFile(str(music / f"{PSC}/08 - The Jacksons.mp3")).artist == "08"   # not touched
     entries = json.loads(manifest.read_text())
     assert len(entries) == 4 and all(e["path_before"] and e["after"] for e in entries)
     assert (state / "library.db.bak-tag-cleanup").exists()
@@ -126,6 +130,6 @@ def test_move_refuses_until_navidrome_has_scanned_pass_one_then_moves(lib, tmp_p
     assert (music / "Pepe Link/Balearic Biscuits, Vol. 4 (2024)/16 - Vem Menina.mp3").is_file()
     assert (music / "September/Singles/Ostavi Trag.mp3").is_file()
     assert (music / "Prince/Graffiti (1987)/01 - Baby's Gone.flac").is_file()
-    assert not (music / PSC).exists()                                       # emptied folder pruned
+    assert [x.name for x in (music / PSC).iterdir()] == ["08 - The Jacksons.mp3"]   # no usable artist: stays put
     assert all(e.get("path_after") for e in json.loads(manifest.read_text()))
     assert tc.move(cfg, manifest, fresh) == []                              # already moved: no-op

@@ -34,9 +34,9 @@ from beets import config as beets_config, ui as beets_ui                # noqa: 
 from beets.util import displayable_path                                 # noqa: E402
 
 try:
-    from scripts.tag_rules import clean                                  # python3 -m scripts.tag_cleanup
+    from scripts.tag_rules import clean, usable_artist                   # python3 -m scripts.tag_cleanup
 except ImportError:                                                      # python3 scripts/tag_cleanup.py
-    from tag_rules import clean
+    from tag_rules import clean, usable_artist
 
 REPO = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG = REPO / "deploy" / "beets.yaml"
@@ -79,7 +79,8 @@ def _needs_regroup(lib, item) -> bool:
     return album is None or album.albumartist != item.albumartist or album.album != item.album or bool(album.comp)
 
 
-def _scan(lib) -> list[Record]:
+def _scan(lib, left: list | None = None) -> list[Record]:
+    """Records for every item that changes; `left` collects Compilations files with no usable artist."""
     comp_root = os.path.join(lib.directory, b"Compilations") + b"/"
     out = []
     for item in lib.items():
@@ -89,6 +90,10 @@ def _scan(lib) -> list[Record]:
         in_comp = path.startswith(comp_root)
         changes, rules = clean(dict(before, in_compilations=in_comp))
         item.update(changes)
+        if in_comp and not usable_artist(item.artist):
+            in_comp = False                                              # nothing to file it under: stays where it is
+            if left is not None:
+                left.append(_rel(lib, path))
         if changes or (in_comp and _needs_regroup(lib, item)):
             out.append(Record(item, path, before, changes, rules or ["regroup"], in_comp))
     return out
@@ -126,6 +131,7 @@ class Plan:
     counts: Counter = field(default_factory=Counter)
     moves: int = 0
     collisions: list[str] = field(default_factory=list)
+    left: list[str] = field(default_factory=list)       # Compilations files with no usable artist tag
 
 
 def plan(config_path, report_path) -> Plan:
@@ -135,9 +141,9 @@ def plan(config_path, report_path) -> Plan:
         shutil.copy2(displayable_path(real.path), tmp / "library.db")
         real._close()
         lib = open_lib(config_path, library=tmp / "library.db")
-        recs = _scan(lib)
-        _apply(lib, recs, write=False)
         result, rows, moves, seen = Plan(), [], [], Counter()
+        recs = _scan(lib, result.left)
+        _apply(lib, recs, write=False)
         for r in recs:
             result.counts.update(r.rules)
             dest = r.item.destination()
@@ -167,6 +173,8 @@ def _write_report(path: Path, lib, result: Plan, rows: list[str], moves: list) -
           "## Moves", "", "| from | to |", "|---|---|", *[f"| {_rel(lib, a)} | {_rel(lib, b)} |" for a, b in moves], ""]
     if result.collisions:
         md += ["## Collisions (skipped by `move`)", "", *[f"- {c}" for c in result.collisions], ""]
+    if result.left:
+        md += ["## Left in Compilations (no usable artist tag: a person has to look)", "", *[f"- {c}" for c in result.left], ""]
     path.write_text("\n".join(md), encoding="utf-8")
 
 

@@ -51,7 +51,10 @@ def test_compilation_files_get_their_own_album_artist():
     junk = "122 - Wendell Harrison - Peace Of Mind.mp3"
     new, _ = tr.clean(f(title=junk, artist=junk, albumartist="Various Artists", comp=True, in_compilations=True))
     assert new["albumartist"] == "Wendell Harrison"                                       # uses the cleaned artist
-    assert tr.clean(f(title="x", artist="", comp=True, in_compilations=True))[0] == {"comp": False}   # no artist to promote
+    for junk_artist in ("", "08", "[Unknown Artist]"):                      # nothing usable to file it under: left as is
+        assert tr.clean(f(title="The Jacksons", artist=junk_artist, comp=True, in_compilations=True)) == ({}, []), junk_artist
+    assert tr.clean(f(title="In da Club", artist="50 Cent", comp=True, in_compilations=True))[0]["albumartist"] == "50 Cent"
+    assert tr.usable_artist("50 Cent") and not tr.usable_artist("12") and not tr.usable_artist(" ")
 
 
 def test_clean_is_idempotent():

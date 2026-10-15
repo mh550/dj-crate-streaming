@@ -8,7 +8,7 @@
   prefix       "Pepe Link - Vem Menina" by Pepe Link
   remaster     " - Remastered 1999", " - 2012 Remaster" … → title; the suffix goes to comments as "version: …"
   compilation  a file under Compilations/ gets albumartist = artist, comp off (Michael's folders are
-               not Various-Artists albums)
+               not Various-Artists albums); a file with no usable artist ("", "08") is left as is
 
 Left alone on purpose: " - Live" (a different recording; D14 default), mixes, edits, demos,
 "Title - Artist" suffixes (could be a featured artist or a label: not ours to guess).
@@ -26,6 +26,11 @@ _REMASTER = re.compile(r"^(?P<title>.*?)\s+-\s+(?P<version>(\d{4}\s+)?(digital(l
 
 def _blank(s: str | None) -> bool:
     return (s or "").strip().casefold() in PLACEHOLDERS
+
+
+def usable_artist(artist: str | None) -> bool:
+    """Something a file can be filed under: not blank, not a placeholder, not a bare track number ("08")."""
+    return not _blank(artist) and not re.fullmatch(r"\d+", (artist or "").strip())
 
 
 def _same(a: str, b: str) -> bool:
@@ -59,9 +64,9 @@ def clean(fields: dict) -> tuple[dict, list[str]]:
         fire("remaster", title=m["title"].strip(),
              comments=(comments + "\n" if comments else "") + f"version: {m['version'].strip()}")
 
-    if f.get("in_compilations"):
+    if f.get("in_compilations") and usable_artist(f.get("artist")):      # else: left for a person (report lists it)
         changes = {}
-        if not _blank(f.get("artist")) and f.get("albumartist") != f["artist"]:
+        if f.get("albumartist") != f["artist"]:
             changes["albumartist"] = f["artist"]
         if f.get("comp"):
             changes["comp"] = False
