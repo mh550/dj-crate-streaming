@@ -118,3 +118,28 @@ def test_unknown_tier_is_an_error(tmp_path):
     from tests.helpers import make_flac
     with pytest.raises(ValueError):
         V.verify(make_flac(tmp_path / "d.flac"), None, tier="ultra")
+
+
+@needs_ffmpeg
+def test_tools_never_read_our_stdin(audio, monkeypatch):
+    # live M5 run: ffmpeg read stdin and swallowed the rest of a `while read` file list
+    import subprocess
+    calls, real = [], subprocess.run
+
+    def spy(cmd, **kw):
+        calls.append((cmd[0], kw.get("stdin"), "-nostdin" in cmd))
+        return real(cmd, **kw)
+    monkeypatch.setattr(V.subprocess, "run", spy)
+    V.verify(audio["true"], 8, tier="crate", reference=audio["true"])
+    assert {c[0] for c in calls} >= {"ffmpeg", "flac", "fpcalc"}
+    assert all(stdin == subprocess.DEVNULL for _, stdin, _ in calls), calls
+    assert all(nostdin for name, _, nostdin in calls if name == "ffmpeg")
+
+
+def test_a_peak_of_exactly_0_dbfs_counts_as_clipping():
+    # live M5 run: Herb Alpert "Aranjuez" peaks at 0.00 dBFS with flat factor 23.8 and was missed (0.0 is falsy)
+    a = {"errors": [], "samples": 44100 * 8, "full_db": -12.0, "bands_db": {20: -60.0}, "bits_used": 16,
+         "peak_db": 0.0, "flat_factor": 23.8, "silences": []}
+    findings, m = [], {}
+    V._decoded_checks(None, V.AudioInfo(8.0, 44100, 16, 2, "flac", "flac-streaminfo"), a, findings, m)
+    assert ("clipping", "clipped: peak 0.00 dBFS, flat factor 23.8") in findings

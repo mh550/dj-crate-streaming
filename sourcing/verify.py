@@ -63,7 +63,7 @@ def ffprobe(path: Path) -> AudioInfo | None:
         return None
     try:
         out = subprocess.run(["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", "-show_format", str(path)],
-                             capture_output=True, text=True, timeout=30).stdout
+                             stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30).stdout
         d = json.loads(out)
         a = next((s for s in d.get("streams", []) if s.get("codec_type") == "audio"), {})
         dur = float(d.get("format", {}).get("duration") or a.get("duration") or 0) or None
@@ -168,23 +168,23 @@ def analyse(path: Path, sample_rate: int | None) -> dict:
         chains.append(f"[x{i}]firequalizer=gain='if(gte(f,{e * 1000}),0,-120)':delay=0.02:accuracy=20,"
                       f"astats=measure_perchannel=none[o{i}]")
     graph = f"asplit={n}" + "".join(f"[x{i}]" for i in range(n)) + ";" + ";".join(chains)
-    cmd = ["ffmpeg", "-hide_banner", "-nostats", "-loglevel", "level+info", "-i", str(path), "-filter_complex", graph]
+    cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-nostats", "-loglevel", "level+info", "-i", str(path), "-filter_complex", graph]
     for i in range(n):
         cmd += ["-map", f"[o{i}]", "-f", "null", "-"]
-    run = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    run = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=600)
     m = parse_ffmpeg(run.stderr, edges)
     if run.returncode and not m["errors"]:
         m["errors"] = [run.stderr.strip().splitlines()[-1] if run.stderr.strip() else f"ffmpeg exit {run.returncode}"]
     if path.suffix.lower() == ".flac" and shutil.which("flac"):
-        t = subprocess.run(["flac", "-t", "-s", str(path)], capture_output=True, text=True, timeout=600)
+        t = subprocess.run(["flac", "-t", "-s", str(path)], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=600)
         if t.returncode:
             m["errors"].append("flac -t: " + (t.stderr.strip().splitlines() or ["failed"])[-1].strip())
     return m
 
 
 def fingerprint(path: Path) -> list[int] | None:
-    run = subprocess.run(["fpcalc", "-raw", "-json", "-length", "120", str(path)], capture_output=True, text=True,
-                         timeout=300)
+    run = subprocess.run(["fpcalc", "-raw", "-json", "-length", "120", str(path)], stdin=subprocess.DEVNULL,
+                         capture_output=True, text=True, timeout=300)
     try:
         return json.loads(run.stdout)["fingerprint"]
     except (ValueError, KeyError):
@@ -288,7 +288,7 @@ def _decoded_checks(path: Path, info: AudioInfo, a: dict, findings: list, m: dic
     if claims_lossless and (info.bit_depth or 0) > 16 and a["bits_used"] and a["bits_used"] <= 16:
         findings.append(("fake_24bit", f"{info.bit_depth}-bit file uses only {a['bits_used']} bits: padded from 16-bit"))
     m["peak_db"], m["flat_factor"] = a["peak_db"], a["flat_factor"]
-    if (a["peak_db"] or -99) >= -0.1 and (a["flat_factor"] or 0) >= 1.0:
+    if a["peak_db"] is not None and a["peak_db"] >= -0.1 and (a["flat_factor"] or 0) >= 1.0:
         findings.append(("clipping", f"clipped: peak {a['peak_db']:.2f} dBFS, flat factor {a['flat_factor']:.1f}"))
     for start, end in a["silences"]:
         if start <= 0.05:
