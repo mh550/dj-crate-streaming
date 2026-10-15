@@ -241,6 +241,9 @@ def verify(path: Path, expected_duration_s: float | None = None, tier: str | Non
                                     "truncation, silence, clipping)"))
     else:
         _decoded_checks(path, info, analyse(path, info.sample_rate), findings, m)
+        if m.get("bands_db") and m["cutoff_khz"] == max(m["bands_db"]):   # the measured spectrum outranks the
+            findings[:] = [("low_kbps", f"{msg}, but the full spectrum is there: quiet or simple material")
+                           if check == "implied_kbps" else (check, msg) for check, msg in findings]   # size guess
     if reference is not None:
         if not shutil.which("fpcalc"):
             findings.append(("skipped", "fpcalc not on PATH: recording check skipped"))
