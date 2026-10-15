@@ -198,8 +198,12 @@ def retag(config_path, manifest_path) -> int:
     return len(recs)
 
 
+_ND_PLACEHOLDERS = {"unknownalbum", "unknownartist"}      # how Navidrome 0.64 shows an empty album/artist tag
+
+
 def _norm(s) -> str:
-    return re.sub(r"\W+", "", str(s or "").casefold())
+    n = re.sub(r"\W+", "", str(s or "").casefold())
+    return "" if n in _ND_PLACEHOLDERS else n
 
 
 def _scanned(row, after: dict) -> bool:

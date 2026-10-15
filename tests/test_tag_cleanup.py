@@ -123,8 +123,10 @@ def test_move_refuses_until_navidrome_has_scanned_pass_one_then_moves(lib, tmp_p
     assert "4 of 4" in str(err.value)
     assert all((music / rel).exists() for rel in FILES)
     stale.unlink()
-    fresh = _navidrome(tmp_path, music, [(str(i), str(Path(e["path_before"]).relative_to(music)), e["after"]["title"], e["after"]["artist"],
-                                          e["after"]["albumartist"], e["after"]["album"]) for i, e in enumerate(entries)])
+    # Like live Navidrome 0.64 (2026-10-15): an empty album tag reads "[Unknown Album]", an empty artist "[Unknown Artist]".
+    fresh = _navidrome(tmp_path, music, [(str(i), str(Path(e["path_before"]).relative_to(music)), e["after"]["title"],
+                                          e["after"]["artist"] or "[Unknown Artist]", e["after"]["albumartist"] or e["after"]["artist"],
+                                          e["after"]["album"] or "[Unknown Album]") for i, e in enumerate(entries)])
     moved = tc.move(cfg, manifest, fresh)
     assert len(moved) == 4
     assert (music / "Pepe Link/Balearic Biscuits, Vol. 4 (2024)/16 - Vem Menina.mp3").is_file()
