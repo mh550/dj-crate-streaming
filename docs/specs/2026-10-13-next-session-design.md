@@ -63,6 +63,9 @@ turns §7 into `docs/plans/` plans (writing-plans → executing-plans), bounded 
 | D9 | Quality tiers are **sourcing tiers** (what the Soulseek getter chooses), with the stream transcode following the same name. Definitions in §1. | Michael |
 | D11 | **Playlists come from Spotify, not from folders.** The 35 folder playlists are a stopgap "quick genre reclassification"; the real playlists are Michael's Spotify playlists. Selected ones are ported into Navidrome (and so into the crate UI) and can be toggled to crates. Folder playlists stay until the Spotify ones replace them. | Michael |
 | D10 | A low-tier file is **provisional**: when a crate claims the track or Michael raises the tier, the better file replaces it and the old one goes to `/srv/_trash/` (never auto-emptied). Michael asked whether to *keep* the low copy as a streaming option; recommendation is no: Navidrome transcodes every stream tier from the best file on hand and caches the result (3 GB cache), so a 64 kbps source can only make streams worse, while a second copy confuses playlists, dedupe and the Soulseek share (sharing upscales is bad etiquette). The trash folder is the "keep it just in case". | *recommended default*, Michael undecided |
+| D13 | **A track Michael removes from an imported playlist stays removed** when the import is re-run (`imported_entries` remembers what the importer added). Question for Michael: keep that, or re-add removed tracks? | *default* (2026-10-14) |
+| D14 | **" - Live" stays in titles** during the tag cleanup (spec §3 said strip it with the remaster suffixes; for a DJ a live take is a different recording, and the title is where Amperfy shows it). Remaster suffixes are stripped into comments as `version: …`. Question for Michael: strip " - Live" too? | *default* (2026-10-15) |
+| D15 | **Wanted rows from Spotify imports and seeds are sourced at tier `crate`** unless the command says `--tier` (today's behaviour; §1 says listening playlists may use low/medium/high). The web client streams at `crate` (the original file) until you pick a tier. Question for Michael: source imported playlists at `high` by default instead? | *default* (2026-10-15) |
 | D12 | **Branch policy:** `overnight/2026-10-13` was merged into `main` in both repos on 2026-10-13 evening. Every overnight run branches from `main`, and the review conversation after a run ends by merging that run's branch into `main` before any new branch is cut. | Michael |
 
 ---
@@ -153,7 +156,8 @@ crate then works through the existing mechanism (every entry gets the crate tier
 Acceptance: `import-playlist` on the perfect-songs report yields a Navidrome playlist
 with ≥ 100 matched entries in report order and the unmatched ones as wanted rows with
 positions; running it twice changes nothing; a fake-server test covers URL, CSV and
-report inputs.
+report inputs. **Implemented 2026-10-13** (`sourcing/playlist_sources.py`,
+`sourcing/import_playlist.py`, `sourcing.cli import-playlist`, `crates.cli publish`).
 
 ## 3. Naming convention and name reconciliation (D5)
 

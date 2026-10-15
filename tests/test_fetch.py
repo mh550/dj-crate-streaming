@@ -7,6 +7,7 @@ from crates.store import CrateStore
 from sourcing.fake_slskd import FakeSlskdServer
 from sourcing.fetch import fetch
 from sourcing.slskd_client import SlskdClient
+from sourcing.verify import verify
 from subsonic.client import SubsonicClient
 from subsonic.fake_server import FakeSubsonicServer
 from tests.helpers import load_responses, make_flac
@@ -45,7 +46,14 @@ def world(tmp_path):
         yield dict(nd=nd, store=store, client=client, rec=rec, music=tmp_path / "music", dl=tmp_path / "dl")
 
 
+def header_only(path, duration, tier=None, reference=None):
+    """These downloads are synthetic header-only FLACs (no frames), so they can't be decoded: check headers only,
+    as fetch did before M5. Decoded verification by tier has its own tests (test_verify_*)."""
+    return verify(path, duration)
+
+
 def run(world, srv, approve, wanted_id="s4", **kw):
+    kw.setdefault("verifier", header_only)
     return fetch(wanted_id, store=world["store"], slskd=SlskdClient(srv.url, "k"), navidrome=world["client"],
                  reconciler=world["rec"], music_root=world["music"], downloads_root=world["dl"],
                  approve=approve, poll_s=0.01, download_timeout_s=kw.pop("download_timeout_s", 1),

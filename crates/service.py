@@ -24,9 +24,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from sourcing.policy import DEFAULT_POLICY, QualityPolicy
+from sourcing.policy import DEFAULT_POLICY, STREAM, QualityPolicy, check_tier
 from subsonic.client import SubsonicClient, SubsonicError
 from .reconcile import Reconciler
+from . import trash
 from .store import CrateStore
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
@@ -44,6 +45,7 @@ class Config:
     db_path: str = "data/crates.db"
     bind: str = "127.0.0.1"
     port: int = 4580
+    trash_dir: str | None = None          # read-only view of /srv/docker/_trash (status reports it)
 
     @classmethod
     def from_env(cls, **overrides) -> "Config":
@@ -56,6 +58,7 @@ class Config:
             db_path=env.get("CRATES_DB", "data/crates.db"),
             bind=env.get("CRATES_BIND", "127.0.0.1"),
             port=int(env.get("CRATES_PORT", "4580")),
+            trash_dir=env.get("CRATES_TRASH") or None,
         )
         for k, v in overrides.items():
             if v is not None:
@@ -85,6 +88,7 @@ class CrateApp:
                 "user": self.cfg.username, "serverType": info.get("type"), "serverVersion": info.get("serverVersion"),
                 "openSubsonic": info.get("openSubsonic"), "crates": len(self.store.all(enabled_only=True)),
                 "wanted": len(self.store.wanted()),
+                "trash": trash.summary(self.cfg.trash_dir),
                 "policy": {"preferred": self.policy.preferred, "allow": self.policy.allow, "deny": self.policy.deny,
                            "minLossyBitrate": self.policy.min_lossy_bitrate}}
 
@@ -218,7 +222,13 @@ def make_handler(app: CrateApp):
                     return self._json(app.store.events(int(q.get("limit", 50))))
                 if head == "search":
                     return self._json(app.search(q.get("q", ""), int(q.get("count", 25))))
+                if head == "stream-tier":
+                    return self._json({"tier": app.store.stream_tier(),
+                                       "tiers": {t: {"format": f, "maxBitRate": b} for t, (f, b) in STREAM.items()}})
                 if head == "stream" and len(p) == 2:
+                    if "tier" in q:                                  # spec §1: the stream follows the tier's name
+                        fmt, mbr = STREAM[check_tier(q["tier"])]
+                        return self._redirect(app.stream_url(p[1], mbr, fmt))
                     mbr = q.get("maxBitRate")
                     return self._redirect(app.stream_url(p[1], int(mbr) if mbr else None, q.get("format")))
                 if head == "download" and len(p) == 2:
@@ -236,6 +246,9 @@ def make_handler(app: CrateApp):
                     return self._json(app.create_playlist(body["name"], list(body.get("songIds", [])), bool(body.get("crate", False))), 201)
                 if head == "reconcile":
                     return self._json(app.reconcile())
+                if head == "stream-tier":
+                    app.store.set_stream_tier(str(body.get("tier")))
+                    return self._json({"tier": app.store.stream_tier()})
             return self._json({"error": "not found"}, 404)
 
         def do_GET(self):

@@ -27,7 +27,7 @@ from crates.reconcile import Reconciler
 from crates.store import CrateStore
 from subsonic.client import SubsonicClient
 from .organize import file_into
-from .policy import DEFAULT_POLICY, QualityPolicy
+from .policy import DEFAULT_TIER, TIERS, QualityPolicy, check_tier
 from .scorer import Candidate, Wanted, explain, rank
 from .slskd_client import SlskdClient, transfer_files
 from .verify import verify
@@ -58,13 +58,24 @@ def _find_landed(downloads_root: Path, best: Candidate) -> Path | None:
 
 def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: SubsonicClient,
           reconciler: Reconciler, music_root: Path, downloads_root: Path, approve: bool,
-          policy: QualityPolicy = DEFAULT_POLICY, download_timeout_s: float = 600, poll_s: float = 1.0,
-          scan_timeout_s: float = 120) -> FetchResult:
+          tier: str | None = None, policy: QualityPolicy | None = None, download_timeout_s: float = 600, poll_s: float = 1.0,
+          scan_timeout_s: float = 120, verifier=verify) -> FetchResult:
     music_root, downloads_root = Path(music_root), Path(downloads_root)
     row = store.find_wanted(wanted_id)
     if row is None:
         return FetchResult("missing", f"{wanted_id} is not in any enabled crate or the external queue")
     external = bool(row.get("external"))
+    if tier is not None and check_tier(tier) != row["tier"]:     # spec §1: a crate track is sourced at crate
+        if not external:
+            return FetchResult("refused", f"{wanted_id} is in a crate, and a crate track is sourced at tier {DEFAULT_TIER}")
+        store.set_external_tier(wanted_id, tier); store.commit()
+        row["tier"] = tier
+    if approve:      # before any search: e.g. inside the crates container the file would land where we can't file it
+        missing = [str(d) for d in (music_root, downloads_root) if not (d.is_dir() or d.parent.is_dir())]
+        if missing:
+            return FetchResult("refused", f"not downloading: {', '.join(missing)} not here (run --approve where the "
+                               "library and slskd's downloads are mounted)")
+    policy = policy or TIERS[row["tier"]]
 
     def set_status(status: str, reason: str | None = None) -> None:
         store.set_wanted_status(wanted_id, status, reason)
@@ -111,6 +122,8 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
     status = row.get("status")
     if status == "ok":
         return FetchResult("ok", "already ok; nothing to do")
+    if status == "review":                                       # import-playlist: several library versions fit
+        return FetchResult("review", f"needs a pick first ({row.get('reason')}); nothing searched")
     if status == "verify":
         m = _FILED.search(row.get("reason") or "")
         if m and (music_root / m.group(1)).exists():
@@ -155,7 +168,8 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
                 continue
             return fail(why, best, text)
 
-        vd = verify(landed, wanted.duration_s)                  # still `sourcing`: the bytes aren't ours yet
+        vd = verifier(landed, wanted.duration_s, tier=row["tier"])          # still `sourcing`: not ours yet
+        store.set_verification(wanted_id, vd.as_dict(row["tier"]) | {"file": landed.name})
         if not vd.ok:
             landed.unlink(missing_ok=True)                      # our own download, not library material
             return fail("; ".join(vd.problems), best, text)

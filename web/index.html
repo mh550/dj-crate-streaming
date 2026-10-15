@@ -63,12 +63,11 @@
     <div id="np-title" class="np-title">—</div>
     <div id="np-sub" class="muted"></div>
   </div>
-  <select id="quality" title="How Navidrome should send this stream to this device">
-    <option value="">player default</option>
-    <option value="opus:96">opus 96k</option>
-    <option value="opus:160">opus 160k</option>
-    <option value="mp3:320">mp3 320k</option>
-    <option value="raw">original (raw)</option>
+  <select id="quality" title="Stream tier: how Navidrome sends audio to this app (saved on the server)">
+    <option value="low">low · opus 64k</option>
+    <option value="medium">medium · opus 96k</option>
+    <option value="high">high · opus 160k</option>
+    <option value="crate" selected>crate · original</option>
   </select>
   <audio id="audio" controls preload="none"></audio>
 </footer>

@@ -1,0 +1,67 @@
+{
+ "name": "Earth, Wind & Fire",
+ "type": "artist",
+ "uri": "spotify:artist:4QQgXkCYTt3BlENzhyNETg",
+ "trackList": [
+  {
+   "title": "September",
+   "subtitle": "Earth, Wind & Fire",
+   "duration": 216022,
+   "uri": "spotify:track:3kXoKlD84c6OmIcOLfrfEs"
+  },
+  {
+   "title": "Let's Groove",
+   "subtitle": "Earth, Wind & Fire",
+   "duration": 339018,
+   "uri": "spotify:track:3koCCeSaVUyrRo3N2gHrd8"
+  },
+  {
+   "title": "Boogie Wonderland (with The Emotions)",
+   "subtitle": "Earth, Wind & Fire, The Emotions",
+   "duration": 288408,
+   "uri": "spotify:track:6ztstiyZL6FXzh4aG46ZPD"
+  },
+  {
+   "title": "After the Love Has Gone",
+   "subtitle": "Earth, Wind & Fire",
+   "duration": 278001,
+   "uri": "spotify:track:3cfnGXJ9bmiWvFqEO6ff8B"
+  },
+  {
+   "title": "Fantasy - Single Version",
+   "subtitle": "Earth, Wind & Fire",
+   "duration": 225501,
+   "uri": "spotify:track:0Eq4BMgsdV6DkLSJfX8eBt"
+  },
+  {
+   "title": "Shining Star",
+   "subtitle": "Earth, Wind & Fire",
+   "duration": 170212,
+   "uri": "spotify:track:0RgcOUQg4qYAEt9RIdf3oB"
+  },
+  {
+   "title": "Fantasy",
+   "subtitle": "Earth, Wind & Fire",
+   "duration": 277797,
+   "uri": "spotify:track:2GH5jo15wbTv1Ll7zXEzSg"
+  },
+  {
+   "title": "Can't Let Go",
+   "subtitle": "Earth, Wind & Fire",
+   "duration": 208408,
+   "uri": "spotify:track:6a44RET0b0enJMb5PVQlr8"
+  },
+  {
+   "title": "Reasons",
+   "subtitle": "Earth, Wind & Fire",
+   "duration": 299363,
+   "uri": "spotify:track:1srD2uc11TcQiOmHHrJp8M"
+  },
+  {
+   "title": "That's the Way of the World",
+   "subtitle": "Earth, Wind & Fire",
+   "duration": 345220,
+   "uri": "spotify:track:4BNhasx75KbS10jHq3VZTz"
+  }
+ ]
+}

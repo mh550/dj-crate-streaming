@@ -85,3 +85,22 @@ def test_extensions(srv):
     assert c.supports("transcodeOffset") and not c.supports("apiKeyAuthentication")
     assert SubsonicClient(srv.url, "nobody", "nothing").extensions()   # reachable without valid credentials
     assert "/rest/ping.view?" in c.url("ping")
+
+
+def test_fake_omits_public_when_false_like_navidrome():
+    # fixtures/navidrome_playlist_song_search3.sample.json: getPlaylists entries have no "public" key when not public
+    from subsonic.fake_server import FakeState
+    st = FakeState()
+    d = st.playlist_json(st.playlists["pl-1"], False)
+    assert "public" not in d
+    st.playlists["pl-1"]["public"] = True
+    assert st.playlist_json(st.playlists["pl-1"], False)["public"] is True
+
+
+def test_fake_search3_folds_accents_and_punctuation():
+    with FakeSubsonicServer() as srv:
+        srv.state.songs["s9"] = dict(srv.state.songs["s1"], id="s9", title="Catendé - Live", artist="Vinícius de Moraes • Maria Creuza", duration=302)
+        c = SubsonicClient(srv.url, "demo", "demo")
+        assert [s.id for s in c.search_songs("Catende Live Vinicius de Moraes")] == ["s9"]
+        assert [s.id for s in c.search_songs("Earth, Wind & Fire good times")] == []
+        assert [s.id for s in c.search_songs("chic good-times")] == ["s1"]

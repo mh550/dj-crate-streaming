@@ -108,3 +108,21 @@ def test_navidrome_down_is_502():
     cfg = Config(subsonic_url="http://127.0.0.1:1", username="x", password="y", db_path=":memory:", port=0)
     with CrateServer(CrateApp(cfg, store=CrateStore())) as srv:
         assert get(srv.url + "/api/status")[0] == 502
+
+
+def test_status_reports_trash(tmp_path):
+    from crates.service import Config, CrateApp
+    (tmp_path / "2026-10-15").mkdir(); (tmp_path / "2026-10-15/x.flac").write_bytes(b"0" * 5)
+    with FakeSubsonicServer() as fake:
+        cfg = Config(subsonic_url=fake.url, username="demo", password="demo", db_path=":memory:", port=0, trash_dir=str(tmp_path))
+        st = CrateApp(cfg, store=CrateStore()).status()
+    assert st["trash"]["files"] == 1 and st["trash"]["oldest"] == "2026-10-15"
+    with FakeSubsonicServer() as fake:
+        cfg = Config(subsonic_url=fake.url, username="demo", password="demo", db_path=":memory:", port=0)
+        assert CrateApp(cfg, store=CrateStore()).status()["trash"] == {"mounted": False}
+
+
+def test_config_reads_crates_trash(monkeypatch):
+    from crates.service import Config
+    monkeypatch.setenv("CRATES_TRASH", "/trash")
+    assert Config.from_env().trash_dir == "/trash"

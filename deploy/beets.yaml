@@ -1,6 +1,12 @@
 # beets config for the one-time library import (and later sourcing hand-offs).
 #   beet -c ~/projects/dj-crate-streaming/deploy/beets.yaml import --pretend /srv/incoming/library-import
 # State (library.db, import log) lives in /srv/docker/beets, outside the repo.
+#
+# DO NOT run `beet write` / `beet modify` / `beet import -L` with writing on this library: beets 1.6 rewrites
+# every field it knows, which collapses multi-valued GENRE/ISRC/ARTIST, garbles RELEASETYPE and adds zero
+# DISCTOTAL/TRACKTOTAL (it did, 2026-10-15; repaired from the originals). Tag edits go through
+# scripts/tag_cleanup.py's write_minimal. `beet move` is safe only after `tag_cleanup.py plan` shows what moves
+# (its "Untouched songs beets would re-file" list), and only after a Navidrome scan of any tag change.
 directory: /srv/music
 library: /srv/docker/beets/library.db
 statefile: /srv/docker/beets/state.pickle   # incremental history + resume state

@@ -1,0 +1,1959 @@
+{
+ "type": "playlist",
+ "name": "Tea tent",
+ "uri": "spotify:playlist:0wPBj1mjvAJcmr6zdaz228",
+ "id": "0wPBj1mjvAJcmr6zdaz228",
+ "title": "Tea tent",
+ "subtitle": "michaelherron7",
+ "authors": null,
+ "coverArt": {
+  "sources": [
+   {
+    "height": 640,
+    "width": 640,
+    "url": "https://mosaic.scdn.co/640/ab67616d00001e0256e3173e3c9b0a6c1715a57eab67616d00001e029a24dc1362ef55bdd9b92a1bab67616d00001e02f86ecbd17361e197921acb66ab67616d00001e02fab13dc56058ea0dfb124dc7"
+   },
+   {
+    "height": 300,
+    "width": 300,
+    "url": "https://mosaic.scdn.co/300/ab67616d00001e0256e3173e3c9b0a6c1715a57eab67616d00001e029a24dc1362ef55bdd9b92a1bab67616d00001e02f86ecbd17361e197921acb66ab67616d00001e02fab13dc56058ea0dfb124dc7"
+   },
+   {
+    "height": 60,
+    "width": 60,
+    "url": "https://mosaic.scdn.co/60/ab67616d00001e0256e3173e3c9b0a6c1715a57eab67616d00001e029a24dc1362ef55bdd9b92a1bab67616d00001e02f86ecbd17361e197921acb66ab67616d00001e02fab13dc56058ea0dfb124dc7"
+   }
+  ]
+ },
+ "releaseDate": null,
+ "duration": 0,
+ "isPlayable": true,
+ "playabilityReason": "UNKNOWN",
+ "isExplicit": false,
+ "hasVideo": false,
+ "relatedEntityUri": "spotify:playlist:0wPBj1mjvAJcmr6zdaz228",
+ "trackList": [
+  {
+   "uri": "spotify:track:4qZ1OgsTZMAgZA776w3USt",
+   "uid": "f30d371f3879b687",
+   "title": "The Weasil",
+   "subtitle": "Donald Byrd",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 540626,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/694915fb16714b46303b178105d1b321a5f2b2d9"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:3xgkfAQRGsuxbr3nAHwTpD",
+   "uid": "2c398c32cb04ebaf",
+   "title": "Morning Thoughts",
+   "subtitle": "Gil Scott-Heron",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 280666,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/160f497cd34685eec57e8721ec617a0bde82876b"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:3K4oV3E9NVN4NZBVnWBPRI",
+   "uid": "9238db14b71b60e5",
+   "title": "Ain't No Sunshine",
+   "subtitle": "Roy Ayers",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 380546,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/9a61d9fcd3b2c61206a7b0b5d320fed9ed7af32b"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:5MlR5f43dKuBkGQ7fhEfp4",
+   "uid": "96171a51f60057e9",
+   "title": "Pelle di luna - Hammond & Percussion Version",
+   "subtitle": "Piero Umiliani",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 197277,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/dc0a7aaf9ed916ef9935f0b8bc1dc9b714dc257c"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:29eLonNk3JNVWqu58cr7rq",
+   "uid": "9e60b6e51c2788c7",
+   "title": "Mahè",
+   "subtitle": "Piero Umiliani",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 162299,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/7093cff1ce69e8e34df32f34fc221e8237fb5de7"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:2jeFwhOqdeaM3PzHcRhxkp",
+   "uid": "90fc0c107bcfd8f7",
+   "title": "A Colorful Dream",
+   "subtitle": "David Bendeth",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 273182,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/deecf933fae9b5e236684197af4e078bf5278d7c"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:0Sj7zYPX2z4xHmEcYbpFjG",
+   "uid": "32b13e81e8bcd1f0",
+   "title": "Acapulco Featuring Billy Cobham",
+   "subtitle": "David Bendeth",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 282052,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/0acbbafabda49d726b4f4755437f8031aff027e4"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:5JO7lio4Kl1paH2ntHLjmz",
+   "uid": "600df09367fde894",
+   "title": "Together at Last",
+   "subtitle": "Ruby Rushton",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 101330,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/f44090c1464b2be8d252e3c3910d5d85f62ada88"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:1tOaKNDYsx3YoWThbOCvVx",
+   "uid": "af68fba56e54d667",
+   "title": "Samba Cantina",
+   "subtitle": "Paul Desmond",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 342026,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/8f59b69b4b10e03c04a7837a4fb2190f5fc40ffe"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:0RHlHLGbKOQJuYmlajKyab",
+   "uid": "169efce2cbc2eae1",
+   "title": "Something in My Soul",
+   "subtitle": "Diggs Duke",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 104000,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/faae99db8cd2d7382ecfa0fb6ea8cc369bb4489c"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:2MUsTTGSu6IGcfCLHdtZfM",
+   "uid": "cad63c5313d985fc",
+   "title": "Hit Or Miss - Live",
+   "subtitle": "Odetta",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 134213,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/e02df40d41646c44306274cbc3e80b8674b8b196"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:6xnPEnL1cyJsEcqoD4PGea",
+   "uid": "6f1c21d4efa13ea4",
+   "title": "THAT'S THE WAY OF THE WORLD",
+   "subtitle": "Masayoshi Takanaka",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 374600,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/394565f023f6ef48716d625c1fd31ccb01fff009"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:5xegBQnzQ5Qcu1utG6ibsL",
+   "uid": "a4549f36f2cd976d",
+   "title": "Ain't Gwine to Whistle Dixie (Any Mo') - Live",
+   "subtitle": "Taj Mahal",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 551026,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/457f10446715baaa79aaf22def31b017582510d7"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:1DN07O8ryZhUML47Pj00E8",
+   "uid": "c66c3f98bc551585",
+   "title": "Anchi Bale Game",
+   "subtitle": "Admas",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 314866,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/e35a3f81f9b12ba9165036d958da56cc49541e23"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:5tcx0hDhFwLR3ThQXHfxF1",
+   "uid": "4c848abb932e8892",
+   "title": "The Dude",
+   "subtitle": "Donald Byrd",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 468600,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/fba384784448d2b268bda5d8c7581adaa30ba9c8"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:0wCvzEcP4lYy9eM4IaKqsR",
+   "uid": "134f8be2364e93ab",
+   "title": "What You Won't Do For Love",
+   "subtitle": "Roy Ayers",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 350546,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/aa7f6384c18f5baf2de44e79d4bcb2e56dd0bde3"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:5P3vzhjroPKNvXTM6zKVzf",
+   "uid": "f1a23575cfadd37f",
+   "title": "Leroy's Latin Lament: Lonnie Dreams/The Way We Feel/ La Fiesta/Lament",
+   "subtitle": "War",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 404800,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/aea9ab31e07b756c1b161ccaa032fdbce1cc98ba"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:6TjHRhVmYyg9I4BlLqSFg4",
+   "uid": "b64c2d701e71a2b2",
+   "title": "I Want You - John Morales M+M Breakdown Mix",
+   "subtitle": "Marvin Gaye, John Morales",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 506353,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/57a490c3f081a33b809b35aac70c6b861f94a445"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:3n4uDHyNFxQRUjdLA7hdN8",
+   "uid": "56fc4c8f11bd4a02",
+   "title": "I Want You - John Morales M+M Main Mix",
+   "subtitle": "Marvin Gaye, John Morales",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 576118,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/85420ceae7ab8dbddd59d378f5941535060e5e03"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:13PGUbmAQuRsvfKrvfI9gP",
+   "uid": "b12f3251479c5b65",
+   "title": "I Want You - John Morales M+M Pianopella Mix",
+   "subtitle": "Marvin Gaye, John Morales",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 502111,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/a8443ab2332e7a60f020c41b864fcfdcc33e7922"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:1Bds69aICl1byDvQ6w73R3",
+   "uid": "888ad7d5639a59b6",
+   "title": "Love, Go Lightly",
+   "subtitle": "Twain",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 265500,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/0fae273ae4050ffaf36c38d33dcd428a200ad354"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:2Fd9HNcaARM7asykrGkUWK",
+   "uid": "693cb4574ab0b9e0",
+   "title": "Georgia's Song",
+   "subtitle": "Twain",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 214500,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/4444f886d88f60d9c5d6711a0609155f235c65c3"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:64rwXrBQqLRLINmF1MZloX",
+   "uid": "89f3ffdc4ff33737",
+   "title": "Parting (In Love)",
+   "subtitle": "Twain",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 278232,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/57b7d0cd562fe285410f619668c31d8f8373eefd"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:0i7L9IbBakLhhRod7huh6e",
+   "uid": "e2cd3192a0a1dfbd",
+   "title": "O My Soul",
+   "subtitle": "Twain",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 371126,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/63ee0c1be001e983a4f486aefc53c97698ce570c"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:6tm3lqsicRV1QDMbhlMHZp",
+   "uid": "10aa9a79d1cfe5f3",
+   "title": "Walking",
+   "subtitle": "Twain",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 159868,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/29bd0f13e3e11cc2bddfabed13ec55b71bfc88d1"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:0IkSxSrbkwksbXt16fmcLI",
+   "uid": "9cfb2a1d004c924b",
+   "title": "The Magician",
+   "subtitle": "Twain",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 353138,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/5b193980ca12913ac937a9a4bc3fa75045231381"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:7FoWdai3raUwCdUMO9tyWH",
+   "uid": "42f7f43129d4f989",
+   "title": "A Kiss",
+   "subtitle": "Twain",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 281371,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/2870e94f0b55aa3668f45633052c9bf7a3cc53d8"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:1UhfqG8us3X5rygBwy4POa",
+   "uid": "ad5548acb0d4c65e",
+   "title": "Solar Pilgrim",
+   "subtitle": "Twain",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 320548,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/c46a3320092f3ff5012ec00a4ebbd8c95cd03cf2"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:1xvKyvgoVo4xMtKn4Dz4dC",
+   "uid": "44c87740323fc60c",
+   "title": "Hank & Georgia",
+   "subtitle": "Twain",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 263195,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/e54e82ffddf232155eec48dfde6fbf818205e951"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:3OA4WVeesIh6a6qQDgNNL9",
+   "uid": "0f250a3b78df0efe",
+   "title": "Rare Feeling v. 2",
+   "subtitle": "Twain",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 357190,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/ec73e2f95fe7c01efd2cbee2c6720ed1e4ca217d"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:1IxZrItyjvKGGOyYVqaX3w",
+   "uid": "12ebb715b21d935d",
+   "title": "Black Chair",
+   "subtitle": "Twain",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 254216,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/4409fa2ca97db7cc5d86f4a9d6c407d60c222125"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:2Kinri1f0ev3NsoDOjMzZx",
+   "uid": "f7ac6d10e6b0eb09",
+   "title": "Good Old Friend",
+   "subtitle": "Twain",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 257674,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/b6b50736aaa8ede5a3725823f9f84c05281912cb"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:2gmWJA9oF4GD2Vw5QoRqu1",
+   "uid": "88765d7b5c8d7cd7",
+   "title": "I Want You",
+   "subtitle": "Marvin Gaye",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 274400,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/2ada350187b92951b4030eef55ec86707692d573"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:1jKQvm9mE1O1LlMZibkx0U",
+   "uid": "8f21e4c24919f1e8",
+   "title": "Love Will Find a Way",
+   "subtitle": "Pharoah Sanders",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 311240,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/6623cc043260048910eb4db383af7c066744557e"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:0HftMLUiDo4vFhC0ChhgFT",
+   "uid": "bab577eddfc90810",
+   "title": "Can't Take My Eyes Off You - Live In London",
+   "subtitle": "Jacob Collier",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 615020,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/c3e73af724442f08d9bb19d6e50f052ea80ca7a3"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:4tfyWUc8sqv3KQurjQldZh",
+   "uid": "b49035dd622a900a",
+   "title": "The Good Wine",
+   "subtitle": "Alabaster DePlume",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 125533,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/9c5784398677d98ae16db38b9d94951b6372cee0"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:5RRpimjelfROAX4FBg6FlJ",
+   "uid": "68c16b929b64f687",
+   "title": "On Love",
+   "subtitle": "David T. Walker",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 298706,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/4d9e16c49eaaa47175b6146c58500cac3d7f14bb"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:7L4G39PVgMfaeHRyi1ML7y",
+   "uid": "cb6ef2cb4a0cb73f",
+   "title": "Day Dreaming",
+   "subtitle": "Aretha Franklin",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 239960,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/5df0997a1b1395b89c7ccd98f55203cbfcb63702"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:1ZczOoLuCyDO5dKUPndxf5",
+   "uid": "377578d0237958c6",
+   "title": "Say a Little Prayer - Live",
+   "subtitle": "Lianne La Havas",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 203574,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/2e8c1965f914ad82348a57c4698330dddb06e8a5"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:4T9uu5bvUnMQAXJI7xCgSv",
+   "uid": "a5c3f53d8cfcaecc",
+   "title": "Strings of Your Guitar",
+   "subtitle": "Claude Fontaine",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 159653,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/c568b367822ec8885f7468bc3a3b34e4c99a7ac0"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:7ckfkO6tYH5X276jusH6Mb",
+   "uid": "79492ef8eb471a9c",
+   "title": "Laura",
+   "subtitle": "Erroll Garner",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 165293,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/3070e5fb732220d4a7538827d17f1e4949ec262e"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:4NNWOy2xzWj8TRfaTpched",
+   "uid": "d3fa0b82a2528c7a",
+   "title": "In The Beauty Of The Night",
+   "subtitle": "Willie Wright",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 277386,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/2720d26bd74450d2b64c9ebc052220d70b6cba07"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:5xevas4P14kVmD4St0X3yy",
+   "uid": "94a71dd5e71d0fa7",
+   "title": "Khala My Friend",
+   "subtitle": "Amanaz",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 203716,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/630ae1aaa2a792a05feefbd8f80e03dac28082ba"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:6fGqxkBPqoIq4SQ3mtbHMI",
+   "uid": "e25de8c7c1c0975c",
+   "title": "What Are You Doing The Rest Of Your Life?",
+   "subtitle": "Bill Evans",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 245000,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/81e3f1819b7ca6a1d4face0a8d912cab72a4a2eb"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:6RXbwdIAIUHuAXkEEaObJm",
+   "uid": "6f7df0adbe8dd65d",
+   "title": "In Heaven",
+   "subtitle": "Julius Rodriguez",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 303406,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/0ea8a587d7b902d21a941f7ece06e8953dca526d"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:5DBBD9XrYNBdcuHYBTMrTf",
+   "uid": "f74198d7bf733c55",
+   "title": "Naranjita - Remasterizado 2021",
+   "subtitle": "Manduka",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 313786,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/89952077e2234b128697aa063e3960189c0eddf5"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:3NaSdaWokxg6vKw5FSNzx9",
+   "uid": "3c6982fb94533e4e",
+   "title": "Patria Amada, Idolatrada, Salve Salve",
+   "subtitle": "Manduka",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 300400,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/a6adbb778a516d894c88d7a71069aae30037ff52"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:6cuKyevjNVrb4I7BAA9NTv",
+   "uid": "54ef105a14be03c5",
+   "title": "Lookin' for a Home",
+   "subtitle": "Al Kooper, Shuggie Otis",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 352240,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/b3bf23449133a88966cccb6be5a3cfe75a0c8b34"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:3q8AgabNzK1mPJdI8egIcn",
+   "uid": "2315b746b79bfc16",
+   "title": "Inspiration Information",
+   "subtitle": "Shuggie Otis",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 252200,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/289737c19551194410356178da91034fef772d28"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:55OoUbyymtaO4avZOMcc51",
+   "uid": "fdaac604c5fcd4de",
+   "title": "Let's Fall in Love Tonight",
+   "subtitle": "Lewis Baloue",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 223906,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/d5a9bee8d79d3634b67891cd64a712c00d8222ba"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:7xkrhxrxOHRPeODdMl9gho",
+   "uid": "a993e675597a6c19",
+   "title": "Love Showered Me",
+   "subtitle": "Lewis Baloue",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 244973,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/4fb7145d56d53f8790f7e4fe72e4747b2ea9bebd"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:6N5cTk5omhhvIDmdeoGS4H",
+   "uid": "82028bbe676e2fd2",
+   "title": "Uma Prece (A Prayer)",
+   "subtitle": "Luiz Bonfá",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 156226,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/3e5a62857dcdf8a0d877e61ff7c519bd29a7a118"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:4xvpttkjjEH0l2hrizYla7",
+   "uid": "7fea26d7b6c0d8a0",
+   "title": "Perdido de Amor (Lost in Love) - 1",
+   "subtitle": "Luiz Bonfá",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 206066,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/111e5dffbfd0ecc496b83486caf3072645e492e9"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:3D5FHK4JRxDKm3c0T6QPUl",
+   "uid": "0c5b78a86b92c6eb",
+   "title": "Variações em Violão (Variations on Guitar)",
+   "subtitle": "Luiz Bonfá",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 88440,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/19531ad8366e54dfdb4269a09ef678f9da76c41f"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:4ecajlw9dEh0YtYlO5QGQR",
+   "uid": "fdecc817069f8f28",
+   "title": "Samba de Orfeu",
+   "subtitle": "Luiz Bonfá",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 75986,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/f4c3a2c4dfcf71eb4a79a96a51b71f6d1d17b9ca"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:6JLzp2M3z8AprYxlFpG35V",
+   "uid": "b707e7fa728fd3d9",
+   "title": "Freedom and Good Times",
+   "subtitle": "O'Donel Levy",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 334880,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/6a5967dcd72d766c86b8a44276c70853e2b0a704"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:03bkkZvHKuRAcLQcDAcBKJ",
+   "uid": "230e9df1a0046a53",
+   "title": "3 Horas da Manha",
+   "subtitle": "Agustin Pereyra Lucena",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 236790,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/47a8bf24beabc64ed969ff4265d6943be0496db4"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:7392C710R030yBEdmYNYNg",
+   "uid": "49ffd3f3af873676",
+   "title": "Peace of Mind",
+   "subtitle": "Wendell Harrison",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 439000,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/fa87e71a60157ba98f73e9524139c82133f705f8"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:4WRguHv37Tmkb2tHFK97XZ",
+   "uid": "ce6bfe3e6d6d89f5",
+   "title": "Winter",
+   "subtitle": "Wendell Harrison",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 400000,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/7cc565d4fc993d62fec6462aa251ec6f4ed686ee"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:18fun5lONYGArRWhgX0eTe",
+   "uid": "2313a32b6a2f15a7",
+   "title": "Ginseng Love",
+   "subtitle": "Wendell Harrison",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 246000,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/67cd7ed33913726a959a01e6c2d6493025bb0c0a"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:1h1LbpOdwTyXJqe4ytSJE5",
+   "uid": "95344368f7f5e9ca",
+   "title": "Fascination",
+   "subtitle": "SHEL",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 146335,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/3744602146a8b332548ac02e0a91e10ee9c7e1f0"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:17tmLK0Y3ATW61d2DFxeMN",
+   "uid": "f7e2313aee34b7c5",
+   "title": "Where You Are - Live",
+   "subtitle": "Rahsaan Patterson",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 479277,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/80104a3847d9ceccc01b70bb7316f4cb395bd827"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:2Wx1DL84XGOJ70j12lEcr5",
+   "uid": "8ff2051c8d0a004e",
+   "title": "Nature Boy",
+   "subtitle": "The Singers Unlimited, Gene Puerling",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 207040,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/67b5bca0a89bcee53ad14690b0819a793aefcba5"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:27TT1nxHMz52HSaGg3bxqo",
+   "uid": "d0e8b5ca54ebff2f",
+   "title": "Blacks And Blues",
+   "subtitle": "Bobbi Humphrey",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 279306,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/73ee80b3c178a8f8ad16fd6d9e0b119b9d1952b1"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:3wGug7Uo26bykRwaUI1l61",
+   "uid": "a2928aa838efc52a",
+   "title": "Baby's Gone - Remastered 1999",
+   "subtitle": "Bobbi Humphrey",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 528973,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/9c89e86b9979bcbaeba42d3096baa9a634e4adcd"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:5fd9YctkGRGadc6GZBEJIG",
+   "uid": "243cd2423c312cde",
+   "title": "Don't You Worry 'Bout a Thing",
+   "subtitle": "Weldon Irvine",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 354403,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/5c8d08f828d80d28956a5f9d60357833ac5e1e2f"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:0UfrXOlbWP9IfFng3zTqQ0",
+   "uid": "2607d1c71d971c13",
+   "title": "What's Goin' On?",
+   "subtitle": "Weldon Irvine",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 280168,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/19d737d49459ac2df8997979f12784f8aea6183d"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:0kmAuNheB4u0rHToopLLzd",
+   "uid": "d32f5d645d6151e5",
+   "title": "I Love You",
+   "subtitle": "Weldon Irvine",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 184358,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/a3acfda00258a3452ce9fedd876d4ce26f45c109"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:2CPcIs5c9AzEH1dUyjcsat",
+   "uid": "86bc5f8d02e4f589",
+   "title": "Music Is the Key",
+   "subtitle": "Weldon Irvine",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 458187,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/5c0e95e63ab14821cfc5bdff30ffed86b5baf647"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:35DEivSHK7ah82fWtC9Oxr",
+   "uid": "699251ce35782852",
+   "title": "Everything Must Change",
+   "subtitle": "George Benson",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 486720,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/366a798d857fb010aef6db77c1446f0007e440b0"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:62AZ6ukR1dxo5F2sbfFQ1L",
+   "uid": "0161ecc6533433ef",
+   "title": "Shape Of Things That Are And Were",
+   "subtitle": "George Benson",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 347413,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/b92fe65aea51aad2be726248de5c0a6d70692831"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:6zMQAgnWYRvzNIQGfjmXad",
+   "uid": "9f13976128ddd996",
+   "title": "Ostavi trag",
+   "subtitle": "September",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 243709,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/d08a987b6818531e68693a302ec2c377033c1472"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:1RpoUhwpD8ZtpJhq41EU9k",
+   "uid": "e4538cce4b7dda8d",
+   "title": "Save The Children",
+   "subtitle": "Marvin Gaye",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 243040,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/17176a711bdf859759d40e3b973cd7ae778b3347"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:3Um9toULmYFGCpvaIPFw7l",
+   "uid": "31041546108706fa",
+   "title": "What's Going On",
+   "subtitle": "Marvin Gaye",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 233000,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/2cfd1682c3ced4c2bfc7ef3ca415f8b63f69b9b5"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:3IDc87lrpEHWFBASmgTgFV",
+   "uid": "f84477fc9e0af8c3",
+   "title": "Mercy Mercy Me (The Ecology)",
+   "subtitle": "Marvin Gaye",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 193573,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/fb9335dcb2debb4801d96ebeaad7f682cee70a3d"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:5hReWjUHqPqkHi31G7izL4",
+   "uid": "69ae2f6ec697a4c2",
+   "title": "Inner City Blues (Make Me Wanna Holler)",
+   "subtitle": "Marvin Gaye",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 327706,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/da2fbe110578dfd33625ff1fb996099592c986bf"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:2Q2NMk1k7MrkQ7Sj3d5MGN",
+   "uid": "50b00bf3208b49c9",
+   "title": "What's Goin On",
+   "subtitle": "Penny Goodwin",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 342933,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/675c682c77efdd001f9976e272d1f424cc873178"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:4NTSDu34al733aIuUWVJHo",
+   "uid": "c6de751332c682e9",
+   "title": "Boogie Nights",
+   "subtitle": "Heatwave",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 303640,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/31e7f6be40bba001381b9170abda55360b811e8c"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:647D8WS57rPpIM1AXXHpHJ",
+   "uid": "db50cad7f6a8786c",
+   "title": "You And I",
+   "subtitle": "Stevie Wonder",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 278213,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/dba092e5804590f8a273312a322e0c2dd91a5e44"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:5clXTCt9oU6WTo83zfTFzI",
+   "uid": "c838cd5fc1cc98d1",
+   "title": "Lookin' For Another Pure Love",
+   "subtitle": "Stevie Wonder",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 283493,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/5ab6bf0b2c9c5fc3f245a6c8157860ce12e1a816"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:4QG8qIv7hZ1jjcm6cQFoyI",
+   "uid": "0bdd521c118cfb97",
+   "title": "Superwoman (Where Were You When I Needed You)",
+   "subtitle": "Stevie Wonder",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 487666,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/ba0c883d042cb498eeef72a0667233fdb978df44"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:0eGpcLG96GWVCG4Ix3qLCp",
+   "uid": "01624c5cdf1c6bc7",
+   "title": "Summer Soft",
+   "subtitle": "Stevie Wonder",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 254106,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/88ec6025530499601d247848bf0f17e5c984bfed"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:6T6PUtMZReSoiugL8UU6aP",
+   "uid": "aa1b712f1b8ca266",
+   "title": "Moon Blue",
+   "subtitle": "Stevie Wonder",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 404880,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/63adb570994b41183f8295b21e043b6e86189686"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:2rqHp5bwq5wucTt3pXIQzA",
+   "uid": "6f4498dad2ebafd5",
+   "title": "For You",
+   "subtitle": "Prince",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 67600,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/db2129f2c430179b06461c155086223c60b325d2"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:7H4IsC0YmKnAjbGVGZGMQo",
+   "uid": "00e390b78ac34d76",
+   "title": "Crazy You",
+   "subtitle": "Prince",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 137333,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/73092aced6b5c85077ce12858e17c1986c26c8d2"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:0qc7kijs5jzvQH43YrTOPf",
+   "uid": "38357eb8a5837e1a",
+   "title": "So Blue",
+   "subtitle": "Prince",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 270200,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/bb4984bdf4cf7c7537c506c8482ed23fbe317ffe"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:4y4ilhWm4BcoWs7o5VsI3R",
+   "uid": "51970ce2472a7d51",
+   "title": "Still Ray",
+   "subtitle": "Raphael Saadiq",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 183293,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/27b0d5d25c247ab63521ed6ad64608b05eca1269"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:6IBWTv73pxGCRcl2gMW74m",
+   "uid": "b5f9bd89b9301746",
+   "title": "Brotha",
+   "subtitle": "Jill Scott",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 207840,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/3a107aaf53a064b98465cf9d3a4b8a1dadfaae3a"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:52g54jjZ6lroPHv9InVFBf",
+   "uid": "31e63ef5002366f8",
+   "title": "Rhythm of Our Souls",
+   "subtitle": "Sunbear",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 229040,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/0935aca8441e860793556c356214a9e9a346827f"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:5Hi6YfSQBMd2fPf5IpJkRL",
+   "uid": "a9f26220777bbe68",
+   "title": "Mood 2 \"Love At First Sight\"",
+   "subtitle": "Sunbear",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 169400,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/7393e454e3e5a5f54e7db81a98d45617e0a3aedb"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:0dEIca2nhcxDUV8C5QkPYb",
+   "uid": "610b64cf7b6cbd8f",
+   "title": "Give Life Back to Music",
+   "subtitle": "Daft Punk",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 275386,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/7974b74d938ac047700dd7a2a0766d1ede1ec023"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:7oaEjLP2dTJLJsITbAxTOz",
+   "uid": "a1796c50a0377f0d",
+   "title": "Touch (feat. Paul Williams)",
+   "subtitle": "Daft Punk, Paul Williams",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 498960,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/0763b5cdbf01b2efd1384e255482aff8ba8e8f56"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:2LD2gT7gwAurzdQDQtILds",
+   "uid": "90d8cd9075c0c51a",
+   "title": "Veridis Quo",
+   "subtitle": "Daft Punk",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 345186,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/58d8089f7e9d99a8d64702c393e038e67ef74c6d"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:09kEUjIvixNShjfl3YoyWo",
+   "uid": "4c7a2afa5efcb66d",
+   "title": "Simply Beautiful",
+   "subtitle": "Al Green",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 251569,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/228a8461147c656a04b0a75c4011c29b595de8e5"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:3PYOwQFOdPMMfuHtxt1R1Z",
+   "uid": "f885a24d8aaf8ca4",
+   "title": "Soul Searchin'",
+   "subtitle": "Horace Silver",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 259173,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/bc5694809dd6ef2949e5ca844a93a446c4466dc8"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:5NBAy2oiS9OIWyAZhklsH2",
+   "uid": "70e892eb2c9bcab9",
+   "title": "Portrait of Tracy",
+   "subtitle": "Jaco Pastorius",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 142466,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/ab90a915cca4acdf9f0cbe102e2ecdecce66ddbe"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:7jszRQdF8gDMAxn7f8ga4A",
+   "uid": "363fca8bd1b7ed61",
+   "title": "I Feel Like Loving You Today",
+   "subtitle": "Donald Byrd",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 415146,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/897dc748efa9c6ec1e9b28ddfa4066faf36913f4"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:6PrvUnbma2yeYKZoF4hpRV",
+   "uid": "5ca845f97a723b58",
+   "title": "Let's Stay Together",
+   "subtitle": "Ronnie Foster",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 294200,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/dab2569c23c78fc44d145d1e5215a35d53a6326b"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:0PofQx5wRPOwk7fEgVax2x",
+   "uid": "2785b02af034e9ba",
+   "title": "I Know Why The Caged Bird Sings",
+   "subtitle": "Buckshot LeFonque",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 484493,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/5cfdc3d1a5b09fa8565110ec41b959b48cbc0924"
+   },
+   "entityType": "track"
+  }
+ ],
+ "visualIdentity": {
+  "backgroundBase": {
+   "alpha": 255,
+   "blue": 40,
+   "green": 48,
+   "red": 88
+  },
+  "backgroundTintedBase": {
+   "alpha": 255,
+   "blue": 71,
+   "green": 79,
+   "red": 123
+  },
+  "textBase": {
+   "alpha": 255,
+   "blue": 255,
+   "green": 255,
+   "red": 255
+  },
+  "textBrightAccent": {
+   "alpha": 255,
+   "blue": 255,
+   "green": 255,
+   "red": 255
+  },
+  "textSubdued": {
+   "alpha": 255,
+   "blue": 183,
+   "green": 194,
+   "red": 244
+  },
+  "image": [
+   {
+    "url": "https://mosaic.scdn.co/300/ab67616d00001e0256e3173e3c9b0a6c1715a57eab67616d00001e029a24dc1362ef55bdd9b92a1bab67616d00001e02f86ecbd17361e197921acb66ab67616d00001e02fab13dc56058ea0dfb124dc7",
+    "maxHeight": 0,
+    "maxWidth": 0
+   }
+  ]
+ },
+ "attributes": [],
+ "format": ""
+}

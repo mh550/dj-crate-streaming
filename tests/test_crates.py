@@ -135,3 +135,42 @@ def test_external_status_names_are_validated():
     import pytest
     with pytest.raises(AssertionError):
         store.set_external_status(ext, "verifying")
+
+
+def test_external_wanted_remembers_playlist_and_position(tmp_path):
+    store = CrateStore(tmp_path / "c.db")
+    ext = store.add_external_wanted("Chic", "Good Times", duration_s=501, source="report", playlist_id="pl-9", position=3)
+    row = store.external(ext)
+    assert row["playlist_id"] == "pl-9" and row["position"] == 3
+    # same artist/title again from another playlist position → same row, position updated, still one row
+    assert store.add_external_wanted("chic", "good times!", playlist_id="pl-9", position=7) == ext
+    assert store.external_count() == 1 and store.external(ext)["position"] == 7
+    # re-adding without a playlist leaves the remembered one alone
+    store.add_external_wanted("Chic", "Good Times")
+    assert store.external(ext)["playlist_id"] == "pl-9"
+    assert [r["song_id"] for r in store.external_for_playlist("pl-9")] == [ext]
+
+
+def test_store_migrates_old_external_wanted_table(tmp_path):
+    import sqlite3
+    db = tmp_path / "old.db"
+    con = sqlite3.connect(db)
+    con.executescript("""CREATE TABLE external_wanted (id INTEGER PRIMARY KEY, artist TEXT NOT NULL, title TEXT NOT NULL,
+        album TEXT, year INTEGER, duration INTEGER, source TEXT, status TEXT NOT NULL DEFAULT 'needs_source', reason TEXT,
+        created_at REAL NOT NULL, updated_at REAL NOT NULL);
+        INSERT INTO external_wanted(artist,title,created_at,updated_at) VALUES('A','B',0,0);""")
+    con.commit(); con.close()
+    store = CrateStore(db)                      # must add the two columns without losing the row
+    assert store.external("ext-1")["playlist_id"] is None and store.external_count() == 1
+
+
+def test_publish_makes_playlists_public(env, monkeypatch, tmp_path, capsys):
+    srv, _, _, _ = env
+    monkeypatch.setenv("SUBSONIC_URL", srv.url); monkeypatch.setenv("SUBSONIC_USER", "demo"); monkeypatch.setenv("SUBSONIC_PASS", "demo")
+    monkeypatch.setenv("CRATES_DB", str(tmp_path / "c.db"))
+    from crates.cli import main
+    assert main(["publish", "Disco Edits"]) == 0
+    st = srv.state.playlists
+    assert st["pl-1"]["public"] is True and st["pl-2"]["public"] is False
+    assert main(["publish"]) == 0 and all(p["public"] for p in st.values())
+    assert "public already" in capsys.readouterr().out

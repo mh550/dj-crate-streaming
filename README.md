@@ -20,7 +20,7 @@ sourcing/   Phase 1: Soulseek sourcing — one wanted track from search to a fil
   organize.py       Artist/Album (Year)/NN - Title.ext from the wanted record, never overwrites
   fake_slskd.py     in-process slskd for tests/demos
   spotify_csv.py    public Spotify playlist → rows, no API credentials (embed page)
-  cli.py            rank | verify | fetch --wanted <id> [--approve] | seed-spotify <url>
+  cli.py            rank | verify | fetch --wanted <id> [--approve] | seed-spotify <url> | import-playlist <src>... [--name N]
 scripts/    one-off library tooling: library_map.py (folder + audio-hash map), folders_to_playlists.py
 deploy/     compose.yml (+ .env.example), beets.yaml — /srv/docker/compose.yml symlinks here
 fixtures/   slskd-shaped search responses covering the failure modes
@@ -50,6 +50,8 @@ Against a live slskd (M4) with `SLSKD_URL`/`SLSKD_API_KEY` set, plus the `SUBSON
 
 ```bash
 python3 -m sourcing.cli seed-spotify https://open.spotify.com/playlist/...   # → ext-N wanted rows
+python3 -m sourcing.cli import-playlist <spotify-url|report.txt|exportify.csv>... [--name N] [--dry-run]
+    # D11: Spotify playlist → public Navidrome playlist (library matches, in order) + wanted rows with playlist/position
 python3 -m sourcing.cli fetch --wanted s4             # search + score, prints the pick, no download
 python3 -m sourcing.cli fetch --wanted s4 --approve   # download → verify → /srv/music → rescan → crate ok
 ```
@@ -58,7 +60,14 @@ Without `--approve` nothing is transferred (rule: Soulseek downloads are Michael
 walks the crate row `needs_source → sourcing → verify → ok | failed`, swaps the new song into every
 crate that held the old one, and reconciles; a file Navidrome can't match stays `verify` with the
 filed path in the reason. `MUSIC_ROOT` (default `/srv/music`) and `DOWNLOADS_ROOT` (default
-`/srv/incoming`, where the slskd container writes) are overridable.
+`/srv/incoming`, where the slskd container writes) are overridable; `--approve` refuses before any
+transfer when neither they nor their parent folders exist (e.g. inside the crates container).
+
+**Quality tiers** (spec §1): `low | medium | high | crate`. `rank`, `fetch`, `seed-spotify` and
+`import-playlist` take `--tier`; wanted rows remember theirs (default `crate`; crate tracks are always
+`crate`), and `fetch` scores with the row's tier. Listening tiers trade quality for estimated arrival,
+assuming our own download speed is 1 MB/s (`sourcing/policy.py`). `rank --slskd … --save r.json` keeps
+the raw responses so `rank --fixture r.json --tier <other>` compares tiers on one search.
 
 ## Against the real box (Phase 0 done)
 
@@ -69,6 +78,7 @@ python3 -m crates.cli status
 python3 -m crates.cli playlists
 python3 -m crates.cli toggle <playlist-id> on
 python3 -m crates.cli wanted                     # → feed each line to sourcing.cli rank --slskd ...
+python3 -m crates.cli publish [NAME ...]         # make playlists visible to every Navidrome user
 python3 -m crates.cli serve                      # 127.0.0.1:4580 → front with `tailscale serve`
 ```
 
@@ -87,12 +97,19 @@ phone browser ──/api/*──▶ crates.service ──Subsonic──▶ Navid
   playlist with a marker (`Disco Edits [crate]` or `🎛 Disco Edits`), or by editing
   the comment where the client allows it.
 - **Judging** uses only what Subsonic reports (suffix, bitRate, samplingRate,
-  bitDepth) against `sourcing/policy.py`. Deep checks (fake FLAC, duration) run in
-  `sourcing/verify.py` once we hold the bytes.
+  bitDepth) against `sourcing/policy.py`. Deep checks run in `sourcing/verify.py` once we
+  hold the bytes (spec §3a, `docs/download-validation.md`): one ffmpeg decode measures the
+  spectral cutoff, bits used, truncation, silence and clipping, `flac -t` checks the MD5, and
+  `fpcalc` compares against a reference copy (CLI `--reference`; `fetch` doesn't pass one yet). The tier decides what is a hard failure.
+  `python3 -m sourcing.cli verify <file> --tier crate [--reference old.flac]` on the host
+  (the crates image has no ffmpeg); `fetch` keeps the last result per wanted row (`verify`
+  in `/api/wanted`, shown in the web client).
 - **Streaming never touches our process.** `/api/stream/<id>` answers 302 to a
   per-request signed Navidrome URL under its own client name (`dj-crates-web`), so
   Navidrome gives it its own Player and you set its transcoding profile in
-  Navidrome → Settings → Players like any other device.
+  Navidrome → Settings → Players like any other device. The web client's quality menu is
+  the same four tiers (opus 64k / 96k / 160k / original), saved server-side
+  (`GET/POST /api/stream-tier`) and sent as `/api/stream/<id>?tier=…`.
 
 ## On the phone
 
@@ -112,7 +129,8 @@ Container build for the Compose stack: `docker build -t crates .` (see the
   riding on `crate_tracks.status` fan-out and on the free-text reason. Then: check Navidrome for
   a good copy *before* searching; tag the file (or hand it to beets) so Navidrome's view matches.
 - Expected-duration lookup (MusicBrainz / SpotiFLAC) instead of trusting the library's.
-- AcoustID fingerprint verification (`fpcalc`).
+- AcoustID *database* lookups (needs a free key); today `fpcalc` only compares against a local reference copy.
+- ffmpeg/flac/fpcalc in the crates image (`apt-get install -y ffmpeg flac libchromaprint-tools`) if verify should run there.
 - Analysis (BPM/key → Serato GEOB), stems, device sync — Phases 2–4.
 - SoundCloud in the client: stream-only via the official API (needs Artist Pro); not a crate source.
 - A native phone client if the web client's background audio proves unreliable on iOS.
