@@ -27,6 +27,7 @@ from urllib.parse import parse_qs, urlparse
 from sourcing.policy import DEFAULT_POLICY, QualityPolicy
 from subsonic.client import SubsonicClient, SubsonicError
 from .reconcile import Reconciler
+from . import trash
 from .store import CrateStore
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
@@ -44,6 +45,7 @@ class Config:
     db_path: str = "data/crates.db"
     bind: str = "127.0.0.1"
     port: int = 4580
+    trash_dir: str | None = None          # read-only view of /srv/docker/_trash (status reports it)
 
     @classmethod
     def from_env(cls, **overrides) -> "Config":
@@ -56,6 +58,7 @@ class Config:
             db_path=env.get("CRATES_DB", "data/crates.db"),
             bind=env.get("CRATES_BIND", "127.0.0.1"),
             port=int(env.get("CRATES_PORT", "4580")),
+            trash_dir=env.get("CRATES_TRASH") or None,
         )
         for k, v in overrides.items():
             if v is not None:
@@ -85,6 +88,7 @@ class CrateApp:
                 "user": self.cfg.username, "serverType": info.get("type"), "serverVersion": info.get("serverVersion"),
                 "openSubsonic": info.get("openSubsonic"), "crates": len(self.store.all(enabled_only=True)),
                 "wanted": len(self.store.wanted()),
+                "trash": trash.summary(self.cfg.trash_dir),
                 "policy": {"preferred": self.policy.preferred, "allow": self.policy.allow, "deny": self.policy.deny,
                            "minLossyBitrate": self.policy.min_lossy_bitrate}}
 

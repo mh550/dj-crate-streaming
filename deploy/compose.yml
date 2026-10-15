@@ -40,7 +40,10 @@ services:
       SUBSONIC_USER: ${ND_USER}
       SUBSONIC_PASS: ${ND_PASS}
       CRATES_DB: /data/crates.db
-    volumes: ["/srv/docker/crates:/data"]
+      CRATES_TRASH: /trash                   # status reports trash size/age; never emptied automatically
+    volumes:
+      - /srv/docker/crates:/data
+      - /srv/docker/_trash:/trash:ro         # runbook wanted /srv/_trash (needs root): see Needs Michael
     depends_on: [navidrome]
     restart: unless-stopped
 
