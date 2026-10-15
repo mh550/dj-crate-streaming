@@ -74,6 +74,10 @@ One, Mobb Deep's "Shook Ones, Pt. II", drops 15 dB above 18 kHz. That suggests t
 (common for 90s hip-hop on Soulseek). It's a warning, not a failure. Three loud masters show clipping warnings.
 The full table is in the OVERNIGHT-2 status log.
 
+The whole library was then checked: **22 of 831 files fail `crate`**. Two are broken FLACs, two are damaged mp3s, one
+is a 32 kHz mp3, and 17 are FLACs or "320" mp3s made from ~128 kbps sources. See `docs/library-verify-2026-10-15.md`;
+these are upgrade candidates.
+
 ## Limits
 
 - Some lossy encoders, and some mp3s made with unusual settings, have no sharp cutoff, so the spectrum check can
