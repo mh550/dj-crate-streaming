@@ -31,6 +31,9 @@ class QualityPolicy:
     arrival_budget_s: float = 60.0
     # Our own download cap, bytes/s (0 = none): a fast peer can't beat it.
     download_cap_Bps: int = 0
+    # Downloaded-file check (spec §3a): a file that isn't the quality it claims (transcode, padded bits,
+    # upsampled) is rejected (True, crate) or accepted with a warning (False, the listening tiers).
+    strict_verify: bool = True
 
     LOSSLESS = {"flac", "wav", "aiff", "aif", "alac", "ape", "wv"}
 
@@ -53,7 +56,7 @@ OUR_DOWNLOAD_CAP_BPS = 1_000_000
 
 def _listening(**kw) -> QualityPolicy:
     return QualityPolicy(allow=["flac", "wav", "aiff", "alac", "m4a", "mp3", "ogg", "opus"], deny=["wma", "ra", "mid"],
-                         download_cap_Bps=OUR_DOWNLOAD_CAP_BPS, **kw)   # fresh lists per tier
+                         download_cap_Bps=OUR_DOWNLOAD_CAP_BPS, strict_verify=False, **kw)   # fresh lists per tier
 
 # One setting, four values (spec §1, D9). Low/medium/high are for listening; crate is today's policy.
 TIERS: dict[str, QualityPolicy] = {

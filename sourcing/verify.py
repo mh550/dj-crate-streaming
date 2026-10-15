@@ -23,6 +23,8 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .policy import DEFAULT_TIER, TIERS, check_tier
+
 
 @dataclass
 class AudioInfo:
@@ -90,6 +92,11 @@ class Verdict:
     warnings: list[str] = field(default_factory=list)
     measurements: dict = field(default_factory=dict)
 
+    def as_dict(self, tier: str | None) -> dict:
+        """The record `fetch` keeps per wanted row and `cli verify --json` prints (JSON-safe)."""
+        return {"ok": self.ok, "tier": tier, "problems": self.problems, "warnings": self.warnings,
+                "measurements": self.measurements}
+
 
 # ---- decoded analysis ----
 
@@ -97,7 +104,7 @@ BAND_EDGES_KHZ = (11, 13, 15, 16, 17, 18, 19, 20)       # + 22, 24 above 48 kHz
 CLIFF_DB = 15.0          # a step this big between adjacent edges is an encoder's lowpass; music falls 2-7 dB
 EMPTY_DB = 90.0          # a band this far under the full band holds nothing
 SILENCE = "silencedetect=n=-60dB:d=3"
-LOSSLESS_CODECS = {"flac", "alac", "ape", "wavpack", "tta"}
+LOSSLESS_CODECS = {"flac", "alac", "ape", "wavpack", "tta"}   # ffprobe codec names (policy.LOSSLESS holds extensions)
 
 
 def band_edges(sample_rate: int | None) -> list[int]:
@@ -105,9 +112,11 @@ def band_edges(sample_rate: int | None) -> list[int]:
     return [e for e in edges if e * 1000 < (sample_rate or 44100) / 2 - 500]
 
 
-def estimate_cutoff(full_db: float, bands_db: dict) -> float:
+def estimate_cutoff(full_db: float, bands_db: dict) -> float | None:
     """Highest band edge (kHz) with real energy above it: stop at the first empty band or at the first cliff
-    (≥ CLIFF_DB down from the previous edge). 0 = nothing above the first edge."""
+    (≥ CLIFF_DB down from the previous edge). 0 = nothing above the first edge; None = no bands measured."""
+    if not bands_db:
+        return None
     cutoff, prev = 0, None
     for edge in sorted(bands_db):
         level = bands_db[edge]
@@ -117,14 +126,20 @@ def estimate_cutoff(full_db: float, bands_db: dict) -> float:
     return cutoff
 
 
+def full_band(m: dict) -> bool:
+    """The measured spectrum reaches the top band edge (no lowpass anywhere)."""
+    return bool(m.get("bands_db")) and m.get("cutoff_khz") == max(m["bands_db"])
+
+
 def fingerprint_ber(a: list[int], b: list[int], max_shift: int = 80, min_overlap: int = 20) -> float:
     """Bit-error rate of two chromaprint raw fingerprints at their best alignment (one item ≈ 0.124 s, so
     ±80 ≈ ±10 s covers a vinyl rip vs a CD rip). 0 = identical, ~0.5 = unrelated, 1.0 = too short to say."""
     best = 1.0
     for shift in range(-max_shift, max_shift + 1):
-        pairs = list(zip(a[max(shift, 0):], b[max(-shift, 0):]))
-        if len(pairs) >= min_overlap:
-            best = min(best, sum(bin((x ^ y) & 0xFFFFFFFF).count("1") for x, y in pairs) / (32 * len(pairs)))
+        i, j = max(shift, 0), max(-shift, 0)
+        n = min(len(a) - i, len(b) - j)
+        if n >= min_overlap:
+            best = min(best, sum(((a[i + k] ^ b[j + k]) & 0xFFFFFFFF).bit_count() for k in range(n)) / (32 * n))
     return best
 
 
@@ -153,6 +168,7 @@ def parse_ffmpeg(stderr: str, edges: list[int]) -> dict:
         "full_db": num(full, "RMS level dB"),
         "bands_db": {e: num(d, "RMS level dB") for e, d in zip(edges, order[1:])} if complete else {},
         "complete": complete,
+        "flac_t": None,
         "peak_db": num(full, "Peak level dB"),
         "flat_factor": num(full, "Flat factor"),
         "bits_used": int(bits[1]) if len(bits) > 1 else None,
@@ -166,25 +182,23 @@ MAX_DECODE_NOISE = 10    # fewer ffmpeg errors than this, with the audio all the
 
 
 def analyse(path: Path, sample_rate: int | None, duration_s: float | None = None) -> dict:
-    """One ffmpeg decode: full band (astats + silencedetect) and one brick-wall highpass per band edge; plus
-    `flac -t` (the MD5 of the decoded audio) for FLAC. The timeout grows with length × rate (≈20 ms per second
-    of 44.1 kHz audio on this box), never under 10 minutes."""
+    """One ffmpeg decode: full band (astats + silencedetect) and one brick-wall highpass per band edge, each
+    band ending in a null sink; plus `flac -t` (the MD5 of the decoded audio) for FLAC. The timeout grows with
+    length × rate (≈20 ms per second of 44.1 kHz audio on this box), never under 10 minutes."""
     timeout = max(600.0, 60 + 2 * (duration_s or 0) * max(1.0, (sample_rate or 44100) / 44100))
     edges = band_edges(sample_rate)
     n = len(edges) + 1
     chains = [f"[x0]astats=measure_perchannel=none,{SILENCE}[o0]"]
     for i, e in enumerate(edges, 1):
         chains.append(f"[x{i}]firequalizer=gain='if(gte(f,{e * 1000}),0,-120)':delay=0.02:accuracy=20,"
-                      f"astats=measure_perchannel=none[o{i}]")
+                      f"astats=measure_perchannel=none,anullsink")
     graph = f"asplit={n}" + "".join(f"[x{i}]" for i in range(n)) + ";" + ";".join(chains)
-    cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-nostats", "-loglevel", "level+info", "-i", str(path), "-filter_complex", graph]
-    for i in range(n):
-        cmd += ["-map", f"[o{i}]", "-f", "null", "-"]
+    cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-nostats", "-loglevel", "level+info", "-i", str(path),
+           "-filter_complex", graph, "-map", "[o0]", "-f", "null", "-"]
     run = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout, **TEXT)
     m = parse_ffmpeg(run.stderr, edges)
     if run.returncode and not m["errors"]:
         m["errors"] = [run.stderr.strip().splitlines()[-1] if run.stderr.strip() else f"ffmpeg exit {run.returncode}"]
-    m["flac_t"] = None
     if path.suffix.lower() == ".flac" and shutil.which("flac"):
         t = subprocess.run(["flac", "-t", "-s", str(path)], stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout, **TEXT)
         if t.returncode:
@@ -204,24 +218,29 @@ def fingerprint(path: Path) -> list[int] | None:
 # ---- the verdict ----
 
 HARD_EVERY_TIER = {"missing", "unreadable", "integrity", "duration", "truncated", "recording"}
-HARD_FOR_CRATE = {"transcode", "fake_24bit", "fake_hires", "implied_kbps", "sample_rate"}
+HARD_WHEN_STRICT = {"transcode", "fake_24bit", "fake_hires", "implied_kbps", "sample_rate"}   # policy.strict_verify
 
 
 def verify(path: Path, expected_duration_s: float | None = None, tier: str | None = None, reference: Path | None = None,
-           tolerance_s: float = 4.0, min_lossless_kbps: int = 500) -> Verdict:
-    """Header checks always; with a `tier`, the decoded checks too (module docstring). Without a tier every
-    finding is hard, which is the pre-M5 behaviour `fetch` relied on."""
-    if tier is not None:
-        from .policy import check_tier
-        check_tier(tier)
+           tolerance_s: float | None = None, min_lossless_kbps: int | None = None) -> Verdict:
+    """Header checks always; with a `tier`, the decoded checks too (module docstring). The tier's policy sets the
+    thresholds and how strict it is. Without a tier: header checks only, judged like crate (pre-M5 behaviour)."""
+    policy = TIERS[check_tier(tier or DEFAULT_TIER)]
+    tolerance_s = policy.duration_tolerance_s if tolerance_s is None else tolerance_s
+    min_lossless_kbps = policy.min_lossless_kbps if min_lossless_kbps is None else min_lossless_kbps
     path = Path(path)
+    reference = Path(reference) if reference is not None else None
+    hard = HARD_EVERY_TIER | (HARD_WHEN_STRICT if policy.strict_verify else set())
     findings: list[tuple[str, str]] = []
     m: dict = {}
 
     def verdict(info: AudioInfo | None) -> Verdict:
-        hard = HARD_EVERY_TIER | HARD_FOR_CRATE if tier in (None, "crate") else HARD_EVERY_TIER
-        problems = [msg for check, msg in findings if check in hard]
-        return Verdict(not problems, problems, info, [msg for check, msg in findings if check not in hard], m)
+        problems, warnings = [], []
+        for check, msg in findings:
+            if check == "implied_kbps" and full_band(m):     # the measured spectrum outranks the size guess
+                check, msg = "low_kbps", f"{msg}, but the full spectrum is there: quiet or simple material"
+            (problems if check in hard else warnings).append(msg)
+        return Verdict(not problems, problems, info, warnings, finite(m))
 
     if not path.exists():
         findings.append(("missing", "file missing"))
@@ -231,15 +250,14 @@ def verify(path: Path, expected_duration_s: float | None = None, tier: str | Non
         findings.append(("unreadable", "could not read audio header (no ffprobe and not FLAC?)"))
         return verdict(None)
     m.update(codec=info.codec, sample_rate=info.sample_rate, bit_depth=info.bit_depth, duration_s=info.duration_s)
-    if info.duration_s:
-        m["kbps"] = round(path.stat().st_size * 8 / info.duration_s / 1000)
     if expected_duration_s and info.duration_s:
         d = abs(info.duration_s - expected_duration_s)
         if d > tolerance_s:
             findings.append(("duration", f"duration {info.duration_s:.0f}s vs expected {expected_duration_s:.0f}s (Δ{d:.0f}s)"))
-    if info.codec == "flac" and info.duration_s:
+    if info.duration_s:
         kbps = path.stat().st_size * 8 / info.duration_s / 1000
-        if kbps < min_lossless_kbps:
+        m["kbps"] = round(kbps)
+        if info.codec == "flac" and kbps < min_lossless_kbps:
             findings.append(("implied_kbps", f"FLAC at {kbps:.0f} kbps looks like a lossy transcode"))
     if info.sample_rate and info.sample_rate < 44100:
         findings.append(("sample_rate", f"low sample rate {info.sample_rate}"))
@@ -251,28 +269,11 @@ def verify(path: Path, expected_duration_s: float | None = None, tier: str | Non
                                     "truncation, silence, clipping)"))
     else:
         try:
-            _decoded_checks(path, info, analyse(path, info.sample_rate, info.duration_s), findings, m)
+            _decoded_checks(info, analyse(path, info.sample_rate, info.duration_s), findings, m)
         except subprocess.TimeoutExpired as e:
             findings.append(("skipped", f"decoded checks timed out after {e.timeout:.0f}s and were skipped"))
-        if m.get("bands_db") and m["cutoff_khz"] == max(m["bands_db"]):   # the measured spectrum outranks the
-            findings[:] = [("low_kbps", f"{msg}, but the full spectrum is there: quiet or simple material")
-                           if check == "implied_kbps" else (check, msg) for check, msg in findings]   # size guess
     if reference is not None:
-        if not shutil.which("fpcalc"):
-            findings.append(("skipped", "fpcalc not on PATH: recording check skipped"))
-        else:
-            try:
-                a, b = fingerprint(path), fingerprint(Path(reference))
-            except subprocess.TimeoutExpired:
-                a = b = None
-            if a and b:
-                m["fingerprint_ber"] = ber = round(fingerprint_ber(a, b), 3)
-                if ber > 0.20:
-                    findings.append(("recording", f"different recording from {Path(reference).name} "
-                                                  f"(fingerprint bit-error rate {ber:.2f}; same audio is under 0.20)"))
-            else:
-                findings.append(("skipped", "fpcalc could not fingerprint one of the files: recording check skipped"))
-    m.update({k: finite(v) for k, v in m.items()})
+        _recording_check(path, reference, findings, m)
     return verdict(info)
 
 
@@ -283,42 +284,61 @@ def finite(v):
     return None if isinstance(v, float) and not math.isfinite(v) else v
 
 
-def _decoded_checks(path: Path, info: AudioInfo, a: dict, findings: list, m: dict) -> None:
+def _recording_check(path: Path, reference: Path, findings: list, m: dict) -> None:
+    if not shutil.which("fpcalc"):
+        findings.append(("skipped", "fpcalc not on PATH: recording check skipped"))
+        return
+    try:
+        a, b = fingerprint(path), fingerprint(reference)
+    except subprocess.TimeoutExpired:
+        a = b = None
+    if not (a and b):
+        findings.append(("skipped", "fpcalc could not fingerprint one of the files: recording check skipped"))
+        return
+    m["fingerprint_ber"] = ber = round(fingerprint_ber(a, b), 3)
+    if ber > 0.20:
+        findings.append(("recording", f"different recording from {reference.name} "
+                                      f"(fingerprint bit-error rate {ber:.2f}; same audio is under 0.20)"))
+
+
+def _decoded_checks(info: AudioInfo, a: dict, findings: list, m: dict) -> None:
     # Integrity. `flac -t` is the authority for FLAC (it checks the MD5 of the audio). ffmpeg also logs metadata
     # it can't parse (a webp cover, an odd ID3 frame) and skipped junk frames as [error]: a handful with the
     # audio all there is a warning; lost audio shows up as truncation below.
-    if a.get("flac_t"):
+    errs = "; ".join(a["errors"][:3])
+    if a["flac_t"]:
         findings.append(("integrity", f"flac -t: {a['flac_t']}"))
     if a["samples"] is None or a["full_db"] is None:
-        findings.append(("integrity", "could not decode" + (": " + "; ".join(a["errors"][:3]) if a["errors"] else " any audio")))
+        findings.append(("integrity", "could not decode" + (f": {errs}" if errs else " any audio")))
         return
     if len(a["errors"]) >= MAX_DECODE_NOISE:
-        findings.append(("integrity", f"{len(a['errors'])} decode errors: " + "; ".join(a["errors"][:3])))
-    elif a["errors"]:
-        findings.append(("decode_noise", "ffmpeg reported: " + "; ".join(a["errors"][:3])))
+        findings.append(("integrity", f"{len(a['errors'])} decode errors: {errs}"))
+    elif errs:
+        findings.append(("decode_noise", f"ffmpeg reported: {errs}"))
     if a["full_db"] == -math.inf:
         findings.append(("integrity", "no signal: the file is digital silence"))
     sr = info.sample_rate or 44100
     m["decoded_s"] = decoded = round(a["samples"] / sr, 2)
     if info.duration_s and info.duration_s - decoded > 1.0:
         findings.append(("truncated", f"truncated: the header says {info.duration_s:.1f}s, only {decoded:.1f}s decodes"))
-    if not a.get("complete", True):
+    if not a["complete"]:
         findings.append(("skipped", "the band analysis came back incomplete: cutoff checks skipped"))
     m["bands_db"] = {e: round(v, 1) for e, v in a["bands_db"].items()}
     m["cutoff_khz"] = cutoff = estimate_cutoff(a["full_db"], a["bands_db"])
-    top = max(a["bands_db"]) if a["bands_db"] else 0
-    claims_lossless = (info.codec or "") in LOSSLESS_CODECS or (info.codec or "").startswith("pcm_")
-    claims_hq = claims_lossless or (m.get("kbps") or 0) >= 315
-    claim = "lossless" if claims_lossless else f"{m.get('kbps')} kbps"
-    where = f"cutoff ≈{cutoff} kHz (energy stops above {cutoff} kHz)" if cutoff else "nothing above 11 kHz"
-    if claims_hq and a["bands_db"] and cutoff <= 16:
-        findings.append(("transcode", f"{where} for a {claim} file: "
-                                      f"lossless or 320 kbps reaches 19–20 kHz, so this likely came from ≤128 kbps"))
-    elif claims_hq and cutoff <= 18 and top >= 19:
-        findings.append(("maybe_lossy", f"cutoff ≈{cutoff} kHz for a {claim} file: may come from a ≤192 kbps source "
-                                        f"(old or lo-fi recordings can lack highs too)"))
-    if sr > 48000 and cutoff <= 22:
-        findings.append(("fake_hires", f"{sr} Hz but nothing above ≈{max(cutoff, 20)} kHz: likely upsampled from 44.1/48 kHz"))
+    codec = info.codec or ""
+    claims_lossless = codec in LOSSLESS_CODECS or codec.startswith("pcm_")
+    if cutoff is not None:                                   # the spectral rules need measured bands
+        claim = "lossless" if claims_lossless else f"{m.get('kbps')} kbps"
+        if claims_lossless or (m.get("kbps") or 0) >= 315:
+            if cutoff <= 16:
+                where = f"cutoff ≈{cutoff} kHz (energy stops above {cutoff} kHz)" if cutoff else "nothing above 11 kHz"
+                findings.append(("transcode", f"{where} for a {claim} file: "
+                                              f"lossless or 320 kbps reaches 19–20 kHz, so this likely came from ≤128 kbps"))
+            elif cutoff <= 18 and max(a["bands_db"]) >= 19:
+                findings.append(("maybe_lossy", f"cutoff ≈{cutoff} kHz for a {claim} file: may come from a ≤192 kbps "
+                                                f"source (old or lo-fi recordings can lack highs too)"))
+        if sr > 48000 and cutoff <= 22:
+            findings.append(("fake_hires", f"{sr} Hz but nothing above ≈{max(cutoff, 20)} kHz: likely upsampled from 44.1/48 kHz"))
     m["bits_used"] = a["bits_used"]
     if claims_lossless and (info.bit_depth or 0) > 16 and a["bits_used"] and a["bits_used"] <= 16:
         findings.append(("fake_24bit", f"{info.bit_depth}-bit file uses only {a['bits_used']} bits: padded from 16-bit"))

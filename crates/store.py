@@ -18,7 +18,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from sourcing.policy import DEFAULT_TIER, check_tier
-from sourcing.verify import finite
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS crates (
@@ -191,9 +190,9 @@ class CrateStore:
         """Every track across enabled crates that still needs a file, plus external rows — the sourcing queue."""
         ext = self.db.execute("SELECT * FROM external_wanted WHERE status IN ('needs_source','failed') ORDER BY id")
         rows = self._crate_wanted("t.status IN ('needs_source','failed')") + [self._ext_row(r) for r in ext]
-        checks = {sid: json.loads(res) for sid, res in self.db.execute("SELECT song_id, result FROM verifications")}
+        checks = dict(self.db.execute("SELECT song_id, result FROM verifications").fetchall())   # parse only rows shown
         for row in rows:
-            row["verify"] = checks.get(row["song_id"])
+            row["verify"] = json.loads(checks[row["song_id"]]) if row["song_id"] in checks else None
         return rows
 
     def find_wanted(self, song_id: str) -> dict | None:
@@ -216,7 +215,7 @@ class CrateStore:
     def set_verification(self, song_id: str, result: dict) -> None:
         """Keep the last download check for a wanted id (crate or external), replacing the previous one."""
         self.db.execute("INSERT INTO verifications(song_id, result, ts) VALUES(?,?,?) ON CONFLICT(song_id) DO UPDATE "
-                        "SET result=excluded.result, ts=excluded.ts", (song_id, json.dumps(finite(result)), time.time()))
+                        "SET result=excluded.result, ts=excluded.ts", (song_id, json.dumps(result), time.time()))
         self.commit()
 
     def verification(self, song_id: str) -> dict | None:

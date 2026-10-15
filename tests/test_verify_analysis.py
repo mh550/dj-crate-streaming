@@ -28,6 +28,7 @@ def test_cutoff_empty_first_band_is_zero_and_inf_is_empty():
     levels = dict(zip(EDGES, [-120.0] + [-math.inf] * 7))
     assert V.estimate_cutoff(-20.0, levels) == 0
     assert V.estimate_cutoff(-math.inf, dict(zip(EDGES, [-math.inf] * 8))) == 0   # digital silence: no crash
+    assert V.estimate_cutoff(-20.0, {}) is None                                      # nothing measured
 
 
 # ---- fingerprints ----
@@ -139,7 +140,7 @@ def test_tools_never_read_our_stdin(audio, monkeypatch):
 def test_a_peak_of_exactly_0_dbfs_counts_as_clipping():
     # live M5 run: Herb Alpert "Aranjuez" peaks at 0.00 dBFS with flat factor 23.8 and was missed (0.0 is falsy)
     a = {"errors": [], "samples": 44100 * 8, "full_db": -12.0, "bands_db": {20: -60.0}, "bits_used": 16,
-         "peak_db": 0.0, "flat_factor": 23.8, "silences": []}
+         "peak_db": 0.0, "flat_factor": 23.8, "silences": [], "complete": True, "flac_t": None}
     findings, m = [], {}
-    V._decoded_checks(None, V.AudioInfo(8.0, 44100, 16, 2, "flac", "flac-streaminfo"), a, findings, m)
+    V._decoded_checks(V.AudioInfo(8.0, 44100, 16, 2, "flac", "flac-streaminfo"), a, findings, m)
     assert ("clipping", "clipped: peak 0.00 dBFS, flat factor 23.8") in findings

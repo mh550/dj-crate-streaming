@@ -8,7 +8,7 @@ import subprocess
 import pytest
 
 from sourcing import verify as V
-from tests.helpers import make_audio, make_flac
+from tests.helpers import convert, make_audio, make_flac
 
 needs_tools = pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("metaflac")), reason="ffmpeg/metaflac missing")
 
@@ -32,9 +32,7 @@ def test_a_webp_cover_is_not_an_integrity_failure(d):
 
 @needs_tools
 def test_a_few_junk_mp3_frames_are_a_warning_but_lost_audio_is_not(d):
-    good = d / "good.mp3"
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(make_audio(d / "src.flac", seconds=20)), "-b:a", "320k", str(good)],
-                   check=True)
+    good = convert(make_audio(d / "src.flac", seconds=20), d / "good.mp3", "-b:a", "320k")
     raw = good.read_bytes()
     junk = d / "junk.mp3"
     junk.write_bytes(raw[: len(raw) // 2] + bytes(range(256)) * 4 + raw[len(raw) // 2:])     # one bad patch mid-file
@@ -48,19 +46,17 @@ def test_many_decode_errors_or_a_failed_flac_t_stay_hard():
             "flat_factor": 0.0, "silences": [], "complete": True, "flac_t": None}
     info = V.AudioInfo(8.0, 44100, 16, 2, "mp3", "ffprobe")
     findings = []
-    V._decoded_checks(None, info, dict(base, errors=["Header missing"] * 12), findings, {})
+    V._decoded_checks(info, dict(base, errors=["Header missing"] * 12), findings, {})
     assert any(c == "integrity" and "12 decode errors" in msg for c, msg in findings), findings
     findings = []
-    V._decoded_checks(None, V.AudioInfo(8.0, 44100, 16, 2, "flac", "flac-streaminfo"), dict(base, errors=[], flac_t="state = FLAC__STREAM_DECODER_END_OF_STREAM"), findings, {})
+    V._decoded_checks(V.AudioInfo(8.0, 44100, 16, 2, "flac", "flac-streaminfo"), dict(base, errors=[], flac_t="state = FLAC__STREAM_DECODER_END_OF_STREAM"), findings, {})
     assert any(c == "integrity" and "flac -t" in msg for c, msg in findings), findings
 
 
 @needs_tools
 def test_a_cp1251_tag_does_not_crash(d):
     # Soulseek is full of ID3 tags in legacy code pages; ffmpeg echoes the raw bytes on stderr
-    plain = d / "plain.mp3"
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(make_audio(d / "ru.flac")), "-b:a", "128k",
-                    "-id3v2_version", "0", "-write_id3v1", "0", str(plain)], check=True)
+    plain = convert(make_audio(d / "ru.flac"), d / "plain.mp3", "-b:a", "128k", "-id3v2_version", "0", "-write_id3v1", "0")
     text = b"\x03" + "Привет".encode("cp1251")                      # says UTF-8 (0x03), holds cp1251
     frame = b"TIT2" + len(text).to_bytes(4, "big") + b"\x00\x00" + text
     tag = b"ID3\x04\x00\x00" + bytes([(len(frame) >> s) & 0x7F for s in (21, 14, 7, 0)]) + frame
@@ -77,22 +73,28 @@ def test_digital_silence_is_hard_and_its_measurements_are_valid_json(d):
                     "-sample_fmt", "s16", str(silent)], check=True)
     v = V.verify(silent, 8, tier="low")
     assert not v.ok and any("no signal" in p for p in v.problems), v.problems
-    json.dumps(v.measurements, allow_nan=False)                     # -inf would break /api/wanted for every row
+    json.dumps(v.as_dict("low"), allow_nan=False)                   # -inf would break /api/wanted for every row
     assert not any(isinstance(x, float) and not math.isfinite(x) for x in v.measurements.values())
 
 
-def test_wanted_survives_a_non_finite_measurement():
-    from crates.store import CrateStore
-    s = CrateStore()
-    s.set_verification("ext-1", {"ok": False, "measurements": {"peak_db": -math.inf, "bands_db": {"20": -math.inf}}})
-    assert s.verification("ext-1")["measurements"] == {"peak_db": None, "bands_db": {"20": None}}
+def test_measurements_are_finite_on_every_path():
+    assert V.finite({"peak_db": -math.inf, "bands_db": {20: -math.inf, 19: -3.0}}) == {"peak_db": None, "bands_db": {20: None, 19: -3.0}}
+
+
+def test_no_measured_bands_means_no_spectral_verdicts():
+    # an incomplete band analysis must not read as "nothing above 11 kHz" (a transcode) or "upsampled"
+    a = {"errors": [], "samples": 96000 * 8, "full_db": -12.0, "bands_db": {}, "bits_used": 24, "peak_db": -3.0,
+         "flat_factor": 0.0, "silences": [], "complete": False, "flac_t": None}
+    findings, m = [], {}
+    V._decoded_checks(V.AudioInfo(8.0, 96000, 24, 2, "flac", "flac-streaminfo"), a, findings, m)
+    assert [c for c, _ in findings] == ["skipped"] and m["cutoff_khz"] is None
 
 
 def test_cutoff_message_when_nothing_is_above_11_khz():
     a = {"errors": [], "samples": 44100 * 8, "full_db": -12.0, "bands_db": {e: -130.0 for e in V.BAND_EDGES_KHZ},
          "bits_used": 16, "peak_db": -3.0, "flat_factor": 0.0, "silences": [], "complete": True, "flac_t": None}
     findings = []
-    V._decoded_checks(None, V.AudioInfo(8.0, 44100, 16, 2, "flac", "flac-streaminfo"), a, findings, {})
+    V._decoded_checks(V.AudioInfo(8.0, 44100, 16, 2, "flac", "flac-streaminfo"), a, findings, {})
     msg = next(msg for c, msg in findings if c == "transcode")
     assert "nothing above 11 kHz" in msg and "≈0" not in msg
 

@@ -21,6 +21,13 @@ def make_flac(path: Path, sr=44100, bps=16, ch=2, total=44100 * 300, pad_bytes=0
     return path
 
 
+def convert(src: Path, dst: Path, *args) -> Path:
+    """ffmpeg src → dst with extra output args (e.g. '-b:a', '128k')."""
+    import subprocess
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(src), *args, str(dst)], check=True)
+    return dst
+
+
 def make_audio(path: Path, *, seconds=8, seed=42, rate=44100, sample_fmt="s16", bits=None, color="white",
                af=None, lead_silence=0, via_mp3_kbps=None) -> Path:
     """Real audio from seeded noise (spec §3a: no binary fixtures). `via_mp3_kbps` round-trips through a lossy

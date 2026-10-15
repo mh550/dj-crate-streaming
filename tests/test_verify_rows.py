@@ -5,9 +5,7 @@ import shutil
 import pytest
 
 from sourcing import cli
-from sourcing import fetch as fetch_mod
 from sourcing.fake_slskd import FakeSlskdServer
-from sourcing.slskd_client import SlskdClient
 from sourcing.verify import Verdict
 from tests.helpers import make_audio
 from tests.test_fetch import GOOD, RESPONSES, good_flac_bytes, new_song, run, world  # noqa: F401  (fixture)
@@ -25,13 +23,10 @@ class Spy:
         return self.verdict
 
 
-def test_fetch_verifies_at_the_rows_tier_and_keeps_the_result(world, tmp_path, monkeypatch):
+def test_fetch_verifies_at_the_rows_tier_and_keeps_the_result(world, tmp_path):
     spy = Spy(BAD)
-    monkeypatch.setattr(fetch_mod, "verify", spy)                      # the default verifier is sourcing.verify.verify
     with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: good_flac_bytes(tmp_path)}) as srv:
-        r = fetch_mod.fetch("s4", store=world["store"], slskd=SlskdClient(srv.url, "k"),
-                            navidrome=world["client"], reconciler=world["rec"], music_root=world["music"],
-                            downloads_root=world["dl"], approve=True, poll_s=0.01, download_timeout_s=1, scan_timeout_s=1)
+        r = run(world, srv, approve=True, verifier=spy)
     assert spy.calls == [("03 - Good Times.flac", 501, "crate")]          # crate rows are crate
     assert r.status == "failed" and r.reason == "cutoff ≈16 kHz …"
     v = world["store"].verification("s4")

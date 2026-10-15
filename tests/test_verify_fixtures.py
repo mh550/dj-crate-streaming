@@ -1,18 +1,12 @@
 """M5 step 2 (spec §3a): the fixture set end to end, all generated here with ffmpeg from seeded noise."""
 import shutil
-import subprocess
 
 import pytest
 
 from sourcing.verify import verify
-from tests.helpers import make_audio
+from tests.helpers import convert, make_audio
 
 pytestmark = pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("fpcalc")), reason="ffmpeg/fpcalc not on PATH")
-
-
-def convert(src, dst, *args):
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(src), *args, str(dst)], check=True)
-    return dst
 
 
 @pytest.fixture(scope="module")

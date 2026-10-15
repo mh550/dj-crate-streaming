@@ -83,7 +83,7 @@ function verifyLine(v) {
   const m = v.measurements || {}, bits = [];
   if (m.cutoff_khz !== undefined) bits.push(m.cutoff_khz ? `cutoff ≈${m.cutoff_khz} kHz` : "cutoff < 11 kHz");
   if (m.bits_used) bits.push(`${m.bits_used}-bit used`);
-  if (m.peak_db !== undefined && m.peak_db !== null) bits.push(`peak ${Number(m.peak_db).toFixed(1)} dB`);
+  if (m.peak_db != null) bits.push(`peak ${Number(m.peak_db).toFixed(1)} dB`);
   if (m.fingerprint_ber !== undefined) bits.push(`fingerprint ${m.fingerprint_ber}`);
   const why = [...(v.problems || []).map(p => "✗ " + p), ...(v.warnings || []).map(w => "! " + w)];
   return `last download ${v.ok ? "passed" : "rejected"} (${v.tier}): ${v.file} · ${bits.join(" · ")}${why.length ? " · " + why.join(" · ") : ""}`;

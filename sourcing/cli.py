@@ -18,16 +18,15 @@ from pathlib import Path
 from .scorer import Wanted, rank, explain
 from .policy import DEFAULT_TIER, TIERS
 from .spotify_csv import fetch_entity
-from .verify import verify
+from .verify import full_band, verify
 
 
 def describe_measurements(m: dict) -> list[str]:
     """The decoded measurements as short lines (header facts are printed separately)."""
     out = []
-    if "cutoff_khz" in m:
-        top = max(m["bands_db"]) if m.get("bands_db") else None
+    if m.get("cutoff_khz") is not None:
         cut = m["cutoff_khz"]
-        out.append(f"cutoff {'≥' if cut == top else '≈'}{cut} kHz" if cut else "cutoff below 11 kHz")
+        out.append(f"cutoff {'≥' if full_band(m) else '≈'}{cut} kHz" if cut else "cutoff below 11 kHz")
         out.append("band dB vs full: " + "  ".join(f">{e}k {v}" for e, v in m["bands_db"].items()))
     if m.get("decoded_s") is not None:
         out.append(f"decoded {m['decoded_s']} s · bits used {m.get('bits_used')} · peak {m['peak_db']:.2f} dBFS · "
@@ -157,20 +156,21 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if r.status in ("ok", "needs_source", "sourcing") else 2
 
     if a.cmd == "verify":
-        vd = verify(Path(a.path), a.duration, tier=a.tier, reference=Path(a.reference) if a.reference else None)
+        if a.reference and not a.tier:
+            v.error("verify --reference needs --tier (the recording check runs with the decoded checks)")
+        vd = verify(Path(a.path), a.duration, tier=a.tier, reference=a.reference)
         if a.json:
-            print(json.dumps({"ok": vd.ok, "tier": a.tier, "problems": vd.problems, "warnings": vd.warnings,
-                              "measurements": vd.measurements}, ensure_ascii=False))
-            return 0 if vd.ok else 2
-        print(("OK  " if vd.ok else "BAD ") + a.path + (f"  (tier {a.tier})" if a.tier else ""))
-        if vd.info:
-            print(f"     {vd.info.codec} {vd.info.sample_rate} Hz / {vd.info.bit_depth} bit / {vd.info.channels} ch / {vd.info.duration_s and round(vd.info.duration_s, 1)} s  [{vd.info.source}]")
-        for line in describe_measurements(vd.measurements):
-            print("     ·", line)
-        for p in vd.problems:
-            print("     ✗", p)
-        for w in vd.warnings:
-            print("     !", w)
+            print(json.dumps(vd.as_dict(a.tier), ensure_ascii=False))
+        else:
+            print(("OK  " if vd.ok else "BAD ") + a.path + (f"  (tier {a.tier})" if a.tier else ""))
+            if vd.info:
+                print(f"     {vd.info.codec} {vd.info.sample_rate} Hz / {vd.info.bit_depth} bit / {vd.info.channels} ch / {vd.info.duration_s and round(vd.info.duration_s, 1)} s  [{vd.info.source}]")
+            for line in describe_measurements(vd.measurements):
+                print("     ·", line)
+            for p in vd.problems:
+                print("     ✗", p)
+            for w in vd.warnings:
+                print("     !", w)
         return 0 if vd.ok else 2
 
     wanted = Wanted(a.artist, a.title, a.album, a.duration, a.year)
