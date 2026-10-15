@@ -233,10 +233,12 @@ class CrateStore:
 
     def add_external_wanted(self, artist: str, title: str, album: str | None = None, duration_s: float | None = None,
                             year: int | None = None, source: str | None = None,
-                            playlist_id: str | None = None, position: int | None = None, tier: str | None = None) -> str:
+                            playlist_id: str | None = None, position: int | None = None, tier: str | None = None,
+                            default_tier: str = DEFAULT_TIER) -> str:
         """Returns the existing id when the same artist/title is already queued (re-running a seed is a no-op);
-        a playlist position or a tier, when given, is (re)recorded on that row. A new row's tier defaults to crate."""
-        check_tier(tier or DEFAULT_TIER)
+        a playlist position or a tier, when given, is (re)recorded on that row. A new row without a tier gets
+        default_tier (crate; imports pass medium, D15)."""
+        check_tier(tier or check_tier(default_tier))
         existing = self.find_external(artist, title)
         if existing:
             if playlist_id is not None:
@@ -245,7 +247,7 @@ class CrateStore:
             if tier is not None:
                 self.set_external_tier(existing["song_id"], tier)
             return existing["song_id"]
-        return self._insert_external(artist, title, album, duration_s, year, source, playlist_id, position, tier or DEFAULT_TIER)
+        return self._insert_external(artist, title, album, duration_s, year, source, playlist_id, position, tier or default_tier)
 
     def set_external_tier(self, ext_id: str, tier: str) -> None:
         """Change the tier an external row is sourced at; logged when it changes."""
@@ -273,6 +275,10 @@ class CrateStore:
     def external_for_playlist(self, playlist_id: str) -> list[dict]:
         return [self._ext_row(r) for r in self.db.execute(
             "SELECT * FROM external_wanted WHERE playlist_id=? ORDER BY position, id", (playlist_id,))]
+
+    def external_ids_at_tier(self, tier: str) -> list[str]:
+        return [self._ext_row(r)["song_id"] for r in self.db.execute(
+            "SELECT * FROM external_wanted WHERE tier=? ORDER BY id", (check_tier(tier),))]
 
     def external_count(self) -> int:
         return self.db.execute("SELECT COUNT(*) FROM external_wanted").fetchone()[0]

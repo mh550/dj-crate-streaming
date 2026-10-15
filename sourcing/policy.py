@@ -66,6 +66,7 @@ TIERS: dict[str, QualityPolicy] = {
     "crate": QualityPolicy(),
 }
 DEFAULT_TIER = "crate"
+IMPORT_TIER = "medium"      # D15 (Michael, 2026-10-15): new rows from import-playlist / seed-spotify, unless --tier
 DEFAULT_POLICY = TIERS[DEFAULT_TIER]
 
 # The stream transcode follows the same name (spec §1 "Stream"): (Subsonic format, maxBitRate kbps).

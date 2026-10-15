@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from crates.store import CrateStore
 from subsonic.client import Song, SubsonicClient
 from .playlist_sources import Row, lead_artist, track_lead
+from .policy import IMPORT_TIER
 
 TOLERANCE_S = 4
 MARKER = "#imported"          # in the playlist comment: "this playlist is managed by import-playlist"
@@ -272,7 +273,8 @@ def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: C
                 store.set_external_status(r["song_id"], "ok", f"in library: {m.song_id}")
         for m, lead in pending:
             ext = store.add_external_wanted(lead, m.row.title, album=m.row.album, duration_s=m.row.duration_s,
-                                            source=source, playlist_id=playlist_id, position=m.row.position, tier=tier)
+                                            source=source, playlist_id=playlist_id, position=m.row.position, tier=tier,
+                                            default_tier=IMPORT_TIER)
             if m.status == "ambiguous" and store.external(ext)["status"] in ("needs_source", "review"):
                 store.set_external_status(ext, "review", f"ambiguous ({m.why}): " + ", ".join(m.candidates))
         store.commit()

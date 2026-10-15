@@ -178,3 +178,37 @@ def test_approved_fetch_refuses_before_any_download_when_the_folders_are_missing
         assert srv.enqueued == []
     assert r.status == "refused" and "srv/music" in r.reason and r.pick is None    # refused before any search
     assert world["store"].external(ext)["status"] == "needs_source"
+
+
+def test_imports_default_to_medium_and_a_rerun_keeps_a_raised_tier(tmp_path, monkeypatch, capsys):
+    """D15 (Michael, 2026-10-15): imported Spotify playlists are sourced at medium unless --tier says otherwise;
+    the default only applies to new rows, so re-running an import never lowers a row raised by hand."""
+    db = tmp_path / "c.db"; monkeypatch.setenv("CRATES_DB", str(db))
+    entity = {"name": "Test", "trackList": [{"title": "Good Times", "subtitle": "Chic", "duration": 501_000}]}
+    monkeypatch.setattr(cli, "fetch_entity", lambda url: entity)
+    assert cli.main(["seed-spotify", "https://open.spotify.com/playlist/abc"]) == 0
+    assert [w["tier"] for w in CrateStore(db).wanted()] == ["medium"]
+    report = tmp_path / "r.txt"; report.write_text("[SUCCESS] Nobody Has This - Nobody\n")
+    with FakeSubsonicServer() as nd:
+        for k, v in dict(SUBSONIC_URL=nd.url, SUBSONIC_USER="demo", SUBSONIC_PASS="demo").items():
+            monkeypatch.setenv(k, v)
+        assert cli.main(["import-playlist", str(report), "--name", "T"]) == 0
+        assert {w["title"]: w["tier"] for w in CrateStore(db).wanted()}["Nobody Has This"] == "medium"
+        assert cli.main(["import-playlist", str(report), "--name", "T", "--tier", "crate"]) == 0
+        assert cli.main(["import-playlist", str(report), "--name", "T"]) == 0          # plain re-run
+    assert {w["title"]: w["tier"] for w in CrateStore(db).wanted()}["Nobody Has This"] == "crate"
+
+
+def test_retier_moves_external_rows_from_one_tier_to_another(tmp_path, monkeypatch, capsys):
+    """D15 backfill: rows queued at crate before the import default changed move to medium; crate rows stay crate."""
+    db = tmp_path / "c.db"; monkeypatch.setenv("CRATES_DB", str(db))
+    st = CrateStore(db)
+    a = st.add_external_wanted("Chic", "Good Times")                     # crate (old default)
+    b = st.add_external_wanted("Cerrone", "Supernature", tier="low")
+    st.commit()
+    assert cli.main(["retier", "--from", "crate", "--to", "medium", "--dry-run"]) == 0
+    assert CrateStore(db).external(a)["tier"] == "crate"
+    assert cli.main(["retier", "--from", "crate", "--to", "medium"]) == 0
+    st = CrateStore(db)
+    assert st.external(a)["tier"] == "medium" and st.external(b)["tier"] == "low"
+    assert "1 row" in capsys.readouterr().out

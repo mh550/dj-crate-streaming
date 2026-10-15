@@ -5,6 +5,9 @@
   python -m crates.cli toggle <playlist-id> on|off
   python -m crates.cli reconcile                 # sync crate state from Navidrome, re-judge every track
   python -m crates.cli wanted                    # the sourcing queue (feeds `sourcing.cli rank`)
+  python -m crates.cli rename <playlist-id> <new-name>
+  python -m crates.cli merge <into-id> <from-id> [--delete-source]   # append from's songs not already in into
+  python -m crates.cli delete <playlist-id>      # the .m3u8 export in /srv/music/_playlists stays as the backup
   python -m crates.cli serve [--bind 127.0.0.1 --port 4580]
   python -m crates.cli demo                      # fake Navidrome + service on one port, for poking at the UI
 
@@ -34,6 +37,10 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("reconcile")
     w = sub.add_parser("wanted"); w.add_argument("--json", action="store_true")
     p = sub.add_parser("publish", help="make playlists visible to every Navidrome user (public)"); p.add_argument("names", nargs="*", help="playlist names (default: all)")
+    r = sub.add_parser("rename"); r.add_argument("playlist_id"); r.add_argument("name")
+    m = sub.add_parser("merge", help="append the songs of one playlist that another lacks, in order")
+    m.add_argument("into_id"); m.add_argument("from_id"); m.add_argument("--delete-source", action="store_true")
+    x = sub.add_parser("delete"); x.add_argument("playlist_id")
     s = sub.add_parser("serve"); s.add_argument("--bind"); s.add_argument("--port", type=int)
     d = sub.add_parser("demo"); d.add_argument("--port", type=int, default=4580)
     a = ap.parse_args(argv)
@@ -88,6 +95,23 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"public already  {pl.name}")
             else:
                 app.api.update_playlist(pl.id, public=True); print(f"made public     {pl.name}")
+    elif a.cmd == "rename":
+        old = app.api.playlist(a.playlist_id).name
+        app.api.update_playlist(a.playlist_id, name=a.name); print(f"renamed {old} → {a.name}")
+    elif a.cmd == "merge":
+        if a.into_id == a.from_id:
+            print("merge: a playlist cannot be merged into itself", file=sys.stderr)
+            return 1
+        into, src = app.api.playlist(a.into_id), app.api.playlist(a.from_id)
+        have = {e.id for e in into.entries}
+        add = [e.id for e in src.entries if e.id not in have]
+        app.api.update_playlist(into.id, add_song_ids=add)
+        print(f"{into.name}: added {len(add)} from {src.name} ({len(src.entries) - len(add)} already there)")
+        if a.delete_source:
+            app.api.delete_playlist(src.id); print(f"deleted {src.name}")
+    elif a.cmd == "delete":
+        pl = app.api.playlist(a.playlist_id)
+        app.api.delete_playlist(pl.id); print(f"deleted {pl.name} ({len(pl.entries)} songs)")
     elif a.cmd == "serve":
         srv = CrateServer(app, a.bind, a.port)
         print(f"crate service on {srv.url} → Navidrome {cfg.subsonic_url} as {cfg.username}")

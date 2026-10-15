@@ -6,6 +6,7 @@ r"""CLI: rank candidates for a wanted track, from a fixture file or a live slskd
   python -m sourcing.cli fetch --wanted s4 [--approve] [--tier T]   # one wanted track, end to end (see fetch.py); tier: the row's
   python -m sourcing.cli seed-spotify https://open.spotify.com/playlist/...   # queue tracks not in Navidrome
   python -m sourcing.cli import-playlist <spotify-url|report.txt|exportify.csv>... [--name N] [--dry-run]   # D11: Spotify playlists → public Navidrome playlist + wanted rows
+  python -m sourcing.cli retier --from crate --to medium [--dry-run]   # move external wanted rows between tiers (D15 backfill)
 """
 from __future__ import annotations
 
@@ -16,7 +17,7 @@ import sys
 from pathlib import Path
 
 from .scorer import Wanted, rank, explain
-from .policy import DEFAULT_TIER, TIERS
+from .policy import DEFAULT_TIER, IMPORT_TIER, TIERS
 from .spotify_csv import fetch_entity
 from .verify import full_band, verify
 
@@ -78,16 +79,33 @@ def main(argv: list[str] | None = None) -> int:
 
     s = sub.add_parser("seed-spotify", help="add every track of a public Spotify playlist/album to the wanted queue")
     s.add_argument("url")
-    add_tier_arg(s, None, "tier for the queued rows (default crate; re-seeding with a tier changes it)")
+    add_tier_arg(s, None, f"tier for new queued rows (default {IMPORT_TIER}, D15); given on a re-seed, it changes existing rows too")
 
     ip = sub.add_parser("import-playlist", help="Spotify URL / Exportify CSV / SpotiFLAC report → public Navidrome playlist; the rest become wanted rows")
     ip.add_argument("sources", nargs="+", help="several sources concatenate in order into one playlist (needs --name)")
     ip.add_argument("--name", help="playlist name (default: the source's own name; required with several sources)")
     ip.add_argument("--dry-run", action="store_true", help="match and report, write nothing")
     ip.add_argument("--merge", action="store_true", help="add to a same-named playlist this tool did not create (adopts it)")
-    add_tier_arg(ip, None, "tier for the wanted rows it creates (default crate)")
+    add_tier_arg(ip, None, f"tier for new wanted rows (default {IMPORT_TIER}, D15); given on a re-run, it changes existing rows too")
+
+    rt = sub.add_parser("retier", help="move every external wanted row at one tier to another (e.g. the D15 backfill)")
+    rt.add_argument("--from", dest="from_tier", choices=list(TIERS), required=True)
+    rt.add_argument("--to", dest="to_tier", choices=list(TIERS), required=True)
+    rt.add_argument("--dry-run", action="store_true")
 
     a = ap.parse_args(argv)
+
+    if a.cmd == "retier":
+        from crates.service import Config
+        from crates.store import CrateStore
+        store = CrateStore(Config.from_env().db_path)
+        ids = store.external_ids_at_tier(a.from_tier)
+        if not a.dry_run:
+            for ext in ids:
+                store.set_external_tier(ext, a.to_tier)      # logged per row
+            store.commit()
+        print(f"{'would move' if a.dry_run else 'moved'} {len(ids)} row{'s' * (len(ids) != 1)} {a.from_tier} → {a.to_tier}")
+        return 0
 
     if a.cmd == "import-playlist":
         from crates.service import Config
@@ -129,7 +147,8 @@ def main(argv: list[str] | None = None) -> int:
         store = CrateStore(db)
         before, total = store.external_count(), 0
         for r in rows(fetch_entity(a.url)):          # dicts: {"Artist", "Title", "Length"} (seconds)
-            store.add_external_wanted(r["Artist"], r["Title"], duration_s=r["Length"], source=a.url, tier=a.tier)   # idempotent
+            store.add_external_wanted(r["Artist"], r["Title"], duration_s=r["Length"], source=a.url, tier=a.tier,   # idempotent
+                                       default_tier=IMPORT_TIER)
             total += 1
         store.commit()
         added = store.external_count() - before
