@@ -107,14 +107,14 @@ def test_trash_refuses_while_referenced_then_moves_logs_and_updates_the_map(worl
     con = sqlite3.connect(nd)                                                 # as if repoint + rescan happened
     con.execute("UPDATE playlist_tracks SET media_file_id='k1' WHERE media_file_id='c1' AND playlist_id='p1'")
     con.execute("DELETE FROM playlist_tracks WHERE media_file_id='c1'"); con.commit(); con.close()
-    moved = dc.trash(plan, music, trash, nd, lm, config=None)
+    moved, skipped = dc.trash(plan, music, trash, nd, lm, config=None)
     rel = "Compilations/Intuition (1981)/01 - Staying Power.flac"
-    assert moved == [rel] and not (music / rel).exists() and (trash / rel).is_file()
+    assert moved == [rel] and skipped == [] and not (music / rel).exists() and (trash / rel).is_file()
     assert f"mv '{trash / rel}' '{music / rel}'" in (trash / "MOVES.txt").read_text()
     assert removed == [str(music / rel)]
     rows = list(csv.DictReader(lm.open()))
     assert rows[0]["new_path"] == "Barry White/Staying Power (1999)/01 - Staying Power.flac" and rows[0]["other_copies"] == ""
-    assert dc.trash(plan, music, trash, nd, lm, config=None) == []           # already done
+    assert dc.trash(plan, music, trash, nd, lm, config=None) == ([], [])     # already done
 
 
 @pytest.mark.parametrize("keep, other", [
@@ -158,3 +158,51 @@ def test_restore_keeps_an_existing_trash_copy(tmp_path):
     entry = {"path_before": str(current), "before": {"title": ""}, "after": {"title": "T"}}
     trp.restore(entry, original, music_root=tmp_path / "music", trash_root=tmp_path / "trash")
     assert (tmp_path / "trash/A/x.flac").read_text() == "already here" and (tmp_path / "trash/A/x (2).flac").is_file()
+
+
+def _clear_playlists(nd):
+    con = sqlite3.connect(nd)
+    con.execute("UPDATE playlist_tracks SET media_file_id='k1' WHERE media_file_id='c1' AND playlist_id='p1'")
+    con.execute("DELETE FROM playlist_tracks WHERE media_file_id='c1'"); con.commit(); con.close()
+
+
+def test_trash_finishes_its_bookkeeping_after_a_crash(world, monkeypatch):
+    # Opus M3 review (proved): a run that died after the move left beets and the library map stale for good.
+    music, nd, lm, tmp = world
+    plan = dc.plan(lm, music, nd, tmp / "plan.json", tmp / "report.md")
+    _clear_playlists(nd)
+    def boom(paths, config): raise RuntimeError("no beets on this python")
+    monkeypatch.setattr(dc, "_forget_in_beets", boom)
+    with pytest.raises(RuntimeError):
+        dc.trash(plan, music, tmp / "trash", nd, lm, config=None)
+    removed = []
+    monkeypatch.setattr(dc, "_forget_in_beets", lambda paths, config: removed.extend(paths))
+    moved, skipped = dc.trash(plan, music, tmp / "trash", nd, lm, config=None)
+    rel = "Compilations/Intuition (1981)/01 - Staying Power.flac"
+    assert moved == [] and skipped == [] and removed == [str(music / rel)]
+    assert list(csv.DictReader(lm.open()))[0]["new_path"] == "Barry White/Staying Power (1999)/01 - Staying Power.flac"
+
+
+def test_trash_skips_a_copy_whose_kept_file_is_gone_or_differs(world, monkeypatch):
+    music, nd, lm, tmp = world
+    plan = dc.plan(lm, music, nd, tmp / "plan.json", tmp / "report.md")
+    _clear_playlists(nd)
+    monkeypatch.setattr(dc, "_forget_in_beets", lambda paths, config: None)
+    keep = music / "Barry White/Staying Power (1999)/01 - Staying Power.flac"
+    keep.rename(keep.with_suffix(".moved-away"))                              # e.g. a later beets move
+    moved, skipped = dc.trash(plan, music, tmp / "trash", nd, lm, config=None)
+    rel = "Compilations/Intuition (1981)/01 - Staying Power.flac"
+    assert moved == [] and skipped == [rel] and (music / rel).is_file()          # the only copy stays
+    keep.with_suffix(".moved-away").rename(keep)
+    (music / rel).unlink(); _audio(music / rel, freq=1234)                      # a different song now sits at the copy's path
+    assert dc.trash(plan, music, tmp / "trash", nd, lm, config=None) == ([], [rel]) and (music / rel).is_file()
+
+
+def test_restore_records_where_the_damaged_copy_went(tmp_path):
+    from scripts import tag_repair as trp
+    original, current = tmp_path / "orig/x.flac", tmp_path / "music/A/x.flac"
+    _audio(original); current.parent.mkdir(parents=True); current.write_bytes(original.read_bytes())
+    (tmp_path / "trash/A").mkdir(parents=True); (tmp_path / "trash/A/x.flac").write_text("already here")
+    entry = {"path_before": str(current), "before": {"title": ""}, "after": {"title": "T"}}
+    trp.restore(entry, original, music_root=tmp_path / "music", trash_root=tmp_path / "trash")
+    assert entry["trashed_to"] == str(tmp_path / "trash/A/x (2).flac")

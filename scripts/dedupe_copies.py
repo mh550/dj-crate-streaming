@@ -170,17 +170,21 @@ def _forget_in_beets(paths: list[str], config) -> None:
     lib._close()
 
 
-def trash(p: dict, music, trash_root, navidrome_db, library_map, config) -> list[str]:
+def trash(p: dict, music, trash_root, navidrome_db, library_map, config) -> tuple[list[str], list[str]]:
+    """(moved, skipped). Refuses while a playlist still has a copy; re-checks each kept copy first."""
     music, trash_root = Path(music), Path(trash_root)
     ids = {t["id"] for t in p["trash"]}
     with closing(open_ro(navidrome_db)) as con:
         still = [m for (m,) in con.execute("SELECT DISTINCT media_file_id FROM playlist_tracks") if m in ids]
     if still:
         raise StillReferenced(f"{len(still)} copies are still in a playlist: run repoint, wait for the scan, then trash")
-    moved = []
+    moved, skipped = [], []
     for t in p["trash"]:
-        src = music / t["path"]
+        src, keep = music / t["path"], music / t["keep_path"]
         if not src.exists():
+            continue
+        if not keep.is_file() or decoded_md5(src) != decoded_md5(keep):
+            skipped.append(t["path"])                    # never move the only copy: the plan is stale for this one
             continue
         dst = free_path(trash_root / t["path"])
         dst.parent.mkdir(parents=True, exist_ok=True)
@@ -188,15 +192,18 @@ def trash(p: dict, music, trash_root, navidrome_db, library_map, config) -> list
         with (trash_root / "MOVES.txt").open("a", encoding="utf-8") as log:   # logged before the next move
             log.write(f"mv {shlex.quote(str(dst))} {shlex.quote(str(src))}\n")
         moved.append(t["path"])
-    if moved:
-        _forget_in_beets([str(music / m) for m in moved], config)
-        rows, keep = read_csv(Path(library_map)), {t["path"]: t["keep_path"] for t in p["trash"]}
+    # Bookkeeping for every planned copy that is gone, moved now or by an earlier run that died
+    # part-way (both steps are idempotent), so a re-run always finishes the job.
+    gone = {t["path"]: t["keep_path"] for t in p["trash"] if not (music / t["path"]).exists()}
+    if gone:
+        _forget_in_beets([str(music / g) for g in gone], config)
+        rows = read_csv(Path(library_map))
         for r in rows:
-            if r["new_path"] in keep:
-                r["new_path"] = keep[r["new_path"]]
-            r["other_copies"] = "|".join(o for o in r["other_copies"].split("|") if o and o not in keep and o != r["new_path"])
+            if r["new_path"] in gone:
+                r["new_path"] = gone[r["new_path"]]
+            r["other_copies"] = "|".join(o for o in r["other_copies"].split("|") if o and o not in gone and o != r["new_path"])
         write_csv(rows, Path(library_map))
-    return moved
+    return moved, skipped
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -222,11 +229,14 @@ def main(argv: list[str] | None = None) -> int:
         return 1 if refused else 0
     else:
         try:
-            moved = trash(json.loads(a.plan.read_text()), a.music, a.trash, a.navidrome_db, a.library_map, a.config)
+            moved, skipped = trash(json.loads(a.plan.read_text()), a.music, a.trash, a.navidrome_db, a.library_map, a.config)
         except StillReferenced as e:
             print(e, file=sys.stderr)
             return 1
         print(f"{len(moved)} copies moved to {a.trash} (reverse commands in {a.trash / 'MOVES.txt'})")
+        for s_ in skipped:
+            print(f"  skipped (kept copy missing or different audio; re-run plan): {s_}")
+        return 1 if skipped else 0
     return 0
 
 

@@ -47,6 +47,7 @@ def restore(entry: dict, original, music_root, trash_root) -> None:
     shutil.copy2(cur, kept)
     os.replace(tmp, cur)
     entry["restored_from"] = str(original)
+    entry["trashed_to"] = str(kept)
 
 
 def _genre_set(values) -> list[str]:
