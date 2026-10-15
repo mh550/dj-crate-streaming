@@ -25,6 +25,8 @@ from pathlib import Path
 
 from .policy import DEFAULT_TIER, TIERS, check_tier
 
+TEXT = {"text": True, "encoding": "utf-8", "errors": "replace"}   # ffmpeg echoes tags in whatever code page they're in
+
 
 @dataclass
 class AudioInfo:
@@ -34,6 +36,7 @@ class AudioInfo:
     channels: int | None
     codec: str | None
     source: str
+    duration_exact: bool = True     # False when ffprobe estimated it from the bitrate (VBR mp3 without a Xing header)
 
 
 def flac_streaminfo(path: Path) -> AudioInfo | None:
@@ -64,14 +67,15 @@ def ffprobe(path: Path) -> AudioInfo | None:
     if not shutil.which("ffprobe"):
         return None
     try:
-        out = subprocess.run(["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", "-show_format", str(path)],
-                             stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30).stdout
-        d = json.loads(out)
+        run = subprocess.run(["ffprobe", "-v", "warning", "-print_format", "json", "-show_streams", "-show_format", str(path)],
+                             stdin=subprocess.DEVNULL, capture_output=True, timeout=30, **TEXT)
+        d = json.loads(run.stdout)
         a = next((s for s in d.get("streams", []) if s.get("codec_type") == "audio"), {})
         dur = float(d.get("format", {}).get("duration") or a.get("duration") or 0) or None
         bits = a.get("bits_per_raw_sample") or a.get("bits_per_sample")
         return AudioInfo(dur, int(a["sample_rate"]) if a.get("sample_rate") else None, int(bits) if bits else None,
-                         a.get("channels"), a.get("codec_name"), "ffprobe")
+                         a.get("channels"), a.get("codec_name"), "ffprobe",
+                         "Estimating duration from bitrate" not in run.stderr)
     except Exception:
         return None
 
@@ -177,7 +181,6 @@ def parse_ffmpeg(stderr: str, edges: list[int]) -> dict:
     }
 
 
-TEXT = {"text": True, "encoding": "utf-8", "errors": "replace"}   # ffmpeg echoes tags in whatever code page they're in
 MAX_DECODE_NOISE = 10    # fewer ffmpeg errors than this, with the audio all there, is a junk frame or a tag: a warning
 
 
@@ -250,10 +253,13 @@ def verify(path: Path, expected_duration_s: float | None = None, tier: str | Non
         findings.append(("unreadable", "could not read audio header (no ffprobe and not FLAC?)"))
         return verdict(None)
     m.update(codec=info.codec, sample_rate=info.sample_rate, bit_depth=info.bit_depth, duration_s=info.duration_s)
-    if expected_duration_s and info.duration_s:
-        d = abs(info.duration_s - expected_duration_s)
-        if d > tolerance_s:
-            findings.append(("duration", f"duration {info.duration_s:.0f}s vs expected {expected_duration_s:.0f}s (Δ{d:.0f}s)"))
+    def check_length(length: float | None) -> None:
+        if expected_duration_s and length and abs(length - expected_duration_s) > tolerance_s:
+            findings.insert(0, ("duration", f"duration {length:.0f}s vs expected {expected_duration_s:.0f}s "
+                                            f"(Δ{abs(length - expected_duration_s):.0f}s)"))
+
+    if tier is None or info.duration_exact:      # else the decoded length decides, below
+        check_length(info.duration_s)
     if info.duration_s:
         kbps = path.stat().st_size * 8 / info.duration_s / 1000
         m["kbps"] = round(kbps)
@@ -272,6 +278,8 @@ def verify(path: Path, expected_duration_s: float | None = None, tier: str | Non
             _decoded_checks(info, analyse(path, info.sample_rate, info.duration_s), findings, m)
         except subprocess.TimeoutExpired as e:
             findings.append(("skipped", f"decoded checks timed out after {e.timeout:.0f}s and were skipped"))
+    if not info.duration_exact:
+        check_length(m.get("decoded_s") or info.duration_s)
     if reference is not None:
         _recording_check(path, reference, findings, m)
     return verdict(info)
@@ -319,7 +327,7 @@ def _decoded_checks(info: AudioInfo, a: dict, findings: list, m: dict) -> None:
         findings.append(("integrity", "no signal: the file is digital silence"))
     sr = info.sample_rate or 44100
     m["decoded_s"] = decoded = round(a["samples"] / sr, 2)
-    if info.duration_s and info.duration_s - decoded > 1.0:
+    if info.duration_exact and info.duration_s and info.duration_s - decoded > 1.0:
         findings.append(("truncated", f"truncated: the header says {info.duration_s:.1f}s, only {decoded:.1f}s decodes"))
     if not a["complete"]:
         findings.append(("skipped", "the band analysis came back incomplete: cutoff checks skipped"))

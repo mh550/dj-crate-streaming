@@ -117,3 +117,15 @@ def test_a_timeout_is_reported_not_raised(tmp_path, monkeypatch):
     v = V.verify(p, 300, tier="crate")
     assert v.ok and any("timed out" in w for w in v.warnings), (v.problems, v.warnings)
     assert seen["ffmpeg"] >= 600                                    # scales with length × rate, never under 10 min
+
+
+@needs_tools
+def test_an_estimated_mp3_length_defers_to_the_decoded_length(d):
+    # library sweep: 6 mp3s "truncated" because ffprobe estimates the length of a VBR mp3 without a Xing header
+    # (or with big cover art) from the bitrate; the decoded length is the real one, for both length checks
+    vbr = convert(make_audio(d / "vsrc.flac", lead_silence=3), d / "vbr.mp3", "-q:a", "2", "-write_xing", "0")
+    v = V.verify(vbr, 11, tier="low")
+    assert v.ok, v.problems
+    assert v.measurements["duration_s"] > 20 and abs(v.measurements["decoded_s"] - 11) < 0.2
+    assert not V.verify(vbr, 30, tier="low").ok                     # the real length is still checked
+    assert not V.verify(vbr, 11).ok                                 # header-only can't know better: unchanged
