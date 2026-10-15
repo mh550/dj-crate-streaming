@@ -119,6 +119,19 @@ def name_match(c: Candidate, w: Wanted) -> tuple[float, str]:
 
 # ---------- scoring ----------
 
+UNKNOWN_SPEED_Bps = 50_000          # a peer that reports no upload speed is assumed slow
+
+
+def estimated_arrival_s(c: Candidate, cap_Bps: int = 0) -> float:
+    """Seconds until the file would be here: size over the slower of the peer and our own cap, plus a
+    rough wait when the peer has no free slot (30 s, and 20 s per upload queued ahead of us)."""
+    speed = c.upload_speed or UNKNOWN_SPEED_Bps
+    if cap_Bps:
+        speed = min(speed, cap_Bps)
+    wait = 0 if c.has_free_slot else 30 + 20 * c.queue_length
+    return c.size / speed + wait
+
+
 def score_candidate(c: Candidate, w: Wanted, policy: QualityPolicy = DEFAULT_POLICY) -> Candidate:
     """Fills c.score / c.rejected / c.reasons. Score is roughly 0..100."""
     c.reasons.clear()
@@ -194,6 +207,13 @@ def score_candidate(c: Candidate, w: Wanted, policy: QualityPolicy = DEFAULT_POL
     # A peer sharing the whole album folder is more likely a real rip than a stray file.
     if c.file_count >= 4:
         s += 2; c.reasons.append(f"peer has {c.file_count} matching files (album?)")
+
+    # --- speed (listening tiers): blend in how soon the file would arrive
+    if policy.speed_weight:
+        t = estimated_arrival_s(c, policy.download_cap_Bps)
+        speed = 100 * policy.arrival_budget_s / (policy.arrival_budget_s + t)
+        c.reasons.append(f"arrival ~{t:.0f} s")
+        s = (1 - policy.speed_weight) * s + policy.speed_weight * speed
 
     c.score = round(s, 1)
     return c
