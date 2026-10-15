@@ -135,3 +135,135 @@ def test_move_refuses_until_navidrome_has_scanned_pass_one_then_moves(lib, tmp_p
     assert [x.name for x in (music / PSC).iterdir()] == ["08 - The Jacksons.mp3"]   # no usable artist: stays put
     assert all(e.get("path_after") for e in json.loads(manifest.read_text()))
     assert tc.move(cfg, manifest, fresh) == []                              # already moved: no-op
+
+
+# ---------------- Opus M2 review fixes (2026-10-15) ----------------
+import mutagen                                                        # noqa: E402
+from mutagen.flac import FLAC                                         # noqa: E402
+from mutagen.id3 import ID3, TCON, TIT2, TPE1                         # noqa: E402
+
+
+def test_write_minimal_keeps_every_other_tag(tmp_path):
+    # Proved live: beets' item.write() collapsed GENRE [Jazz, Latin] to [Jazz], garbled RELEASETYPE and added zero totals.
+    f = tmp_path / "a.flac"; _audio(f)
+    tags = FLAC(f); tags["TITLE"] = "Old - Remastered"; tags["ARTIST"] = ["Alice", "Bob"]; tags["GENRE"] = ["Jazz", "Latin"]
+    tags["RELEASETYPE"] = ["album", "remix"]; tags.save()
+    tc.write_minimal(f, {"title": "Old", "albumartist": "Alice", "comp": False})
+    t = FLAC(f)
+    assert t["TITLE"] == ["Old"] and t["ALBUMARTIST"] == ["Alice"] and t["ARTIST"] == ["Alice", "Bob"]
+    assert t["GENRE"] == ["Jazz", "Latin"] and t["RELEASETYPE"] == ["album", "remix"]
+    assert not {"DATE", "DISCTOTAL", "TRACKTOTAL", "COMPILATION", "BPM"} & set(t.keys())
+    m = tmp_path / "b.mp3"; _audio(m)
+    id3 = ID3(); id3.add(TIT2(encoding=3, text="Pepe Link - Vem Menina")); id3.add(TPE1(encoding=3, text="Pepe Link"))
+    id3.add(TCON(encoding=3, text=["Jazz", "Latin"])); id3.save(m, v2_version=3)
+    tcon_before = ID3(m)["TCON"].text                                     # v2.3 stores it as "Jazz/Latin"
+    tc.write_minimal(m, {"title": "Vem Menina"})
+    t = ID3(m)
+    assert t.version[:2] == (2, 3) and str(t["TIT2"]) == "Vem Menina" and t["TCON"].text == tcon_before
+    assert not {"TRCK", "TDRC", "TYER", "USLT"} & {k[:4] for k in t.keys()}
+
+
+def test_retag_writes_only_intended_fields_and_skips_regroup_only(lib):
+    cfg, music, state = lib
+    prince = music / "Prince/Graffiti (1987)/01 - Baby's Gone - Remastered 1999.flac"
+    t = FLAC(prince); t["GENRE"] = ["Soul", "Funk"]; t.save()
+    tc.retag(cfg, state / "manifest.json")
+    assert FLAC(prince)["GENRE"] == ["Soul", "Funk"] and "DISCTOTAL" not in FLAC(prince)
+
+
+def test_retag_crash_keeps_a_manifest_that_a_rerun_completes(lib, monkeypatch):
+    cfg, music, state = lib
+    manifest, real, calls = state / "manifest.json", tc.write_minimal, []
+    def flaky(path, changes):
+        calls.append(path)
+        if len(calls) == 3:
+            raise OSError("not writable")
+        real(path, changes)
+    monkeypatch.setattr(tc, "write_minimal", flaky)
+    with pytest.raises(OSError):
+        tc.retag(cfg, manifest)
+    entries = json.loads(manifest.read_text())
+    assert len(entries) == 4 and sum(1 for e in entries if e["written"]) == 2      # recorded before any file was touched
+    first_before = {e["id"]: e["before"] for e in entries}
+    monkeypatch.setattr(tc, "write_minimal", real)
+    tc.retag(cfg, manifest)
+    entries = json.loads(manifest.read_text())
+    assert all(e["written"] for e in entries) and {e["id"]: e["before"] for e in entries} == first_before
+
+
+def _fresh_navidrome(tmp_path, music, entries, path_key="path_before"):
+    return _navidrome(tmp_path, music, [(str(i), str(Path(e.get(path_key) or e["path_before"]).relative_to(music)), e["after"]["title"],
+                                         e["after"]["artist"] or "[Unknown Artist]", e["after"]["albumartist"] or e["after"]["artist"],
+                                         e["after"]["album"] or "[Unknown Album]") for i, e in enumerate(entries)])
+
+
+def test_move_crash_resumes(lib, tmp_path, monkeypatch):
+    cfg, music, state = lib
+    manifest = state / "manifest.json"
+    tc.retag(cfg, manifest)
+    nd = _fresh_navidrome(tmp_path, music, json.loads(manifest.read_text()))
+    from beets.library import Item
+    real_move, n = Item.move, []
+    def flaky(self, *a, **k):
+        n.append(1)
+        if len(n) == 2:
+            raise OSError("disk hiccup")
+        return real_move(self, *a, **k)
+    monkeypatch.setattr(Item, "move", flaky)
+    with pytest.raises(OSError):
+        tc.move(cfg, manifest, nd)
+    assert sum(1 for e in json.loads(manifest.read_text()) if e.get("path_after")) == 1   # progress saved per move
+    monkeypatch.setattr(Item, "move", real_move)
+    nd.unlink()
+    nd = _fresh_navidrome(tmp_path, music, json.loads(manifest.read_text()), path_key="path_after")   # Navidrome saw the first move
+    tc.move(cfg, manifest, nd)
+    assert all(e.get("path_after") for e in json.loads(manifest.read_text()))
+
+
+def test_scan_guard_needs_equal_values_not_substrings():
+    after = {"title": "Rock With You", "artist": "Cameo", "albumartist": "Cameo", "album": "X"}
+    assert not tc._scanned(("Rock With You", "Cameo feat. Larry Blackmon", "Cameo feat. Larry Blackmon", "X"), after)
+    assert tc._scanned(("Rock With You", "Cameo", "Cameo", "X"), after)
+    assert tc._scanned(("Rock With You", "Cameo", "Cameo", "[Unknown Album]"), dict(after, album=""))
+
+
+def test_plan_lists_untouched_songs_whose_path_would_change(lib, tmp_path):
+    cfg, music, state = lib
+    from beets.library import Item
+    stray = music / "Somewhere Else/odd name.mp3"; _audio(stray)
+    m = MediaFile(str(stray)); m.title, m.artist, m.albumartist, m.album, m.year, m.track = "Odd", "Zed", "Zed", "Z", 2001, 3; m.save()
+    bl = tc.open_lib(cfg); bl.add_album([Item.from_path(str(stray))]); bl._close()
+    report = tmp_path / "r.md"
+    p = tc.plan(cfg, report)
+    assert p.drift == ["Somewhere Else/odd name.mp3 → Zed/Z (2001)/03 - Odd.mp3"]
+    assert "## Untouched songs beets would re-file" in report.read_text()
+
+
+def test_restore_puts_back_the_original_and_applies_only_the_intended_change(tmp_path):
+    original, current = tmp_path / "orig/x.flac", tmp_path / "music/A/x.flac"
+    _audio(original); t = FLAC(original); t["TITLE"] = "Song - Remastered"; t["GENRE"] = ["Jazz", "Latin"]; t.save()
+    current.parent.mkdir(parents=True); current.write_bytes(original.read_bytes())
+    t = FLAC(current); t["TITLE"] = "Song"; t["GENRE"] = ["Jazz"]; t["DISCTOTAL"] = "0"; t.save()     # what beets left
+    entry = {"id": 1, "path_before": str(current), "path_after": str(current),
+             "before": {"title": "Song - Remastered", "artist": "", "albumartist": "", "album": "", "comp": False, "comments": ""},
+             "after": {"title": "Song", "artist": "", "albumartist": "", "album": "", "comp": False, "comments": "version: Remastered"}}
+    trash = tmp_path / "trash"
+    tc.restore(entry, original, music_root=tmp_path / "music", trash_root=trash)
+    t = FLAC(current)
+    assert t["TITLE"] == ["Song"] and t["GENRE"] == ["Jazz", "Latin"] and "DISCTOTAL" not in t and t["COMMENT"] == ["version: Remastered"]
+    assert FLAC(trash / "A/x.flac")["GENRE"] == ["Jazz"]                          # the damaged copy is kept, not deleted
+    assert entry["restored_from"] == str(original)
+    assert FLAC(original)["TITLE"] == ["Song - Remastered"]                       # the original is never written
+
+
+def test_refresh_library_map_follows_the_moves(tmp_path):
+    csv_path = tmp_path / "map.csv"
+    csv_path.write_text("original_path,folder,ext,size,audio_md5,new_path,other_copies\n"
+                        "o/a.mp3,f,mp3,1,m1,Compilations/x/a.mp3,Compilations/y/a.mp3\n"
+                        "o/b.mp3,f,mp3,1,m2,Keep/b.mp3,\n", encoding="utf-8")
+    manifest = [{"path_before": "/srv/music/Compilations/x/a.mp3", "path_after": "/srv/music/Art/Alb/a.mp3"},
+                {"path_before": "/srv/music/Compilations/y/a.mp3", "path_after": "/srv/music/Art/Alb (2)/a.mp3"}]
+    assert tc.refresh_library_map(csv_path, manifest, music_root="/srv/music") == 1        # rows changed
+    import csv as _csv
+    rows = list(_csv.DictReader(csv_path.open(encoding="utf-8")))
+    assert rows[0]["new_path"] == "Art/Alb/a.mp3" and rows[0]["other_copies"] == "Art/Alb (2)/a.mp3" and rows[1]["new_path"] == "Keep/b.mp3"

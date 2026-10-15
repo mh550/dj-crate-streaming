@@ -30,8 +30,11 @@ for _p in ("/usr/share/beets", "/usr/lib/python3/dist-packages"):      # Debian'
     if _p not in sys.path:
         sys.path.append(_p)
 
+import csv                                                              # noqa: E402
+import mutagen.id3                                                      # noqa: E402
 from beets import config as beets_config, ui as beets_ui                # noqa: E402
 from beets.util import displayable_path                                 # noqa: E402
+from mediafile import MediaFile                                         # noqa: E402
 
 try:
     from scripts.tag_rules import clean, usable_artist                   # python3 -m scripts.tag_cleanup
@@ -43,6 +46,22 @@ DEFAULT_CONFIG = REPO / "deploy" / "beets.yaml"
 DEFAULT_MANIFEST = Path("/srv/docker/beets/tag-cleanup-manifest.json")
 DEFAULT_NAVIDROME_DB = Path("/srv/docker/navidrome/navidrome.db")
 KEYS = ("title", "artist", "albumartist", "album", "comp", "comments")
+
+
+def write_minimal(path, changes: dict) -> None:
+    """Write only `changes` into the file. beets' item.write() rewrites every field it knows, which
+    collapsed multi-valued GENRE/ISRC, garbled RELEASETYPE and added zero DISCTOTAL/TRACKTOTAL on the
+    live run (2026-10-15, Opus review); mediafile saves only the fields set here. The ID3 version is kept."""
+    path = str(path)
+    v23 = False
+    try:
+        v23 = mutagen.id3.ID3(path).version[:2] == (2, 3)
+    except Exception:                                    # not an ID3 file (FLAC, MP4…) or no ID3 tag yet
+        pass
+    m = MediaFile(path, id3v23=v23)
+    for k, v in changes.items():
+        setattr(m, k, (True if v else None) if k == "comp" else (v if v != "" else None))
+    m.save()
 
 
 class NotScanned(Exception):
@@ -119,7 +138,8 @@ def _apply(lib, recs: list[Record], write: bool) -> None:
                 album.remove(with_items=False)
     if write:
         for r in recs:
-            r.item.write()
+            if r.changes:
+                write_minimal(displayable_path(r.item.path), r.changes)
 
 
 def _rel(lib, path: bytes) -> str:
@@ -132,6 +152,7 @@ class Plan:
     moves: int = 0
     collisions: list[str] = field(default_factory=list)
     left: list[str] = field(default_factory=list)       # Compilations files with no usable artist tag
+    drift: list[str] = field(default_factory=list)      # untouched songs whose beets destination ≠ their path
 
 
 def plan(config_path, report_path) -> Plan:
@@ -156,6 +177,10 @@ def plan(config_path, report_path) -> Plan:
             if seen[dest] > 1 or os.path.exists(dest):
                 result.collisions.append(f"{_rel(lib, old)} → {_rel(lib, dest)}")
         result.moves = len(moves)
+        touched = {r.item.id for r in recs}
+        for item in lib.items():                         # what a later `beet move` / `beet import -L` would also do
+            if item.id not in touched and item.destination() != item.path:
+                result.drift.append(f"{_rel(lib, item.path)} → {_rel(lib, item.destination())}")
         lib._close()
         _write_report(Path(report_path), lib, result, rows, moves)
         return result
@@ -175,25 +200,49 @@ def _write_report(path: Path, lib, result: Plan, rows: list[str], moves: list) -
         md += ["## Collisions (skipped by `move`)", "", *[f"- {c}" for c in result.collisions], ""]
     if result.left:
         md += ["## Left in Compilations (no usable artist tag: a person has to look)", "", *[f"- {c}" for c in result.left], ""]
+    if result.drift:
+        md += ["## Untouched songs beets would re-file", "",
+               "Not changed by this cleanup, but `beet move` or `beet import -L` would move them (collisions left in "
+               "place by an earlier `move`, or songs beets filed differently at import). Nothing here is moved.", "",
+               *[f"- {c}" for c in result.drift], ""]
     path.write_text("\n".join(md), encoding="utf-8")
 
 
+def _save_manifest(path: Path, entries: list) -> None:
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(entries, indent=1, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(path)
+
+
 def retag(config_path, manifest_path) -> int:
+    """Pass 1. The manifest (before/after per song) is saved before any file is touched and after every
+    file written, so a crash part-way leaves a record that a re-run completes."""
     lib = open_lib(config_path)
     db = Path(displayable_path(lib.path))
     backup = db.with_name(db.name + ".bak-tag-cleanup")
     if not backup.exists():
         shutil.copy2(db, backup)
     recs = _scan(lib)
-    _apply(lib, recs, write=True)
     manifest = Path(manifest_path)
     entries = json.loads(manifest.read_text()) if manifest.exists() else []
-    known = {e["id"] for e in entries}
+    by_id = {e["id"]: e for e in entries}
     for r in recs:
-        if r.item.id not in known:
-            entries.append({"id": r.item.id, "path_before": displayable_path(r.path_before), "rules": r.rules,
-                            "before": r.before, "after": _fields(r.item)})
-    manifest.write_text(json.dumps(entries, indent=1, ensure_ascii=False), encoding="utf-8")
+        e = by_id.get(r.item.id)
+        if e is None:
+            e = {"id": r.item.id, "path_before": displayable_path(r.path_before), "rules": r.rules, "before": r.before}
+            entries.append(e)
+            by_id[r.item.id] = e
+        else:                                            # keep the first run's `before`: that is the true original
+            e["rules"] = sorted(set(e["rules"]) | set(r.rules))
+        e["after"] = _fields(r.item)
+        e["written"] = not r.changes                     # regroup-only: nothing to write into the file
+    _save_manifest(manifest, entries)
+    _apply(lib, recs, write=False)
+    for r in recs:
+        if r.changes:
+            write_minimal(displayable_path(r.item.path), r.changes)
+            by_id[r.item.id]["written"] = True
+            _save_manifest(manifest, entries)
     lib._close()
     return len(recs)
 
@@ -206,16 +255,20 @@ def _norm(s) -> str:
     return "" if n in _ND_PLACEHOLDERS else n
 
 
-def _scanned(row, after: dict) -> bool:
+def _scanned(row, after: dict, before: dict | None = None) -> bool:
+    """Navidrome shows the values pass 1 wrote. Only the keys that changed are compared (Navidrome joins
+    multi-valued artists differently from beets), and they must be *equal*: a substring test accepted
+    "Cameo feat. Larry Blackmon" for "Cameo" before any scan (Opus review)."""
     if row is None:
         return False
-    title, artist, album_artist, album = row
-    return (_norm(title) == _norm(after["title"]) and _norm(album) == _norm(after["album"])
-            and (not after["artist"] or _norm(after["artist"]) in _norm(artist))
-            and (not after["albumartist"] or _norm(after["albumartist"]) in _norm(album_artist)))
+    shown = dict(zip(("title", "artist", "albumartist", "album"), row))
+    keys = [k for k in shown if before is None or after[k] != before.get(k)]
+    return all(_norm(shown[k]) == _norm(after[k]) for k in keys if after[k] or before is not None)
 
 
 def move(config_path, manifest_path, navidrome_db) -> list[tuple[str, str]]:
+    """Pass 2. Progress is saved after every move; a song beets already moved but the manifest missed
+    (crash) is checked and recorded at its current path."""
     manifest = Path(manifest_path)
     entries = json.loads(manifest.read_text())
     pending = [e for e in entries if not e.get("path_after")]
@@ -226,25 +279,65 @@ def move(config_path, manifest_path, navidrome_db) -> list[tuple[str, str]]:
     con = sqlite3.connect(f"{Path(navidrome_db).resolve().as_uri()}?mode=ro", uri=True)
     rows = {p: (t, a, aa, al) for p, t, a, aa, al in con.execute("SELECT path, title, artist, album_artist, album FROM media_file WHERE NOT missing")}
     con.close()
-    late = [e for e in pending if not _scanned(rows.get(os.path.relpath(e["path_before"], root)), e["after"])]
+    items = {e["id"]: lib.get_item(e["id"]) for e in pending}
+    late = [e for e in pending if not e.get("written", True)
+            or not _scanned(rows.get(os.path.relpath(displayable_path(items[e["id"]].path), root)), e["after"], e["before"])]
     if late:
         lib._close()
         raise NotScanned(f"{len(late)} of {len(pending)} retagged files not yet rescanned by Navidrome "
                          f"(e.g. {os.path.relpath(late[0]['path_before'], root)}); wait for the scan and run move again")
     moved = []
-    for e in pending:
-        item = lib.get_item(e["id"])
-        dest = item.destination()
-        if dest != item.path and os.path.exists(dest):
-            e["skipped"] = f"destination exists: {_rel(lib, dest)}"
-            continue
-        if dest != item.path:
-            item.move()
-            moved.append((e["path_before"], displayable_path(item.path)))
-        e["path_after"] = displayable_path(item.path)
-    manifest.write_text(json.dumps(entries, indent=1, ensure_ascii=False), encoding="utf-8")
-    lib._close()
+    try:
+        for e in pending:
+            item = items[e["id"]]
+            dest = item.destination()
+            if dest != item.path and os.path.exists(dest):
+                e["skipped"] = f"destination exists: {_rel(lib, dest)}"
+                continue
+            if dest != item.path:
+                item.move()
+                moved.append((e["path_before"], displayable_path(item.path)))
+            e["path_after"] = displayable_path(item.path)
+            _save_manifest(manifest, entries)
+    finally:
+        _save_manifest(manifest, entries)
+        lib._close()
     return moved
+
+
+def restore(entry: dict, original, music_root, trash_root) -> None:
+    """Put the original file's bytes back (audio and every tag as downloaded), then apply only the
+    intended changes. The current file is copied to trash first; the swap is one rename, so the path
+    never disappears and Navidrome keeps the song id. The original is only read."""
+    cur = Path(entry.get("path_after") or entry["path_before"])
+    tmp = cur.with_name("." + cur.name + ".restore")
+    shutil.copyfile(original, tmp)                       # fresh mtime: Navidrome re-reads it
+    changes = {k: v for k, v in entry["after"].items() if entry["before"].get(k) != v}
+    if changes:
+        write_minimal(tmp, changes)
+    kept = Path(trash_root) / cur.relative_to(music_root)
+    kept.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(cur, kept)
+    os.replace(tmp, cur)
+    entry["restored_from"] = str(original)
+
+
+def refresh_library_map(csv_path, manifest: list, music_root) -> int:
+    """Point docs/library-map.csv's new_path/other_copies at where the songs live after `move`."""
+    moved = {os.path.relpath(e["path_before"], music_root): os.path.relpath(e["path_after"], music_root)
+             for e in manifest if e.get("path_after") and e["path_after"] != e["path_before"]}
+    rows = list(csv.DictReader(open(csv_path, encoding="utf-8")))
+    changed = 0
+    for r in rows:
+        new = moved.get(r["new_path"], r["new_path"])
+        others = "|".join(moved.get(o, o) for o in r["other_copies"].split("|")) if r["other_copies"] else ""
+        if (new, others) != (r["new_path"], r["other_copies"]):
+            r["new_path"], r["other_copies"], changed = new, others, changed + 1
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+        w.writeheader()
+        w.writerows(rows)
+    return changed
 
 
 def main(argv: list[str] | None = None) -> int:
