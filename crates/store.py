@@ -61,6 +61,10 @@ CREATE TABLE IF NOT EXISTS imported_entries (     -- every song import-playlist 
   PRIMARY KEY (playlist_id, song_id)
 );
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS verifications (        -- the last download check per wanted id (spec §3a): JSON of
+  song_id TEXT PRIMARY KEY, result TEXT NOT NULL, -- ok, tier, problems, warnings, measurements, file
+  ts REAL NOT NULL
+);
 """
 
 STATUSES = ("ok", "needs_source", "sourcing", "verify", "failed", "removed", "review")   # review: a person must pick a version
@@ -185,7 +189,11 @@ class CrateStore:
     def wanted(self) -> list[dict]:
         """Every track across enabled crates that still needs a file, plus external rows — the sourcing queue."""
         ext = self.db.execute("SELECT * FROM external_wanted WHERE status IN ('needs_source','failed') ORDER BY id")
-        return self._crate_wanted("t.status IN ('needs_source','failed')") + [self._ext_row(r) for r in ext]
+        rows = self._crate_wanted("t.status IN ('needs_source','failed')") + [self._ext_row(r) for r in ext]
+        checks = {sid: json.loads(res) for sid, res in self.db.execute("SELECT song_id, result FROM verifications")}
+        for row in rows:
+            row["verify"] = checks.get(row["song_id"])
+        return rows
 
     def find_wanted(self, song_id: str) -> dict | None:
         """One wanted-shaped row for this id whatever its status."""
@@ -203,6 +211,16 @@ class CrateStore:
                     "WHERE c.enabled=1 AND t.song_id=? AND t.status!='removed' ORDER BY c.name", (song_id,)).fetchall():
                 self.set_track_status(pl, song_id, status, reason)
         self.commit()
+
+    def set_verification(self, song_id: str, result: dict) -> None:
+        """Keep the last download check for a wanted id (crate or external), replacing the previous one."""
+        self.db.execute("INSERT INTO verifications(song_id, result, ts) VALUES(?,?,?) ON CONFLICT(song_id) DO UPDATE "
+                        "SET result=excluded.result, ts=excluded.ts", (song_id, json.dumps(result), time.time()))
+        self.commit()
+
+    def verification(self, song_id: str) -> dict | None:
+        r = self.db.execute("SELECT result FROM verifications WHERE song_id=?", (song_id,)).fetchone()
+        return json.loads(r[0]) if r else None
 
     # --- external wanted (not in Navidrome at all; seeded from Spotify etc.)
     def find_external(self, artist: str, title: str) -> dict | None:

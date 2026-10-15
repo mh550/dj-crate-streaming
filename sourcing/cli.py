@@ -2,7 +2,7 @@ r"""CLI: rank candidates for a wanted track, from a fixture file or a live slskd
 
   python -m sourcing.cli rank --fixture fixtures/search_responses.sample.json --artist Chic --title "Good Times" --duration 501 [--tier low]
   python -m sourcing.cli rank --slskd http://server:5030 --api-key $SLSKD_KEY --artist Chic --title "Good Times" [--download]
-  python -m sourcing.cli verify /srv/incoming/03\ -\ Good\ Times.flac --duration 501
+  python -m sourcing.cli verify /srv/incoming/03\ -\ Good\ Times.flac --duration 501 [--tier crate] [--reference old.flac] [--json]
   python -m sourcing.cli fetch --wanted s4 [--approve] [--tier T]   # one wanted track, end to end (see fetch.py); tier: the row's
   python -m sourcing.cli seed-spotify https://open.spotify.com/playlist/...   # queue tracks not in Navidrome
   python -m sourcing.cli import-playlist <spotify-url|report.txt|exportify.csv>... [--name N] [--dry-run]   # D11: Spotify playlists → public Navidrome playlist + wanted rows
@@ -19,6 +19,22 @@ from .scorer import Wanted, rank, explain
 from .policy import DEFAULT_TIER, TIERS
 from .spotify_csv import fetch_entity
 from .verify import verify
+
+
+def describe_measurements(m: dict) -> list[str]:
+    """The decoded measurements as short lines (header facts are printed separately)."""
+    out = []
+    if "cutoff_khz" in m:
+        top = max(m["bands_db"]) if m.get("bands_db") else None
+        cut = m["cutoff_khz"]
+        out.append(f"cutoff {'≥' if cut == top else '≈'}{cut} kHz" if cut else "cutoff below 11 kHz")
+        out.append("band dB vs full: " + "  ".join(f">{e}k {v}" for e, v in m["bands_db"].items()))
+    if m.get("decoded_s") is not None:
+        out.append(f"decoded {m['decoded_s']} s · bits used {m.get('bits_used')} · peak {m['peak_db']:.2f} dBFS · "
+                   f"flat factor {m['flat_factor']:.1f}")
+    if "fingerprint_ber" in m:
+        out.append(f"fingerprint bit-error rate vs reference {m['fingerprint_ber']} (same recording < 0.20)")
+    return out
 
 
 def add_slskd_args(p: argparse.ArgumentParser) -> None:
@@ -51,6 +67,9 @@ def main(argv: list[str] | None = None) -> int:
     v = sub.add_parser("verify", help="check a downloaded file")
     v.add_argument("path")
     v.add_argument("--duration", type=float)
+    v.add_argument("--tier", choices=list(TIERS), help="also decode and judge at this tier (spec §3a); without it, header checks only")
+    v.add_argument("--reference", help="a copy of the same recording (e.g. the library file being upgraded) to fingerprint against")
+    v.add_argument("--json", action="store_true")
 
     f = sub.add_parser("fetch", help="take one wanted track through search → score → (approve) download → verify → file → ok")
     f.add_argument("--wanted", required=True, help="song id from `crates.cli wanted` (or ext-N from seed-spotify)")
@@ -138,12 +157,20 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if r.status in ("ok", "needs_source", "sourcing") else 2
 
     if a.cmd == "verify":
-        vd = verify(Path(a.path), a.duration)
-        print(("OK  " if vd.ok else "BAD ") + a.path)
+        vd = verify(Path(a.path), a.duration, tier=a.tier, reference=Path(a.reference) if a.reference else None)
+        if a.json:
+            print(json.dumps({"ok": vd.ok, "tier": a.tier, "problems": vd.problems, "warnings": vd.warnings,
+                              "measurements": vd.measurements}, ensure_ascii=False))
+            return 0 if vd.ok else 2
+        print(("OK  " if vd.ok else "BAD ") + a.path + (f"  (tier {a.tier})" if a.tier else ""))
         if vd.info:
             print(f"     {vd.info.codec} {vd.info.sample_rate} Hz / {vd.info.bit_depth} bit / {vd.info.channels} ch / {vd.info.duration_s and round(vd.info.duration_s, 1)} s  [{vd.info.source}]")
+        for line in describe_measurements(vd.measurements):
+            print("     ·", line)
         for p in vd.problems:
             print("     ✗", p)
+        for w in vd.warnings:
+            print("     !", w)
         return 0 if vd.ok else 2
 
     wanted = Wanted(a.artist, a.title, a.album, a.duration, a.year)

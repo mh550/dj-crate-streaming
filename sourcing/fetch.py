@@ -59,7 +59,7 @@ def _find_landed(downloads_root: Path, best: Candidate) -> Path | None:
 def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: SubsonicClient,
           reconciler: Reconciler, music_root: Path, downloads_root: Path, approve: bool,
           tier: str | None = None, policy: QualityPolicy | None = None, download_timeout_s: float = 600, poll_s: float = 1.0,
-          scan_timeout_s: float = 120) -> FetchResult:
+          scan_timeout_s: float = 120, verifier=None) -> FetchResult:
     music_root, downloads_root = Path(music_root), Path(downloads_root)
     row = store.find_wanted(wanted_id)
     if row is None:
@@ -168,7 +168,10 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
                 continue
             return fail(why, best, text)
 
-        vd = verify(landed, wanted.duration_s)                  # still `sourcing`: the bytes aren't ours yet
+        vd = (verifier or verify)(landed, wanted.duration_s, tier=row["tier"])   # still `sourcing`: not ours yet
+        store.set_verification(wanted_id, {"ok": vd.ok, "tier": row["tier"], "problems": vd.problems,
+                                           "warnings": vd.warnings, "measurements": vd.measurements,
+                                           "file": landed.name})
         if not vd.ok:
             landed.unlink(missing_ok=True)                      # our own download, not library material
             return fail("; ".join(vd.problems), best, text)

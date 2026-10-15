@@ -78,6 +78,17 @@ $("#detail-crate").onchange = async e => {
 };
 
 // ---- wanted
+// the last download check (spec §3a): verdict, then what was measured, then why
+function verifyLine(v) {
+  const m = v.measurements || {}, bits = [];
+  if (m.cutoff_khz !== undefined) bits.push(m.cutoff_khz ? `cutoff ≈${m.cutoff_khz} kHz` : "cutoff < 11 kHz");
+  if (m.bits_used) bits.push(`${m.bits_used}-bit used`);
+  if (m.peak_db !== undefined && m.peak_db !== null) bits.push(`peak ${Number(m.peak_db).toFixed(1)} dB`);
+  if (m.fingerprint_ber !== undefined) bits.push(`fingerprint ${m.fingerprint_ber}`);
+  const why = [...(v.problems || []).map(p => "✗ " + p), ...(v.warnings || []).map(w => "! " + w)];
+  return `last download ${v.ok ? "passed" : "rejected"} (${v.tier}): ${v.file} · ${bits.join(" · ")}${why.length ? " · " + why.join(" · ") : ""}`;
+}
+
 async function loadWanted() {
   const items = await api("/api/wanted"); const ul = $("#wanted"); ul.innerHTML = "";
   if (!items.length) ul.append(el("li", "muted", "nothing to source — every crate track meets policy"));
@@ -85,6 +96,7 @@ async function loadWanted() {
     const li = el("li"); const grow = el("div", "grow");
     grow.append(el("div", "title", `${t.artist} — ${t.title}`));
     grow.append(el("div", "sub", `${t.album || ""} ${t.year || ""} · ${dur(t.duration)} · ${t.crates.length ? "in " + t.crates.join(", ") : "external"} · tier ${t.tier}`));
+    if (t.verify) grow.append(el("div", "sub", verifyLine(t.verify)));
     li.append(grow, el("span", "badge " + t.status, t.reason)); ul.append(li);
   }
 }
