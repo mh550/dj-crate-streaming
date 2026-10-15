@@ -19,6 +19,9 @@ services:
       ND_DEFAULTDOWNSAMPLINGFORMAT: opus      # what maxBitRate-only requests get
       ND_TRANSCODINGCACHESIZE: 3GB
       ND_ENABLESHARING: "false"
+      ND_AUTOIMPORTPLAYLISTS: "false"        # /srv/music/_playlists/*.m3u8 are *exports* (scripts/export_playlists.py);
+                                             # auto-import would re-create every playlist as a duplicate on each scan.
+                                             # To restore from the files: scripts/export_playlists.py restore (see its --help).
     volumes:
       - /srv/docker/navidrome:/data
       - /srv/music:/music:ro
