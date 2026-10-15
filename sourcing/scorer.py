@@ -14,6 +14,7 @@ CLI (and later the control app) can explain *why* a file was chosen.
 """
 from __future__ import annotations
 
+import math
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -215,7 +216,7 @@ def score_candidate(c: Candidate, w: Wanted, policy: QualityPolicy = DEFAULT_POL
     if policy.speed_weight:
         t = estimated_arrival_s(c, policy.download_cap_Bps)
         speed = 100 * policy.arrival_budget_s / (policy.arrival_budget_s + t)
-        c.reasons.append(f"arrival ~{t:.0f} s" if t != float("inf") else "arrival unknown")
+        c.reasons.append("arrival unknown" if math.isinf(t) else f"arrival ~{t:.0f} s")
         s = (1 - policy.speed_weight) * s + policy.speed_weight * speed
 
     c.score = round(s, 1)

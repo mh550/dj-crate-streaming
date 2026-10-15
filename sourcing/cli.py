@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 from .scorer import Wanted, rank, explain
-from .policy import TIERS
+from .policy import DEFAULT_TIER, TIERS
 from .spotify_csv import fetch_entity
 from .verify import verify
 
@@ -46,7 +46,7 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--save", help="live mode: write the raw search responses here (rank them again with --fixture)")
     r.add_argument("--json", action="store_true")
     r.add_argument("--limit", type=int, default=10)
-    add_tier_arg(r, "crate", "what to score for (default crate)")
+    add_tier_arg(r, DEFAULT_TIER, "what to score for (default crate)")
 
     v = sub.add_parser("verify", help="check a downloaded file")
     v.add_argument("path")
@@ -56,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
     f.add_argument("--wanted", required=True, help="song id from `crates.cli wanted` (or ext-N from seed-spotify)")
     f.add_argument("--approve", action="store_true", help="actually download; without it, stop after scoring")
     add_slskd_args(f)
-    add_tier_arg(f, None, "override the wanted row's tier (external rows only; crate rows are crate)")
+    add_tier_arg(f, None, "change the wanted row's tier, then fetch (external rows only; crate rows are crate)")
 
     s = sub.add_parser("seed-spotify", help="add every track of a public Spotify playlist/album to the wanted queue")
     s.add_argument("url")
@@ -128,11 +128,8 @@ def main(argv: list[str] | None = None) -> int:
         if not cfg.username:
             print("set SUBSONIC_USER / SUBSONIC_PASS (and SUBSONIC_URL)", file=sys.stderr); return 1
         app = CrateApp(cfg)                          # same store/client/reconciler wiring as the crate service
-        row = app.store.find_wanted(a.wanted)
-        if a.tier and a.tier != "crate" and row and not row.get("external"):
-            print(f"{a.wanted} is in a crate, and a crate track is sourced at tier crate (spec §1)", file=sys.stderr); return 1
         r = fetch(a.wanted, store=app.store, slskd=SlskdClient(a.slskd, a.api_key), navidrome=app.api,
-                  reconciler=app.reconciler, policy=TIERS[a.tier] if a.tier else None, music_root=Path(os.environ.get("MUSIC_ROOT", "/srv/music")),
+                  reconciler=app.reconciler, tier=a.tier, music_root=Path(os.environ.get("MUSIC_ROOT", "/srv/music")),
                   downloads_root=Path(os.environ.get("DOWNLOADS_ROOT", "/srv/incoming")), approve=a.approve)
         print(r.explain)
         if r.pick:

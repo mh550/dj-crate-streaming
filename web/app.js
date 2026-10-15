@@ -112,8 +112,13 @@ function streamUrl(id) {
   u.searchParams.set("tier", $("#quality").value);
   return u.toString();
 }
-async function loadStreamTier() {
-  try { $("#quality").value = (await api("/api/stream-tier")).tier; } catch (e) { /* keep the selected default, crate (= the server's) */ }
+async function loadStreamTier() {   // the menu comes from the server's table; the HTML options are the fallback
+  try {
+    const s = await api("/api/stream-tier"), sel = $("#quality"); sel.innerHTML = "";
+    for (const [name, t] of Object.entries(s.tiers))
+      sel.append(new Option(`${name} · ${t.format === "raw" ? "original" : `${t.format} ${t.maxBitRate}k`}`, name));
+    sel.value = s.tier;
+  } catch (e) { /* keep the static menu, crate selected (= the server's default) */ }
 }
 function playTrack(t) {
   state.playingId = t.id;
@@ -125,7 +130,7 @@ function playTrack(t) {
   if (state.current) openPlaylist(state.current.id);
 }
 $("#quality").onchange = async () => {
-  try { await api("/api/stream-tier", { tier: $("#quality").value }); } catch (e) { alert(e.message); }
+  api("/api/stream-tier", { tier: $("#quality").value }).catch(e => alert(e.message));   // saved in parallel
   const a = $("#audio"); if (!state.playingId) return;
   const t = a.currentTime, wasPlaying = !a.paused;
   a.src = streamUrl(state.playingId); a.currentTime = t; if (wasPlaying) a.play().catch(() => {});

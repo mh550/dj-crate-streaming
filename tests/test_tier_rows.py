@@ -119,8 +119,9 @@ def test_fetch_cli_tier_overrides_external_and_is_refused_on_crate_rows(tmp_path
         from crates.cli import main as crates_main
         assert crates_main(["toggle", "pl-2", "on"]) == 0
         capsys.readouterr()
-        assert cli.main(["fetch", "--wanted", "s4", "--tier", "low"]) == 1
-        assert "crate" in capsys.readouterr().err and sl.enqueued == []
+        assert cli.main(["fetch", "--wanted", "s4", "--tier", "low"]) == 2
+        assert "refused" in capsys.readouterr().out and sl.enqueued == []
+        assert CrateStore(tmp_path / "c.db").external(ext)["tier"] == "low"           # the override is the row's tier now
 
 
 def test_seed_spotify_and_import_playlist_take_a_tier(tmp_path, monkeypatch, capsys):
@@ -175,5 +176,5 @@ def test_approved_fetch_refuses_before_any_download_when_the_folders_are_missing
                   reconciler=world["rec"], music_root=tmp_path / "srv" / "music", downloads_root=tmp_path / "srv" / "incoming",
                   approve=True, poll_s=0.01, download_timeout_s=1, scan_timeout_s=1)
         assert srv.enqueued == []
-    assert r.status == "needs_source" and "srv/music" in r.reason and r.pick.username == "fastpeer"
+    assert r.status == "refused" and "srv/music" in r.reason and r.pick is None    # refused before any search
     assert world["store"].external(ext)["status"] == "needs_source"

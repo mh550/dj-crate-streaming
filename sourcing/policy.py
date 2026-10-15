@@ -62,7 +62,8 @@ TIERS: dict[str, QualityPolicy] = {
     "high": _listening(name="high", min_lossy_bitrate=128, speed_weight=0.35, arrival_budget_s=300),
     "crate": QualityPolicy(),
 }
-DEFAULT_POLICY = TIERS["crate"]
+DEFAULT_TIER = "crate"
+DEFAULT_POLICY = TIERS[DEFAULT_TIER]
 
 # The stream transcode follows the same name (spec §1 "Stream"): (Subsonic format, maxBitRate kbps).
 STREAM: dict[str, tuple[str, int | None]] = {"low": ("opus", 64), "medium": ("opus", 96), "high": ("opus", 160), "crate": ("raw", None)}

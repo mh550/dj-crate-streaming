@@ -17,7 +17,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from sourcing.policy import check_tier
+from sourcing.policy import DEFAULT_TIER, check_tier
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS crates (
@@ -179,7 +179,7 @@ class CrateStore:
                 "SELECT t.*, c.name AS crate_name FROM crate_tracks t JOIN crates c USING(playlist_id) "
                 f"WHERE c.enabled=1 AND {where} ORDER BY c.name, t.position", params):
             d = dict(r); name = d.pop("crate_name")
-            out.setdefault(d["song_id"], {**d, "crates": [], "tier": "crate"})["crates"].append(name)   # a crate is crate
+            out.setdefault(d["song_id"], {**d, "crates": [], "tier": DEFAULT_TIER})["crates"].append(name)   # a crate is crate
         return list(out.values())
 
     def wanted(self) -> list[dict]:
@@ -218,21 +218,25 @@ class CrateStore:
                             playlist_id: str | None = None, position: int | None = None, tier: str | None = None) -> str:
         """Returns the existing id when the same artist/title is already queued (re-running a seed is a no-op);
         a playlist position or a tier, when given, is (re)recorded on that row. A new row's tier defaults to crate."""
-        if tier is not None:
-            check_tier(tier)
+        check_tier(tier or DEFAULT_TIER)
         existing = self.find_external(artist, title)
         if existing:
-            pk = _ext_pk(existing["song_id"])
             if playlist_id is not None:
                 self.db.execute("UPDATE external_wanted SET playlist_id=?, position=?, updated_at=? WHERE id=?",
-                                (playlist_id, position, time.time(), pk))
-            if tier is not None and tier != existing["tier"]:
-                self.db.execute("UPDATE external_wanted SET tier=?, updated_at=? WHERE id=?", (tier, time.time(), pk))
-                self.log(None, existing["song_id"], "tier", f"{existing['tier']} → {tier}")
+                                (playlist_id, position, time.time(), _ext_pk(existing["song_id"])))
+            if tier is not None:
+                self.set_external_tier(existing["song_id"], tier)
             return existing["song_id"]
-        return self._insert_external(artist, title, album, duration_s, year, source, playlist_id, position, tier or "crate")
+        return self._insert_external(artist, title, album, duration_s, year, source, playlist_id, position, tier or DEFAULT_TIER)
 
-    def _insert_external(self, artist, title, album, duration_s, year, source, playlist_id=None, position=None, tier="crate") -> str:
+    def set_external_tier(self, ext_id: str, tier: str) -> None:
+        """Change the tier an external row is sourced at; logged when it changes."""
+        old = self.external(ext_id)["tier"]
+        if check_tier(tier) != old:
+            self.db.execute("UPDATE external_wanted SET tier=?, updated_at=? WHERE id=?", (tier, time.time(), _ext_pk(ext_id)))
+            self.log(None, ext_id, "tier", f"{old} → {tier}")
+
+    def _insert_external(self, artist, title, album, duration_s, year, source, playlist_id, position, tier) -> str:
         now = time.time()
         cur = self.db.execute(
             "INSERT INTO external_wanted(artist,title,album,year,duration,source,playlist_id,position,tier,created_at,updated_at) "
@@ -276,7 +280,7 @@ class CrateStore:
     def stream_tier(self) -> str:
         """The web client's stream tier (spec §1 "Stream"); crate (= original file) until one is chosen."""
         r = self.db.execute("SELECT value FROM settings WHERE key='stream_tier'").fetchone()
-        return r[0] if r else "crate"
+        return r[0] if r else DEFAULT_TIER
 
     def set_stream_tier(self, tier: str) -> None:
         self.db.execute("INSERT INTO settings(key, value) VALUES('stream_tier', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
