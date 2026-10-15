@@ -27,7 +27,7 @@ from crates.reconcile import Reconciler
 from crates.store import CrateStore
 from subsonic.client import SubsonicClient
 from .organize import file_into
-from .policy import DEFAULT_POLICY, QualityPolicy
+from .policy import TIERS, QualityPolicy
 from .scorer import Candidate, Wanted, explain, rank
 from .slskd_client import SlskdClient, transfer_files
 from .verify import verify
@@ -58,13 +58,14 @@ def _find_landed(downloads_root: Path, best: Candidate) -> Path | None:
 
 def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: SubsonicClient,
           reconciler: Reconciler, music_root: Path, downloads_root: Path, approve: bool,
-          policy: QualityPolicy = DEFAULT_POLICY, download_timeout_s: float = 600, poll_s: float = 1.0,
+          policy: QualityPolicy | None = None, download_timeout_s: float = 600, poll_s: float = 1.0,
           scan_timeout_s: float = 120) -> FetchResult:
     music_root, downloads_root = Path(music_root), Path(downloads_root)
     row = store.find_wanted(wanted_id)
     if row is None:
         return FetchResult("missing", f"{wanted_id} is not in any enabled crate or the external queue")
     external = bool(row.get("external"))
+    policy = policy or TIERS[row.get("tier") or "crate"]     # the row's tier (spec §1); crate rows are crate
 
     def set_status(status: str, reason: str | None = None) -> None:
         store.set_wanted_status(wanted_id, status, reason)

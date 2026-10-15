@@ -57,3 +57,12 @@ TIERS: dict[str, QualityPolicy] = {
     "crate": QualityPolicy(),
 }
 DEFAULT_POLICY = TIERS["crate"]
+
+# The stream transcode follows the same name (spec §1 "Stream"): (Subsonic format, maxBitRate kbps).
+STREAM: dict[str, tuple[str, int | None]] = {"low": ("opus", 64), "medium": ("opus", 96), "high": ("opus", 160), "crate": ("raw", None)}
+
+
+def check_tier(name: str) -> str:
+    if name not in TIERS:
+        raise ValueError(f"unknown tier {name!r} (one of {', '.join(TIERS)})")
+    return name

@@ -31,3 +31,23 @@ below the floor). A test pins each tier's floor. Hand check: arrivals ≈ 1 s vs
 
 **Next step (runbook M4 step 2):** `sourcing.cli rank/fetch --tier`, `external_wanted` and crate rows
 carry a tier, web selector renamed to the four tiers with the stream mapping (opus 64/96/160, raw).
+
+## Step 2: the tier travels (CLI, rows, web)
+
+- `policy.STREAM = {low: opus 64, medium: opus 96, high: opus 160, crate: raw}` (spec §1 "Stream").
+- `external_wanted.tier TEXT NOT NULL DEFAULT 'crate'` through `_migrate()`; existing rows read `crate`,
+  so nothing changes for them. `add_external_wanted(..., tier=None)`: a new row gets `tier or 'crate'`; an
+  existing row's tier changes only when one is given. An unknown name is a `ValueError`.
+  Crate rows carry `tier: "crate"` in `wanted()` / `find_wanted()` (constant, no column: a crate is crate).
+- `fetch(policy=None)` → `TIERS[row["tier"]]`; an explicit policy still wins. `sourcing.cli rank --tier`
+  (default crate), `fetch --tier` (overrides the row's; refused on a crate row unless `crate`),
+  `seed-spotify --tier`, `import-playlist --tier` (stored on the wanted rows it creates).
+- Stream tier: one setting in the crate store (`settings` table, default `crate` = raw, which is what the
+  Navidrome player does today). `GET /api/stream-tier` → `{tier, tiers: {name: {format, maxBitRate}}}`;
+  `POST {tier}` saves it. `/api/stream/<id>?tier=<name>` maps through `STREAM`; explicit
+  `format`/`maxBitRate` still work. The web selector shows the four names, loads the saved tier and
+  saves on change, so the choice survives a cache clear.
+- **Not done (classifier):** setting the `dj-crates-web` Player's profile in Navidrome needs the native
+  API (`/auth/login`, `/api/player`); a read-only capture was denied as a production read, so there is
+  no live shape to build a fake from. Michael sets it once in Navidrome → Settings → Players (Needs
+  Michael). The web client sends the format explicitly, so it works without it.

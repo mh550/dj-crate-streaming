@@ -1,9 +1,9 @@
 r"""CLI: rank candidates for a wanted track, from a fixture file or a live slskd.
 
-  python -m sourcing.cli rank --fixture fixtures/search_responses.sample.json --artist Chic --title "Good Times" --duration 501
+  python -m sourcing.cli rank --fixture fixtures/search_responses.sample.json --artist Chic --title "Good Times" --duration 501 [--tier low]
   python -m sourcing.cli rank --slskd http://server:5030 --api-key $SLSKD_KEY --artist Chic --title "Good Times" [--download]
   python -m sourcing.cli verify /srv/incoming/03\ -\ Good\ Times.flac --duration 501
-  python -m sourcing.cli fetch --wanted s4 [--approve]        # one wanted track, end to end (see fetch.py)
+  python -m sourcing.cli fetch --wanted s4 [--approve] [--tier T]   # one wanted track, end to end (see fetch.py); tier: the row's
   python -m sourcing.cli seed-spotify https://open.spotify.com/playlist/...   # queue tracks not in Navidrome
   python -m sourcing.cli import-playlist <spotify-url|report.txt|exportify.csv>... [--name N] [--dry-run]   # D11: Spotify playlists → public Navidrome playlist + wanted rows
 """
@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 from .scorer import Wanted, rank, explain
-from .policy import DEFAULT_POLICY
+from .policy import TIERS
 from .spotify_csv import fetch_entity
 from .verify import verify
 
@@ -24,6 +24,10 @@ from .verify import verify
 def add_slskd_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--slskd", default=os.environ.get("SLSKD_URL"), help="slskd base URL (or $SLSKD_URL), e.g. http://127.0.0.1:5030")
     p.add_argument("--api-key", default=os.environ.get("SLSKD_API_KEY"))
+
+
+def add_tier_arg(p: argparse.ArgumentParser, default: str | None, what: str) -> None:
+    p.add_argument("--tier", choices=list(TIERS), default=default, help=f"quality tier (spec §1): {what}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -41,6 +45,7 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--download", action="store_true", help="enqueue the top candidate (live mode only)")
     r.add_argument("--json", action="store_true")
     r.add_argument("--limit", type=int, default=10)
+    add_tier_arg(r, "crate", "what to score for (default crate)")
 
     v = sub.add_parser("verify", help="check a downloaded file")
     v.add_argument("path")
@@ -50,15 +55,18 @@ def main(argv: list[str] | None = None) -> int:
     f.add_argument("--wanted", required=True, help="song id from `crates.cli wanted` (or ext-N from seed-spotify)")
     f.add_argument("--approve", action="store_true", help="actually download; without it, stop after scoring")
     add_slskd_args(f)
+    add_tier_arg(f, None, "override the wanted row's tier (external rows only; crate rows are crate)")
 
     s = sub.add_parser("seed-spotify", help="add every track of a public Spotify playlist/album to the wanted queue")
     s.add_argument("url")
+    add_tier_arg(s, None, "tier for the queued rows (default crate; re-seeding with a tier changes it)")
 
     ip = sub.add_parser("import-playlist", help="Spotify URL / Exportify CSV / SpotiFLAC report → public Navidrome playlist; the rest become wanted rows")
     ip.add_argument("sources", nargs="+", help="several sources concatenate in order into one playlist (needs --name)")
     ip.add_argument("--name", help="playlist name (default: the source's own name; required with several sources)")
     ip.add_argument("--dry-run", action="store_true", help="match and report, write nothing")
     ip.add_argument("--merge", action="store_true", help="add to a same-named playlist this tool did not create (adopts it)")
+    add_tier_arg(ip, None, "tier for the wanted rows it creates (default crate)")
 
     a = ap.parse_args(argv)
 
@@ -85,7 +93,7 @@ def main(argv: list[str] | None = None) -> int:
         store = CrateStore(cfg.db_path)                 # opened only after every source loaded
         try:
             rep = import_playlist(name, rows, SubsonicClient(cfg.subsonic_url, cfg.username, cfg.password), store,
-                                  source=" ".join(a.sources), dry_run=a.dry_run, merge=a.merge)
+                                  source=" ".join(a.sources), dry_run=a.dry_run, merge=a.merge, tier=a.tier)
         except NameCollision as e:
             print(f"{e}; re-run with --merge to add to it, or pick another --name", file=sys.stderr); return 1
         print(rep.table())
@@ -102,7 +110,7 @@ def main(argv: list[str] | None = None) -> int:
         store = CrateStore(db)
         before, total = store.external_count(), 0
         for r in rows(fetch_entity(a.url)):          # dicts: {"Artist", "Title", "Length"} (seconds)
-            store.add_external_wanted(r["Artist"], r["Title"], duration_s=r["Length"], source=a.url)   # idempotent
+            store.add_external_wanted(r["Artist"], r["Title"], duration_s=r["Length"], source=a.url, tier=a.tier)   # idempotent
             total += 1
         store.commit()
         added = store.external_count() - before
@@ -119,8 +127,11 @@ def main(argv: list[str] | None = None) -> int:
         if not cfg.username:
             print("set SUBSONIC_USER / SUBSONIC_PASS (and SUBSONIC_URL)", file=sys.stderr); return 1
         app = CrateApp(cfg)                          # same store/client/reconciler wiring as the crate service
+        row = app.store.find_wanted(a.wanted)
+        if a.tier and a.tier != "crate" and row and not row.get("external"):
+            print(f"{a.wanted} is in a crate, and a crate track is sourced at tier crate (spec §1)", file=sys.stderr); return 1
         r = fetch(a.wanted, store=app.store, slskd=SlskdClient(a.slskd, a.api_key), navidrome=app.api,
-                  reconciler=app.reconciler, policy=app.policy, music_root=Path(os.environ.get("MUSIC_ROOT", "/srv/music")),
+                  reconciler=app.reconciler, policy=TIERS[a.tier] if a.tier else None, music_root=Path(os.environ.get("MUSIC_ROOT", "/srv/music")),
                   downloads_root=Path(os.environ.get("DOWNLOADS_ROOT", "/srv/incoming")), approve=a.approve)
         print(r.explain)
         if r.pick:
@@ -153,7 +164,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print("need --fixture or --slskd", file=sys.stderr); return 1
 
-    cands = rank(responses, wanted, DEFAULT_POLICY)
+    cands = rank(responses, wanted, TIERS[a.tier])
     if a.json:
         print(json.dumps([c.__dict__ for c in cands[: a.limit]], indent=2))
     else:

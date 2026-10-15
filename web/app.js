@@ -84,7 +84,7 @@ async function loadWanted() {
   for (const t of items) {
     const li = el("li"); const grow = el("div", "grow");
     grow.append(el("div", "title", `${t.artist} — ${t.title}`));
-    grow.append(el("div", "sub", `${t.album || ""} ${t.year || ""} · ${dur(t.duration)} · in ${t.crates.join(", ")}`));
+    grow.append(el("div", "sub", `${t.album || ""} ${t.year || ""} · ${dur(t.duration)} · ${t.crates.length ? "in " + t.crates.join(", ") : "external"} · tier ${t.tier}`));
     li.append(grow, el("span", "badge " + t.status, t.reason)); ul.append(li);
   }
 }
@@ -106,12 +106,14 @@ async function loadEvents() {
   for (const e of ev) ul.append(el("li", null, `${new Date(e.ts * 1000).toLocaleTimeString()}  ${e.kind}  ${e.playlist_id || ""} ${e.song_id || ""}  ${e.detail || ""}`));
 }
 
-// ---- player
+// ---- player: the stream tier (spec §1) is one server-side setting, so it survives a cache clear
 function streamUrl(id) {
-  const q = $("#quality").value; const u = new URL("/api/stream/" + id, location.href);
-  if (q === "raw") u.searchParams.set("format", "raw");
-  else if (q) { const [f, br] = q.split(":"); u.searchParams.set("format", f); u.searchParams.set("maxBitRate", br); }
+  const u = new URL("/api/stream/" + id, location.href);
+  u.searchParams.set("tier", $("#quality").value);
   return u.toString();
+}
+async function loadStreamTier() {
+  try { $("#quality").value = (await api("/api/stream-tier")).tier; } catch (e) { /* keep the first option */ }
 }
 function playTrack(t) {
   state.playingId = t.id;
@@ -122,7 +124,8 @@ function playTrack(t) {
   if ("mediaSession" in navigator) navigator.mediaSession.metadata = new MediaMetadata({ title: t.title, artist: t.artist || "", album: t.album || "" });
   if (state.current) openPlaylist(state.current.id);
 }
-$("#quality").onchange = () => {
+$("#quality").onchange = async () => {
+  try { await api("/api/stream-tier", { tier: $("#quality").value }); } catch (e) { alert(e.message); }
   const a = $("#audio"); if (!state.playingId) return;
   const t = a.currentTime, wasPlaying = !a.paused;
   a.src = streamUrl(state.playingId); a.currentTime = t; if (wasPlaying) a.play().catch(() => {});
@@ -136,4 +139,4 @@ $("#btn-reconcile").onclick = async () => {
   finally { b.disabled = false; setTimeout(() => b.textContent = "reconcile", 2500); }
 };
 
-loadStatus(); loadPlaylists();
+loadStatus(); loadPlaylists(); loadStreamTier();

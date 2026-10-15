@@ -6,6 +6,7 @@ Tables
   crate_tracks  per (crate, song): last-seen library facts + provisioning status
   events        append-only log so the UI can show "what did the reconciler do"
   external_wanted  tracks wanted that aren't in Navidrome at all (seeded from Spotify etc.)
+  settings      small key/value settings (the web client's stream tier)
 """
 from __future__ import annotations
 
@@ -15,6 +16,8 @@ import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
+
+from sourcing.policy import check_tier
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS crates (
@@ -50,12 +53,14 @@ CREATE TABLE IF NOT EXISTS external_wanted (
   status      TEXT NOT NULL DEFAULT 'needs_source',
   reason      TEXT,
   playlist_id TEXT, position INTEGER,             -- import-playlist: where a later fetch inserts the track
+  tier        TEXT NOT NULL DEFAULT 'crate',      -- quality tier it is sourced at (spec §1): low|medium|high|crate
   created_at  REAL NOT NULL, updated_at REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS imported_entries (     -- every song import-playlist ever added to a playlist,
   playlist_id TEXT NOT NULL, song_id TEXT NOT NULL, -- so a track Michael removes by hand is never re-added
   PRIMARY KEY (playlist_id, song_id)
 );
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 """
 
 STATUSES = ("ok", "needs_source", "sourcing", "verify", "failed", "removed", "review")   # review: a person must pick a version
@@ -98,7 +103,7 @@ class CrateStore:
     def _migrate(self) -> None:
         """Add columns introduced after a DB was created (CREATE IF NOT EXISTS does not alter)."""
         have = {r[1] for r in self.db.execute("PRAGMA table_info(external_wanted)")}
-        for col, typ in (("playlist_id", "TEXT"), ("position", "INTEGER")):
+        for col, typ in (("playlist_id", "TEXT"), ("position", "INTEGER"), ("tier", "TEXT NOT NULL DEFAULT 'crate'")):
             if col not in have:
                 self.db.execute(f"ALTER TABLE external_wanted ADD COLUMN {col} {typ}")
         self.db.commit()
@@ -174,7 +179,7 @@ class CrateStore:
                 "SELECT t.*, c.name AS crate_name FROM crate_tracks t JOIN crates c USING(playlist_id) "
                 f"WHERE c.enabled=1 AND {where} ORDER BY c.name, t.position", params):
             d = dict(r); name = d.pop("crate_name")
-            out.setdefault(d["song_id"], {**d, "crates": []})["crates"].append(name)
+            out.setdefault(d["song_id"], {**d, "crates": [], "tier": "crate"})["crates"].append(name)   # a crate is crate
         return list(out.values())
 
     def wanted(self) -> list[dict]:
@@ -210,23 +215,29 @@ class CrateStore:
 
     def add_external_wanted(self, artist: str, title: str, album: str | None = None, duration_s: float | None = None,
                             year: int | None = None, source: str | None = None,
-                            playlist_id: str | None = None, position: int | None = None) -> str:
+                            playlist_id: str | None = None, position: int | None = None, tier: str | None = None) -> str:
         """Returns the existing id when the same artist/title is already queued (re-running a seed is a no-op);
-        a playlist position, when given, is (re)recorded on that row."""
+        a playlist position or a tier, when given, is (re)recorded on that row. A new row's tier defaults to crate."""
+        if tier is not None:
+            check_tier(tier)
         existing = self.find_external(artist, title)
         if existing:
+            pk = _ext_pk(existing["song_id"])
             if playlist_id is not None:
                 self.db.execute("UPDATE external_wanted SET playlist_id=?, position=?, updated_at=? WHERE id=?",
-                                (playlist_id, position, time.time(), _ext_pk(existing["song_id"])))
+                                (playlist_id, position, time.time(), pk))
+            if tier is not None and tier != existing["tier"]:
+                self.db.execute("UPDATE external_wanted SET tier=?, updated_at=? WHERE id=?", (tier, time.time(), pk))
+                self.log(None, existing["song_id"], "tier", f"{existing['tier']} → {tier}")
             return existing["song_id"]
-        return self._insert_external(artist, title, album, duration_s, year, source, playlist_id, position)
+        return self._insert_external(artist, title, album, duration_s, year, source, playlist_id, position, tier or "crate")
 
-    def _insert_external(self, artist, title, album, duration_s, year, source, playlist_id=None, position=None) -> str:
+    def _insert_external(self, artist, title, album, duration_s, year, source, playlist_id=None, position=None, tier="crate") -> str:
         now = time.time()
         cur = self.db.execute(
-            "INSERT INTO external_wanted(artist,title,album,year,duration,source,playlist_id,position,created_at,updated_at) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?)",
-            (artist, title, album, year, int(duration_s) if duration_s else None, source, playlist_id, position, now, now))
+            "INSERT INTO external_wanted(artist,title,album,year,duration,source,playlist_id,position,tier,created_at,updated_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (artist, title, album, year, int(duration_s) if duration_s else None, source, playlist_id, position, tier, now, now))
         self.log(None, f"ext-{cur.lastrowid}", "wanted", f"{artist} — {title}")
         return f"ext-{cur.lastrowid}"
 
@@ -260,6 +271,17 @@ class CrateStore:
         d["song_id"] = f"ext-{d.pop('id')}"
         d["crates"], d["external"] = [], True
         return d
+
+    # --- settings
+    def stream_tier(self) -> str:
+        """The web client's stream tier (spec §1 "Stream"); crate (= original file) until one is chosen."""
+        r = self.db.execute("SELECT value FROM settings WHERE key='stream_tier'").fetchone()
+        return r[0] if r else "crate"
+
+    def set_stream_tier(self, tier: str) -> None:
+        self.db.execute("INSERT INTO settings(key, value) VALUES('stream_tier', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                        (check_tier(tier),))
+        self.db.commit()
 
     # --- events
     def log(self, playlist_id: str | None, song_id: str | None, kind: str, detail: str | None = None) -> None:

@@ -224,7 +224,7 @@ class Report:
 
 
 def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: CrateStore,
-                    source: str, dry_run: bool = False, merge: bool = False, resolve=track_lead) -> Report:
+                    source: str, dry_run: bool = False, merge: bool = False, resolve=track_lead, tier: str | None = None) -> Report:
     """Create or update the playlist `name`: matched tracks in row order (appending only what is
     missing on a re-run, never removing), public; everything else becomes an external_wanted row
     that remembers the playlist and position. Ambiguous rows are parked as `verify` with the ids.
@@ -272,7 +272,7 @@ def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: C
                 store.set_external_status(r["song_id"], "ok", f"in library: {m.song_id}")
         for m, lead in pending:
             ext = store.add_external_wanted(lead, m.row.title, album=m.row.album, duration_s=m.row.duration_s,
-                                            source=source, playlist_id=playlist_id, position=m.row.position)
+                                            source=source, playlist_id=playlist_id, position=m.row.position, tier=tier)
             if m.status == "ambiguous" and store.external(ext)["status"] in ("needs_source", "review"):
                 store.set_external_status(ext, "review", f"ambiguous ({m.why}): " + ", ".join(m.candidates))
         store.commit()
