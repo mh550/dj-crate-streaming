@@ -67,10 +67,6 @@ def _blob(h: Song) -> str:
     return norm(f"{h.artist} {h.title}")
 
 
-def _key(h: Song) -> str:
-    return norm(h.artist) + "|" + norm(h.title)
-
-
 def _untagged(artist: str | None) -> bool:
     """A file with no artist tag ("[Unknown Artist]", "Various") is no evidence against a match."""
     return norm(artist) in ("", "unknownartist", "various", "variousartists", "unknown")
@@ -135,28 +131,31 @@ def _by_title(row: Row, hits: list[Song], lead: str) -> tuple[list[Song], list[S
     return same, [h for h in named if h not in same]
 
 
-def _decide(row: Row, fit: list[Song]) -> Match:
+def _decide(row: Row, fit: list[Song], lead: str) -> Match:
     durs = [h.duration for h in fit if h.duration is not None]
-    # Same artist|title twice is a redundant copy only when the lengths agree; "The Magician" 353 s
-    # vs 300 s are two recordings, and without a row duration we cannot pick → ambiguous.
-    if len({_key(h) for h in fit}) > 1 or (durs and max(durs) - min(durs) > TOLERANCE_S):
+    # Same (cleaned) title twice is a redundant copy only when the lengths agree; "The Magician"
+    # 353 s vs 300 s are two recordings, and without a row duration we cannot pick → ambiguous.
+    # Cleaned titles, not raw tags: "122 - Wendell Harrison - Peace Of Mind.mp3" is a copy too.
+    if len({_core(h.title, lead) for h in fit}) > 1 or (durs and max(durs) - min(durs) > TOLERANCE_S):
         return Match(row, "ambiguous", candidates=[h.id for h in fit], why="several versions")
-    fit.sort(key=lambda h: (h.path or "").startswith("Compilations/"))      # the properly filed copy first
+    # The cleanly tagged, properly filed copy first.
+    fit.sort(key=lambda h: (norm(h.title) != norm(row.title), (h.path or "").startswith("Compilations/")))
     return Match(row, "matched", fit[0].id, [h.id for h in fit])
 
 
 def choose(row: Row, hits: list[Song]) -> Match:
     if not hits:
         return Match(row, "missing")
-    same, near = _by_title(row, hits, _lead(row))
+    lead = _lead(row)
+    same, near = _by_title(row, hits, lead)
     if row.duration_s is not None:
         fit = _by_length(row, hits)
         if fit:
-            return _decide(row, fit)
+            return _decide(row, fit, lead)
         if same or near:                                 # right song name, another length: another edit
             return Match(row, "ambiguous", candidates=[h.id for h in same + near], why="length differs")
     elif same:
-        return _decide(row, same)
+        return _decide(row, same, lead)
     elif near:
         return Match(row, "ambiguous", candidates=[h.id for h in near], why="title differs")
     return Match(row, "missing", candidates=[h.id for h in hits])
@@ -233,14 +232,18 @@ def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: C
     A same-named playlist that this tool did not create (no `#imported` in its comment) raises
     NameCollision unless `merge=True`, which adopts it (adds the marker, leaves its visibility alone)."""
     matches = [match(client, r) for r in rows]
-    ordered = list(dict.fromkeys(m.song_id for m in matches if m.status == "matched"))
     existing = next((p for p in client.playlists() if p.name == name), None)
     ours = existing is not None and MARKER in (existing.comment or "")
     if existing is not None and not ours and not merge:
         raise NameCollision(name, existing.id)
     have = {e.id for e in client.playlist(existing.id).entries} if existing else set()
     added_before = store.imported(existing.id) if existing else set()
-    new_ids = [i for i in ordered if i not in have and i not in added_before]   # a track Michael removed stays removed
+    present = have | added_before
+    for m in matches:                    # a copy of this track is already there (or was, until Michael removed it)
+        if m.status == "matched" and m.song_id not in present:
+            m.song_id = next((i for i in m.candidates if i in present), m.song_id)
+    ordered = list(dict.fromkeys(m.song_id for m in matches if m.status == "matched"))
+    new_ids = [i for i in ordered if i not in present]          # a track Michael removed stays removed
     playlist_id = existing.id if existing else None
     # Resolve lead artists (may ask Spotify) before touching anything, so a failure leaves nothing half-written.
     failed = set()

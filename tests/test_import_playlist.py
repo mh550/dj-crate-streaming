@@ -265,3 +265,28 @@ def test_fetch_leaves_review_rows_alone():
         assert r.status == "review" and "pick" in r.reason
         assert store.external(twain["song_id"])["status"] == "review"
         assert twain["song_id"] not in [w["song_id"] for w in store.wanted()]
+
+
+def test_copies_with_junk_tags_collapse_and_the_cleanly_tagged_copy_wins():
+    # Live 2026-10-14: four files of Wendell Harrison "Peace of Mind" (438-439 s), two tagged
+    # "122 - Wendell Harrison - Peace Of Mind.mp3" as both artist and title.
+    row = Row(1, "Peace of Mind", "Wendell Harrison", None, sep="; ")
+    junk = "122 - Wendell Harrison - Peace Of Mind.mp3"
+    hits = [song("j1", junk, junk, 438, path="Compilations/pure soul 128/04.mp3"),
+            song("c3", "Peace Of Mind", "Wendell Harrison", 439, path="Compilations/Le Top/04.mp3"),
+            song("f1", "Peace of Mind", "Wendell Harrison", 439, path="Wendell Harrison/Organic Dream (1981)/04.flac")]
+    m = ip.choose(row, hits)
+    assert m.status == "matched" and m.song_id == "f1" and set(m.candidates) == {"j1", "c3", "f1"}
+
+
+def test_rerun_never_appends_a_second_copy_of_a_track_already_in_the_playlist():
+    with FakeSubsonicServer() as srv:
+        s = srv.state.songs
+        s["c3"] = dict(s["s1"], id="c3", title="Peace Of Mind", artist="Wendell Harrison", duration=439, path="Compilations/Le Top/04.mp3")
+        c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
+        rows = [Row(1, "Peace of Mind", "Wendell Harrison", None, sep="; ")]
+        first = ip.import_playlist("PoM", rows, c, store, source="s")
+        s["f1"] = dict(s["s1"], id="f1", title="Peace of Mind", artist="Wendell Harrison", duration=439,
+                       path="Wendell Harrison/Organic Dream (1981)/04.flac")      # a better-filed copy appears
+        again = ip.import_playlist("PoM", rows, c, store, source="s")
+        assert again.added == 0 and [e.id for e in c.playlist(first.playlist_id).entries] == ["c3"]
