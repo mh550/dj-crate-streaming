@@ -152,3 +152,15 @@ def test_stream_tier_endpoint_and_stream_by_tier(svc):  # noqa: F811
     loc = get(srv.url + "/api/stream/s1?tier=crate", raw=True)[1]["Location"]
     assert "format=raw" in loc and "maxBitRate" not in loc
     assert get(srv.url + "/api/stream/s1?tier=ultra", raw=True)[0] == 400
+
+
+def test_rank_live_can_save_the_responses_for_a_second_tier(tmp_path, capsys):
+    out = tmp_path / "resp.json"
+    with FakeSlskdServer([FAST_MP3, SLOW_FLAC], tmp_path / "dl", files={}) as sl:
+        rc = cli.main(["rank", "--slskd", sl.url, "--api-key", "k", "--artist", "Chic", "--title", "Good Times",
+                       "--duration", "501", "--tier", "low", "--json", "--save", str(out)])
+        assert rc == 0 and sl.enqueued == []
+    low = json.loads(capsys.readouterr().out)
+    assert cli.main(["rank", "--fixture", str(out), "--artist", "Chic", "--title", "Good Times", "--duration", "501", "--json"]) == 0
+    crate = json.loads(capsys.readouterr().out)
+    assert low[0]["username"] == "fastpeer" and crate[0]["username"] == "slowpeer"

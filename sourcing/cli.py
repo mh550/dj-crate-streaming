@@ -43,6 +43,7 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--fixture", help="JSON file shaped like slskd search responses (offline mode)")
     add_slskd_args(r)
     r.add_argument("--download", action="store_true", help="enqueue the top candidate (live mode only)")
+    r.add_argument("--save", help="live mode: write the raw search responses here (rank them again with --fixture)")
     r.add_argument("--json", action="store_true")
     r.add_argument("--limit", type=int, default=10)
     add_tier_arg(r, "crate", "what to score for (default crate)")
@@ -161,6 +162,8 @@ def main(argv: list[str] | None = None) -> int:
         st = client.wait_search(sid)
         responses = client.search_responses(sid)
         print(f"search {st.get('state')}: {len(responses)} peers responded", file=sys.stderr)
+        if a.save:
+            Path(a.save).write_text(json.dumps(responses))
     else:
         print("need --fixture or --slskd", file=sys.stderr); return 1
 
