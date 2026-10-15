@@ -267,3 +267,17 @@ def test_refresh_library_map_follows_the_moves(tmp_path):
     import csv as _csv
     rows = list(_csv.DictReader(csv_path.open(encoding="utf-8")))
     assert rows[0]["new_path"] == "Art/Alb/a.mp3" and rows[0]["other_copies"] == "Art/Alb (2)/a.mp3" and rows[1]["new_path"] == "Keep/b.mp3"
+
+
+def test_find_original_prefers_same_audio_and_tags_then_the_mapped_path(tmp_path):
+    a, b, c = (tmp_path / n for n in ("a.mp3", "b.mp3", "c.mp3"))
+    for f, title, genre in ((a, "Other Song", "Soul"), (b, "Fantasy", "Funk; Soul"), (c, "Fantasy", "Disco")):
+        _audio(f); m = MediaFile(str(f)); m.title, m.genre = title, genre; m.save()
+    rows = [{"original_path": str(a), "audio_md5": "h1", "new_path": "X/a.mp3"},
+            {"original_path": str(b), "audio_md5": "h1", "new_path": "X/b.mp3"},
+            {"original_path": str(c), "audio_md5": "h9", "new_path": "Compilations/x/Fantasy.mp3"}]
+    entry = {"path_before": "/srv/music/Compilations/x/Fantasy.mp3"}
+    pre = {"Compilations/x/Fantasy.mp3": ("Fantasy", ["Funk", "Soul"])}
+    assert tc.find_original(entry, "h1", rows, pre, music_root="/srv/music") == str(b)      # same audio, same tags
+    assert tc.find_original(entry, "zz", rows, pre, music_root="/srv/music") == str(c)      # ID3v1 changed the hash: mapped path
+    assert tc.find_original({"path_before": "/srv/music/none.mp3"}, "zz", rows, {}, music_root="/srv/music") is None
