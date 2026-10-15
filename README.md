@@ -97,8 +97,13 @@ phone browser ──/api/*──▶ crates.service ──Subsonic──▶ Navid
   playlist with a marker (`Disco Edits [crate]` or `🎛 Disco Edits`), or by editing
   the comment where the client allows it.
 - **Judging** uses only what Subsonic reports (suffix, bitRate, samplingRate,
-  bitDepth) against `sourcing/policy.py`. Deep checks (fake FLAC, duration) run in
-  `sourcing/verify.py` once we hold the bytes.
+  bitDepth) against `sourcing/policy.py`. Deep checks run in `sourcing/verify.py` once we
+  hold the bytes (spec §3a, `docs/download-validation.md`): one ffmpeg decode measures the
+  spectral cutoff, bits used, truncation, silence and clipping, `flac -t` checks the MD5, and
+  `fpcalc` compares against a reference copy. The tier decides what is a hard failure.
+  `python3 -m sourcing.cli verify <file> --tier crate [--reference old.flac]` on the host
+  (the crates image has no ffmpeg); `fetch` keeps the last result per wanted row (`verify`
+  in `/api/wanted`, shown in the web client).
 - **Streaming never touches our process.** `/api/stream/<id>` answers 302 to a
   per-request signed Navidrome URL under its own client name (`dj-crates-web`), so
   Navidrome gives it its own Player and you set its transcoding profile in
@@ -124,7 +129,8 @@ Container build for the Compose stack: `docker build -t crates .` (see the
   riding on `crate_tracks.status` fan-out and on the free-text reason. Then: check Navidrome for
   a good copy *before* searching; tag the file (or hand it to beets) so Navidrome's view matches.
 - Expected-duration lookup (MusicBrainz / SpotiFLAC) instead of trusting the library's.
-- AcoustID fingerprint verification (`fpcalc`).
+- AcoustID *database* lookups (needs a free key); today `fpcalc` only compares against a local reference copy.
+- ffmpeg/flac/fpcalc in the crates image (`apt-get install -y ffmpeg flac libchromaprint-tools`) if verify should run there.
 - Analysis (BPM/key → Serato GEOB), stems, device sync — Phases 2–4.
 - SoundCloud in the client: stream-only via the official API (needs Artist Pro); not a crate source.
 - A native phone client if the web client's background audio proves unreliable on iOS.
