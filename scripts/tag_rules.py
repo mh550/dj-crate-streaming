@@ -24,13 +24,14 @@ _SOCK = re.compile(r"^(?P<artist>.+?) - '(?P<title>.+)' \((?P<album>.+)\)$")
 _REMASTER = re.compile(r"^(?P<title>.*?)\s+-\s+(?P<version>(\d{4}\s+)?(digital(ly)?\s+)?remaster(ed)?(\s+(version|\d{4}))?)\s*$", re.I)
 
 
-def _blank(s: str | None) -> bool:
+def blank(s: str | None) -> bool:
+    """Empty, or a placeholder a tagger or Navidrome uses for empty (\"[Unknown Album]\")."""
     return (s or "").strip().casefold() in PLACEHOLDERS
 
 
 def usable_artist(artist: str | None) -> bool:
     """Something a file can be filed under: not blank, not a placeholder, not a bare track number ("08")."""
-    return not _blank(artist) and not re.fullmatch(r"\d+", (artist or "").strip())
+    return not blank(artist) and not re.fullmatch(r"\d+", (artist or "").strip())
 
 
 def _same(a: str, b: str) -> bool:
@@ -46,14 +47,14 @@ def clean(fields: dict) -> tuple[dict, list[str]]:
 
     title, artist = f.get("title") or "", f.get("artist") or ""
     m = _JUNK.match(title)
-    if m and (_blank(artist) or artist == title):
+    if m and (blank(artist) or artist == title):
         fire("junk", artist=m["artist"].strip(), title=m["title"].strip())
-    elif _blank(artist) and title.count(" - ") == 1:
+    elif blank(artist) and title.count(" - ") == 1:
         a, t = title.split(" - ")
         fire("split", artist=a.strip(), title=t.strip())
-    elif (m := _SOCK.match(title)) and (_blank(artist) or _same(m["artist"], artist)):
+    elif (m := _SOCK.match(title)) and (blank(artist) or _same(m["artist"], artist)):
         changes = {"title": m["title"].strip()}
-        if _blank(f.get("album")):
+        if blank(f.get("album")):
             changes["album"] = m["album"].strip()
         fire("sockseek", **changes)
     elif artist and title.casefold().startswith(artist.casefold() + " - "):

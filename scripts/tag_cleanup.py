@@ -4,7 +4,7 @@
     /usr/bin/python3 -m scripts.tag_cleanup retag    # pass 1: write tags in place, no moves (backs up library.db)
       … wait for Navidrome's scan (its folder watcher picks the changes up within seconds) …
     /usr/bin/python3 -m scripts.tag_cleanup move     # pass 2: re-file the changed songs; refuses until pass 1 is scanned
-    /usr/bin/python3 -m scripts.tag_cleanup repair   # one-off: undo the first run's full-field beets writes (see restore)
+    (scripts/tag_repair.py: the one-off repair of the first live run's full-field beets writes)
     /usr/bin/python3 -m scripts.tag_cleanup refresh-map   # docs/library-map.csv follows the moves
 
 Why two passes: on Navidrome 0.64 a retag keeps the song id and a move with unchanged tags keeps
@@ -21,10 +21,10 @@ import json
 import os
 import re
 import shutil
-import sqlite3
 import sys
 import tempfile
 from collections import Counter, defaultdict
+from contextlib import closing
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -32,50 +32,53 @@ for _p in ("/usr/share/beets", "/usr/lib/python3/dist-packages"):      # Debian'
     if _p not in sys.path:
         sys.path.append(_p)
 
-import csv                                                              # noqa: E402
 import mutagen.id3                                                      # noqa: E402
 from beets import config as beets_config, ui as beets_ui                # noqa: E402
 from beets.util import displayable_path                                 # noqa: E402
 from mediafile import MediaFile                                         # noqa: E402
 
 try:
-    from scripts.library_map import audio_md5                            # python3 -m scripts.tag_cleanup
-    from scripts.tag_rules import clean, usable_artist
+    from scripts.export_playlists import open_ro                         # python3 -m scripts.tag_cleanup
+    from scripts.library_map import read_csv, write_csv
+    from scripts.tag_rules import blank, clean, usable_artist
 except ImportError:                                                      # python3 scripts/tag_cleanup.py
-    from library_map import audio_md5
-    from tag_rules import clean, usable_artist
+    from export_playlists import open_ro
+    from library_map import read_csv, write_csv
+    from tag_rules import blank, clean, usable_artist
 
 REPO = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG = REPO / "deploy" / "beets.yaml"
 DEFAULT_MANIFEST = Path("/srv/docker/beets/tag-cleanup-manifest.json")
 DEFAULT_NAVIDROME_DB = Path("/srv/docker/navidrome/navidrome.db")
 KEYS = ("title", "artist", "albumartist", "album", "comp", "comments")
+SHOWN = ("title", "artist", "albumartist", "album")      # the KEYS a navidrome.db media_file row shows
+# ID3 frames that carry the same field under another name. mediafile writes only the standard frame
+# (TPE2), so an alias would keep the old value beside it: Navidrome showed "X • VA" (2026-10-15).
+ALIASES = {"albumartist": ("TXXX:ALBUM ARTIST", "TXXX:ALBUMARTIST", "TXXX:ALBUM_ARTIST")}
+
+
+def _id3_v23(path: str) -> bool:
+    try:
+        return mutagen.id3.ID3(path).version[:2] == (2, 3)
+    except Exception:                                    # not an ID3 file (FLAC, MP4…) or no ID3 tag yet
+        return False
 
 
 def write_minimal(path, changes: dict) -> None:
     """Write only `changes` into the file. beets' item.write() rewrites every field it knows, which
     collapsed multi-valued GENRE/ISRC, garbled RELEASETYPE and added zero DISCTOTAL/TRACKTOTAL on the
-    live run (2026-10-15, Opus review); mediafile saves only the fields set here. The ID3 version is kept."""
+    live run (2026-10-15, Opus review); mediafile saves only the fields set here. The ID3 version is
+    kept, and ID3 aliases of a changed field are dropped, all in one save."""
     path = str(path)
-    v23 = False
-    try:
-        v23 = mutagen.id3.ID3(path).version[:2] == (2, 3)
-    except Exception:                                    # not an ID3 file (FLAC, MP4…) or no ID3 tag yet
-        pass
-    m = MediaFile(path, id3v23=v23)
+    m = MediaFile(path, id3v23=_id3_v23(path))
     for k, v in changes.items():
-        setattr(m, k, (True if v else None) if k == "comp" else (v if v != "" else None))
+        setattr(m, k, (bool(v) or None) if k == "comp" else (v or None))     # comp off / "" = remove the tag
+    tags = getattr(m.mgfile, "tags", None)
+    if isinstance(tags, mutagen.id3.ID3):
+        stale = {a.casefold() for k in changes for a in ALIASES.get(k, ())}
+        for key in [key for key in tags.keys() if key.casefold() in stale]:
+            del tags[key]
     m.save()
-    if "albumartist" in changes:                         # TXXX:ALBUM ARTIST aliases would keep the old value next to TPE2
-        try:
-            id3 = mutagen.id3.ID3(path)
-        except Exception:
-            return
-        stale = [k for k in id3.keys() if k.lower().replace(" ", "").replace("_", "") in ("txxx:albumartist",)]
-        if stale:
-            for k in stale:
-                del id3[k]
-            id3.save(path, v2_version=3 if v23 else 4)
 
 
 class NotScanned(Exception):
@@ -105,17 +108,17 @@ def _fields(item) -> dict:
     return {k: (bool(item.get(k)) if k == "comp" else (item.get(k) or "")) for k in KEYS}
 
 
-def _needs_regroup(lib, item) -> bool:
+def _needs_regroup(item) -> bool:
     album = item.get_album()
     if not item.album:
         return album is not None                                         # no album tag → a singleton
     return album is None or album.albumartist != item.albumartist or album.album != item.album or bool(album.comp)
 
 
-def _scan(lib, left: list | None = None) -> list[Record]:
-    """Records for every item that changes; `left` collects Compilations files with no usable artist."""
+def _scan(lib) -> tuple[list[Record], list[str]]:
+    """Records for every item that changes, and the Compilations files left alone (no usable artist)."""
     comp_root = os.path.join(lib.directory, b"Compilations") + b"/"
-    out = []
+    out, left = [], []
     for item in lib.items():
         path = item.path
         item.read()                                                      # the file is the truth (the DB drifted)
@@ -125,11 +128,10 @@ def _scan(lib, left: list | None = None) -> list[Record]:
         item.update(changes)
         if in_comp and not usable_artist(item.artist):
             in_comp = False                                              # nothing to file it under: stays where it is
-            if left is not None:
-                left.append(_rel(lib, path))
-        if changes or (in_comp and _needs_regroup(lib, item)):
+            left.append(_rel(lib, path))
+        if changes or (in_comp and _needs_regroup(item)):
             out.append(Record(item, path, before, changes, rules or ["regroup"], in_comp))
-    return out
+    return out, left
 
 
 def _apply(lib, recs: list[Record], write: bool) -> None:
@@ -177,7 +179,7 @@ def plan(config_path, report_path) -> Plan:
         real._close()
         lib = open_lib(config_path, library=tmp / "library.db")
         result, rows, moves, seen = Plan(), [], [], Counter()
-        recs = _scan(lib, result.left)
+        recs, result.left = _scan(lib)
         _apply(lib, recs, write=False)
         for r in recs:
             result.counts.update(r.rules)
@@ -236,7 +238,7 @@ def retag(config_path, manifest_path) -> int:
     backup = db.with_name(db.name + ".bak-tag-cleanup")
     if not backup.exists():
         shutil.copy2(db, backup)
-    recs = _scan(lib)
+    recs, _ = _scan(lib)
     manifest = Path(manifest_path)
     entries = json.loads(manifest.read_text()) if manifest.exists() else []
     by_id = {e["id"]: e for e in entries}
@@ -261,23 +263,23 @@ def retag(config_path, manifest_path) -> int:
     return len(recs)
 
 
-_ND_PLACEHOLDERS = {"unknownalbum", "unknownartist"}      # how Navidrome 0.64 shows an empty album/artist tag
-
-
 def _norm(s) -> str:
-    n = re.sub(r"\W+", "", str(s or "").casefold())
-    return "" if n in _ND_PLACEHOLDERS else n
+    return re.sub(r"\W+", "", str(s or "").casefold())
 
 
-def _scanned(row, after: dict, before: dict | None = None) -> bool:
+def _same_shown(shown, wanted) -> bool:
+    """Navidrome 0.64 shows an empty album/artist tag as "[Unknown Album]"/"[Unknown Artist]"."""
+    return (blank(shown) and blank(wanted)) or _norm(shown) == _norm(wanted)
+
+
+def _scanned(row, after: dict, before: dict) -> bool:
     """Navidrome shows the values pass 1 wrote. Only the keys that changed are compared (Navidrome joins
     multi-valued artists differently from beets), and they must be *equal*: a substring test accepted
     "Cameo feat. Larry Blackmon" for "Cameo" before any scan (Opus review)."""
     if row is None:
         return False
-    shown = dict(zip(("title", "artist", "albumartist", "album"), row))
-    keys = [k for k in shown if before is None or after[k] != before.get(k)]
-    return all(_norm(shown[k]) == _norm(after[k]) for k in keys if after[k] or before is not None)
+    shown = dict(zip(SHOWN, row))
+    return all(_same_shown(shown[k], after[k]) for k in SHOWN if after[k] != before.get(k))
 
 
 def move(config_path, manifest_path, navidrome_db) -> list[tuple[str, str]]:
@@ -289,26 +291,24 @@ def move(config_path, manifest_path, navidrome_db) -> list[tuple[str, str]]:
     if not pending:
         return []
     lib = open_lib(config_path)
-    root = displayable_path(lib.directory)
-    con = sqlite3.connect(f"{Path(navidrome_db).resolve().as_uri()}?mode=ro", uri=True)
-    rows = {p: (t, a, aa, al) for p, t, a, aa, al in con.execute("SELECT path, title, artist, album_artist, album FROM media_file WHERE NOT missing")}
-    con.close()
+    with closing(open_ro(navidrome_db)) as con:
+        rows = {p: r for p, *r in con.execute("SELECT path, title, artist, album_artist, album FROM media_file WHERE NOT missing")}
     items = {e["id"]: lib.get_item(e["id"]) for e in pending}
     late = [e for e in pending if not e.get("written", True)
-            or not _scanned(rows.get(os.path.relpath(displayable_path(items[e["id"]].path), root)), e["after"], e["before"])]
+            or not _scanned(rows.get(_rel(lib, items[e["id"]].path)), e["after"], e["before"])]
     if late:
         lib._close()
         raise NotScanned(f"{len(late)} of {len(pending)} retagged files not yet rescanned by Navidrome "
-                         f"(e.g. {os.path.relpath(late[0]['path_before'], root)}); wait for the scan and run move again")
+                         f"(e.g. {_rel(lib, items[late[0]['id']].path)}); wait for the scan and run move again")
     moved = []
     try:
         for e in pending:
             item = items[e["id"]]
             dest = item.destination()
-            if dest != item.path and os.path.exists(dest):
-                e["skipped"] = f"destination exists: {_rel(lib, dest)}"
-                continue
             if dest != item.path:
+                if os.path.exists(dest):
+                    e["skipped"] = f"destination exists: {_rel(lib, dest)}"
+                    continue
                 item.move()
                 moved.append((e["path_before"], displayable_path(item.path)))
             e["path_after"] = displayable_path(item.path)
@@ -319,94 +319,26 @@ def move(config_path, manifest_path, navidrome_db) -> list[tuple[str, str]]:
     return moved
 
 
-def restore(entry: dict, original, music_root, trash_root) -> None:
-    """Put the original file's bytes back (audio and every tag as downloaded), then apply only the
-    intended changes. The current file is copied to trash first; the swap is one rename, so the path
-    never disappears and Navidrome keeps the song id. The original is only read."""
-    cur = Path(entry.get("path_after") or entry["path_before"])
-    tmp = cur.with_name(".restore." + cur.name)          # keep the extension: mediafile picks the format by it
-    shutil.copyfile(original, tmp)                       # fresh mtime: Navidrome re-reads it
-    changes = {k: v for k, v in entry["after"].items() if entry["before"].get(k) != v}
-    if changes:
-        write_minimal(tmp, changes)
-    kept = Path(trash_root) / cur.relative_to(music_root)
-    kept.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(cur, kept)
-    os.replace(tmp, cur)
-    entry["restored_from"] = str(original)
-
-
-def _genre_set(values) -> list[str]:
-    return sorted({_norm(g) for v in values for g in re.split(r"[;/,]", v or "") if _norm(g)})
-
-
-def find_original(entry: dict, md5_now: str, map_rows: list[dict], pre: dict, music_root) -> str | None:
-    """The original in /srv/incoming this /srv/music copy was made from. First choice: same audio hash
-    *and* the title/genres Navidrome showed before the cleanup (`pre`: rel path → (title, genres));
-    else the one library-map row filed at the song's old path (an ID3v1 rewrite changes an mp3's hash)."""
-    rel = os.path.relpath(entry["path_before"], music_root)
-    title, genres = pre.get(rel, (None, []))
-    for r in (r for r in map_rows if r["audio_md5"] == md5_now):
-        m = MediaFile(r["original_path"])
-        if _norm(m.title) == _norm(title) and _genre_set(m.genres or []) == _genre_set(genres):
-            return r["original_path"]
-    at_path = [r for r in map_rows if r["new_path"] == rel]
-    return at_path[0]["original_path"] if len(at_path) == 1 else None
-
-
 def refresh_library_map(csv_path, manifest: list, music_root) -> int:
     """Point docs/library-map.csv's new_path/other_copies at where the songs live after `move`."""
     moved = {os.path.relpath(e["path_before"], music_root): os.path.relpath(e["path_after"], music_root)
              for e in manifest if e.get("path_after") and e["path_after"] != e["path_before"]}
-    rows = list(csv.DictReader(open(csv_path, encoding="utf-8")))
-    changed = 0
+    rows, changed = read_csv(Path(csv_path)), 0
     for r in rows:
         new = moved.get(r["new_path"], r["new_path"])
         others = "|".join(moved.get(o, o) for o in r["other_copies"].split("|")) if r["other_copies"] else ""
         if (new, others) != (r["new_path"], r["other_copies"]):
-            r["new_path"], r["other_copies"], changed = new, others, changed + 1
-    with open(csv_path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
-        w.writeheader()
-        w.writerows(rows)
+            r["new_path"], r["other_copies"] = new, others
+            changed += 1
+    write_csv(rows, Path(csv_path))
     return changed
-
-
-def _repair_cli(a) -> int:
-    """Undo beets' full-field writes from the first live run: original bytes + only the intended changes."""
-    from concurrent.futures import ThreadPoolExecutor
-    entries = json.loads(a.manifest.read_text())
-    todo = [e for e in entries if e.get("written", True) and not e.get("restored_from")]
-    rows = [dict(r, original_path=r["original_path"] if r["original_path"].startswith("/")
-                 else f"/srv/incoming/library-import/{r['original_path']}") for r in csv.DictReader(open(a.library_map, encoding="utf-8"))]
-    con = sqlite3.connect(f"{a.pre_db.resolve().as_uri()}?mode=ro", uri=True)
-    pre = {p: (t, [g["value"] for g in json.loads(tags or "{}").get("genre", [])]) for p, t, tags in con.execute("SELECT path, title, tags FROM media_file")}
-    con.close()
-    with ThreadPoolExecutor(8) as ex:
-        hashes = list(ex.map(lambda e: audio_md5(Path(e.get("path_after") or e["path_before"])), todo))
-    done = missing = 0
-    for e, h in zip(todo, hashes):
-        src = find_original(e, h, rows, pre, a.music)
-        if src is None:
-            e["restore_skipped"] = "no original found"
-            missing += 1
-        else:
-            restore(e, src, a.music, a.trash)
-            done += 1
-        _save_manifest(a.manifest, entries)
-    print(f"{done} files restored from their originals with only the intended changes; {missing} without an original; "
-          f"previous versions kept in {a.trash}")
-    return 0 if not missing else 1
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["plan", "retag", "move", "repair", "refresh-map"])
+    ap.add_argument("cmd", choices=["plan", "retag", "move", "refresh-map"])
     ap.add_argument("--music", type=Path, default=Path("/srv/music"))
     ap.add_argument("--library-map", type=Path, default=REPO / "docs" / "library-map.csv")
-    ap.add_argument("--pre-db", type=Path, default=Path("/srv/docker/navidrome/navidrome.db.bak-2026-10-15-pre-tagcleanup"),
-                    help="navidrome.db as it was before the cleanup (repair matches originals against it)")
-    ap.add_argument("--trash", type=Path, default=Path("/srv/docker/_trash") / __import__("datetime").date.today().isoformat())
     ap.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     ap.add_argument("--report", type=Path, default=REPO / "docs" / "tag-cleanup-report.md")
     ap.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
@@ -417,8 +349,6 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{sum(p.counts.values())} rule hits {dict(p.counts)}; {p.moves} moves; {len(p.collisions)} collisions → {a.report}")
     elif a.cmd == "retag":
         print(f"{retag(a.config, a.manifest)} songs retagged in place (manifest: {a.manifest})")
-    elif a.cmd == "repair":
-        return _repair_cli(a)
     elif a.cmd == "refresh-map":
         n = refresh_library_map(a.library_map, json.loads(a.manifest.read_text()), a.music)
         print(f"{n} library-map rows now point at the moved files ({a.library_map})")

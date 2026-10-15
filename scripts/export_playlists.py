@@ -37,12 +37,13 @@ class Summary:
     stale: list[str] = field(default_factory=list)   # .m3u8 files with no playlist behind them
 
 
-def _connect(db: Path) -> sqlite3.Connection:
+def open_ro(db: Path) -> sqlite3.Connection:
+    """navidrome.db, read-only: these scripts never write Navidrome's database."""
     return sqlite3.connect(f"{Path(db).resolve().as_uri()}?mode=ro", uri=True)
 
 
 def load(db: Path) -> list[PL]:
-    con = _connect(db)
+    con = open_ro(db)
     try:
         pls = [PL(pid, name, []) for pid, name in con.execute("SELECT id, name FROM playlist ORDER BY name COLLATE NOCASE, id")]
         for pl in pls:
@@ -55,7 +56,7 @@ def load(db: Path) -> list[PL]:
 
 
 def _path_ids(db: Path) -> dict[str, str]:
-    con = _connect(db)
+    con = open_ro(db)
     try:
         return {path: mid for mid, path in con.execute("SELECT id, path FROM media_file")}
     finally:

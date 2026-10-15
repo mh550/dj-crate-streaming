@@ -13,6 +13,7 @@ import yaml                                                           # noqa: E4
 from mediafile import MediaFile                                       # noqa: E402
 
 from scripts import tag_cleanup as tc                                 # noqa: E402
+from scripts import tag_repair as trp                                 # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 PSC = "Compilations/pure soul 128"
@@ -222,9 +223,11 @@ def test_move_crash_resumes(lib, tmp_path, monkeypatch):
 
 def test_scan_guard_needs_equal_values_not_substrings():
     after = {"title": "Rock With You", "artist": "Cameo", "albumartist": "Cameo", "album": "X"}
-    assert not tc._scanned(("Rock With You", "Cameo feat. Larry Blackmon", "Cameo feat. Larry Blackmon", "X"), after)
-    assert tc._scanned(("Rock With You", "Cameo", "Cameo", "X"), after)
-    assert tc._scanned(("Rock With You", "Cameo", "Cameo", "[Unknown Album]"), dict(after, album=""))
+    before = {k: "old" for k in after}                                     # every shown key changed
+    assert not tc._scanned(("Rock With You", "Cameo feat. Larry Blackmon", "Cameo feat. Larry Blackmon", "X"), after, before)
+    assert tc._scanned(("Rock With You", "Cameo", "Cameo", "X"), after, before)
+    assert tc._scanned(("Rock With You", "Cameo", "Cameo", "[Unknown Album]"), dict(after, album=""), before)
+    assert tc._scanned(("Rock With You", "Cameo • Larry", "Cameo", "X"), after, dict(after, title="old"))   # unchanged keys are not compared
 
 
 def test_plan_lists_untouched_songs_whose_path_would_change(lib, tmp_path):
@@ -248,7 +251,7 @@ def test_restore_puts_back_the_original_and_applies_only_the_intended_change(tmp
              "before": {"title": "Song - Remastered", "artist": "", "albumartist": "", "album": "", "comp": False, "comments": ""},
              "after": {"title": "Song", "artist": "", "albumartist": "", "album": "", "comp": False, "comments": "version: Remastered"}}
     trash = tmp_path / "trash"
-    tc.restore(entry, original, music_root=tmp_path / "music", trash_root=trash)
+    trp.restore(entry, original, music_root=tmp_path / "music", trash_root=trash)
     t = FLAC(current)
     assert t["TITLE"] == ["Song"] and t["GENRE"] == ["Jazz", "Latin"] and "DISCTOTAL" not in t and t["COMMENT"] == ["version: Remastered"]
     assert FLAC(trash / "A/x.flac")["GENRE"] == ["Jazz"]                          # the damaged copy is kept, not deleted
@@ -278,9 +281,9 @@ def test_find_original_prefers_same_audio_and_tags_then_the_mapped_path(tmp_path
             {"original_path": str(c), "audio_md5": "h9", "new_path": "Compilations/x/Fantasy.mp3"}]
     entry = {"path_before": "/srv/music/Compilations/x/Fantasy.mp3"}
     pre = {"Compilations/x/Fantasy.mp3": ("Fantasy", ["Funk", "Soul"])}
-    assert tc.find_original(entry, "h1", rows, pre, music_root="/srv/music") == str(b)      # same audio, same tags
-    assert tc.find_original(entry, "zz", rows, pre, music_root="/srv/music") == str(c)      # ID3v1 changed the hash: mapped path
-    assert tc.find_original({"path_before": "/srv/music/none.mp3"}, "zz", rows, {}, music_root="/srv/music") is None
+    assert trp.find_original(entry, "h1", rows, pre, music_root="/srv/music") == str(b)      # same audio, same tags
+    assert trp.find_original(entry, "zz", rows, pre, music_root="/srv/music") == str(c)      # ID3v1 changed the hash: mapped path
+    assert trp.find_original({"path_before": "/srv/music/none.mp3"}, "zz", rows, {}, music_root="/srv/music") is None
 
 
 def test_restore_works_for_mp3_whose_type_comes_from_the_extension(tmp_path):
@@ -295,7 +298,7 @@ def test_restore_works_for_mp3_whose_type_comes_from_the_extension(tmp_path):
     entry = {"id": 1, "path_before": str(current),
              "before": {"title": "", "artist": "", "albumartist": "", "album": "", "comp": False, "comments": ""},
              "after": {"title": "Vem Menina", "artist": "", "albumartist": "", "album": "", "comp": False, "comments": ""}}
-    tc.restore(entry, original, music_root=tmp_path / "music", trash_root=tmp_path / "trash")
+    trp.restore(entry, original, music_root=tmp_path / "music", trash_root=tmp_path / "trash")
     assert MediaFile(str(current)).title == "Vem Menina" and not list(current.parent.glob(".*"))
 
 
