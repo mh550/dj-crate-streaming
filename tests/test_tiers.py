@@ -51,7 +51,7 @@ def test_estimated_arrival():
 
 def test_listening_tiers_explain_the_arrival_and_crate_does_not():
     low = explain(rank([FAST_MP3], WANTED, TIERS["low"]))
-    assert "arrival ~1 s" in low
+    assert "arrival ~2 s" in low                                   # 2 MB at our 1 MB/s cap
     assert "arrival" not in explain(rank([SLOW_FLAC], WANTED, TIERS["crate"]))
 
 
@@ -59,3 +59,22 @@ def test_listening_tiers_accept_opus_crate_does_not():
     opus = response("o", r"m\Chic\Risque\03 - Good Times.opus", 3_000_000, "opus", kbps=96)
     assert rank([opus], WANTED, TIERS["low"])[0].rejected is None
     assert rank([opus], WANTED, TIERS["crate"])[0].rejected is not None
+
+
+# Live, 2026-10-15 (Stevie Wonder — Lookin' For Another Pure Love, 253 peers): peers *report* upload speeds
+# up to 61 MB/s, so without our own cap a 28.5 MB FLAC "arrives" in under a second and wins low.
+BRAG_FLAC = response("bragger", r"m\Stevie Wonder\Talking Book\09 - Lookin' for Another Pure Love.flac", 28_500_000, "flac",
+                     speed=61_123_797, length=283)
+SMALL_M4A = response("small", r"m\Stevie Wonder\Talking Book\09 - Lookin' for Another Pure Love.m4a", 5_041_379, "m4a",
+                     kbps=138, speed=5_000_000, length=283)
+STEVIE = Wanted("Stevie Wonder", "Lookin' For Another Pure Love", None, 283, None)
+
+
+@pytest.mark.parametrize("tier, winner", [("low", "small"), ("medium", "small"), ("high", "bragger"), ("crate", "bragger")])
+def test_our_download_cap_keeps_a_bragging_peer_from_winning_low(tier, winner):
+    ranked = [c for c in rank([BRAG_FLAC, SMALL_M4A], STEVIE, TIERS[tier]) if not c.rejected]
+    assert ranked[0].username == winner
+
+
+def test_listening_tiers_share_our_download_cap():
+    assert {TIERS[t].download_cap_Bps for t in ("low", "medium", "high")} == {1_000_000}

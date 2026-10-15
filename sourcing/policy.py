@@ -47,7 +47,12 @@ class QualityPolicy:
         return ext.lower().lstrip(".") in self.LOSSLESS
 
 
-_LISTENING = dict(allow=["flac", "wav", "aiff", "alac", "m4a", "mp3", "ogg", "opus"], deny=["wma", "ra", "mid"])
+# Our own download speed through the VPN, bytes/s. Peers *report* upload speeds up to 61 MB/s (live, M4),
+# which made a 28 MB FLAC look as quick as a 5 MB file. 1 MB/s is an assumption until a real download measures it.
+OUR_DOWNLOAD_CAP_BPS = 1_000_000
+
+_LISTENING = dict(allow=["flac", "wav", "aiff", "alac", "m4a", "mp3", "ogg", "opus"], deny=["wma", "ra", "mid"],
+                  download_cap_Bps=OUR_DOWNLOAD_CAP_BPS)
 
 # One setting, four values (spec §1, D9). Low/medium/high are for listening; crate is today's policy.
 TIERS: dict[str, QualityPolicy] = {
