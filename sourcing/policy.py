@@ -51,14 +51,15 @@ class QualityPolicy:
 # which made a 28 MB FLAC look as quick as a 5 MB file. 1 MB/s is an assumption until a real download measures it.
 OUR_DOWNLOAD_CAP_BPS = 1_000_000
 
-_LISTENING = dict(allow=["flac", "wav", "aiff", "alac", "m4a", "mp3", "ogg", "opus"], deny=["wma", "ra", "mid"],
-                  download_cap_Bps=OUR_DOWNLOAD_CAP_BPS)
+def _listening(**kw) -> QualityPolicy:
+    return QualityPolicy(allow=["flac", "wav", "aiff", "alac", "m4a", "mp3", "ogg", "opus"], deny=["wma", "ra", "mid"],
+                         download_cap_Bps=OUR_DOWNLOAD_CAP_BPS, **kw)   # fresh lists per tier
 
 # One setting, four values (spec §1, D9). Low/medium/high are for listening; crate is today's policy.
 TIERS: dict[str, QualityPolicy] = {
-    "low": QualityPolicy(name="low", min_lossy_bitrate=32, speed_weight=0.8, arrival_budget_s=60, **_LISTENING),
-    "medium": QualityPolicy(name="medium", min_lossy_bitrate=64, speed_weight=0.6, arrival_budget_s=60, **_LISTENING),
-    "high": QualityPolicy(name="high", min_lossy_bitrate=128, speed_weight=0.35, arrival_budget_s=300, **_LISTENING),
+    "low": _listening(name="low", min_lossy_bitrate=32, speed_weight=0.8, arrival_budget_s=60),
+    "medium": _listening(name="medium", min_lossy_bitrate=64, speed_weight=0.6, arrival_budget_s=60),
+    "high": _listening(name="high", min_lossy_bitrate=128, speed_weight=0.35, arrival_budget_s=300),
     "crate": QualityPolicy(),
 }
 DEFAULT_POLICY = TIERS["crate"]

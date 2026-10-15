@@ -124,7 +124,10 @@ UNKNOWN_SPEED_Bps = 50_000          # a peer that reports no upload speed is ass
 
 def estimated_arrival_s(c: Candidate, cap_Bps: int = 0) -> float:
     """Seconds until the file would be here: size over the slower of the peer and our own cap, plus a
-    rough wait when the peer has no free slot (30 s, and 20 s per upload queued ahead of us)."""
+    rough wait when the peer has no free slot (30 s, and 20 s per upload queued ahead of us).
+    A listing without a size can't be estimated: infinity, so it earns no speed points."""
+    if c.size <= 0:
+        return float("inf")
     speed = c.upload_speed or UNKNOWN_SPEED_Bps
     if cap_Bps:
         speed = min(speed, cap_Bps)
@@ -212,7 +215,7 @@ def score_candidate(c: Candidate, w: Wanted, policy: QualityPolicy = DEFAULT_POL
     if policy.speed_weight:
         t = estimated_arrival_s(c, policy.download_cap_Bps)
         speed = 100 * policy.arrival_budget_s / (policy.arrival_budget_s + t)
-        c.reasons.append(f"arrival ~{t:.0f} s")
+        c.reasons.append(f"arrival ~{t:.0f} s" if t != float("inf") else "arrival unknown")
         s = (1 - policy.speed_weight) * s + policy.speed_weight * speed
 
     c.score = round(s, 1)

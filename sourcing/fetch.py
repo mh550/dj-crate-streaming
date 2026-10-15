@@ -132,6 +132,10 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         return FetchResult("needs_source", "no acceptable candidate", None, explain=text)
     if not approve:
         return FetchResult("needs_source", "pick printed; re-run with --approve to download", best, explain=text)
+    missing = [str(d) for d in (music_root, downloads_root) if not (d.is_dir() or d.parent.is_dir())]   # makeable is fine
+    if missing:      # e.g. inside the crates container: the file would land where we can't file it
+        return FetchResult("needs_source", f"not downloading: {', '.join(missing)} not here (run --approve where the "
+                           "library and slskd's downloads are mounted)", best, explain=text)
 
     set_status("sourcing", f"downloading from {best.username}")
     try:

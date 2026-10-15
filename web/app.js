@@ -113,7 +113,7 @@ function streamUrl(id) {
   return u.toString();
 }
 async function loadStreamTier() {
-  try { $("#quality").value = (await api("/api/stream-tier")).tier; } catch (e) { /* keep the first option */ }
+  try { $("#quality").value = (await api("/api/stream-tier")).tier; } catch (e) { /* keep the selected default, crate (= the server's) */ }
 }
 function playTrack(t) {
   state.playingId = t.id;

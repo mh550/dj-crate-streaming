@@ -41,7 +41,8 @@ services:
       SUBSONIC_PASS: ${ND_PASS}
       CRATES_DB: /data/crates.db
       CRATES_TRASH: /trash                   # status reports trash size/age; never emptied automatically
-      SLSKD_URL: http://gluetun:5030         # slskd shares gluetun's network; sourcing.cli rank/fetch (search; downloads need --approve)
+      SLSKD_URL: http://gluetun:5030         # slskd shares gluetun's network: search/rank/fetch here. fetch --approve refuses
+                                             # here (no /srv/music or /srv/incoming mounted); run it where both exist
       SLSKD_API_KEY: ${SLSKD_API_KEY}
     volumes:
       - /srv/docker/crates:/data

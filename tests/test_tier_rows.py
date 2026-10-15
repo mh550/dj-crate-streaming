@@ -164,3 +164,16 @@ def test_rank_live_can_save_the_responses_for_a_second_tier(tmp_path, capsys):
     assert cli.main(["rank", "--fixture", str(out), "--artist", "Chic", "--title", "Good Times", "--duration", "501", "--json"]) == 0
     crate = json.loads(capsys.readouterr().out)
     assert low[0]["username"] == "fastpeer" and crate[0]["username"] == "slowpeer"
+
+
+def test_approved_fetch_refuses_before_any_download_when_the_folders_are_missing(world, tmp_path):
+    # Opus M4 review: the crates container has no /srv/music or /srv/incoming; an approved fetch there used to
+    # enqueue a real download, then mark the row failed and orphan the file.
+    ext = world["store"].add_external_wanted("Chic", "Good Times", duration_s=501, tier="low")
+    with FakeSlskdServer([FAST_MP3, SLOW_FLAC], world["dl"], files={}) as srv:
+        r = fetch(ext, store=world["store"], slskd=SlskdClient(srv.url, "k"), navidrome=world["client"],
+                  reconciler=world["rec"], music_root=tmp_path / "srv" / "music", downloads_root=tmp_path / "srv" / "incoming",
+                  approve=True, poll_s=0.01, download_timeout_s=1, scan_timeout_s=1)
+        assert srv.enqueued == []
+    assert r.status == "needs_source" and "srv/music" in r.reason and r.pick.username == "fastpeer"
+    assert world["store"].external(ext)["status"] == "needs_source"

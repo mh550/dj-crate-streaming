@@ -60,7 +60,14 @@ Without `--approve` nothing is transferred (rule: Soulseek downloads are Michael
 walks the crate row `needs_source → sourcing → verify → ok | failed`, swaps the new song into every
 crate that held the old one, and reconciles; a file Navidrome can't match stays `verify` with the
 filed path in the reason. `MUSIC_ROOT` (default `/srv/music`) and `DOWNLOADS_ROOT` (default
-`/srv/incoming`, where the slskd container writes) are overridable.
+`/srv/incoming`, where the slskd container writes) are overridable; `--approve` refuses before any
+transfer when neither they nor their parent folders exist (e.g. inside the crates container).
+
+**Quality tiers** (spec §1): `low | medium | high | crate`. `rank`, `fetch`, `seed-spotify` and
+`import-playlist` take `--tier`; wanted rows remember theirs (default `crate`; crate tracks are always
+`crate`), and `fetch` scores with the row's tier. Listening tiers trade quality for estimated arrival,
+assuming our own download speed is 1 MB/s (`sourcing/policy.py`). `rank --slskd … --save r.json` keeps
+the raw responses so `rank --fixture r.json --tier <other>` compares tiers on one search.
 
 ## Against the real box (Phase 0 done)
 
@@ -95,7 +102,9 @@ phone browser ──/api/*──▶ crates.service ──Subsonic──▶ Navid
 - **Streaming never touches our process.** `/api/stream/<id>` answers 302 to a
   per-request signed Navidrome URL under its own client name (`dj-crates-web`), so
   Navidrome gives it its own Player and you set its transcoding profile in
-  Navidrome → Settings → Players like any other device.
+  Navidrome → Settings → Players like any other device. The web client's quality menu is
+  the same four tiers (opus 64k / 96k / 160k / original), saved server-side
+  (`GET/POST /api/stream-tier`) and sent as `/api/stream/<id>?tier=…`.
 
 ## On the phone
 

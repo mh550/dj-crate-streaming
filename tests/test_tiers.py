@@ -78,3 +78,12 @@ def test_our_download_cap_keeps_a_bragging_peer_from_winning_low(tier, winner):
 
 def test_listening_tiers_share_our_download_cap():
     assert {TIERS[t].download_cap_Bps for t in ("low", "medium", "high")} == {1_000_000}
+
+
+def test_a_listing_without_a_size_gets_no_speed_bonus():
+    # Opus M4 review: size 0 (missing) used to mean "arrives instantly" and a 100 speed score.
+    sizeless = response("nosize", r"m\Chic\Risque\03 - Good Times.mp3", 0, "mp3", kbps=128, speed=2_500_000)
+    [c] = parse_responses([sizeless])
+    assert estimated_arrival_s(c) == float("inf")
+    [ranked] = rank([sizeless], WANTED, TIERS["low"])
+    assert "arrival unknown" in ranked.reasons and ranked.score < 30
