@@ -314,7 +314,7 @@ def restore(entry: dict, original, music_root, trash_root) -> None:
     intended changes. The current file is copied to trash first; the swap is one rename, so the path
     never disappears and Navidrome keeps the song id. The original is only read."""
     cur = Path(entry.get("path_after") or entry["path_before"])
-    tmp = cur.with_name("." + cur.name + ".restore")
+    tmp = cur.with_name(".restore." + cur.name)          # keep the extension: mediafile picks the format by it
     shutil.copyfile(original, tmp)                       # fresh mtime: Navidrome re-reads it
     changes = {k: v for k, v in entry["after"].items() if entry["before"].get(k) != v}
     if changes:

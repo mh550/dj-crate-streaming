@@ -281,3 +281,19 @@ def test_find_original_prefers_same_audio_and_tags_then_the_mapped_path(tmp_path
     assert tc.find_original(entry, "h1", rows, pre, music_root="/srv/music") == str(b)      # same audio, same tags
     assert tc.find_original(entry, "zz", rows, pre, music_root="/srv/music") == str(c)      # ID3v1 changed the hash: mapped path
     assert tc.find_original({"path_before": "/srv/music/none.mp3"}, "zz", rows, {}, music_root="/srv/music") is None
+
+
+def test_restore_works_for_mp3_whose_type_comes_from_the_extension(tmp_path):
+    # Live 2026-10-15: the temp copy "….mp3.restore" was not recognised by mediafile → repair stopped at file 34.
+    # The live file had no ID3v2 header (only ID3v1 at the end), so mutagen could only tell its type from the name.
+    original, current = tmp_path / "orig/x.mp3", tmp_path / "music/A/x.mp3"
+    original.parent.mkdir(parents=True)
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-ac", "1", "-b:a", "32k",
+                    "-id3v2_version", "0", "-write_xing", "0", "-f", "mp3", str(original)], check=True)
+    assert original.read_bytes()[:3] != b"ID3"
+    current.parent.mkdir(parents=True); current.write_bytes(original.read_bytes())
+    entry = {"id": 1, "path_before": str(current),
+             "before": {"title": "", "artist": "", "albumartist": "", "album": "", "comp": False, "comments": ""},
+             "after": {"title": "Vem Menina", "artist": "", "albumartist": "", "album": "", "comp": False, "comments": ""}}
+    tc.restore(entry, original, music_root=tmp_path / "music", trash_root=tmp_path / "trash")
+    assert MediaFile(str(current)).title == "Vem Menina" and not list(current.parent.glob(".*"))
