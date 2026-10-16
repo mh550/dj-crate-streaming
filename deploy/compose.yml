@@ -71,6 +71,7 @@ services:
       BEETSDIR: /srv/docker/beets            # beets' own dir (uid 1000 has no home in the image)
       WORKER_POLL_S: "30"
       WORKER_RECHECK_S: "300"                # a `verify` row is re-checked (one Navidrome scan) at most this often
+      WORKER_RECONCILE_S: "600"              # playlist comments re-read, tiers re-derived (Amperfy edits take effect)
     volumes:                               # identical paths: beets stores absolute paths in library.db
       - /srv/music:/srv/music
       - /srv/docker/beets:/srv/docker/beets

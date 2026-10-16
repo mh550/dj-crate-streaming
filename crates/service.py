@@ -148,7 +148,7 @@ class CrateApp:
 
     def add_to_playlist(self, pid: str, song_ids: list[str]) -> dict:
         self.api.update_playlist(pid, add_song_ids=song_ids)
-        if (c := self.store.get(pid)) and c.enabled:
+        if self.store.playlist_tier(pid) is not None:           # a tiered playlist: judge the new songs now
             with self._lock:
                 self.reconciler.reconcile_playlist(self.api.playlist(pid))
         return self.playlist(pid)

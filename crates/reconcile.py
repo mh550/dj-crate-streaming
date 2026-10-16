@@ -1,5 +1,8 @@
 """Reconcile: rebuild the cache of which playlists are crates (and their tiers) from the playlists' own
-comments, and decide per track whether the library file is crate-worthy or must be sourced.
+comments, and decide per track whether the library file is good enough for its tier or must be sourced.
+
+Fact #7: a track's tier is derived, never stored: the highest effective tier of the tiered playlists holding it
+(crate > high > medium > low, deploy/policy.toml order). Each song is judged once, at that tier.
 
 The playlist's comment owns the crate flag and the tier (D21, spec fact #6): `#crate` and `#tier:<t>`, read and
 written only through crates.attrs, so Michael's own text survives byte for byte. crates.db caches them; when the
@@ -13,9 +16,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from sourcing.policy import DEFAULT_POLICY, DEFAULT_TIER, QualityPolicy, check_tier
+from sourcing.policy import DEFAULT_POLICY, DEFAULT_TIER, TIERS, QualityPolicy, check_tier, max_tier
 from sourcing.scorer import Wanted
-from subsonic.client import Playlist, Song, SubsonicClient
+from subsonic.client import Playlist, Song, SubsonicClient, SubsonicError
 from . import attrs
 from .store import CrateStore, filed_path
 
@@ -63,15 +66,25 @@ def with_crate_tag(comment: str | None, on: bool) -> str:
 
 
 def judge(song: Song, policy: QualityPolicy = DEFAULT_POLICY) -> tuple[str, str]:
-    """Is the file Navidrome has good enough for a crate? Uses only what Subsonic tells us
+    """Is the file Navidrome has good enough for this tier? Uses only what Subsonic tells us
     (suffix, bitRate, samplingRate, bitDepth) — the deep check (fake-FLAC, duration) runs
-    in sourcing.verify once we have the bytes."""
+    in sourcing.verify once we have the bytes.
+
+    A strict tier (crate) wants the preferred format and sane lossless. A listening tier (strict_verify false) keeps
+    one file that Navidrome transcodes for streaming, so it asks for an upgrade only below its floor: a format it
+    does not allow, or a lossy file under min_lossy_bitrate. "Lossless preferred" is never a reason there."""
     ext = (song.suffix or "").lower()
     if not ext:
         return "needs_source", "library entry has no file suffix"
     rank = policy.format_rank(ext)
     if rank is None:
-        return "needs_source", f".{ext} not allowed by crate policy"
+        return "needs_source", f".{ext} not allowed by {policy.name} policy"
+    if not policy.strict_verify:
+        if policy.is_lossless(ext):
+            return "ok", f".{ext} lossless"
+        if (song.bit_rate or 0) < policy.min_lossy_bitrate:
+            return "needs_source", f".{ext} {song.bit_rate or '?'} kbps below {policy.name}'s {policy.min_lossy_bitrate} floor"
+        return "ok", f".{ext} {song.bit_rate} kbps"
     if policy.is_lossless(ext):
         if song.sample_rate and song.sample_rate not in policy.accept_sample_rates:
             return "needs_source", f"odd sample rate {song.sample_rate}"
@@ -105,6 +118,7 @@ class ReconcileReport:
     errors: list[str] = field(default_factory=list)
     attr_changes: list[str] = field(default_factory=list)   # "<name>: crate off→on (comment wins)"
     problems: list[str] = field(default_factory=list)       # attrs problems: "<name>: unknown tier …"
+    external_tiers: list[str] = field(default_factory=list) # "ext-7: medium → high" (derive_external_tiers)
 
     def as_dict(self) -> dict:
         return self.__dict__.copy()
@@ -136,12 +150,16 @@ class Reconciler:
         if new != (pl.comment or ""):
             pl = write_comment(self.client, pl, new)             # an exception propagates: the cache is untouched
         self.refresh_cache(pl)
-        # Until derived tiers (M8 Task 5): today's per-playlist reconcile of the crate's tracks.
-        if (c := self.store.get(pl.id)) and c.enabled:
-            self.reconcile_playlist(pl)
-        else:
-            for t in self.store.tracks(pl.id):
-                self.store.set_track_status(pl.id, t["song_id"], "removed", "crate disabled")
+        # The playlist's tier moved, so every song it holds (or held) may have a new derived tier: judge this
+        # playlist, then those songs' other tiered playlists, so none keeps asking at the old tier until the next run.
+        songs = {t["song_id"] for t in self.store.tracks(pl.id)} | {s.id for s in pl.entries}
+        self.reconcile_playlist(pl)
+        for pid in sorted(self.store.playlists_holding(songs) - {pl.id}):
+            try:
+                self.reconcile_playlist(self.client.playlist(pid))
+            except (SubsonicError, OSError) as e:                # the comment is written; the next run() catches up
+                self.store.log(pid, None, "reconcile", f"not re-judged after {pl.name}'s tier changed: {e}")
+        self.store.derive_external_tiers()
         self.store.commit()
         return self.crate_view(pl)
 
@@ -166,10 +184,15 @@ class Reconciler:
 
     # --- reconcile
     def run(self) -> ReconcileReport:
+        """1. the cache from every comment; 2. read each tiered playlist; 3. derive each song's tier (the max over
+        the tiered playlists holding it); 4. judge each song at it, per (playlist, song) row; 5. rows of playlists
+        no longer tiered are removed; 6. external rows take their playlist's tier."""
         rep = ReconcileReport()
         playlists = self.client.playlists()
         rep.crates_seen = len(playlists)
         known = {c.playlist_id: c for c in self.store.all()}
+        tiered: list[Playlist] = []
+        derived: dict[str, str | None] = {}
         for p in playlists:
             was = known.get(p.id)
             if self._disagrees(p, was):
@@ -191,38 +214,71 @@ class Reconciler:
                 rep.attr_changes += [f"{x} (comment wins)" for x in changes]
             if bool(was and was.enabled) != bool(c and c.enabled):
                 rep.toggled_from_comment.append(p.name)
-            if not (c and c.enabled):
+            tier = c.effective if c else None
+            if tier is None:
                 continue
-            rep.crates_enabled += 1
+            rep.crates_enabled += c.enabled
             try:
                 full = self.client.playlist(p.id)
             except Exception as e:
                 rep.errors.append(f"{p.name}: {e}")
-                continue
-            ok, need, gone = self.reconcile_playlist(full)
+                held = [t["song_id"] for t in self.store.tracks(p.id)]    # unread: its last known songs still count
+            else:
+                tiered.append(full)
+                held = [s.id for s in full.entries]
+            for sid in held:
+                derived[sid] = max_tier(derived.get(sid), tier)
+        for full in tiered:
+            ok, need, gone = self._judge_playlist(full, derived)
             rep.tracks_ok += ok; rep.tracks_needing_source += need; rep.tracks_removed += gone
-        # Crates whose playlist vanished from Navidrome.
         present = {p.id for p in playlists}
+        for c in self.store.all():
+            if c.effective is None and c.playlist_id in present:
+                rep.tracks_removed += self._untier(c.playlist_id)
+        # Tiered playlists that vanished from Navidrome.
         for pid, c in known.items():
-            if c.enabled and pid not in present:
+            if c.effective is not None and pid not in present:
                 rep.errors.append(f"{c.name}: playlist no longer exists in Navidrome")
+        rep.external_tiers = self.store.derive_external_tiers()
         self.store.commit()
         return rep
 
+    def _policy(self, tier: str) -> QualityPolicy:
+        """The crate tier is this reconciler's policy (a test or service may pass its own); the others are policy.toml's."""
+        return self.policy if tier == DEFAULT_TIER else TIERS[tier]
+
+    def _untier(self, playlist_id: str) -> int:
+        """A playlist with no effective tier has no rows: each live one becomes `removed`. Returns how many."""
+        live = self.store.tracks(playlist_id)
+        for t in live:
+            self.store.set_track_status(playlist_id, t["song_id"], "removed", "playlist no longer tiered")
+        return len(live)
+
     def reconcile_playlist(self, pl: Playlist) -> tuple[int, int, int]:
-        """Returns (ok, needs_source, removed) counts."""
+        """One playlist, each song judged at its derived tier: the max of this playlist's tier and the tiers of the
+        other tiered playlists holding it (store.song_tier). An untiered playlist loses its rows. Returns (ok,
+        needs_source, removed) counts."""
+        own = self.store.playlist_tier(pl.id)
+        if own is None:
+            gone = self._untier(pl.id)
+            self.store.commit()
+            return 0, 0, gone
+        return self._judge_playlist(pl, {s.id: max_tier(own, self.store.song_tier(s.id)) for s in pl.entries})
+
+    def _judge_playlist(self, pl: Playlist, derived: dict[str, str | None]) -> tuple[int, int, int]:
         prev = self.store.track_status_map(pl.id)
         seen: set[str] = set()
         ok = need = 0
         for pos, s in enumerate(pl.entries):
             seen.add(s.id)
-            status, reason = judge(s, self.policy)
+            status, reason = judge(s, self._policy(derived[s.id]))
             old = prev.get(s.id)
-            # Don't clobber an in-flight sourcing job with a fresh "needs_source" verdict; nor a failed
-            # never-indexed row, whose file is already in the library (it is re-checked, never downloaded twice).
-            if old and status == "needs_source" and (
+            # A `review` row waits for Michael's answer, whatever the verdict. Don't clobber an in-flight sourcing
+            # job with a fresh "needs_source" verdict; nor a failed never-indexed row, whose file is already in the
+            # library (it is re-checked, never downloaded twice).
+            if old and (old["status"] == "review" or status == "needs_source" and (
                     old["status"] in ("sourcing", "verify")
-                    or (old["status"] == "failed" and filed_path(old["reason"]))):
+                    or (old["status"] == "failed" and filed_path(old["reason"])))):
                 status, reason = old["status"], old["reason"]
             self.store.upsert_track(pl.id, s.id, pos, song_facts(s), status, reason)
             if not old or old["status"] != status:

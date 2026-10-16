@@ -4,10 +4,10 @@ r"""CLI: rank candidates for a wanted track, from a fixture file or a live slskd
   python -m sourcing.cli rank --slskd http://server:5030 --api-key $SLSKD_KEY --artist Chic --title "Good Times" [--download]
   python -m sourcing.cli verify /srv/incoming/03\ -\ Good\ Times.flac --duration 501 [--tier crate] [--reference old.flac] [--json]
   python -m sourcing.cli fetch --wanted s4 [--approve [--wait]] [--tier T]   # search+score; --approve only records an approval for the worker; tier: the row's
-  python -m sourcing.cli worker [--once]   # D18: spend approvals (download, verify, file with beets), re-check `verify` rows; WORKER_POLL_S (30), WORKER_RECHECK_S (300)
+  python -m sourcing.cli worker [--once]   # D18: spend approvals (download, verify, file with beets), re-check `verify` rows, reconcile; WORKER_POLL_S (30), WORKER_RECHECK_S (300), WORKER_RECONCILE_S (600)
   python -m sourcing.cli seed-spotify https://open.spotify.com/playlist/...   # queue tracks not in Navidrome
   python -m sourcing.cli import-playlist <spotify-url|report.txt|exportify.csv>... [--name N] [--dry-run]   # D11: Spotify playlists → public Navidrome playlist + wanted rows
-  python -m sourcing.cli retier --from crate --to medium [--dry-run]   # move external wanted rows between tiers (D15 backfill)
+  python -m sourcing.cli retier --from crate --to medium [--dry-run]   # move external wanted rows between tiers (D15 backfill; rows of a tiered playlist follow its comment)
 """
 from __future__ import annotations
 
@@ -66,7 +66,7 @@ def approve_cmd(a) -> int:
             app._not_in_progress(a.wanted)             # first: a refused approve must change nothing (not even the tier)
         if row is not None and a.tier and a.tier != row["tier"]:
             if not row.get("external"):
-                print(f"{a.wanted} is in a crate, and a crate track is sourced at tier {DEFAULT_TIER}", file=sys.stderr)
+                print(f"{a.wanted}: its tier comes from its playlists ({row['tier']})", file=sys.stderr)
                 return 1
             app.store.set_external_tier(a.wanted, a.tier); app.store.commit()
         approval = app.approve(a.wanted, None)         # same rules as the web Approve: 404, 409 in progress, cached pick
@@ -140,7 +140,7 @@ def main(argv: list[str] | None = None) -> int:
                    help="record your approval; the worker downloads, verifies and files it on its next tick")
     f.add_argument("--wait", action="store_true", help="with --approve: wait (up to 600 s) for the worker's outcome")
     add_slskd_args(f)
-    add_tier_arg(f, None, "change the wanted row's tier, then fetch (external rows only; crate rows are crate)")
+    add_tier_arg(f, None, "change the wanted row's tier, then fetch (external rows only; a playlist row's tier comes from its playlists)")
 
     w = sub.add_parser("worker", help="the container's loop: fetch every approved row, re-check filed-but-unseen rows")
     w.add_argument("--once", action="store_true", help="one tick, then exit (the live check reads '0 approvals')")
@@ -168,12 +168,19 @@ def main(argv: list[str] | None = None) -> int:
         from crates.service import Config
         from crates.store import CrateStore
         store = CrateStore(Config.from_env().db_path)
-        ids = store.external_ids_at_tier(a.from_tier)
+        ids, owned = [], 0
+        for ext in store.external_ids_at_tier(a.from_tier):   # a tiered playlist's rows follow its comment (D21)
+            if store.playlist_tier(store.external(ext)["playlist_id"]) is None:
+                ids.append(ext)
+            else:
+                owned += 1
         if not a.dry_run:
             for ext in ids:
                 store.set_external_tier(ext, a.to_tier)      # logged per row
             store.commit()
         print(f"{'would move' if a.dry_run else 'moved'} {len(ids)} row{'s' * (len(ids) != 1)} {a.from_tier} → {a.to_tier}")
+        if owned:
+            print(f"skipped {owned} row{'s' * (owned != 1)} whose playlist owns the tier (crates.cli tier)")
         return 0
 
     if a.cmd == "import-playlist":
@@ -249,6 +256,7 @@ def main(argv: list[str] | None = None) -> int:
         wk = Worker(store=app.store, slskd=SlskdClient(a.slskd, a.api_key), navidrome=app.api, reconciler=app.reconciler,
                     fetch_kwargs=_fetch_env(), log=lambda line: print(line, flush=True),
                     recheck_s=float(os.environ.get("WORKER_RECHECK_S", "300")),
+                    reconcile_s=float(os.environ.get("WORKER_RECONCILE_S", "600")),
                     lock_path=Path(cfg.db_path).parent / "worker.lock")
         try:
             if a.once:

@@ -4,7 +4,8 @@ those, and reconcile rebuilds it from the comments. We own *what we know about e
 
 Tables
   crates        one row per playlist that is or was a crate or tiered: the cached flag and tier
-  crate_tracks  per (crate, song): last-seen library facts + provisioning status
+  crate_tracks  per (tiered playlist, song): last-seen library facts + provisioning status (the name predates
+                tiers: every playlist with an effective tier has rows, not only crates)
   events        append-only log so the UI can show "what did the reconciler do"
   external_wanted  tracks wanted that aren't in Navidrome at all (seeded from Spotify etc.)
   settings      small key/value settings (the web client's stream tier)
@@ -22,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from sourcing.identity import lead_artist, loose
-from sourcing.policy import DEFAULT_TIER, STREAM_DEFAULT, check_stream, check_tier
+from sourcing.policy import DEFAULT_TIER, STREAM_DEFAULT, check_stream, check_tier, max_tier
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS crates (
@@ -100,6 +101,14 @@ def never_indexed(rel) -> str:
 
 _loose = loose                    # identity owns "is this the same text" (accents ignored, "&" is "and")
 
+# A playlist is tiered when its comment makes it a crate or gives it a #tier: (the cache of both, D21).
+TIERED = "(c.enabled=1 OR c.tier IS NOT NULL)"
+
+
+def effective_tier(enabled: bool, tier: str | None) -> str | None:
+    """A playlist's sourcing tier: crate when flagged, else its #tier:, else none (mirrors attrs.Attrs.effective)."""
+    return DEFAULT_TIER if enabled else tier
+
 
 def _ext_pk(ext_id: str) -> int:
     return int(ext_id[4:])          # "ext-<rowid>"
@@ -116,6 +125,10 @@ class Crate:
     updated_at: float
     last_reconciled_at: float | None
     tier: str | None = None             # the comment's #tier:<t>, cached
+
+    @property
+    def effective(self) -> str | None:
+        return effective_tier(self.enabled, self.tier)
 
     @classmethod
     def from_row(cls, r: sqlite3.Row) -> "Crate":
@@ -151,6 +164,31 @@ class CrateStore:
     def all(self, enabled_only: bool = False) -> list[Crate]:
         q = "SELECT * FROM crates" + (" WHERE enabled=1" if enabled_only else "") + " ORDER BY name"
         return [Crate.from_row(r) for r in self.db.execute(q)]
+
+    def tiered(self) -> list[Crate]:
+        """Playlists with an effective tier (crates and #tier: playlists), by name."""
+        return [Crate.from_row(r) for r in self.db.execute(f"SELECT * FROM crates c WHERE {TIERED} ORDER BY name")]
+
+    def playlist_tier(self, playlist_id: str | None) -> str | None:
+        """The cached effective tier of a playlist; None for an untiered or unknown one."""
+        c = self.get(playlist_id) if playlist_id else None
+        return c.effective if c else None
+
+    def song_tier(self, song_id: str) -> str | None:
+        """Fact #7: the tier a song's file must reach, the highest effective tier of the tiered playlists holding it
+        (a live row); None when no tiered playlist holds it."""
+        return max_tier(*(effective_tier(bool(e), t) for e, t in self.db.execute(
+            "SELECT c.enabled, c.tier FROM crate_tracks t JOIN crates c USING(playlist_id) "
+            f"WHERE t.song_id=? AND t.status!='removed' AND {TIERED}", (song_id,))))
+
+    def playlists_holding(self, song_ids) -> set[str]:
+        """Tiered playlists with a live row for any of these songs."""
+        ids = list(song_ids)
+        if not ids:
+            return set()
+        return {r[0] for r in self.db.execute(
+            "SELECT DISTINCT t.playlist_id FROM crate_tracks t JOIN crates c USING(playlist_id) "
+            f"WHERE t.status!='removed' AND {TIERED} AND t.song_id IN ({','.join('?' * len(ids))})", ids)}
 
     def set_enabled(self, playlist_id: str, name: str, enabled: bool, source: str = "app") -> Crate:
         """Write the flag directly. Only tests use it: the comment owns the flag (D21), so production code caches
@@ -235,17 +273,21 @@ class CrateStore:
         return out
 
     def _crate_wanted(self, where: str, params: tuple = ()) -> list[dict]:
-        """Crate rows grouped per song (a song in several crates is one entry with `crates` listed)."""
+        """Tiered-playlist rows grouped per song (a song in several playlists is one entry): `playlists` names the
+        tiered playlists, `crates` the crates among them, and `tier` is the song's derived tier (song_tier)."""
         out: dict[str, dict] = {}
         for r in self.db.execute(
-                "SELECT t.*, c.name AS crate_name FROM crate_tracks t JOIN crates c USING(playlist_id) "
-                f"WHERE c.enabled=1 AND {where} ORDER BY c.name, t.position", params):
-            d = dict(r); name = d.pop("crate_name")
-            out.setdefault(d["song_id"], {**d, "crates": [], "tier": DEFAULT_TIER})["crates"].append(name)   # a crate is crate
+                "SELECT t.*, c.name AS crate_name, c.enabled AS crate_on FROM crate_tracks t JOIN crates c "
+                f"USING(playlist_id) WHERE {TIERED} AND {where} ORDER BY c.name, t.position", params):
+            d = dict(r); name, on = d.pop("crate_name"), d.pop("crate_on")
+            w = out.setdefault(d["song_id"], {**d, "crates": [], "playlists": [], "tier": self.song_tier(d["song_id"])})
+            w["playlists"].append(name)
+            if on:
+                w["crates"].append(name)
         return list(out.values())
 
     def wanted(self) -> list[dict]:
-        """Every track across enabled crates that still needs a file, plus external rows — the sourcing queue.
+        """Every track across tiered playlists that still needs a file, plus external rows — the sourcing queue.
         Rows in progress (`sourcing`, `verify`) are listed too, so none is invisible; the web client shows them
         with their status and reason and offers no Preview/Approve for them."""
         live = "('needs_source','failed','sourcing','verify')"
@@ -261,13 +303,13 @@ class CrateStore:
         return rows
 
     def verify_ids(self, updated_before: float | None = None) -> list[str]:
-        """Wanted ids (crate songs in enabled crates, then `ext-N`) whose file is filed but not yet seen by
+        """Wanted ids (songs in tiered playlists, then `ext-N`) whose file is filed but not yet seen by
         Navidrome: the worker re-checks these without downloading again. With `updated_before`, only rows last
         updated before that time (the worker's re-check throttle: each re-check rewrites the reason)."""
         cut = float("inf") if updated_before is None else updated_before
         crate = [r[0] for r in self.db.execute(
             "SELECT DISTINCT t.song_id FROM crate_tracks t JOIN crates c USING(playlist_id) "
-            "WHERE c.enabled=1 AND t.status='verify' AND t.updated_at <= ? ORDER BY t.song_id", (cut,))]
+            f"WHERE {TIERED} AND t.status='verify' AND t.updated_at <= ? ORDER BY t.song_id", (cut,))]
         ext = [f"ext-{r[0]}" for r in self.db.execute(
             "SELECT id FROM external_wanted WHERE status='verify' AND updated_at <= ? ORDER BY id", (cut,))]
         return crate + ext
@@ -279,13 +321,13 @@ class CrateStore:
         return (self._crate_wanted("t.song_id=? AND t.status!='removed'", (song_id,)) or [None])[0]
 
     def set_wanted_status(self, song_id: str, status: str, reason: str | None = None) -> None:
-        """Status for a wanted id: the external row, or every live row of that song in an enabled crate."""
+        """Status for a wanted id: the external row, or every live row of that song in a tiered playlist."""
         if song_id.startswith("ext-"):
             self.set_external_status(song_id, status, reason)
         else:
             for (pl,) in self.db.execute(
                     "SELECT t.playlist_id FROM crate_tracks t JOIN crates c USING(playlist_id) "
-                    "WHERE c.enabled=1 AND t.song_id=? AND t.status!='removed' ORDER BY c.name", (song_id,)).fetchall():
+                    f"WHERE {TIERED} AND t.song_id=? AND t.status!='removed' ORDER BY c.name", (song_id,)).fetchall():
                 self.set_track_status(pl, song_id, status, reason)
         self.commit()
 
@@ -458,6 +500,23 @@ class CrateStore:
     def external(self, ext_id: str) -> dict | None:
         r = self.db.execute("SELECT * FROM external_wanted WHERE id=?", (_ext_pk(ext_id),)).fetchone()
         return self._ext_row(r) if r else None
+
+    def derive_external_tiers(self) -> list[str]:
+        """An external row of a tiered playlist takes that playlist's effective tier (D15/D21: the comment owns it,
+        so `--tier` on a re-run and Michael's tier menu both land here). Rows in flight (`sourcing`, `verify`) keep
+        theirs: their download was chosen at it. A row of an untiered playlist, or of none, keeps its stored tier.
+        Each change is a `tier` event (set_external_tier); returns them as "<ext id>: <old> → <new>"."""
+        out = []
+        for r in self.db.execute(
+                "SELECT e.id, e.tier AS old, c.enabled, c.tier FROM external_wanted e JOIN crates c USING(playlist_id) "
+                f"WHERE {TIERED} AND e.status NOT IN ('sourcing','verify') ORDER BY e.id").fetchall():
+            new = effective_tier(bool(r["enabled"]), r["tier"])
+            if new != r["old"]:
+                self.set_external_tier(f"ext-{r['id']}", new)
+                out.append(f"ext-{r['id']}: {r['old']} → {new}")
+        if out:
+            self.commit()
+        return out
 
     def set_external_status(self, ext_id: str, status: str, reason: str | None = None) -> None:
         assert status in STATUSES, status

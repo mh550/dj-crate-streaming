@@ -6,6 +6,9 @@ before touching anything. Then, before the first tick: `recover` marks approvals
 `started` as "interrupted: worker restarted" and fails their rows still in `sourcing`, so neither is stranded.
 
 Each tick:
+  0. every `reconcile_s` seconds (WORKER_RECONCILE_S, 600 in the CLI; 0 = never) the reconciler runs: the playlist
+     comments are re-read and every song re-judged at its derived tier, so a #crate / #tier: Michael edits in
+     Amperfy takes effect without anyone opening the web client. A failed reconcile is logged and the tick goes on;
   1. every `verify` row not updated in the last `recheck_s` seconds (WORKER_RECHECK_S, 300 in the CLI) is
      fetched again with approve=True; that path downloads nothing, it only asks Navidrome (after a rescan)
      whether the filed song has appeared. Each re-check rewrites the row, which restarts its clock, so a row
@@ -54,8 +57,9 @@ class TickReport:
 
 class Worker:
     def __init__(self, *, store, slskd, navidrome, reconciler, fetch_kwargs: dict, fetcher=fetch, log=print,
-                 recheck_s: float = 0, lock_path: Path | None = None):
+                 recheck_s: float = 0, reconcile_s: float = 0, clock=time.monotonic, lock_path: Path | None = None):
         self.store, self.fetcher, self.log, self.recheck_s = store, fetcher, log, recheck_s
+        self.reconciler, self.reconcile_s, self.clock, self._reconciled_at = reconciler, reconcile_s, clock, None
         self.lock_path, self._lock_fd = lock_path, None
         self.common = dict(store=store, slskd=slskd, navidrome=navidrome, reconciler=reconciler, **fetch_kwargs)
 
@@ -87,8 +91,22 @@ class Worker:
             self.log(f"{wanted_id}: approval interrupted by a worker restart; approve again")
         return ids
 
+    def reconcile_due(self) -> None:
+        """Step 0: run the reconciler when `reconcile_s` has passed since the last run (the first tick always runs)."""
+        if not self.reconcile_s:
+            return
+        now = self.clock()
+        if self._reconciled_at is not None and now - self._reconciled_at < self.reconcile_s:
+            return
+        self._reconciled_at = now                          # a failure waits for the interval too, like a recheck
+        try:
+            self.reconciler.run()
+        except Exception as e:                             # e.g. Navidrome down: the next interval tries again
+            self.log(f"reconcile failed: {type(e).__name__}: {e}")
+
     def tick(self) -> TickReport:
         """No `tier` is passed: the row's current tier rules, and an approval's tier only records what was approved."""
+        self.reconcile_due()
         results, rechecked = [], 0
         for wanted_id in self.store.verify_ids(updated_before=time.time() - self.recheck_s):
             reason = (self.store.find_wanted(wanted_id) or {}).get("reason")

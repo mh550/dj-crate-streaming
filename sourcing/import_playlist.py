@@ -273,12 +273,14 @@ def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: C
     NameCollision unless `merge=True`, which adopts it (adds the marker, leaves its visibility alone).
 
     The tier lives in the comment (D21): a created playlist gets `#imported #tier:<tier or IMPORT_TIER>`; a re-run
-    rewrites `#tier:` only when `tier` is given. A written comment is read back before crates.db caches it; if
+    rewrites `#tier:` only when `tier` is given. Without `tier`, a re-run matches and queues at the existing
+    playlist's effective tier (its comment's #crate / #tier:), else IMPORT_TIER. A written comment is read back before crates.db caches it; if
     Navidrome did not keep it, the playlist edit and the wanted rows are still recorded, then CommentNotKept is
     raised with `.report` set."""
-    accept = frozenset(TIERS[tier or IMPORT_TIER].accept_versions)
-    matches = [match(client, r, accept) for r in rows]
     existing = next((p for p in client.playlists() if p.name == name), None)
+    at = tier or (existing and attrs.parse(existing.comment).effective) or IMPORT_TIER     # D21: the comment's tier
+    accept = frozenset(TIERS[at].accept_versions)
+    matches = [match(client, r, accept) for r in rows]
     ours = existing is not None and MARKER in (existing.comment or "")
     if existing is not None and not ours and not merge:
         raise NameCollision(name, existing.id)
@@ -330,7 +332,7 @@ def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: C
         for m, lead in pending:
             ext = store.add_external_wanted(lead, m.row.title, album=m.row.album, duration_s=m.row.duration_s,
                                             source=source, playlist_id=playlist_id, position=m.row.position, tier=tier,
-                                            default_tier=IMPORT_TIER)
+                                            default_tier=at)
             if m.status == "ambiguous" and store.external(ext)["status"] in ("needs_source", "review"):
                 store.set_external_status(ext, "review", f"ambiguous ({m.why}): " + ", ".join(m.candidates))
         store.commit()

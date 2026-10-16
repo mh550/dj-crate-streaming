@@ -26,8 +26,8 @@ once beets has filed the file: from then on the row is `verify` with the filed p
 after filing, and again with the exception text), because the library file is the one copy of that version
 and a retry would download and file a second one.
 
-Crate rows (song already in Navidrome, just not good enough) also get the playlist entry swapped
-to the new song in every crate that holds it, in one updatePlaylist call per crate, then
+Playlist rows (song already in Navidrome, just not good enough for its derived tier) also get the playlist
+entry swapped to the new song in every tiered playlist that holds it, in one updatePlaylist call each, then
 reconciled so the new row is `ok` and the old one `removed`. External rows (seeded from Spotify)
 just need the file in the library.
 """
@@ -46,7 +46,7 @@ from scripts.export_playlists import open_ro
 from subsonic.client import SubsonicClient, SubsonicError
 from .filer import BeetsFiler, FilingError
 from .identity import parse_filename, parse_title
-from .policy import DEFAULT_TIER, TIERS, QualityPolicy, check_tier
+from .policy import TIERS, QualityPolicy, check_tier
 from .scorer import Candidate, Wanted, explain, rank
 from .slskd_client import SlskdClient, transfer_files
 from .verify import verify
@@ -134,9 +134,9 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
     if row is None:
         return FetchResult("missing", f"{wanted_id} is not in any enabled crate or the external queue")
     external = bool(row.get("external"))
-    if tier is not None and check_tier(tier) != row["tier"]:     # spec §1: a crate track is sourced at crate
+    if tier is not None and check_tier(tier) != row["tier"]:     # fact #7: a playlist row's tier is derived
         if not external:
-            return FetchResult("refused", f"{wanted_id} is in a crate, and a crate track is sourced at tier {DEFAULT_TIER}")
+            return FetchResult("refused", f"{wanted_id}: its tier comes from its playlists ({row['tier']})")
         store.set_external_tier(wanted_id, tier); store.commit()
         row["tier"] = tier
     if approve:      # before any search: e.g. inside the crates container the file would land where we can't file it
@@ -188,7 +188,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         if external:
             set_status("ok", f"filed as {filed.relative_to(music_root)}")
             return FetchResult("ok", "filed and visible in Navidrome", best, filed, new.id, text)
-        for crate in store.all(enabled_only=True):
+        for crate in store.tiered():                          # every playlist the row was queued for (fact #7)
             pl = navidrome.playlist(crate.playlist_id)
             ids = [e.id for e in pl.entries]
             if wanted_id not in ids:
@@ -199,7 +199,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
             navidrome.update_playlist(pl.id, add_song_ids=[new.id] + ids[idx + 1:], remove_indexes=list(range(idx, len(ids))))
             reconciler.reconcile_playlist(navidrome.playlist(pl.id))
         store.commit()
-        return FetchResult("ok", "filed, swapped into every crate, reconciled", best, filed, new.id, text)
+        return FetchResult("ok", "filed, swapped into every tiered playlist, reconciled", best, filed, new.id, text)
 
     status = row.get("status")
     if status == "ok":

@@ -62,8 +62,9 @@ def _q(s: str) -> str:
 
 
 def _would_queue(client: SubsonicClient, c: Change) -> str | None:
-    """"<name> at <tier>: n of m tracks would be queued", for a change that gives a playlist a tier."""
-    tier = attrs.parse(c.new).tier
+    """"<name> at <tier>: n of m tracks would be queued", judged at the playlist's NEW effective tier (an added
+    #crate included). Per playlist: a song another tiered playlist holds may derive a higher tier than this."""
+    tier = attrs.parse(c.new).effective
     if tier is None:
         return None
     try:
