@@ -186,7 +186,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
             return fail("; ".join(vd.problems), best, text)
 
         staging = downloads_root / ".staging" / f"{wanted_id}-{int(time.time())}"   # beets only ever sees this
-        staging.mkdir(parents=True)
+        staging.mkdir(parents=True, exist_ok=True)
         shutil.move(landed, staging / landed.name)
         log = staging.with_suffix(".log")
         item = filer.file(staging, log, names={"artist": wanted.artist, "title": wanted.title})

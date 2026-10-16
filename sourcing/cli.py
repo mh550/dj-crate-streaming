@@ -30,7 +30,7 @@ def _fetch_env() -> dict:
     folder (Task 7 gives slskd its own) and the beets config the filer imports with."""
     return {"music_root": Path(os.environ.get("MUSIC_ROOT") or "/srv/music"),
             "downloads_root": Path(os.environ.get("DOWNLOADS_ROOT") or "/srv/incoming/soulseek"),
-            "filer": BeetsFiler(Path(os.environ.get("BEETS_CONFIG", DEFAULT_BEETS_CONFIG)))}
+            "filer": BeetsFiler(Path(os.environ.get("BEETS_CONFIG") or DEFAULT_BEETS_CONFIG))}
 
 
 def describe_measurements(m: dict) -> list[str]:

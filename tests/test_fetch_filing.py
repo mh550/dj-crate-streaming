@@ -5,7 +5,7 @@ import pytest
 
 from sourcing.fake_slskd import FakeSlskdServer
 from sourcing.filer import BeetsFiler, FilingError
-from tests.helpers import beets_items_db, fake_beet
+from tests.helpers import beets_items_db, fake_beet, make_flac
 from tests.test_fetch import GOOD, RESPONSES, good_flac_bytes, new_song, run, world  # noqa: F401  (world: fixture)
 
 TARGET = "Chic/Risqué (1979)/03 - Good Times.flac"
@@ -37,17 +37,31 @@ def test_fetch_hands_the_download_to_beets_from_a_fresh_staging_folder(world, tm
     assert [e["detail"] for e in kinds(world, "filed")] == ["beets as-is: Chic/Risqué (1979)/03 - Good Times.flac"]
 
 
-def test_no_peer_name_reaches_events_or_row_reasons(world, tmp_path):
-    flac = good_flac_bytes(tmp_path)
+@pytest.mark.parametrize("outcome", ["ok", "failed"])
+def test_no_peer_name_reaches_events_or_row_reasons(world, tmp_path, outcome):
+    """Every reason written during the run is recorded as it is written (later statuses overwrite the
+    `sourcing` one), for an ok run and for a download that fails verification."""
+    store, written = world["store"], []
+    set_wanted_status = store.set_wanted_status
+
+    def recording(song_id, status, reason=None):
+        written.append((status, reason or ""))
+        set_wanted_status(song_id, status, reason)
+
+    store.set_wanted_status = recording
+    if outcome == "ok":
+        flac = good_flac_bytes(tmp_path)
+    else:                                                  # fake lossless: verify rejects it after the download
+        flac = make_flac(tmp_path / "bad.flac", total=44100 * 501, pad_bytes=10_000).read_bytes()
     with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: flac}) as srv:
         new_song(world["nd"], len(flac))
         r = run(world, srv, approve=True)
     peer = r.pick.username
-    assert r.status == "ok" and peer == "vinylhead77"
-    db = world["store"].db
-    details = [e["detail"] or "" for e in world["store"].events(limit=1000)]
-    reasons = [x or "" for (x,) in db.execute("SELECT reason FROM crate_tracks UNION ALL SELECT reason FROM external_wanted")]
-    assert details and not [d for d in details + reasons if peer in d]
+    assert r.status == outcome and peer == "vinylhead77"
+    details = [e["detail"] or "" for e in store.events(limit=1000)]
+    reasons = [x or "" for (x,) in store.db.execute("SELECT reason FROM crate_tracks UNION ALL SELECT reason FROM external_wanted")]
+    assert details and not [d for d in details + reasons + [w for _, w in written] if peer in d]
+    assert ("sourcing", "downloading 03 - Good Times.flac") in written
 
 
 def test_names_from_navidrome_go_back_onto_an_external_row(world, tmp_path):
