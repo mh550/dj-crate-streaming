@@ -18,9 +18,12 @@ sourcing/   Phase 1: Soulseek sourcing — one wanted track from search to a fil
   policy.py  scorer.py  verify.py  slskd_client.py   rank + check (unchanged)
   fetch.py          the slice: search → score → (approved) download → verify → file → rescan → crate ok
   filer.py          beet import of each verified download (the only beets writer)
+  worker.py         the worker (D18): claims approvals, fetches, re-checks `verify` rows — see docs/worker.md
+  acoustid.py       AcoustID lookup (only with ACOUSTID_KEY): is this file the recording Navidrome knows?
+  musicbrainz.py    recording length from MusicBrainz: confirms a beets match before `beet write` (D22)
   fake_slskd.py     in-process slskd for tests/demos
   spotify_csv.py    public Spotify playlist → rows, no API credentials (embed page)
-  cli.py            rank | verify | fetch --wanted <id> [--approve] | seed-spotify <url> | import-playlist <src>... [--name N]
+  cli.py            rank | verify | worker [--once] | fetch --wanted <id> [--approve] | seed-spotify <url> | import-playlist <src>... [--name N]
 scripts/    one-off library tooling: library_map.py (folder + audio-hash map), folders_to_playlists.py
 deploy/     compose.yml (+ .env.example), beets.yaml — /srv/docker/compose.yml symlinks here
 fixtures/   slskd-shaped search responses covering the failure modes
@@ -53,7 +56,8 @@ python3 -m sourcing.cli seed-spotify https://open.spotify.com/playlist/...   # �
 python3 -m sourcing.cli import-playlist <spotify-url|report.txt|exportify.csv>... [--name N] [--dry-run]
     # D11: Spotify playlist → public Navidrome playlist (library matches, in order) + wanted rows with playlist/position
 python3 -m sourcing.cli fetch --wanted s4             # search + score, prints the pick, no download
-python3 -m sourcing.cli fetch --wanted s4 --approve   # download → verify → /srv/music → rescan → crate ok
+python3 -m sourcing.cli fetch --wanted s4 --approve   # download → verify → beets → /srv/music → rescan → crate ok
+# normally: Preview + Approve in the web client, and the worker container downloads (docs/worker.md)
 ```
 
 Without `--approve` nothing is transferred (rule: Soulseek downloads are Michael's call). `fetch`
@@ -100,9 +104,9 @@ phone browser ──/api/*──▶ crates.service ──Subsonic──▶ Navid
   bitDepth) against `sourcing/policy.py`. Deep checks run in `sourcing/verify.py` once we
   hold the bytes (spec §3a, `docs/download-validation.md`): one ffmpeg decode measures the
   spectral cutoff, bits used, truncation, silence and clipping, `flac -t` checks the MD5, and
-  `fpcalc` compares against a reference copy (CLI `--reference`; `fetch` doesn't pass one yet). The tier decides what is a hard failure.
+  `fpcalc` compares against a reference copy (CLI `--reference`; `fetch` passes the library copy of a crate upgrade). The tier decides what is a hard failure.
   `python3 -m sourcing.cli verify <file> --tier crate [--reference old.flac]` on the host
-  (the crates image has no ffmpeg); `fetch` keeps the last result per wanted row (`verify`
+  (the worker image has ffmpeg, flac and fpcalc; the crates service only serves); `fetch` keeps the last result per wanted row (`verify`
   in `/api/wanted`, shown in the web client).
 - **Streaming never touches our process.** `/api/stream/<id>` answers 302 to a
   per-request signed Navidrome URL under its own client name (`dj-crates-web`), so
@@ -119,18 +123,14 @@ playback; for daily listening on iOS use Amperfy or play:Sub against the same
 Navidrome — see `../ideas/dj-crate-streaming/phase0-options.md` §1.4 for why.
 
 Container build for the Compose stack: `docker build -t crates .` (see the
-`crates` service in the Phase 0 compose skeleton).
+`crates` service in the Phase 0 compose skeleton). The same image runs the `worker` service (`docs/worker.md`).
 
 ## Not done yet
 
-- Background jobs that run `fetch` automatically from the wanted queue (today: one track per
-  command, downloads only with `--approve`). First step before any runner: a `sourcing_jobs`
-  table keyed once per wanted id (status, filed path, slskd transfer) so job progress stops
-  riding on `crate_tracks.status` fan-out and on the free-text reason. Then: check Navidrome for
-  a good copy *before* searching; tag the file (or hand it to beets) so Navidrome's view matches.
+- The worker (`docs/worker.md`) runs approved downloads automatically; automatic approval (`policy:` / `agent:`
+  approvers) and a `sourcing_jobs` table (status, filed path, slskd transfer per wanted id, instead of riding on
+  `crate_tracks.status` and the free-text reason) are not built. Also: check Navidrome for a good copy *before* searching.
 - Expected-duration lookup (MusicBrainz / SpotiFLAC) instead of trusting the library's.
-- AcoustID *database* lookups (needs a free key); today `fpcalc` only compares against a local reference copy.
-- ffmpeg/flac/fpcalc in the crates image (`apt-get install -y ffmpeg flac libchromaprint-tools`) if verify should run there.
 - Analysis (BPM/key → Serato GEOB), stems, device sync — Phases 2–4.
 - SoundCloud in the client: stream-only via the official API (needs Artist Pro); not a crate source.
 - A native phone client if the web client's background audio proves unreliable on iOS.

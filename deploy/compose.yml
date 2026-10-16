@@ -41,13 +41,41 @@ services:
       SUBSONIC_PASS: ${ND_PASS}
       CRATES_DB: /data/crates.db
       CRATES_TRASH: /trash                   # status reports trash size/age; never emptied automatically
-      SLSKD_URL: http://gluetun:5030         # slskd shares gluetun's network: search/rank/fetch here. fetch --approve refuses
-                                             # here (no /srv/music or /srv/incoming mounted); run it where both exist
+      SLSKD_URL: http://gluetun:5030         # slskd shares gluetun's network: search/rank/preview here. Approve in the web
+                                             # client; the worker service below downloads (this one has no /srv/music or
+                                             # /srv/incoming mounted, so `fetch --approve` refuses here)
       SLSKD_API_KEY: ${SLSKD_API_KEY}
     volumes:
       - /srv/docker/crates:/data
       - /srv/docker/_trash:/trash:ro         # runbook wanted /srv/_trash (needs root): see Needs Michael
     depends_on: [navidrome]
+    restart: unless-stopped
+
+  worker:                                  # D18: the only process that downloads or runs beets
+    user: "1000:1000"
+    build:
+      context: ${CRATES_SRC:?set CRATES_SRC=<repo checkout> in /srv/docker/.env}
+    command: ["python", "-m", "sourcing.cli", "worker"]
+    environment:
+      SUBSONIC_URL: http://navidrome:4533
+      SUBSONIC_USER: ${ND_USER}
+      SUBSONIC_PASS: ${ND_PASS}
+      CRATES_DB: /data/crates.db
+      SLSKD_URL: http://gluetun:5030
+      SLSKD_API_KEY: ${SLSKD_API_KEY}
+      ACOUSTID_KEY: ${ACOUSTID_KEY:-}        # optional; empty = no AcoustID lookup
+      MUSIC_ROOT: /srv/music
+      DOWNLOADS_ROOT: /srv/incoming/soulseek
+      NAVIDROME_DB: /srv/docker/navidrome/navidrome.db
+      BEETSDIR: /srv/docker/beets            # beets' own dir (uid 1000 has no home in the image)
+      WORKER_POLL_S: "30"
+    volumes:                               # identical paths: beets stores absolute paths in library.db
+      - /srv/music:/srv/music
+      - /srv/docker/beets:/srv/docker/beets
+      - /srv/incoming/soulseek:/srv/incoming/soulseek
+      - /srv/docker/crates:/data
+      - /srv/docker/navidrome:/srv/docker/navidrome:ro
+    depends_on: [navidrome, gluetun]
     restart: unless-stopped
 
   # --- Phase 1: Soulseek, only ever through the VPN (brought up in M4) ---
@@ -85,6 +113,6 @@ services:
       SLSKD_SHARED_DIR: /app/shared
     volumes:
       - /srv/docker/slskd:/app
-      - /srv/incoming:/app/downloads
+      - /srv/incoming/soulseek:/app/downloads     # slskd's own folder: library-import is not exposed to it
       - /srv/music:/app/shared:ro
     restart: unless-stopped

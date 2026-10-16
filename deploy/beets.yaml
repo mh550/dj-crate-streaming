@@ -1,6 +1,9 @@
-# beets config for the one-time library import (and later sourcing hand-offs).
-#   beet -c ~/projects/dj-crate-streaming/deploy/beets.yaml import --pretend /srv/incoming/library-import
+# beets config. Since M6 the worker container is the ONLY process that runs beets: it imports each verified
+# download with `beet import -q -s -m -W` from its own <downloads>/.staging/<id>-<ts>/ folder (sourcing/filer.py)
+# and runs `beet write` on that new file only after a MusicBrainz match. Do not run beet on the host.
 # State (library.db, import log) lives in /srv/docker/beets, outside the repo.
+# beets 1.6 sets up MusicBrainz BEFORE it reads the -c file, so any `musicbrainz:` settings (host, rate limit)
+# belong in $BEETSDIR/config.yaml (BEETSDIR=/srv/docker/beets), not here. The worker needs none today.
 #
 # DO NOT run `beet write` / `beet modify` / `beet import -L` with writing on this library: beets 1.6 rewrites
 # every field it knows, which collapses multi-valued GENRE/ISRC/ARTIST, garbles RELEASETYPE and adds zero
