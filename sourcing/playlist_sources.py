@@ -21,6 +21,7 @@ from pathlib import Path
 
 from dataclasses import dataclass, replace
 
+from . import identity
 from .spotify_csv import URL as SPOTIFY_URL, fetch_entity, track_lead
 
 
@@ -34,6 +35,7 @@ class Row:
     album: str | None = None
     note: str | None = None    # report rows: "success" | "skipped" | "error: <message>"
     sep: str = ", "            # how the source joins several artists: ", " (Spotify, Exportify) or "; " (reports)
+    isrc: str | None = None    # Exportify's ISRC: the recording itself, whatever the titles say (M7)
 
 
 def rows_from_spotify(entity: dict) -> list[Row]:
@@ -105,7 +107,8 @@ def rows_from_csv(text: str) -> list[Row]:
             ms = r.get("Duration (ms)") or ""
             sid = (r.get("Track URI") or "").split(":")[-1] or None
             out.append(Row(i, r["Track Name"].strip(), (r.get("Artist Name(s)") or "").strip(),
-                           round(int(ms) / 1000) if ms.isdigit() else None, sid, (r.get("Album Name") or None)))
+                           round(int(ms) / 1000) if ms.isdigit() else None, sid, (r.get("Album Name") or None),
+                           isrc=(r.get("ISRC") or "").strip() or None))
         else:                                                  # sockseek / spotify_csv: Artist,Title,Length
             length = (r.get("Length") or "").strip()
             out.append(Row(i, r["Title"].strip(), r["Artist"].strip(), int(float(length)) if length else None,
@@ -129,10 +132,11 @@ def load(src: str, fetch=fetch_entity) -> tuple[str, list[Row]]:
 
 
 def lead_artist(row: Row, resolve=track_lead) -> str:
-    """Report rows join artists with "; ", so the first segment is exact (a comma is part of the
-    name). Spotify/Exportify join with ", ", which mangles "Earth, Wind & Fire": when there is a
-    comma and a track id, ask the track's own embed (`resolve`; None = never look up)."""
-    first = row.artist.split(row.sep.strip())[0].strip()
+    """A row's lead artist. Only the source's separator is decided here; `identity.lead_artist` owns the rest
+    ("; ", " • ", "feat."). Report rows join artists with "; ", so identity's split is exact (a comma is part of
+    the name). Spotify/Exportify join with ", ", which mangles "Earth, Wind & Fire": when there is a comma and a
+    track id, ask the track's own embed (`resolve`; None = never look up), else take the first comma segment."""
     if row.sep.strip() == ";" or "," not in row.artist:
-        return first
-    return (resolve(row.spotify_id) if resolve and row.spotify_id else None) or first
+        return identity.lead_artist(row.artist)
+    got = resolve(row.spotify_id) if resolve and row.spotify_id else None
+    return got or identity.lead_artist(row.artist.split(",")[0])

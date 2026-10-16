@@ -1,28 +1,34 @@
 """Spotify/report playlist rows → Navidrome playlist + wanted rows (spec §2a, D11).
 
-Matching: search3 on artist+title words (Navidrome ignores case, accents and punctuation; every
-word must hit). Then:
-  * row has a length → hits within ±4 s whose title fits; if none, hits with the right artist and
-    title but another length are a different edit → `ambiguous (length differs)`, never a match;
-  * no length → hits with the lead artist and the *same* title, after dropping noise that does not
-    change the recording (file extension, track-number prefix, the artist's name glued on,
-    " - 2012 Remaster", "(feat. X)"); a title that only *contains* the row's is `ambiguous (title differs)`.
-Redundant copies (same artist|title, lengths within ±4 s of each other) collapse to one match;
-different versions are `ambiguous (several versions)`. Ambiguous rows become `review` wanted rows
-for a person to pick. No hits at all → retry with the title words only, keeping hits that name the
-artist or have no artist tag (library titles sometimes carry it: "A Change Is Gonna Come - Jennifer Lara").
+A row names a *song*; which version stands at that spot is the playlist's choice (spec Part 2). Matching:
+search3 on artist+title words (Navidrome ignores case, accents and punctuation; every word must hit), then
+`sourcing.identity` splits the row's and every hit's title into a base title and a version label, and three
+questions are asked in order:
+  1. same recording: the row's ISRC (Exportify) is among the hit's ISRCs, whatever the titles say;
+  2. same version: the same version key (label kinds + credit; "original mix" is neutral). With a row length:
+     hits within ±4 s whose base title fits; without one: the lead artist and the *same* base title;
+  3. an accepted other version: the lead artist, the same base title, another key whose kinds the tier's
+     policy accepts (deploy/policy.toml `accept`, D16: a 12" may stand in). Matched, `how` names the label,
+     and the report notes it, so a stand-in is never silent.
+Otherwise the row is `ambiguous` (a review row): "other version" (the same song with a label the tier does not
+accept), "length differs" (the same song at another length), "title differs" (no length; a title that only
+*contains* the row's), "several versions" (more than one candidate version). A wrong match puts the wrong
+version in a set; a missed one only queues a download, so every doubt stays a review row.
+Noise that does not change the recording is identity's: file extension, track-number prefix, the artist's name
+glued on, " - 2012 Remaster", "(feat. X)". Redundant copies (same base title and key, lengths within ±4 s)
+collapse to one match. No hits at all → retry with the title words only, keeping hits that name the artist or
+have no artist tag (library titles sometimes carry it: "A Change Is Gonna Come - Jennifer Lara").
 """
 from __future__ import annotations
 
-import re
 import unicodedata
 from dataclasses import dataclass, field
 
 from crates.store import CrateStore
 from subsonic.client import Song, SubsonicClient
-from .identity import loose
+from .identity import Title, loose, parse_title
 from .playlist_sources import Row, lead_artist, track_lead
-from .policy import IMPORT_TIER
+from .policy import IMPORT_TIER, TIERS
 
 TOLERANCE_S = 4
 MARKER = "#imported"          # in the playlist comment: "this playlist is managed by import-playlist"
@@ -62,7 +68,9 @@ class Match:
     status: str                 # "matched" | "ambiguous" | "missing"
     song_id: str | None = None
     candidates: list[str] = field(default_factory=list)   # ids considered (ambiguous → the tie; matched → the copies)
-    why: str | None = None      # ambiguous: "several versions" | "title differs" | "length differs"
+    why: str | None = None      # ambiguous: "several versions" | "other version" | "title differs" | "length differs"
+    how: str | None = None      # matched: "same recording" | "same version" | "other version: <hit's label>"
+    title: str | None = None    # matched: the chosen hit's title (names a stand-in in the notes)
 
 
 def _blob(h: Song) -> str:
@@ -74,11 +82,11 @@ def _untagged(artist: str | None) -> bool:
     return norm(artist) in ("", "unknownartist", "various", "variousartists", "unknown")
 
 
-def _title_fits(row: Row, hit: Song) -> bool:
-    """The row's title appears in the hit, or the hit's title in the row's ("Fascination" vs
-    "Fascination - 2012 Remaster"). Guards the length strategy against artist-only queries."""
-    t, h = norm(row.title), norm(hit.title)
-    return bool(t and h) and (t in _blob(hit) or h in t)
+def _title_fits(want: Title, hit: Song, got: Title) -> bool:
+    """The row's base title appears in the hit, or the hit's in the row's ("Fascination" vs "Fascination
+    Remix"). Guards the length strategy against artist-only queries."""
+    t, h = loose(want.base), loose(got.base)
+    return bool(t and h) and (t in norm(f"{hit.artist} {got.base}") or h in t)
 
 
 def _lead(row: Row) -> str:
@@ -90,74 +98,78 @@ def _artist_gate(hits: list[Song], lead: str) -> list[Song]:
     return [h for h in hits if lead and (lead in _blob(h) or _untagged(h.artist))]
 
 
-# Decorations that do not change the recording, stripped before titles are compared.
-_NOISE = [re.compile(p, re.I) for p in (
-    r"(\.(mp3|flac|m4a|wav))+$",                                            # file names used as titles
-    r"^\d{1,3}\s*-\s*",                                                     # "100 - Smokey Robinson - …"
-    r"\s+-\s+(\d{4}\s+)?(digital(ly)?\s+)?remaster(ed)?(\s+(version|\d{4}))?\s*$",   # " - 2012 Remaster"
-    r"\s*[(\[](\d{4}\s+)?(digital(ly)?\s+)?remaster(ed)?[^)\]]*[)\]]\s*$",       # "(Remastered 2011)"
-    r"\s*[(\[](feat|ft|with)\.?\s[^)\]]*[)\]]",                               # "(feat. Action Bronson)"
-)]
+def _isrcs(h: Song) -> set[str]:
+    """Navidrome (OpenSubsonic) sends `isrc` as a list; a single string is read too."""
+    v = h.raw.get("isrc") or []
+    return {x.strip().upper() for x in ([v] if isinstance(v, str) else v) if isinstance(x, str) and x.strip()}
 
 
-def _core(title: str | None, lead: str) -> str:
-    t = title or ""
-    for _ in range(3):                                   # decorations stack: "04 - 122 - X - Y.mp3.mp3"
-        for p in _NOISE:
-            t = p.sub("", t)
-    n = norm(t)
-    if lead and n != lead:                               # "Pepe Link - Vem Menina", "… - Jennifer Lara"
-        n = n[len(lead):] if n.startswith(lead) else n[:-len(lead)] if n.endswith(lead) else n
-    return n
-
-
-def _same_title(row: Row, hit: Song, lead: str) -> bool:
-    return bool(norm(row.title)) and _core(hit.title, lead) == _core(row.title, lead)
-
-
-def _by_length(row: Row, hits: list[Song]) -> list[Song]:
+def _by_length(row: Row, hits: list[Song], t: dict[str, Title], want: Title) -> list[Song]:
     def d(h: Song) -> int:
         return abs(h.duration - row.duration_s)
-    fit = [h for h in hits if h.duration is not None and d(h) <= TOLERANCE_S and _title_fits(row, h)]
+    fit = [h for h in hits if h.duration is not None and d(h) <= TOLERANCE_S and _title_fits(want, h, t[h.id])]
     if not fit:
         return []
     best = min(map(d, fit))
     return [h for h in fit if d(h) == best]
 
 
-def _by_title(row: Row, hits: list[Song], lead: str) -> tuple[list[Song], list[Song]]:
-    """(same title, title only contains the row's) among hits that name the lead artist."""
-    title = norm(row.title)
+def _by_title(hits: list[Song], t: dict[str, Title], want: Title, lead: str) -> tuple[list[Song], list[Song]]:
+    """(the same song, hits that only contain the row's base title) among hits that name the lead artist."""
+    title = loose(want.base)
     named = [h for h in hits if title and lead and title in _blob(h) and lead in _blob(h)]
-    same = [h for h in named if _same_title(row, h, lead)]
+    same = [h for h in named if loose(t[h.id].base) == title]
     return same, [h for h in named if h not in same]
 
 
-def _decide(row: Row, fit: list[Song], lead: str) -> Match:
+def _decide(row: Row, fit: list[Song], t: dict[str, Title], how: str) -> Match:
     durs = [h.duration for h in fit if h.duration is not None]
-    # Same (cleaned) title twice is a redundant copy only when the lengths agree; "The Magician"
+    # One base title and version key is a redundant copy only when the lengths agree too; "The Magician"
     # 353 s vs 300 s are two recordings, and without a row duration we cannot pick → ambiguous.
-    # Cleaned titles, not raw tags: "122 - Wendell Harrison - Peace Of Mind.mp3" is a copy too.
-    if len({_core(h.title, lead) for h in fit}) > 1 or (durs and max(durs) - min(durs) > TOLERANCE_S):
+    # Parsed titles, not raw tags: "122 - Wendell Harrison - Peace Of Mind.mp3" is a copy too.
+    if len({(loose(t[h.id].base), t[h.id].key) for h in fit}) > 1 or (durs and max(durs) - min(durs) > TOLERANCE_S):
         return Match(row, "ambiguous", candidates=[h.id for h in fit], why="several versions")
     # The cleanly tagged, properly filed copy first.
     fit.sort(key=lambda h: (norm(h.title) != norm(row.title), (h.path or "").startswith("Compilations/")))
-    return Match(row, "matched", fit[0].id, [h.id for h in fit])
+    return Match(row, "matched", fit[0].id, [h.id for h in fit], how=how, title=fit[0].title)
 
 
-def choose(row: Row, hits: list[Song]) -> Match:
+def choose(row: Row, hits: list[Song], accept: frozenset[str] = frozenset()) -> Match:
+    """Same recording → same version → an other version the tier accepts (`accept`: version kinds)."""
     if not hits:
         return Match(row, "missing")
     lead = _lead(row)
-    same, near = _by_title(row, hits, lead)
+    lead_name = lead_artist(row, resolve=None)
+    want = parse_title(row.title, lead_name)
+    t = {h.id: parse_title(h.title, lead_name) for h in hits}
+    if row.isrc:
+        rec = [h for h in hits if row.isrc.strip().upper() in _isrcs(h)]
+        if rec:
+            return _decide(row, rec, t, "same recording")
+    same, near = _by_title(hits, t, want, lead)
     if row.duration_s is not None:
-        fit = _by_length(row, hits)
+        fit = _by_length(row, [h for h in hits if t[h.id].key == want.key], t, want)
         if fit:
-            return _decide(row, fit, lead)
-        if same or near:                                 # right song name, another length: another edit
-            return Match(row, "ambiguous", candidates=[h.id for h in same + near], why="length differs")
-    elif same:
-        return _decide(row, same, lead)
+            return _decide(row, fit, t, "same version")
+    else:
+        fit = [h for h in same if t[h.id].key == want.key]
+        if fit:
+            return _decide(row, fit, t, "same version")
+    # A stand-in must be the same song by the same artist: the same base title, never one that only fits.
+    other = [h for h in same if t[h.id].key != want.key and t[h.id].kinds & accept]
+    if other:
+        m = _decide(row, other, t, "other version")
+        if m.status == "matched":
+            m.how = f"other version: {t[m.song_id].label}"
+        return m
+    if row.duration_s is not None:
+        if same or near:                                 # right song name, another length or label
+            relabelled = any(t[h.id].key != want.key and h.duration is not None
+                             and abs(h.duration - row.duration_s) <= TOLERANCE_S for h in same + near)
+            return Match(row, "ambiguous", candidates=[h.id for h in same + near],
+                         why="other version" if relabelled else "length differs")
+    elif same:                                           # the same song, a label the tier does not accept
+        return Match(row, "ambiguous", candidates=[h.id for h in same + near], why="other version")
     elif near:
         return Match(row, "ambiguous", candidates=[h.id for h in near], why="title differs")
     return Match(row, "missing", candidates=[h.id for h in hits])
@@ -174,7 +186,7 @@ def _search_all(client: SubsonicClient, query: str) -> list[Song]:
     return hits
 
 
-def match(client: SubsonicClient, row: Row) -> Match:
+def match(client: SubsonicClient, row: Row, accept: frozenset[str] = frozenset()) -> Match:
     query = build_query(row)
     if not query:                                        # nothing searchable: an empty search3 lists everything
         return Match(row, "missing")
@@ -182,7 +194,7 @@ def match(client: SubsonicClient, row: Row) -> Match:
     if not hits:
         title_only = " ".join(query_words(row.title))
         hits = _artist_gate(_search_all(client, title_only), _lead(row)) if title_only else []
-    return choose(row, hits)
+    return choose(row, hits, accept)
 
 
 @dataclass
@@ -233,7 +245,8 @@ def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: C
 
     A same-named playlist that this tool did not create (no `#imported` in its comment) raises
     NameCollision unless `merge=True`, which adopts it (adds the marker, leaves its visibility alone)."""
-    matches = [match(client, r) for r in rows]
+    accept = frozenset(TIERS[tier or IMPORT_TIER].accept_versions)
+    matches = [match(client, r, accept) for r in rows]
     existing = next((p for p in client.playlists() if p.name == name), None)
     ours = existing is not None and MARKER in (existing.comment or "")
     if existing is not None and not ours and not merge:
@@ -259,6 +272,8 @@ def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: C
     pending = [(m, lead_artist(m.row, resolve=_resolve)) for m in matches if m.status != "matched"]
     notes = [f"lead artist of {m.row.artist!r} could not be resolved; wanted row uses {lead!r}"
              for m, lead in pending if m.row.spotify_id in failed]
+    notes += [f"matched with another version: {m.row.position} {m.row.artist} — {m.row.title} → {m.title}"
+              for m in matches if (m.how or "").startswith("other version")]
     if not dry_run:
         if existing is None:
             playlist_id = client.create_playlist(name, new_ids).id
