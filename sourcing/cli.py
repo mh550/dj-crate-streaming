@@ -3,7 +3,7 @@ r"""CLI: rank candidates for a wanted track, from a fixture file or a live slskd
   python -m sourcing.cli rank --fixture fixtures/search_responses.sample.json --artist Chic --title "Good Times" --duration 501 [--tier low]
   python -m sourcing.cli rank --slskd http://server:5030 --api-key $SLSKD_KEY --artist Chic --title "Good Times" [--download]
   python -m sourcing.cli verify /srv/incoming/03\ -\ Good\ Times.flac --duration 501 [--tier crate] [--reference old.flac] [--json]
-  python -m sourcing.cli fetch --wanted s4 [--approve] [--tier T]   # one wanted track, end to end (see fetch.py); tier: the row's
+  python -m sourcing.cli fetch --wanted s4 [--approve [--wait]] [--tier T]   # search+score; --approve only records an approval for the worker; tier: the row's
   python -m sourcing.cli worker [--once]   # D18: spend approvals (download, verify, file with beets), re-check `verify` rows; WORKER_POLL_S (30), WORKER_RECHECK_S (300)
   python -m sourcing.cli seed-spotify https://open.spotify.com/playlist/...   # queue tracks not in Navidrome
   python -m sourcing.cli import-playlist <spotify-url|report.txt|exportify.csv>... [--name N] [--dry-run]   # D11: Spotify playlists → public Navidrome playlist + wanted rows
@@ -32,9 +32,9 @@ def _fetch_env() -> dict:
     """Where an approved fetch downloads and files, from the environment: the library, slskd's downloads
     folder (Task 7 gives slskd its own) and the beets config the filer imports with.
 
-    A filer exists only inside the worker container (DJ_WORKER=1, set in deploy/compose.yml): it is the one
-    beets writer, with the one library.db. Anywhere else `fetch --approve` is refused before any download
-    ("no beets filer configured (run --approve in the worker)"); run it with `docker compose exec -T worker`."""
+    A filer exists only inside the worker container (DJ_WORKER=1, set in deploy/compose.yml): the worker daemon
+    is the one beets writer, with the one library.db, and the only caller of fetch(approve=True); without a filer
+    an approved fetch is refused before any download ("no beets filer configured")."""
     filer = (BeetsFiler(Path(os.environ.get("BEETS_CONFIG") or DEFAULT_BEETS_CONFIG), confirm=confirm_recording_length)
              if os.environ.get("DJ_WORKER") == "1" else None)
     return {"music_root": Path(os.environ.get("MUSIC_ROOT") or "/srv/music"),
@@ -42,6 +42,40 @@ def _fetch_env() -> dict:
             "filer": filer,
             "navidrome_db": Path(os.environ.get("NAVIDROME_DB", "/srv/docker/navidrome/navidrome.db")),
             "lookup": make_lookup(k) if (k := os.environ.get("ACOUSTID_KEY")) else None}
+
+
+WAIT_POLL_S, WAIT_TIMEOUT_S = 2.0, 600.0
+
+
+def approve_cmd(a) -> int:
+    """`fetch --approve`: record Michael's approval (D23) exactly as the web client's Approve does, unclaimed,
+    and leave the download to the worker daemon, the only code path that fetches with approve=True (it holds the
+    worker lock, so there is one beets writer and an interrupted run is recovered). Works from the host or the
+    container alike. `--wait` polls the approval until the worker has written its outcome."""
+    import time
+    from crates.service import ApiError, Config, CrateApp
+    app = CrateApp(Config.from_env())
+    row = app.store.find_wanted(a.wanted)
+    if row is not None and a.tier and a.tier != row["tier"]:
+        if not row.get("external"):
+            print(f"{a.wanted} is in a crate, and a crate track is sourced at tier {DEFAULT_TIER}", file=sys.stderr)
+            return 1
+        app.store.set_external_tier(a.wanted, a.tier); app.store.commit()
+    try:
+        approval = app.approve(a.wanted, None)         # same rules as the web Approve: 404, 409 in progress, cached pick
+    except ApiError as e:
+        print(f"{a.wanted}: {e}", file=sys.stderr); return 1
+    print("approved; the worker picks it up on its next tick", flush=True)
+    if not a.wait:
+        return 0
+    deadline = time.time() + WAIT_TIMEOUT_S
+    while time.time() < deadline:
+        r = app.store.db.execute("SELECT result FROM approvals WHERE id=?", (approval["id"],)).fetchone()[0]
+        if r not in (None, "started"):
+            print(r); return 0
+        time.sleep(WAIT_POLL_S)
+    print(f"no result after {WAIT_TIMEOUT_S:.0f} s; the worker may still be on it (see the Wanted tab)", file=sys.stderr)
+    return 2
 
 
 def describe_measurements(m: dict) -> list[str]:
@@ -95,7 +129,9 @@ def main(argv: list[str] | None = None) -> int:
 
     f = sub.add_parser("fetch", help="take one wanted track through search → score → (approve) download → verify → file → ok")
     f.add_argument("--wanted", required=True, help="song id from `crates.cli wanted` (or ext-N from seed-spotify)")
-    f.add_argument("--approve", action="store_true", help="actually download; without it, stop after scoring")
+    f.add_argument("--approve", action="store_true",
+                   help="record your approval; the worker downloads, verifies and files it on its next tick")
+    f.add_argument("--wait", action="store_true", help="with --approve: wait (up to 600 s) for the worker's outcome")
     add_slskd_args(f)
     add_tier_arg(f, None, "change the wanted row's tier, then fetch (external rows only; crate rows are crate)")
 
@@ -184,6 +220,9 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "worker" and os.environ.get("DJ_WORKER") != "1":    # before anything is claimed or recovered
         print("the worker runs only in the worker container (DJ_WORKER=1)", file=sys.stderr); return 1
 
+    if a.cmd == "fetch" and a.approve:
+        return approve_cmd(a)
+
     if a.cmd in ("fetch", "worker"):
         if not (a.slskd and a.api_key):
             print("need --slskd/$SLSKD_URL and --api-key/$SLSKD_API_KEY", file=sys.stderr); return 1
@@ -209,23 +248,10 @@ def main(argv: list[str] | None = None) -> int:
             print(str(e), file=sys.stderr); return 1
         return 0
 
-    if a.cmd == "fetch":
+    if a.cmd == "fetch":                             # without --approve: search and score only, nothing downloads
         from .fetch import fetch
-        row, aid = app.store.find_wanted(a.wanted), None
-        if a.approve and row is not None:            # D23: every download carries an approval, here Michael's own command
-            tier = a.tier if a.tier and row.get("external") else row["tier"]
-            aid = app.store.approve(a.wanted, "michael", None, tier)
-            if not app.store.claim_approval(aid):         # a running worker took it first: it is fetching this row
-                print(f"{a.wanted}: the worker already took this approval", file=sys.stderr); return 1
-        try:
-            r = fetch(a.wanted, store=app.store, slskd=SlskdClient(a.slskd, a.api_key), navidrome=app.api,
-                      reconciler=app.reconciler, tier=a.tier, approve=a.approve, **_fetch_env())
-        except Exception as e:
-            if aid is not None:
-                app.store.mark_approval_used(aid, f"error: {type(e).__name__}: {e}"); app.store.commit()
-            raise
-        if aid is not None:
-            app.store.mark_approval_used(aid, r.approval_result or f"{r.status}: {r.reason}"); app.store.commit()
+        r = fetch(a.wanted, store=app.store, slskd=SlskdClient(a.slskd, a.api_key), navidrome=app.api,
+                  reconciler=app.reconciler, tier=a.tier, approve=False, **_fetch_env())
         print(r.explain)
         if r.pick:
             print(f"pick: {r.pick.basename}  (score {r.pick.score:.2f})")      # the peer stays in `search`, not in logs

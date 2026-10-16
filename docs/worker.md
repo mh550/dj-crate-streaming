@@ -39,16 +39,22 @@ path in its reason, so the re-check picks it up and nothing downloads a second c
    "worker: <outcome>".
 
 Every download carries an approval record (D23): who approved, the candidate, the tier and the time. Today the only
-`approved_by` value is `michael` (the Approve button, and `sourcing.cli fetch --approve`, which records and claims
-its own approval so the worker cannot fetch the same row at the same time). Later values are `policy:<name>` and
-`agent:<id>`: new approvers, not a redesign.
+`approved_by` value is `michael` (the Approve button, and `sourcing.cli fetch --approve`). Later values are
+`policy:<name>` and `agent:<id>`: new approvers, not a redesign.
 
-The manual command runs inside the worker container, because only there (`DJ_WORKER=1`) is a beets filer configured;
-on the host it is refused before any download:
+`sourcing.cli fetch --wanted <id> --approve` only records the approval, with the same rules as the Approve button
+(the previewed pick if there is one; refused for a row that is `sourcing` or `verify`), and prints "approved; the
+worker picks it up on its next tick". Add `--wait` to wait (up to 600 s) for the worker's outcome. It works from the
+host or the container alike: the worker daemon is the only process that downloads, files with beets, and holds the
+worker lock, so a manual run can never be a second beets writer or leave an approval `started`.
 
 ```
-cd /srv/docker && docker compose exec -T worker python -m sourcing.cli fetch --wanted <id> --approve
+python3 -m sourcing.cli fetch --wanted <id> --approve --wait
 ```
+
+A Preview of a row that is already filed (`verify`, or failed as "Navidrome never indexed …") searches nothing and
+changes nothing: it answers "already filed as <path>; the worker re-checks it". The web service answers 409 to
+Preview or Approve of a row that is `sourcing` or `verify`.
 
 Approvals are claimed atomically. A second approval for the same row supersedes the first; a superseded or already
 taken approval is skipped, with a `skipped <id>: approval #N already used` line in the log.

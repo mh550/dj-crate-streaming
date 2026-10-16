@@ -116,3 +116,13 @@ def test_web_client_offers_preview_and_approve(svc_slskd):
     _, _, js = get(web.url + "/app.js", raw=True)
     js = js.decode()
     assert "/preview" in js and "/approve" in js and "waiting for worker" in js
+
+
+@pytest.mark.parametrize("status", ["sourcing", "verify"])
+def test_preview_and_approve_of_a_row_in_progress_is_409(svc_slskd, status):
+    fake, srv, app, web = svc_slskd
+    app.store.set_wanted_status("s4", status, "filed as x but Navidrome has not picked it up yet")
+    for action in ("preview", "approve"):
+        code, body = post(web.url + f"/api/wanted/s4/{action}", {})
+        assert code == 409 and status in body["error"]
+    assert app.store.approval("s4") is None and app.store.preview("s4") is None

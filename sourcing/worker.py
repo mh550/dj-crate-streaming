@@ -91,12 +91,17 @@ class Worker:
         """No `tier` is passed: the row's current tier rules, and an approval's tier only records what was approved."""
         results, rechecked = [], 0
         for wanted_id in self.store.verify_ids(updated_before=time.time() - self.recheck_s):
+            reason = (self.store.find_wanted(wanted_id) or {}).get("reason")
             try:
                 r = self.fetcher(wanted_id, approve=True, **self.common)
                 results.append(f"{wanted_id}: {r.status}: {r.reason}")
-            except Exception as e:                         # the row is left as fetch left it; the next tick retries
+            except Exception as e:                         # e.g. Navidrome down: try again after the interval
                 results.append(f"{wanted_id}: error: {type(e).__name__}: {e}")
                 self.log(f"recheck {wanted_id} failed: {type(e).__name__}: {e}")
+                try:                                       # same status and reason, but the clock restarts
+                    self.store.set_wanted_status(wanted_id, "verify", reason)
+                except Exception as e2:
+                    self.log(f"recheck {wanted_id}: could not restart its clock: {type(e2).__name__}: {e2}")
             rechecked += 1
         claimed = 0
         for a in self.store.pending_approvals():

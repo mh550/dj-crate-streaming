@@ -156,10 +156,21 @@ class CrateApp:
         return self.reconciler.crate_view(pl)
 
     # --- approvals (D23): a preview searches and ranks but never downloads; an approval is what lets the worker
+    def _not_in_progress(self, wanted_id: str) -> dict:
+        """The row, unless it is missing (404) or in progress (409): a `sourcing` row is being downloaded and a
+        `verify` row is filed already; the worker finishes both, and neither may be searched or approved again."""
+        row = self.store.find_wanted(wanted_id)
+        if row is None:
+            raise ApiError(404, f"{wanted_id} is not in any enabled crate or the external queue")
+        if row["status"] in ("sourcing", "verify"):
+            raise ApiError(409, f"{wanted_id} is {row['status']} (in progress): the worker finishes it")
+        return row
+
     def preview(self, wanted_id: str) -> dict:
         if self.slskd is None:
             raise ApiError(503, "slskd is not configured")
         with self._lock:
+            self._not_in_progress(wanted_id)
             r = fetch(wanted_id, store=self.store, slskd=self.slskd, navidrome=self.api, reconciler=self.reconciler,
                       music_root=Path(os.environ.get("MUSIC_ROOT", "/srv/music")),
                       downloads_root=Path(os.environ.get("DOWNLOADS_ROOT", "/srv/incoming/soulseek")), approve=False)
@@ -174,9 +185,7 @@ class CrateApp:
         """Michael's yes for one row: the candidate he saw, else the cached preview's pick (which may be None,
         leaving the worker to search and pick itself)."""
         with self._lock:
-            row = self.store.find_wanted(wanted_id)
-            if row is None:
-                raise ApiError(404, f"{wanted_id} is not in any enabled crate or the external queue")
+            row = self._not_in_progress(wanted_id)
             if candidate is None:
                 candidate = (self.store.preview(wanted_id) or {}).get("pick")
             elif not (isinstance(candidate, dict) and isinstance(candidate.get("username"), str)

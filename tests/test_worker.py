@@ -168,11 +168,11 @@ def test_cli_fetch_approve_records_an_approval(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     approval = CrateStore(tmp_path / "c.db").approval("s4")
     assert approval["approved_by"] == "michael" and approval["tier"] == "crate" and approval["candidate"] is None
-    assert approval["used_at"] and approval["result"] and out.splitlines()[-1].startswith(approval["result"].split(":")[0])
-    assert "pick: 03 - Good Times.flac" in out
+    assert approval["used_at"] is None and out.splitlines()[-1] == "approved; the worker picks it up on its next tick"
+    assert sl.enqueued == []                                                     # the worker daemon downloads, not the CLI
     peers = [r["username"] for r in RESPONSES if r["username"] != "locked"]     # "locked" is also the word in "rejected: locked"
     assert len(peers) == 7 and not [p for p in peers if p in out]                # no Soulseek peer name on stdout
-    assert code in (0, 2)
+    assert code == 0
 
 
 def test_claim_approval_is_conditional_on_unused():
@@ -338,18 +338,6 @@ def test_fetch_env_builds_a_filer_only_in_the_worker(monkeypatch):
     assert isinstance(filer, BeetsFiler) and filer.confirm is confirm_recording_length
 
 
-def test_cli_fetch_approve_on_the_host_is_refused(tmp_path, monkeypatch, capsys):
-    monkeypatch.delenv("DJ_WORKER", raising=False)
-    (tmp_path / "m").mkdir(); (tmp_path / "dl").mkdir()
-    with FakeSubsonicServer() as nd, FakeSlskdServer(RESPONSES, tmp_path / "dl", files={}) as sl:
-        _cli_env(monkeypatch, tmp_path, nd, sl)
-        st = CrateStore(tmp_path / "c.db")
-        ext = st.add_external_wanted("Chic", "Good Times", duration_s=501); st.commit()
-        assert cli.main(["fetch", "--wanted", ext, "--approve"]) == 2
-        assert sl.enqueued == []
-    assert "no beets filer configured (run --approve in the worker)" in capsys.readouterr().out
-
-
 # --- one worker at a time, and only in the worker container ------------------------------------------------
 
 def _queued(tmp_path):
@@ -430,3 +418,76 @@ def test_filed_path_reads_both_shapes():
     assert filed_path(f"filed as {rel} but Navidrome has not picked it up yet (check 3)") == rel
     assert filed_path(f"Navidrome never indexed {rel}; file is in the library") == rel
     assert filed_path("download timed out") is None
+
+
+# --- fix round 2 -------------------------------------------------------------------------------------------------
+
+def test_cli_fetch_approve_only_records_an_approval(tmp_path, monkeypatch, capsys):
+    """From the host or the container alike: the worker daemon is the only code path that downloads and files."""
+    monkeypatch.delenv("DJ_WORKER", raising=False)
+    with FakeSubsonicServer() as nd, FakeSlskdServer(RESPONSES, tmp_path / "dl", files={}) as sl:
+        _cli_env(monkeypatch, tmp_path, nd, sl)
+        st = CrateStore(tmp_path / "c.db")
+        ext = st.add_external_wanted("Chic", "Good Times", duration_s=501)
+        st.set_preview(ext, {"pick": {"username": "u", "filename": "f", "basename": "f"}})
+        assert cli.main(["fetch", "--wanted", ext, "--approve"]) == 0
+        assert sl.enqueued == []
+    assert "approved; the worker picks it up on its next tick" in capsys.readouterr().out
+    a = CrateStore(tmp_path / "c.db").approval(ext)
+    assert a["approved_by"] == "michael" and a["used_at"] is None and a["candidate"]["filename"] == "f"
+    assert CrateStore(tmp_path / "c.db").external(ext)["status"] == "needs_source"
+
+
+def test_cli_fetch_approve_wait_prints_the_workers_result(tmp_path, monkeypatch, capsys):
+    import threading
+    import time as _time
+    monkeypatch.setattr(cli, "WAIT_POLL_S", 0.05); monkeypatch.setattr(cli, "WAIT_TIMEOUT_S", 5)
+    with FakeSubsonicServer() as nd, FakeSlskdServer(RESPONSES, tmp_path / "dl", files={}) as sl:
+        _cli_env(monkeypatch, tmp_path, nd, sl)
+        st = CrateStore(tmp_path / "c.db")
+        ext = st.add_external_wanted("Chic", "Good Times", duration_s=501); st.commit()
+
+        def worker_takes_it():                                   # what the daemon does with the approval
+            st, give_up = CrateStore(tmp_path / "c.db"), _time.time() + 5
+            while not st.pending_approvals():
+                if _time.time() > give_up:
+                    return
+                _time.sleep(0.02)
+            a = st.pending_approvals()[0]
+            st.claim_approval(a["id"]); _time.sleep(0.1)
+            st.mark_approval_used(a["id"], "ok: filed and visible in Navidrome")
+
+        t = threading.Thread(target=worker_takes_it, daemon=True); t.start()
+        assert cli.main(["fetch", "--wanted", ext, "--approve", "--wait"]) == 0
+        t.join()
+    assert capsys.readouterr().out.splitlines()[-1] == "ok: filed and visible in Navidrome"
+
+
+def test_cli_fetch_approve_refuses_a_row_in_progress(tmp_path, monkeypatch, capsys):
+    with FakeSubsonicServer() as nd, FakeSlskdServer(RESPONSES, tmp_path / "dl", files={}) as sl:
+        _cli_env(monkeypatch, tmp_path, nd, sl)
+        st = CrateStore(tmp_path / "c.db")
+        ext = st.add_external_wanted("Chic", "Good Times", duration_s=501)
+        st.set_wanted_status(ext, "verify", "filed as x but Navidrome has not picked it up yet")
+        assert cli.main(["fetch", "--wanted", ext, "--approve"]) != 0
+    assert CrateStore(tmp_path / "c.db").approval(ext) is None and "in progress" in capsys.readouterr().err
+
+
+def test_a_recheck_that_raises_still_waits_for_the_interval(world):
+    store, calls = world["store"], []
+    why = "filed as x but Navidrome has not picked it up yet (check 2)"
+    store.set_wanted_status("s4", "verify", why)
+    store.db.execute("UPDATE crate_tracks SET updated_at = updated_at - 301 WHERE song_id='s4'"); store.commit()
+    stale = store.find_wanted("s4")["updated_at"]
+
+    def fetcher(wanted_id, **kw):
+        calls.append(wanted_id)
+        raise RuntimeError("navidrome down")
+
+    with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
+        w = worker(world, srv, fetcher=fetcher, recheck_s=300)
+        w.tick()
+        row = store.find_wanted("s4")
+        assert (row["status"], row["reason"]) == ("verify", why) and row["updated_at"] > stale
+        w.tick()
+    assert calls == ["s4"]                                              # not retried every tick

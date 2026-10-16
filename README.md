@@ -23,7 +23,7 @@ sourcing/   Phase 1: Soulseek sourcing — one wanted track from search to a fil
   musicbrainz.py    recording length from MusicBrainz: confirms a beets match before `beet write` (D22)
   fake_slskd.py     in-process slskd for tests/demos
   spotify_csv.py    public Spotify playlist → rows, no API credentials (embed page)
-  cli.py            rank | verify | worker [--once] | fetch --wanted <id> [--approve] | seed-spotify <url> | import-playlist <src>... [--name N]
+  cli.py            rank | verify | worker [--once] | fetch --wanted <id> [--approve [--wait]] | seed-spotify <url> | import-playlist <src>... [--name N]
 scripts/    one-off library tooling: library_map.py (folder + audio-hash map), folders_to_playlists.py
 deploy/     compose.yml (+ .env.example), beets.yaml — /srv/docker/compose.yml symlinks here
 fixtures/   slskd-shaped search responses covering the failure modes
@@ -56,9 +56,9 @@ python3 -m sourcing.cli seed-spotify https://open.spotify.com/playlist/...   # �
 python3 -m sourcing.cli import-playlist <spotify-url|report.txt|exportify.csv>... [--name N] [--dry-run]
     # D11: Spotify playlist → public Navidrome playlist (library matches, in order) + wanted rows with playlist/position
 python3 -m sourcing.cli fetch --wanted s4             # search + score, prints the pick, no download
-cd /srv/docker && docker compose exec -T worker python -m sourcing.cli fetch --wanted s4 --approve
-    # download → verify → beets → /srv/music → rescan → crate ok; only in the worker container (DJ_WORKER=1), the
-    # one beets writer: on the host `--approve` is refused ("no beets filer configured")
+python3 -m sourcing.cli fetch --wanted s4 --approve [--wait]
+    # records Michael's approval; the worker daemon (the one beets writer) then downloads → verifies → files with
+    # beets → rescans → crate ok on its next tick; --wait prints its outcome (docs/worker.md)
 # normally: Preview + Approve in the web client, and the worker container downloads (docs/worker.md)
 ```
 
@@ -66,8 +66,8 @@ Without `--approve` nothing is transferred (rule: Soulseek downloads are Michael
 walks the crate row `needs_source → sourcing → verify → ok | failed`, swaps the new song into every
 crate that held the old one, and reconciles; a file Navidrome can't match stays `verify` with the
 filed path in the reason. `MUSIC_ROOT` (default `/srv/music`) and `DOWNLOADS_ROOT` (default
-`/srv/incoming`, where the slskd container writes) are overridable; `--approve` refuses before any
-transfer when neither they nor their parent folders exist (e.g. inside the crates container).
+`/srv/incoming/soulseek`, where the slskd container writes) are overridable; the worker refuses an approved
+fetch before any transfer when neither they nor their parent folders exist.
 
 **Quality tiers** (spec §1): `low | medium | high | crate`. `rank`, `fetch`, `seed-spotify` and
 `import-playlist` take `--tier`; wanted rows remember theirs (default `crate`; crate tracks are always
