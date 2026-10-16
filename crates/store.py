@@ -97,6 +97,7 @@ CREATE TABLE IF NOT EXISTS proposals (            -- one question per playlist s
   summary TEXT NOT NULL,                           -- what Michael reads: playlist, slot, both titles and lengths
   wanted_id TEXT,                                  -- unproven_copy: the row that is `review` until answered
   new_path TEXT,                                   -- the new song's library path when proposed (a decline names it)
+  old_name TEXT, new_name TEXT,                    -- "Artist – Title" when proposed: results name songs, not ids
   created_at REAL NOT NULL,
   decided_by TEXT, decided_at REAL,                -- michael | policy:<name> | agent:<id> (as approvals)
   decision TEXT, result TEXT);                     -- accepted | declined | stale; result: what happened
@@ -107,6 +108,12 @@ REPLACEMENT_OPEN = ("repoint", "trash", "scan")    # the worker advances these; 
 PROPOSAL_KINDS = ("version_swap", "unproven_copy")
 DECISIONS = ("accepted", "declined", "stale")
 DECIDERS = re.compile(r"michael|(?:policy|agent):\S+")     # the approver vocabulary (approvals.approved_by)
+
+
+
+class ProposalDecided(ValueError):
+    """The proposal is answered already (maybe by another process meanwhile); nothing was recorded."""
+
 
 STATUSES = ("ok", "needs_source", "sourcing", "verify", "failed", "removed", "review")   # review: a person must pick a version
 
@@ -193,6 +200,10 @@ class CrateStore:
                 self.db.execute(f"ALTER TABLE external_wanted ADD COLUMN {col} {typ}")
         if "tier" not in {r[1] for r in self.db.execute("PRAGMA table_info(crates)")}:
             self.db.execute("ALTER TABLE crates ADD COLUMN tier TEXT")
+        have = {r[1] for r in self.db.execute("PRAGMA table_info(proposals)")}
+        for col in ("old_name", "new_name"):
+            if col not in have:
+                self.db.execute(f"ALTER TABLE proposals ADD COLUMN {col} TEXT")
         self.db.commit()
 
     # --- crates
@@ -623,7 +634,8 @@ class CrateStore:
 
     # --- proposals (crates.proposals): questions about one playlist slot, answered by Michael
     def add_proposal(self, *, kind: str, playlist_id: str, position: int, old_song_id: str, new_song_id: str,
-                     summary: str, wanted_id: str | None = None, new_path: str | None = None) -> int | None:
+                     summary: str, wanted_id: str | None = None, new_path: str | None = None,
+                     old_name: str | None = None, new_name: str | None = None) -> int | None:
         """Record an open proposal and return its id; None, recording nothing, when the same question was asked
         before: the same kind, playlist, slot, old and new song in any state, or the same swap in that playlist
         declined at any slot (Michael said no to it; the slot moving does not make it a new question)."""
@@ -636,8 +648,9 @@ class CrateStore:
             return None
         cur = self.db.execute(
             "INSERT INTO proposals(kind, playlist_id, position, old_song_id, new_song_id, summary, wanted_id, new_path, "
-            "created_at) VALUES(?,?,?,?,?,?,?,?,?)",
-            (kind, playlist_id, position, old_song_id, new_song_id, summary, wanted_id, new_path, time.time()))
+            "old_name, new_name, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (kind, playlist_id, position, old_song_id, new_song_id, summary, wanted_id, new_path, old_name, new_name,
+             time.time()))
         self.log(playlist_id, old_song_id, "proposal", f"#{cur.lastrowid} {kind}: {summary}")
         self.db.commit()
         return cur.lastrowid
@@ -652,14 +665,15 @@ class CrateStore:
 
     def decide(self, proposal_id: int, decision: str, decided_by: str, result: str) -> None:
         """Answer an open proposal and log a `proposal` event. ValueError for a decider outside the approver
-        vocabulary or a proposal that is unknown or answered already (the conditional UPDATE is the check)."""
+        vocabulary; ProposalDecided for a proposal that is unknown or answered already, by another process too
+        (the conditional UPDATE is the check)."""
         assert decision in DECISIONS, decision
         if not DECIDERS.fullmatch(decided_by or ""):
             raise ValueError(f"decided_by {decided_by!r}: michael, policy:<name> or agent:<id>")
         cur = self.db.execute("UPDATE proposals SET decision=?, decided_by=?, decided_at=?, result=? "
                               "WHERE id=? AND decision IS NULL", (decision, decided_by, time.time(), result, proposal_id))
         if cur.rowcount != 1:                      # nothing was changed
-            raise ValueError(f"proposal #{proposal_id} is unknown or answered already")
+            raise ProposalDecided(f"proposal #{proposal_id} is unknown or already answered")
         p = self.proposal(proposal_id)
         self.log(p["playlist_id"], p["old_song_id"], "proposal", f"#{proposal_id} {decision} by {decided_by}: {result}")
         self.db.commit()

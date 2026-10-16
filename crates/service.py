@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
+import sqlite3
 import threading
 import time
 from dataclasses import dataclass
@@ -202,7 +203,15 @@ class CrateApp:
 
     # --- proposals (D23): questions about one playlist slot; Michael's answer edits that slot, downloads nothing
     def proposals(self, include_decided: bool = False) -> list[dict]:
-        """Open proposals (every one with include_decided), each with its playlist's name from the cache."""
+        """Open proposals (every one with include_decided), each with its playlist's name from the cache. Questions
+        whose slot or playlist is gone are marked stale first (proposals.prune); when navidrome.db cannot be read the
+        list is served as it is."""
+        if self.cfg.navidrome_db:
+            with self._lock:
+                try:
+                    proposals.prune(self.store, Path(self.cfg.navidrome_db))
+                except (sqlite3.Error, OSError):
+                    pass
         return [self._proposal_view(p) for p in self.store.proposals(open_only=not include_decided)]
 
     def _proposal_view(self, p: dict) -> dict:
@@ -302,6 +311,8 @@ def make_handler(app: CrateApp):
                 return self._json({"error": f"busy, try again ({e})"}, 503)
             except SubsonicError as e:
                 return self._json({"error": str(e), "code": e.code}, 502 if e.code == 0 else 400)
+            except sqlite3.Error:                   # navidrome.db (NAVIDROME_DB) missing, locked or unreadable
+                return self._json({"error": "Navidrome's database can't be read right now"}, 503)
             except (ConnectionError, OSError) as e:
                 return self._json({"error": f"cannot reach Navidrome: {e}"}, 502)
             except (KeyError, ValueError) as e:

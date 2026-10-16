@@ -218,7 +218,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
                 store.set_library_song(wanted_id, new.id)
             set_status("ok", f"filed as {rel}")
             if external:                 # another version of a song a tiered playlist holds: ask, never swap (D23)
-                ask(lambda: proposals.version_swaps(store, navidrome_db, new.id))
+                ask(lambda: proposals.version_swaps(store, navidrome_db, new.id), rel)
             return FetchResult("ok", "filed and visible in Navidrome", best, filed, new.id, text)
         if not external and not store.playlists_holding([copy_id]):
             # Its playlist stopped being tiered (or dropped the song) mid-download: the request is withdrawn, so
@@ -242,16 +242,16 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
             pass
         return (store.verification(wanted_id) or {}).get("reference") or f"song {song_id}"
 
-    def ask(make) -> None:
-        """Create proposals (crates.proposals). Asking is a side effect of the filing: a failure is an event, never
-        the fetch's outcome (the file is filed either way)."""
+    def ask(make, rel: str) -> None:
+        """Create proposals (crates.proposals) about the filed file `rel` (library-relative, which is what the event
+        names). Asking is a side effect of the filing: a failure is an event, never the fetch's outcome."""
         if navidrome_db is None or not Path(navidrome_db).is_file():
-            store.log(None, wanted_id, "proposal", f"not asked: no navidrome.db at {navidrome_db}")
+            store.log(None, wanted_id, "proposal", f"not asked about {rel}: navidrome.db is not available")
         else:
             try:
                 make()
             except Exception as e:
-                store.log(None, wanted_id, "proposal", f"not asked: {type(e).__name__}: {e}")
+                store.log(None, wanted_id, "proposal", f"not asked about {rel}: {type(e).__name__}: {e}")
         store.commit()
 
     def keep_both(old_rel: str, rel: str, why: str, filed: Path, new_id: str, best, text: str) -> FetchResult:
@@ -260,7 +260,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         set_status("review", f"kept beside {old_rel}: not proven the same recording ({why}); the new copy is {rel}")
         store.log(None, wanted_id, "kept_both", f"{rel} beside {old_rel}: {why}")
         store.commit()
-        ask(lambda: proposals.unproven_copy(store, navidrome_db, copy_id, new_id, why, wanted_id))
+        ask(lambda: proposals.unproven_copy(store, navidrome_db, copy_id, new_id, why, wanted_id), rel)
         return FetchResult("ok", f"filed; kept both ({why})", best, filed, new_id, text)
 
     def replace_copy(filed: Path, rel: str, new_id: str, best, text: str) -> FetchResult:

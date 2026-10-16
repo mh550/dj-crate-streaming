@@ -3,6 +3,8 @@ system asks: one proposal per playlist slot, "replace X with Y in P at slot n?".
 proven the same recording (kind unproven_copy). Accepting edits that one slot through crates.playlist_edit and never
 trashes; declining is remembered, so the same question is not asked again."""
 import json
+import re
+import threading
 import urllib.error
 import urllib.request
 
@@ -84,7 +86,7 @@ def test_a_preferred_12in_arriving_proposes_a_swap_for_the_crate_slot(w):
     p = w.store.proposal(ids[0])
     assert (p["kind"], p["playlist_id"], p["position"], p["old_song_id"], p["new_song_id"]) == \
         ("version_swap", "pl-c", 1, "r1", "t12")
-    assert "secondset" in p["summary"] and "459 s" in p["summary"] and "580 s" in p["summary"]
+    assert p["summary"] == "secondset #2: Double Exposure – My Love Is Free (459 s) → (Tom Moulton 12” Mix) (580 s)"
     assert p["decision"] is None and p["decided_by"] is None
     assert w.edits() == before and w.ids("pl-c") == ["s1", "r1", "s2"]          # asking changes nothing
     assert [e for e in w.store.events(limit=100) if e["kind"] == "proposal"]
@@ -242,7 +244,7 @@ def test_accept_of_a_stale_slot_changes_nothing(w):
     result = P.apply(w.store, w.client, w.db, i, "michael", w.rec)
     assert w.edits() == before and w.ids("pl-c") == ["s1", "s2"]
     p = w.store.proposal(i)
-    assert p["decision"] == "stale" and p["result"] == result and "r1" in result
+    assert p["decision"] == "stale" and p["result"] == result and RADIO_NAME in result
 
 
 def test_accept_follows_a_slot_that_moved(w):
@@ -280,6 +282,57 @@ def test_accepting_supersedes_the_other_questions_about_that_slot(w):
     pb = w.store.proposal(b)
     assert pb["decision"] == "stale" and f"#{a}" in pb["result"] and w.store.proposals() == []
     assert w.ids("pl-c") == ["s1", "t12", "s2"]
+
+
+def test_accept_never_takes_a_slot_that_has_its_own_question(w):
+    w.playlist("pl-c", "secondset", "#crate", ["s1", "r1", "s2", "s3", "r1"])
+    w.reconcile()
+    ids = P.version_swaps(w.store, w.db, "t12")
+    first = next(i for i in ids if w.store.proposal(i)["position"] == 1)
+    other = next(i for i in ids if i != first)
+    w.client.update_playlist("pl-c", remove_indexes=[1])                   # the asked slot is gone; r1 left at 4
+    before = w.edits()
+    result = P.apply(w.store, w.client, w.db, first, "michael", w.rec)
+    assert w.edits() == before and w.ids("pl-c") == ["s1", "s2", "s3", "r1"]
+    assert w.store.proposal(first)["decision"] == "stale" and "slot changed" in result
+    assert w.store.proposal(other)["decision"] is None
+    P.apply(w.store, w.client, w.db, other, "michael", w.rec)               # its own question still works
+    assert w.ids("pl-c") == ["s1", "s2", "s3", "t12"]
+
+
+RADIO_NAME = "Double Exposure – My Love Is Free"
+TWELVE_NAME = "Double Exposure – My Love Is Free (Tom Moulton 12” Mix)"
+
+
+def no_ids(text, *ids):
+    return not any(re.search(rf"\b{re.escape(i)}\b", text) for i in ids)
+
+
+def test_results_name_songs_and_1_based_slots_never_ids(w):
+    w.reconcile()
+    [i] = P.version_swaps(w.store, w.db, "t12")
+    p = w.store.proposal(i)
+    assert (p["old_name"], p["new_name"]) == (RADIO_NAME, TWELVE_NAME)
+    result = P.apply(w.store, w.client, w.db, i, "michael", w.rec)
+    assert "slot 2" in result and RADIO_NAME in result and TWELVE_NAME in result
+    assert no_ids(result, "t12", "r1", "pl-c")
+
+
+@pytest.mark.parametrize("change", ["removed", "hidden", "new gone"])
+def test_refusals_name_songs_not_ids(w, change):
+    w.reconcile()
+    [i] = P.version_swaps(w.store, w.db, "t12")
+    if change == "removed":
+        w.client.update_playlist("pl-c", remove_indexes=[1])
+    else:
+        w.nd.state.missing.add("s2" if change == "hidden" else "t12"); w.nd.state.sync()
+    result = P.apply(w.store, w.client, w.db, i, "michael", w.rec)
+    assert w.store.proposal(i)["decision"] == "stale"
+    assert no_ids(result, "t12", "r1", "s2", "pl-c"), result
+    if change == "removed":
+        assert f"slot 2 no longer holds {RADIO_NAME}" in result
+    if change == "hidden":
+        assert "Donna Summer – I Feel Love" in result
 
 
 # --- version_rank is the scorer's D16 bonus ---------------------------------------------------------------------
@@ -403,21 +456,65 @@ def test_all_slots_accepted_never_fails_the_row_even_before_a_reconcile(world, t
     assert any("reconcile busy" in (e["detail"] or "") for e in world["store"].events(limit=1000))
 
 
-def test_decline_of_the_last_unproven_copy_fails_the_row_with_the_new_path(world, tmp_path):
+def test_decline_of_the_last_unproven_copy_leaves_the_row_in_review_naming_the_new_copy(world, tmp_path):
+    """Not `failed`: reconcile would re-queue a failed row for a download nobody asked for (review ruling)."""
     client, store = world["client"], world["store"]
     client.update_playlist("pl-3", add_song_ids=["s4"])
     world["rec"].set_tier("pl-3", "medium")
     keep_both(world, tmp_path)
     a, b = (p["id"] for p in store.proposals())
     P.decline(store, a, "michael")
-    assert store.track_status_map("pl-2")["s4"]["status"] == "review"           # one question still open
+    assert store.track_status_map("pl-2")["s4"]["reason"].startswith("kept beside")     # one question still open
     P.decline(store, b, "michael")
+    world["rec"].run()
     for pl in ("pl-2", "pl-3"):
         row = store.track_status_map(pl)["s4"]
-        assert row["status"] == "failed"
-        assert row["reason"] == f"swap declined; the new copy stays in the library as {NEW_REL}"
+        assert row["status"] == "review"
+        assert row["reason"] == (f"declined replacement #{b}; approve a different candidate to retry "
+                                 f"(the new copy stays in the library as {NEW_REL})")
     assert (world["music"] / OLD_REL).exists() and (world["music"] / NEW_REL).exists()
     assert [e.id for e in client.playlist("pl-2").entries] == ["s3", "s4", "s5"]
+
+
+def test_a_stale_unproven_copy_leaves_the_row_in_review_with_the_reason(world, tmp_path):
+    keep_both(world, tmp_path)
+    store = world["store"]
+    [p] = store.proposals()
+    world["client"].update_playlist("pl-2", add_song_ids=["s4", "s4"])      # s4 thrice, then not at the asked slot
+    world["client"].update_playlist("pl-2", remove_indexes=[1])
+    result = P.apply(store, world["client"], world["nd"].state.db_path, p["id"], "michael", world["rec"])
+    assert store.proposal(p["id"])["decision"] == "stale"
+    world["rec"].run()
+    row = store.track_status_map("pl-2")["s4"]
+    assert row["status"] == "review"
+    assert row["reason"].startswith(f"replacement #{p['id']} not made: ") and result in row["reason"]
+    assert "approve a different candidate to retry" in row["reason"] and NEW_REL in row["reason"]
+
+
+def test_an_unproven_copy_superseded_by_a_swap_settles_its_row(world, tmp_path):
+    client, store, db = world["client"], world["store"], world["nd"].state.db_path
+    client.update_playlist("pl-3", add_song_ids=["s4"])
+    world["rec"].set_tier("pl-3", "medium")
+    keep_both(world, tmp_path)
+    u2, u3 = (next(p["id"] for p in store.proposals() if p["playlist_id"] == pl) for pl in ("pl-2", "pl-3"))
+    P.decline(store, u3, "michael")
+    v = store.add_proposal(kind="version_swap", playlist_id="pl-2", position=1, old_song_id="s4", new_song_id="s1",
+                           summary="another version for that slot")
+    P.apply(store, client, db, v, "michael", world["rec"])
+    assert store.proposal(u2)["decision"] == "stale" and store.proposal(u2)["result"] == f"superseded by #{v}"
+    row = store.track_status_map("pl-3")["s4"]
+    assert row["status"] == "review" and row["reason"].startswith(f"declined replacement #{u3}; ")
+
+
+def test_the_not_asked_event_names_the_filed_file_by_its_library_path(world, tmp_path):
+    flac = good_flac_bytes(tmp_path)
+    ext = world["store"].add_external_wanted("Chic", "Good Times", album="Risqué", duration_s=501, year=1979)
+    with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: flac}) as srv:
+        new_song(world["nd"], len(flac))
+        r = run(world, srv, approve=True, wanted_id=ext, navidrome_db=tmp_path / "nowhere.db")
+    assert r.status == "ok"
+    [e] = [e for e in world["store"].events(limit=1000) if e["kind"] == "proposal"]
+    assert NEW_REL in e["detail"] and str(tmp_path) not in e["detail"]
 
 
 # --- HTTP and CLI ------------------------------------------------------------------------------------------------
@@ -502,3 +599,94 @@ def test_cli_lists_and_accepts(tmp_path, monkeypatch, capsys):
         assert main(["proposals", "--all"]) == 0 and "accepted by michael" in capsys.readouterr().out
         with pytest.raises(SystemExit):
             main(["proposals", "decline"])
+
+
+def test_api_double_tap_accepts_once(svc):
+    w, app, srv = svc
+    P.version_swaps(w.store, w.db, "t12")
+    a = next(p["id"] for p in w.store.proposals() if p["playlist_id"] == "pl-c")
+    before, res = w.edits(), []
+    ts = [threading.Thread(target=lambda: res.append(call(f"{srv.url}/api/proposals/{a}/accept", "POST")))
+          for _ in range(4)]
+    [t.start() for t in ts]; [t.join() for t in ts]
+    assert sorted(r[0] for r in res) == [200, 409, 409, 409] and w.edits() - before == 1
+
+
+def test_api_an_answer_from_elsewhere_during_accept_is_409(svc, monkeypatch):
+    w, app, srv = svc
+    P.version_swaps(w.store, w.db, "t12")
+    a = next(p["id"] for p in w.store.proposals() if p["playlist_id"] == "pl-c")
+    real = P.replace_slot
+
+    def raced(*args, **kw):
+        real(*args, **kw)
+        w.store.decide(a, "declined", "agent:other", "answered in another process")
+    monkeypatch.setattr(P, "replace_slot", raced)
+    code, body = call(f"{srv.url}/api/proposals/{a}/accept", "POST")
+    assert code == 409 and "already answered" in body["error"] and "still edited it" in body["error"]
+    assert any("after it was answered elsewhere" in (e["detail"] or "") for e in w.store.events(limit=100))
+
+
+def test_api_accept_on_a_deleted_playlist_is_stale(svc):
+    w, app, srv = svc
+    P.version_swaps(w.store, w.db, "t12")
+    a = next(p["id"] for p in w.store.proposals() if p["playlist_id"] == "pl-c")
+    del w.nd.state.playlists["pl-c"]; w.nd.state.sync()
+    code, body = call(f"{srv.url}/api/proposals/{a}/accept", "POST")
+    assert code == 200 and body["decision"] == "stale" and "no longer exists" in body["result"]
+
+
+def test_api_unreadable_navidrome_db_is_a_503_and_listing_still_works(svc):
+    w, app, srv = svc
+    P.version_swaps(w.store, w.db, "t12")
+    a = next(p["id"] for p in w.store.proposals() if p["playlist_id"] == "pl-c")
+    w.client.update_playlist("pl-c", remove_indexes=[1])                   # would be pruned if the db were readable
+    app.cfg.navidrome_db = str(w.db.parent / "nowhere" / "navidrome.db")
+    code, body = call(f"{srv.url}/api/proposals/{a}/accept", "POST")
+    assert code == 503 and body["error"] == "Navidrome's database can't be read right now"
+    assert w.store.proposal(a)["decision"] is None
+    code, body = call(f"{srv.url}/api/proposals")
+    assert code == 200 and len(body) == 2
+
+
+def test_api_listing_marks_questions_whose_slot_is_gone_stale(svc):
+    w, app, srv = svc
+    w.playlist("pl-e", "moved", "#crate", ["s3", "r1"])
+    w.playlist("pl-f", "untiered later", "#crate", ["r1"])
+    app.reconcile()
+    P.version_swaps(w.store, w.db, "t12")
+    by = {p["playlist_id"]: p["id"] for p in w.store.proposals()}
+    assert sorted(by) == ["pl-c", "pl-d", "pl-e", "pl-f"]
+    w.client.update_playlist("pl-c", remove_indexes=[1])                   # slot gone
+    del w.nd.state.playlists["pl-d"]; w.nd.state.sync()                    # playlist gone
+    w.playlist("pl-e", "moved", "#crate", ["r1", "s3"])                     # moved: apply can still follow it
+    w.playlist("pl-f", "untiered later", "", ["r1"]); app.reconcile()       # no longer tiered
+    code, body = call(f"{srv.url}/api/proposals")
+    assert code == 200 and [p["playlist_id"] for p in body] == ["pl-e"]
+    for pl, why in (("pl-c", "no longer holds"), ("pl-d", "no longer exists"), ("pl-f", "no longer tiered")):
+        p = w.store.proposal(by[pl])
+        assert p["decision"] == "stale" and p["decided_by"].startswith("policy:") and why in p["result"], p
+        assert no_ids(p["result"], "t12", "r1", pl)
+
+
+def test_cli_an_answer_from_elsewhere_during_accept_exits_1(tmp_path, monkeypatch, capsys):
+    from crates.cli import main
+    with FakeSubsonicServer(db_path=tmp_path / "navidrome.db") as nd:
+        w = W(nd)
+        w.add(RADIO, TWELVE)
+        w.playlist("pl-c", "secondset", "#crate", ["s1", "r1", "s2"])
+        for k, v in (("SUBSONIC_URL", nd.url), ("SUBSONIC_USER", "demo"), ("SUBSONIC_PASS", "demo"),
+                     ("CRATES_DB", str(tmp_path / "c.db")), ("NAVIDROME_DB", str(w.db))):
+            monkeypatch.setenv(k, v)
+        store = CrateStore(tmp_path / "c.db")
+        Reconciler(w.client, store).run()
+        [i] = P.version_swaps(store, w.db, "t12")
+        real = P.replace_slot
+
+        def raced(*args, **kw):
+            real(*args, **kw)
+            store.decide(i, "declined", "agent:other", "answered in another process")   # another connection
+        monkeypatch.setattr(P, "replace_slot", raced)
+        assert main(["proposals", "accept", str(i)]) == 1
+        err = capsys.readouterr().err
+        assert "already answered" in err and "Traceback" not in err
