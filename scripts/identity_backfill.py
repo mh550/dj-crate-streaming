@@ -275,6 +275,12 @@ def _set_pick(p: Proposal, r: Recording) -> None:
 
 def _work(p: Proposal, f: FileFacts, works: tuple[str, ...]) -> None:
     if f.mb_workid:
+        # Never overwritten; but a work the recording does not have means one of the two ids is wrong, and
+        # writing the recording id beside it would leave an inconsistent pair: a conflict for a person.
+        if works and f.mb_workid.strip().casefold() not in {w.casefold() for w in works}:
+            p.cls, p.write = "conflict", {}
+            p.why += (f"; the file's work id {f.mb_workid} is not among the recording's works "
+                      f"({', '.join(works)})")
         return
     if len(works) == 1:
         p.write["mb_workid"] = works[0]
@@ -833,6 +839,7 @@ def _scan(navidrome, timeout_s: float, poll_s: float) -> str:
 
 def _write_one(p: Path, rel: str, row: dict, write: dict[str, str], log: Path, writer) -> tuple[str, str]:
     """Log, write, confirm one file: (state, problem). state is "untouched" (stopped before the writer),
+    "skipped" (a target field filled in since the check: problem is the skip reason, the run goes on),
     "failed" (the writer raised: the file may be half-written) or "written"; problem is "" when confirmed."""
     try:
         before = read_ids(p)
@@ -840,6 +847,9 @@ def _write_one(p: Path, rel: str, row: dict, write: dict[str, str], log: Path, w
         st = p.stat()
     except Exception as e:
         return "untouched", f"cannot read {rel} before writing ({type(e).__name__}: {e})"
+    filled = [k for k in write if before[k]]
+    if filled:                                               # another writer won the race since `_check`
+        return "skipped", f"already has {', '.join(filled)} (filled in since the check); not written"
     try:
         _append(log, {"event": "write", "path": rel, "cls": row.get("cls"), "written": write,
                       "prior": {k: before[k] for k in write}, "size": st.st_size, "mtime_ns": st.st_mtime_ns})
@@ -915,6 +925,10 @@ def apply(proposal: Path, music_root: Path, *, log: Path, classes: set[str] | No
             rep.fields[rel] = write
             continue
         state, problem = _write_one(music_root / rel, rel, row, write, log, writer)
+        if state == "skipped":
+            rep.skipped.append((rel, problem))
+            say(f"skipped {rel}: {problem}")
+            continue
         if state == "written":
             rep.written.append(rel)
             rep.fields[rel] = write
@@ -927,11 +941,22 @@ def apply(proposal: Path, music_root: Path, *, log: Path, classes: set[str] | No
 
     if dry_run or not rep.written:
         return rep
+    try:                                     # the files are written: a failing check is a problem, not a crash
+        _post_write_checks(rep, music_root, navidrome, navidrome_db, before, scan_timeout_s, poll_s)
+    except Exception as e:
+        rep.problems.append(f"post-write check failed ({type(e).__name__}: {e}); {len(rep.written)} files written; "
+                            f"revert log {log}")
+    return rep
+
+
+def _post_write_checks(rep: ApplyReport, music_root: Path, navidrome, navidrome_db: Path | None, before: dict,
+                       scan_timeout_s: float, poll_s: float) -> None:
+    """After the writes: scan, then Navidrome's song ids held, it reads the recording ids, the playlists match."""
     if navidrome is not None:
         problem = _scan(navidrome, scan_timeout_s, poll_s)
         if problem:
             rep.problems.append(problem)
-            return rep
+            return
     if navidrome_db is not None:
         after = _navidrome_ids(navidrome_db)
         for rel in rep.written:
@@ -944,7 +969,6 @@ def apply(proposal: Path, music_root: Path, *, log: Path, classes: set[str] | No
                 rep.problems.append(f"Navidrome does not show the recording id for {rel}")
         from scripts.export_playlists import check
         rep.problems += check(navidrome_db, music_root, music_root / "_playlists")
-    return rep
 
 
 def _removable(p: Path) -> dict[str, str]:
@@ -1040,20 +1064,25 @@ def _apply_cli(a, navidrome) -> int:
             from subsonic.client import SubsonicClient
             cfg = Config.from_env()
             navidrome = SubsonicClient(cfg.subsonic_url, cfg.username, cfg.password)
-    rep = ApplyReport()
+    rep, partial = ApplyReport(), False
+    logged = log.stat().st_size if log.exists() else -1     # a reused --log: only lines this run adds count
     try:
         rep = apply(a.proposal, a.music, log=log, classes=classes, dry_run=a.dry_run, navidrome=navidrome,
                     navidrome_db=db, poll_s=a.poll, limit=a.limit, only=a.only or (),
                     say=lambda s: print(s, flush=True))
-    except Exception as e:                                   # the proposal or navidrome.db unreadable: nothing written
-        rep.problems.append(f"apply did not start: {type(e).__name__}: {e}")
+    except Exception as e:           # before any write (the proposal or navidrome.db unreadable), or, if the log
+        started = partial = (not a.dry_run and log.exists()  # grew, after one: then say where the revert log is
+                             and log.stat().st_size != logged)
+        rep.problems.append(f"apply {'stopped' if started else 'did not start'}: {type(e).__name__}: {e}"
+                            + (f"; check the files in the revert log {log}" if started else ""))
     if a.dry_run:
         for rel, write in rep.fields.items():
             print(f"would write {rel}: " + " ".join(f"{k}={v}" for k, v in write.items()))
     for x in rep.problems:
         print(f"PROBLEM: {x}")
-    print(f"{len(rep.written)} {'would be written' if a.dry_run else 'written'}, {len(rep.skipped)} skipped, "
-          f"{len(rep.problems)} problems" + ("" if a.dry_run or not rep.written else f"; revert log {log}"))
+    written = "an unknown number of files (see the revert log)" if partial else len(rep.written)
+    print(f"{written} {'would be written' if a.dry_run else 'written'}, {len(rep.skipped)} skipped, "
+          f"{len(rep.problems)} problems" + ("" if a.dry_run or not log.exists() else f"; revert log {log}"))
     return 1 if rep.problems else 0
 
 

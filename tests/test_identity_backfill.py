@@ -1066,3 +1066,118 @@ def test_revert_does_not_resave_or_count_a_file_with_nothing_of_ours_left(tmp_pa
     assert ib.revert(log, music, say=said.append) == 1                  # our UFID goes; the TXXX copy is not ours
     shas = sha(music)
     assert ib.revert(log, music, say=said.append) == 0 and sha(music) == shas
+
+
+# ---- M7 final fixes m6: an existing work id the proposed recording does not have is a conflict ----
+
+def test_an_existing_work_id_outside_the_recordings_works_is_a_conflict(tmp_path, template):
+    music = tmp_path / "music"
+    p = tagged(music, "a.flac", template, artist="Jamiroquai", title="Virtual Insanity", isrc="GBARL0601475",
+               mb_workid="w9")
+    mb = FakeMB(isrcs={"GBARL0601475": [rec(RA, "Virtual Insanity", 8.0, artist="Jamiroquai", works=["w1"])]})
+    pr = ib.classify(facts(music, p), mb)
+    assert pr.cls == "conflict" and pr.write == {} and pr.accept is False
+    assert "work id w9 is not among" in pr.why and "w1" in pr.why
+    q = tagged(music, "b.flac", template, artist="Kool & the Gang", title="Song", mb_trackid=R1, mb_workid="w9")
+    pr = ib.classify(facts(music, q), FakeMB([rec(R1, "Song", 8.0, works=["w1"])]))
+    assert pr.cls == "conflict" and pr.write == {} and "work id w9 is not among" in pr.why
+
+
+def test_an_existing_work_id_among_the_recordings_works_or_with_none_known_is_kept(tmp_path, template):
+    music = tmp_path / "music"
+    p = tagged(music, "a.flac", template, artist="Jamiroquai", title="Virtual Insanity", isrc="GBARL0601475",
+               mb_workid="W1")
+    for works in (["w1", "w2"], []):
+        mb = FakeMB(isrcs={"GBARL0601475": [rec(RA, "Virtual Insanity", 8.0, artist="Jamiroquai", works=works)]})
+        pr = ib.classify(facts(music, p), mb)
+        assert pr.cls == "isrc" and pr.write == {"mb_trackid": RA}, works
+
+
+# ---- M7 final fixes m5: a field that filled in between the check and the write is never written over ----
+
+def test_write_one_refuses_a_field_that_filled_in_since_the_check(tmp_path, template):
+    music = tmp_path / "music"
+    p = rich(music, "K/a.flac", template)
+    from scripts.tag_cleanup import write_minimal
+    write_minimal(p, {"mb_trackid": OTHER})                           # the race: another writer, just now
+    calls = []
+    (tmp_path / "out").mkdir()
+    state, why = ib._write_one(p, "K/a.flac", {"cls": "isrc"}, {"mb_trackid": R1}, tmp_path / "out" / "a.jsonl",
+                               lambda path, w: calls.append(w))
+    assert (state, calls) == ("skipped", []) and "mb_trackid" in why and "since the check" in why
+    assert ib.read_ids(p)["mb_trackid"] == [OTHER]
+
+
+def test_apply_skips_a_row_whose_field_filled_in_since_the_check_and_goes_on(tmp_path, template, monkeypatch):
+    music = tmp_path / "music"
+    a, b = rich(music, "K/a.flac", template), rich(music, "K/b.flac", template)
+    rows = [row_for(music, a), row_for(music, b)]
+    real = ib._check
+
+    def racing(row, root):
+        got = real(row, root)
+        if row["path"] == "K/a.flac":                                  # fills in after the check
+            from scripts.tag_cleanup import write_minimal
+            write_minimal(a, {"mb_trackid": OTHER})
+            row["size"], row["mtime_ns"] = a.stat().st_size, a.stat().st_mtime_ns     # so the re-stat passes too
+        return got
+    monkeypatch.setattr(ib, "_check", racing)
+    rep = apply(tmp_path, music, rows)
+    assert rep.written == ["K/b.flac"] and not rep.problems
+    assert dict(rep.skipped)["K/a.flac"].startswith("already has mb_trackid")
+    assert ib.read_ids(a)["mb_trackid"] == [OTHER]
+
+
+# ---- M7 final fixes m1: the apply CLI never says "did not start, 0 written" once a write happened ----
+
+def test_cli_reports_the_writes_and_the_revert_log_when_a_post_write_check_raises(tmp_path, template, capsys,
+                                                                                    monkeypatch):
+    import scripts.export_playlists as ep
+    music = tmp_path / "music"
+    p = rich(music, "K/a.flac", template)
+    db = navidrome(tmp_path, music, ["K/a.flac"])
+    prop = proposal_file(tmp_path, [row_for(music, p)])
+
+    def boom(*a, **k):
+        raise OSError("playlists dir unreadable")
+    monkeypatch.setattr(ep, "check", boom)
+    log = tmp_path / "out" / "a.jsonl"
+    rc = ib.main(["apply", str(prop), "--music", str(music), "--navidrome-db", str(db), "--yes",
+                  "--log", str(log), "--poll", "0"], navidrome=FakeNavidrome(db, music))
+    out = capsys.readouterr().out
+    assert rc == 1 and ib.read_ids(p)["mb_trackid"] == [R1]
+    assert "did not start" not in out and "0 written" not in out
+    assert "post-write check failed (OSError: playlists dir unreadable)" in out
+    assert "1 written, 0 skipped, 1 problems" in out and f"revert log {log}" in out
+
+
+def test_cli_prints_the_revert_log_after_a_failed_write(tmp_path, template, capsys, monkeypatch):
+    import scripts.tag_cleanup as tc
+    music = tmp_path / "music"
+    p = rich(music, "K/a.flac", template)
+    prop = proposal_file(tmp_path, [row_for(music, p)])
+
+    def disk_full(path, changes):
+        raise OSError("disk full")
+    monkeypatch.setattr(tc, "write_minimal", disk_full)
+    log = tmp_path / "out" / "a.jsonl"
+    rc = ib.main(["apply", str(prop), "--music", str(music), "--no-navidrome", "--yes", "--log", str(log)])
+    out = capsys.readouterr().out
+    assert rc == 1 and "disk full" in out and f"revert log {log}" in out and "did not start" not in out
+
+
+def test_cli_never_says_0_written_when_apply_raises_after_a_write(tmp_path, template, capsys, monkeypatch):
+    music = tmp_path / "music"
+    p = rich(music, "K/a.flac", template)
+    prop = proposal_file(tmp_path, [row_for(music, p)])
+    real = ib._write_one
+
+    def then_crash(*a, **k):
+        real(*a, **k)
+        raise RuntimeError("bug after the write")
+    monkeypatch.setattr(ib, "_write_one", then_crash)
+    log = tmp_path / "out" / "a.jsonl"
+    rc = ib.main(["apply", str(prop), "--music", str(music), "--no-navidrome", "--yes", "--log", str(log)])
+    out = capsys.readouterr().out
+    assert rc == 1 and ib.read_ids(p)["mb_trackid"] == [R1]
+    assert "did not start" not in out and "0 written" not in out and f"revert log {log}" in out
