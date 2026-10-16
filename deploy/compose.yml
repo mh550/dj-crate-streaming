@@ -45,9 +45,11 @@ services:
                                              # client; the worker service below downloads (this one has no /srv/music or
                                              # /srv/incoming mounted, so `fetch --approve` refuses here)
       SLSKD_API_KEY: ${SLSKD_API_KEY}
+      NAVIDROME_DB: /srv/docker/navidrome/navidrome.db   # read-only: playlist edits cross-check it (crates/playlist_edit.py)
     volumes:
       - /srv/docker/crates:/data
       - /srv/docker/_trash:/trash:ro         # runbook wanted /srv/_trash (needs root): see Needs Michael
+      - /srv/docker/navidrome:/srv/docker/navidrome:ro
     depends_on: [navidrome]
     restart: unless-stopped
 

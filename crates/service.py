@@ -59,6 +59,7 @@ class Config:
     trash_dir: str | None = None          # read-only view of /srv/docker/_trash (status reports it)
     slskd_url: str | None = None          # slskd, for previews (and the worker)
     slskd_key: str | None = None
+    navidrome_db: str | None = None       # read-only navidrome.db: playlist edits cross-check it (crates.playlist_edit)
 
     @classmethod
     def from_env(cls, **overrides) -> "Config":
@@ -74,6 +75,7 @@ class Config:
             trash_dir=env.get("CRATES_TRASH") or None,
             slskd_url=env.get("SLSKD_URL") or None,
             slskd_key=env.get("SLSKD_API_KEY") or None,
+            navidrome_db=env.get("NAVIDROME_DB") or None,
         )
         for k, v in overrides.items():
             if v is not None:
