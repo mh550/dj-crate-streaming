@@ -360,10 +360,16 @@ def test_a_download_finished_after_its_crate_was_turned_off_is_not_rechecked_for
         new_song(nd, len(flac))
         r = run(world, srv, approve=True, verifier=verifier)
     assert r.status == "ok", r.reason
-    assert row(store, "pl-2", "s4")["status"] == "ok" and store.verify_ids() == []
+    # was: assert row(store, "pl-2", "s4")["status"] == "ok" and store.verify_ids() == []
+    # (Task 8 review: a withdrawn copy upgrade leaves both copies on disk, so Michael is asked)
+    st = row(store, "pl-2", "s4")
+    assert st["status"] == "review" and "request withdrawn, both copies kept" in st["reason"]
+    assert st["reason"].startswith("filed beside Mr. Fingers/Washing Machine/02 - Can You Feel It.mp3")
+    assert store.verify_ids() == []
     assert [e.id for e in client.playlist("pl-2").entries] == ["s3", "s4", "s5"]   # not a tiered playlist: untouched
     rec.run()
-    assert row(store, "pl-2", "s4")["status"] == "removed"
+    # was: assert row(store, "pl-2", "s4")["status"] == "removed"   (a `review` row is in flight: reconcile keeps it)
+    assert row(store, "pl-2", "s4")["status"] == "review"
 
 
 HOLD = """

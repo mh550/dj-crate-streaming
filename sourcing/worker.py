@@ -123,7 +123,7 @@ class Worker:
         return replace.Ctx(store=self.store, navidrome=c["navidrome"], navidrome_db=c.get("navidrome_db"),
                            music_root=Path(c["music_root"]), trash_root=c.get("trash_root"),
                            forget=filer.forget if filer is not None else None, reconciler=self.reconciler,
-                           scan_timeout_s=c.get("scan_timeout_s", 120), poll_s=c.get("poll_s", 1.0))
+                           rescan_s=self.recheck_s or 300)
 
     def advance_replacements(self, job_ids: list[int]) -> list[str]:
         """Step 3: the jobs open when the tick began (one fetch finishing now has just advanced its own)."""

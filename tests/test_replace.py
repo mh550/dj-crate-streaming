@@ -79,7 +79,7 @@ def flagged(value):
 def ctx(world, **kw) -> replace.Ctx:
     return replace.Ctx(store=world["store"], navidrome=world["client"], navidrome_db=db(world), music_root=world["music"],
                        trash_root=world["trash"], forget=kw.pop("forget", None), reconciler=world["rec"],
-                       scan_timeout_s=1, poll_s=0.01, **kw)
+                       **kw)
 
 
 def reference_of(path: Path) -> dict:
@@ -276,6 +276,8 @@ def test_a_reference_naming_another_file_never_trashes(world, tmp_path):
     old, other = world["music"] / OLD_REL, tmp_path / "elsewhere.mp3"
     other.write_bytes(old.read_bytes())
     os.utime(other, ns=(old.stat().st_atime_ns, old.stat().st_mtime_ns))     # same size and mtime, another file
+    new_file = world["music"] / NEW_REL                                       # s1's file
+    new_file.parent.mkdir(parents=True); new_file.write_bytes(b"new copy s1")
     world["nd"].state.sync()
     jid = replace.start(world["store"], wanted_id="s4", old_song_id="s4", new_song_id="s1", old_path=OLD_REL,
                         new_path=NEW_REL, reference=reference_of(other))
@@ -360,6 +362,8 @@ def test_the_trash_step_rechecks_references_first(world, monkeypatch, scan_sees_
     monkeypatch.setattr(replace, "move_to_trash", lambda *a, **kw: seen.append(references(db(world), "s4")) or real_move(*a, **kw))
     store = world["store"]
     world["nd"].state.sync()                                          # navidrome.db learns s4's relabelled names
+    (world["music"] / NEW_REL).parent.mkdir(parents=True)
+    (world["music"] / NEW_REL).write_bytes(b"new copy s1")            # s1's file
     jid = replace.start(store, wanted_id="s4", old_song_id="s4", new_song_id="s1", old_path=OLD_REL, new_path=NEW_REL,
                         reference=reference_of(old))
     store.set_replacement(jid, "trash", "repointed earlier")
@@ -424,3 +428,174 @@ def test_worker_without_export_interval_never_exports(world):
     with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
         worker(world, srv, exporter=lambda *a: calls.append(a)).tick()
     assert calls == []
+
+
+# --- Task 8 review ------------------------------------------------------------------------------------------------
+
+def s1_job(world, state=None, new="s1"):
+    """A job replacing s4 (the stand-in) by s1, whose file is put at NEW_REL (s1's path in the fake)."""
+    new_file = world["music"] / NEW_REL
+    new_file.parent.mkdir(parents=True, exist_ok=True)
+    new_file.write_bytes(b"new copy s1")
+    world["nd"].state.sync()
+    jid = replace.start(world["store"], wanted_id="s4", old_song_id="s4", new_song_id=new, old_path=OLD_REL,
+                        new_path=NEW_REL, reference=reference_of(world["music"] / OLD_REL))
+    if state:
+        world["store"].set_replacement(jid, state, "set by the test")
+    return jid
+
+
+def counting_scans(world, monkeypatch):
+    calls, real = [], world["client"].start_scan
+    monkeypatch.setattr(world["client"], "start_scan", lambda *a, **k: calls.append(1) or real(*a, **k))
+    return calls
+
+
+def test_the_scan_step_starts_one_scan_per_interval_and_never_waits_long(world, monkeypatch):
+    import time
+    world["client"].update_playlist("pl-2", remove_indexes=[1])       # nothing refers to s4
+    jid = s1_job(world, "scan")                                       # Navidrome never marks s4 missing here
+    calls = counting_scans(world, monkeypatch)
+    monkeypatch.setattr(world["client"], "scan_status", lambda: {"scanning": True})   # a scan that never ends
+    t0 = time.time()
+    assert replace.advance(jid, ctx(world)) == "scan"
+    with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
+        wk = worker(world, srv)
+        for _ in range(3):
+            wk.tick()
+    assert len(calls) == 1 and time.time() - t0 < 10
+    assert replace.advance(jid, ctx(world, rescan_s=0)) == "scan" and len(calls) == 2   # the interval passed
+
+
+def test_a_reference_appearing_during_the_move_restores_the_old_copy_and_repoints(world, monkeypatch, scan_sees_trash):
+    real, added = replace.move_to_trash, []
+
+    def move(*a, **kw):
+        out = real(*a, **kw)
+        if not added:
+            world["client"].update_playlist("pl-3", add_song_ids=["s4"])  # Amperfy adds the old song right now
+            added.append(1)
+        return out
+    monkeypatch.setattr(replace, "move_to_trash", move)
+    jid = s1_job(world)
+    assert replace.advance(jid, ctx(world)) == "done"
+    assert references(db(world), "s4") == [] and ids(world, "pl-3") == ["s2", "s1"]
+    assert len(trashed(world)) == 1 and not (world["music"] / OLD_REL).exists()
+    assert any("restored" in e["detail"] and "during the move" in e["detail"] for e in events(world, "replace"))
+
+
+def test_restore_refused_when_the_old_path_is_taken_blocks(world, monkeypatch):
+    real = replace.move_to_trash
+    old = world["music"] / OLD_REL
+
+    def move(*a, **kw):
+        out = real(*a, **kw)
+        old.write_bytes(b"another file filed at the old path")
+        world["client"].update_playlist("pl-3", add_song_ids=["s4"])
+        return out
+    monkeypatch.setattr(replace, "move_to_trash", move)
+    jid = s1_job(world)
+    assert replace.advance(jid, ctx(world)) == "blocked"
+    assert "taken" in world["store"].replacement(jid)["detail"]
+    assert old.read_bytes() == b"another file filed at the old path" and len(trashed(world)) == 1
+
+
+def test_a_reference_appearing_before_the_scan_is_done_restores_and_repoints(world, monkeypatch):
+    jid = s1_job(world)
+    assert replace.advance(jid, ctx(world)) == "scan"                 # moved; Navidrome still lists s4
+    world["client"].update_playlist("pl-1", add_song_ids=["s4"])
+    calls = counting_scans(world, monkeypatch)
+    replace.advance(jid, ctx(world, rescan_s=0))
+    assert references(db(world), "s4") == [] and ids(world, "pl-1") == ["s1", "s2", "s3"]
+    assert len(trashed(world)) == 1 and not (world["music"] / OLD_REL).exists()
+    assert any("restored" in e["detail"] for e in events(world, "replace")) and calls
+
+
+@pytest.mark.parametrize("fault", ["missing", "moved", "not on disk"])
+def test_the_new_copy_must_be_sound_before_the_old_one_moves(world, fault):
+    jid = s1_job(world)
+    nd = world["nd"]
+    if fault == "missing":
+        nd.state.missing.add("s1")
+    elif fault == "moved":
+        nd.state.songs["s1"]["path"] = "Chic/Elsewhere/03 - Good Times.flac"
+    else:
+        (world["music"] / NEW_REL).unlink()
+    nd.state.sync()
+    assert replace.advance(jid, ctx(world)) == "blocked"
+    assert "new copy" in world["store"].replacement(jid)["detail"]
+    assert (world["music"] / OLD_REL).exists() and trashed(world) == []
+
+
+def test_a_located_song_at_another_path_is_not_the_filed_copy(world, tmp_path):
+    def verifier(*a, **kw):
+        world["nd"].state.songs["s9"]["path"] = "Chic/Other/03 - Good Times.flac"    # hits[0], not the filed file
+        return header_only(*a, **kw)
+    r = fetch_copy(world, tmp_path, verifier=verifier)
+    assert r.status == "ok" and "kept both" in r.reason and "new copy" in r.reason, r.reason
+    assert ids(world, "pl-2") == ["s3", "s4", "s5"] and trashed(world) == []
+
+
+def test_already_gone_is_believed_only_with_the_library_reachable(world, monkeypatch):
+    jid = s1_job(world, "trash")
+    world["client"].update_playlist("pl-2", remove_indexes=[1])       # nothing refers to s4 now
+    hidden = world["music"].with_name("music-hidden")
+    world["music"].rename(hidden)                                     # /srv/music not mounted for a moment
+    forgot = []
+    try:
+        assert replace.advance(jid, ctx(world, forget=lambda p: forgot.append(p) or True)) == "blocked"
+    finally:
+        hidden.rename(world["music"])
+    assert "library not reachable" in world["store"].replacement(jid)["detail"] and forgot == []
+    assert (world["music"] / OLD_REL).exists()
+
+
+def test_already_gone_needs_the_new_copy_on_disk(world):
+    jid = s1_job(world, "trash")
+    world["client"].update_playlist("pl-2", remove_indexes=[1])
+    (world["music"] / OLD_REL).unlink()
+    (world["music"] / NEW_REL).unlink()
+    assert replace.advance(jid, ctx(world)) == "blocked"
+    assert "library not reachable" in world["store"].replacement(jid)["detail"]
+
+
+def test_old_copy_gone_and_moved_in_navidrome_blocks(world):
+    jid = s1_job(world, "trash")
+    world["client"].update_playlist("pl-2", remove_indexes=[1])
+    (world["music"] / OLD_REL).unlink()
+    world["nd"].state.songs["s4"]["path"] = "Elsewhere/02 - Can You Feel It.mp3"; world["nd"].state.sync()
+    assert replace.advance(jid, ctx(world)) == "blocked"
+    assert "moved since verification" in world["store"].replacement(jid)["detail"]
+
+
+def test_a_job_whose_new_song_is_the_old_song_is_blocked(world):
+    jid = s1_job(world, new="s4")
+    assert replace.advance(jid, ctx(world)) == "blocked"
+    assert "old song's id" in world["store"].replacement(jid)["detail"]
+    assert ids(world, "pl-2") == ["s3", "s4", "s5"] and trashed(world) == []
+
+
+def test_navidrome_giving_the_new_copy_the_old_id_keeps_both(world, tmp_path):
+    flac = good_flac_bytes(tmp_path)
+    world["nd"].state.songs["s4"].update(suffix="flac", size=len(flac))   # the scan "finds" the filed file as s4
+    with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: flac}) as srv:
+        r = run(world, srv, approve=True)
+    assert r.status == "ok" and "kept both" in r.reason and "old song's id" in r.reason, r.reason
+    assert trashed(world) == [] and jobs(world) == []
+
+
+def test_the_trash_path_is_recorded_before_the_move(world, monkeypatch):
+    real = replace.move_to_trash
+
+    def move(*a, before=None, **kw):
+        def crash(dst):
+            before(dst)
+            raise RuntimeError("killed just before the move")
+        return real(*a, before=crash, **kw)
+    monkeypatch.setattr(replace, "move_to_trash", move)
+    jid = s1_job(world)
+    with pytest.raises(RuntimeError):
+        replace.advance(jid, ctx(world))
+    job = world["store"].replacement(jid)
+    assert job["state"] == "trash" and job["trash_path"] == str(world["trash"] / today() / OLD_REL)
+    assert (world["music"] / OLD_REL).exists()

@@ -3,9 +3,11 @@ the old copy goes to the trash. The one code path in this project that removes a
 step refuses on doubt and nothing here guesses.
 
     repoint ─▶ trash ─▶ scan ─▶ done
-       │  ▲      │         └─ (Navidrome still lists the old copy: waits, the worker re-checks)
-       │  └──────┤  a playlist holds the old song again: back to repoint, never a move
-       │         └─▶ blocked   the old copy moved or changed since it was compared, or is the new file
+       │  ▲      │  ▲      └─ (Navidrome still lists the old copy: one rescan per `rescan_s`, the worker re-checks)
+       │  └──────┤  └────── a playlist holds the old song again: before the move, back to repoint; after it (or
+       │         │          before `done`), the old file is restored from the trash first, then back to repoint
+       │         └─▶ blocked   the old copy moved or changed since it was compared, or is the new file; the new copy
+       │                       is not sound (missing, elsewhere, not on disk); the library is not reachable
        └─ waits while any playlist entry (hidden ones included) still holds the old song
 
 The licence (fetch decides before `start`, and every step re-checks the parts that can change):
@@ -15,6 +17,7 @@ The licence (fetch decides before `start`, and every step re-checks the parts th
   - that reference is still the old song's file, byte-for-byte as compared: navidrome.db's path for the old song
     is the recorded `old_path`, which resolves to the reference path, with the same size and mtime;
   - identity.same_version agrees (its every doubt says "different"), and the old path is not the new one;
+  - the new copy is sound: navidrome.db lists it (not missing) at the job's `new_path`, and that file is on disk;
   - before the move, `playlist_edit.references(db, old)` is empty. repoint_everywhere's result values are never
     trusted for this: a smart playlist, another user's playlist or a hidden missing row keeps a reference, and
     then nothing moves (the reason is in the job's detail and the Log tab).
@@ -33,7 +36,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from crates import playlist_edit
+from crates import playlist_edit, trash
 from crates.store import REPLACEMENT_OPEN, CrateStore
 from crates.trash import move_to_trash
 from scripts.export_playlists import open_ro
@@ -51,8 +54,7 @@ class Ctx:
     trash_root: Path | None
     forget: Callable[[Path], bool] | None            # BeetsFiler.forget in the worker; None: beets is not told
     reconciler: object | None = None                 # crates.reconcile.Reconciler: re-judges the repointed playlists
-    scan_timeout_s: float = 120
-    poll_s: float = 1.0
+    rescan_s: float = 300                            # a job waiting for Navidrome starts one scan per this interval
 
 
 # --- the licence ---------------------------------------------------------------------------------------------------
@@ -124,6 +126,12 @@ def proof(ctx: Ctx, old_song_id: str, new_song_id: str, old_path: str, new_path:
     src = music / old_path
     if old_path == new_path or src.resolve() == (music / new_path).resolve():
         return f"the new copy {new_path} is the old file"
+    if new["missing"]:
+        return f"the new copy {new_path} is missing in Navidrome"
+    if new["path"] != new_path:
+        return f"the new copy is {new['path']} in Navidrome, not the filed {new_path}"
+    if not (music / new_path).is_file():
+        return f"the new copy {new_path} is not on disk"
     try:
         st = src.stat()
     except OSError as e:
@@ -216,21 +224,50 @@ def _trash(job: dict, ctx: Ctx) -> str:
         return _set(ctx, job, "trash", "waiting: no navidrome.db or trash configured here")
     left = playlist_edit.references(ctx.navidrome_db, old)
     if left:                                              # someone put it back: repoint again before anything moves
-        return _set(ctx, job, "repoint", f"old song back in {len(left)} playlist entr{'y' if len(left) == 1 else 'ies'}")
-    src = Path(ctx.music_root).absolute() / rel
+        return _set(ctx, job, "repoint", f"old song back in {_entries(left)}")
+    music = Path(ctx.music_root).absolute()
+    src = music / rel
     if not src.exists():
         now = song_path(ctx.navidrome_db, old)
         if now is not None and now != rel:
             return _set(ctx, job, "blocked", f"old copy moved since verification (Navidrome now has {now})")
+        if not music.is_dir() or not (music / job["new_path"]).is_file():
+            # An unmounted or half-mounted library also says "no such file": that is not the old copy being gone.
+            return _set(ctx, job, "blocked", f"library not reachable: neither {rel} nor the new copy "
+                                             f"{job['new_path']} is under {music}")
         _forget(ctx, job, src)
-        return _set(ctx, job, "scan", "old copy already gone")
+        where = job["trash_path"] if job["trash_path"] and Path(job["trash_path"]).is_file() else None
+        return _set(ctx, job, "scan", "old copy already gone" + (f" (in the trash: {where})" if where else ""))
     why = proof(ctx, old, job["new_song_id"], rel, job["new_path"], job["reference"])
     if why:
         return _set(ctx, job, "blocked", why)
-    dst = move_to_trash(rel, ctx.music_root, ctx.trash_root)
-    ctx.store.set_replacement(job["id"], "trash", job["detail"], trash_path=str(dst))   # recorded before anything else
+
+    def planned(dst: Path) -> None:                       # recorded before the move, so a crash still knows where
+        ctx.store.set_replacement(job["id"], "trash", job["detail"], trash_path=str(dst))
+    dst = move_to_trash(rel, ctx.music_root, ctx.trash_root, before=planned)
+    left = playlist_edit.references(ctx.navidrome_db, old)
+    if left:                                              # added while it moved: it must play again, put it back
+        return _restore(ctx, dict(job, trash_path=str(dst)), f"the old song was added to {_entries(left)} during the move")
     _forget(ctx, job, src)
     return _set(ctx, job, "scan", f"old copy moved to {dst}")
+
+
+def _entries(refs: list) -> str:
+    return f"{len(refs)} playlist entr{'y' if len(refs) == 1 else 'ies'}"
+
+
+def _restore(ctx: Ctx, job: dict, why: str) -> str:
+    """A playlist refers to the old song after its file moved: put the file back (never over a file someone put at
+    its path since) and repoint again; when it cannot go back, blocked with where it is."""
+    tp = job["trash_path"]
+    if not tp or not Path(tp).is_file():
+        return _set(ctx, job, "blocked", f"{why}, but the old copy is not in the trash at {tp}")
+    try:
+        trash.restore(Path(tp), job["old_path"], ctx.music_root)
+    except FileExistsError:
+        return _set(ctx, job, "blocked", f"{why}; {job['old_path']} is taken by another file, so the old copy stays "
+                                         f"in the trash at {tp}")
+    return _set(ctx, job, "repoint", f"restored {job['old_path']} from the trash: {why}", trash_path=None)
 
 
 def _forget(ctx: Ctx, job: dict, src: Path) -> None:
@@ -253,16 +290,24 @@ def _old_listed(ctx: Ctx, old: str) -> bool:
     return m is not None and not m["missing"]
 
 
+WAITING = "waiting for Navidrome to see the old copy gone"
+
+
 def _scan(job: dict, ctx: Ctx) -> str:
+    """No waiting in here (a worker tick must stay short): start a scan at most once per `rescan_s` and look again
+    on a later visit. A reference that appeared meanwhile puts the old file back first."""
     if ctx.navidrome_db is None:
         return _set(ctx, job, "scan", "waiting: no navidrome.db configured here")
+    left = playlist_edit.references(ctx.navidrome_db, job["old_song_id"])
+    if left:
+        return _restore(ctx, job, f"the old song is back in {_entries(left)}")
+    if not _old_listed(ctx, job["old_song_id"]):
+        return _set(ctx, job, "done", "Navidrome no longer lists the old copy")
+    if job["detail"] == WAITING and time.time() - (job["updated_at"] or 0) < ctx.rescan_s:
+        return "scan"                                     # scanned this interval already: nothing written
+    ctx.navidrome.start_scan()
     if _old_listed(ctx, job["old_song_id"]):
-        ctx.navidrome.start_scan()
-        t0 = time.time()
-        while ctx.navidrome.scan_status().get("scanning") and time.time() - t0 < ctx.scan_timeout_s:
-            time.sleep(ctx.poll_s)
-        if _old_listed(ctx, job["old_song_id"]):
-            return _set(ctx, job, "scan", "waiting for Navidrome to see the old copy gone")
+        return _set(ctx, job, "scan", WAITING)            # also restarts the job's clock
     return _set(ctx, job, "done", "Navidrome no longer lists the old copy")
 
 

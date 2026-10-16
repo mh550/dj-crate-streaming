@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 import pytest
 
@@ -72,3 +73,88 @@ def test_move_to_trash_refuses_a_directory(tmp_path):
     with pytest.raises(ValueError):
         trash.move_to_trash("A", music, tr, day="2026-10-16")
     assert (music / "A/x.flac").exists()
+
+
+# --- Task 8 review: a durable move, the intent logged first, nothing outside the library --------------------------
+
+def test_move_to_trash_refuses_a_symlinked_parent_outside_the_library(tmp_path):
+    music, tr = _library(tmp_path, "A/x.flac"), tmp_path / "trash"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "y.flac").write_text("not in the library")
+    (music / "B").symlink_to(outside)                                     # music/B/y.flac resolves outside
+    with pytest.raises(ValueError, match="outside the library"):
+        trash.move_to_trash("B/y.flac", music, tr, day="2026-10-16")
+    assert (outside / "y.flac").exists() and not tr.exists()
+
+
+def test_cross_filesystem_move_is_copied_synced_and_renamed(tmp_path, monkeypatch):
+    music, tr = _library(tmp_path, "A/x.flac"), tmp_path / "trash"
+    synced = []
+    real_fsync = os.fsync
+    monkeypatch.setattr(trash, "_same_fs", lambda a, b: False)
+    monkeypatch.setattr(trash.os, "fsync", lambda fd: synced.append(os.readlink(f"/proc/self/fd/{fd}")) or real_fsync(fd))
+    dst = trash.move_to_trash("A/x.flac", music, tr, day="2026-10-16")
+    assert dst == tr / "2026-10-16/A/x.flac" and dst.read_text() == "A/x.flac" and not (music / "A/x.flac").exists()
+    names = [Path(x).name for x in synced]
+    copy = next(i for i, x in enumerate(names) if x.startswith(".partial-"))   # the copy's data, before its rename
+    assert names[copy + 1:] == ["A", "A"] and synced[copy + 1] == str(dst.parent) and synced[-1] == str(music / "A")
+    assert [p.name for p in dst.parent.iterdir()] == ["x.flac"]           # no temp file left
+
+
+def test_a_partial_copy_left_by_a_crash_is_ignored_and_cleaned_on_retry(tmp_path, monkeypatch):
+    music, tr = _library(tmp_path, "A/x.flac"), tmp_path / "trash"
+    monkeypatch.setattr(trash, "_same_fs", lambda a, b: False)
+    real_copy = trash.shutil.copy2
+
+    def crash(*a, **kw):
+        real_copy(*a, **kw)
+        raise OSError("killed mid-copy")
+    monkeypatch.setattr(trash.shutil, "copy2", crash)
+    with pytest.raises(OSError):
+        trash.move_to_trash("A/x.flac", music, tr, day="2026-10-16")
+    left = list((tr / "2026-10-16/A").iterdir())
+    assert len(left) == 1 and left[0].name.startswith(".partial-") and (music / "A/x.flac").exists()
+    assert trash.summary(tr)["files"] == 0                                # a partial copy is not trash
+    monkeypatch.setattr(trash.shutil, "copy2", real_copy)
+    dst = trash.move_to_trash("A/x.flac", music, tr, day="2026-10-16")
+    assert dst == tr / "2026-10-16/A/x.flac"                              # not "x (2).flac"
+    assert [p.name for p in dst.parent.iterdir()] == ["x.flac"]
+
+
+def test_the_reverse_move_is_logged_before_the_move_and_a_failed_move_says_so(tmp_path, monkeypatch):
+    import shlex
+    music, tr = _library(tmp_path, "A/x.flac"), tmp_path / "trash"
+    seen = []
+
+    def link(a, b):
+        seen.append((tr / "2026-10-16/MOVES.txt").read_text())
+        raise PermissionError("read-only")
+    monkeypatch.setattr(trash.os, "link", link)
+    monkeypatch.setattr(trash.os, "rename", link)
+    with pytest.raises(PermissionError):
+        trash.move_to_trash("A/x.flac", music, tr, day="2026-10-16")
+    dst = tr / "2026-10-16/A/x.flac"
+    assert shlex.split(seen[0]) == ["mv", str(dst), str(music / "A/x.flac")]
+    assert (tr / "2026-10-16/MOVES.txt").read_text().splitlines()[-1].startswith("# not moved")
+    assert (music / "A/x.flac").exists() and not dst.exists()
+
+
+def test_move_to_trash_calls_before_with_the_destination_before_moving(tmp_path):
+    music, tr = _library(tmp_path, "A/x.flac"), tmp_path / "trash"
+    seen = []
+    dst = trash.move_to_trash("A/x.flac", music, tr, day="2026-10-16",
+                              before=lambda d: seen.append((d, (music / "A/x.flac").exists())))
+    assert seen == [(dst, True)]
+
+
+def test_restore_puts_a_trashed_file_back_and_never_overwrites(tmp_path):
+    music, tr = _library(tmp_path, "A/x.flac"), tmp_path / "trash"
+    dst = trash.move_to_trash("A/x.flac", music, tr, day="2026-10-16")
+    assert trash.restore(dst, "A/x.flac", music) == music / "A/x.flac"
+    assert (music / "A/x.flac").read_text() == "A/x.flac" and not dst.exists()
+    dst = trash.move_to_trash("A/x.flac", music, tr, day="2026-10-16")
+    (music / "A/x.flac").write_text("someone filed another file here")
+    with pytest.raises(FileExistsError):
+        trash.restore(dst, "A/x.flac", music)
+    assert dst.exists() and (music / "A/x.flac").read_text() == "someone filed another file here"

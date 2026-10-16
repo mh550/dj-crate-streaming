@@ -33,11 +33,12 @@ version. Then the new song takes the old one's place in *every* playlist that ho
 reconciled rows say so (new `ok`, old `removed`), and the old file goes to the trash once no playlist entry refers
 to it; a step that cannot finish now is resumed by the worker. Without proof both copies stay, no playlist is
 touched, and the row becomes `review` ("kept beside <old>: not proven the same recording (<why>)"). A request
-withdrawn mid-download (no tiered playlist holds the old song any more) is filed and set `ok`, nothing replaced.
+withdrawn mid-download (no tiered playlist holds the old song any more) is filed, nothing is replaced, and the row
+becomes `review` ("filed beside <old>; request withdrawn, both copies kept").
 A new version is never a replacement (D23). External rows (seeded from Spotify) just need the file in the library.
 
     filed, Navidrome lists it ─┬─ not a copy upgrade ───────────────────────▶ ok
-                               ├─ withdrawn (no tiered playlist holds it) ──▶ ok, nothing replaced
+                               ├─ withdrawn (no tiered playlist holds it) ──▶ review, both copies kept
                                ├─ proven ─▶ replacement: repoint ─▶ trash ─▶ scan ─▶ done (else the worker resumes)
                                └─ not proven ─▶ review "kept beside …" (both copies stay)
 """
@@ -214,12 +215,26 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
             set_status("ok", f"filed as {rel}")
             return FetchResult("ok", "filed and visible in Navidrome", best, filed, new.id, text)
         if not external and not store.playlists_holding([copy_id]):
-            # Its playlist stopped being tiered (or dropped the song) mid-download: the request is withdrawn, so the
-            # file stays and nothing is replaced. Without `ok` it would stay `verify` and be re-checked forever.
-            set_status("ok", f"filed as {rel}; not swapped in: its playlist is no longer tiered or no longer holds it")
-            return FetchResult("ok", "filed; nothing replaced (no tiered playlist holds the old song now)", best, filed,
-                               new.id, text)
+            # Its playlist stopped being tiered (or dropped the song) mid-download: the request is withdrawn, so
+            # nothing is replaced and both copies stay on disk, which Michael is asked about (`review`, which also
+            # ends the re-checks: a `verify` row would be re-checked forever).
+            old_rel = _old_rel(copy_id)
+            set_status("review", f"filed beside {old_rel}; request withdrawn, both copies kept (the new copy is {rel})")
+            store.log(None, wanted_id, "kept_both", f"{rel} beside {old_rel}: request withdrawn")
+            store.commit()
+            return FetchResult("ok", "filed; request withdrawn, both copies kept", best, filed, new.id, text)
         return replace_copy(filed, rel, new.id, best, text)
+
+    def _old_rel(song_id: str) -> str:
+        """The old copy's library path for a reason: navidrome.db's, else the verification's reference."""
+        try:
+            if navidrome_db is not None and Path(navidrome_db).is_file():
+                found = replacement.song_path(navidrome_db, song_id)
+                if found:
+                    return found
+        except sqlite3.Error:
+            pass
+        return (store.verification(wanted_id) or {}).get("reference") or f"song {song_id}"
 
     def keep_both(old_rel: str, rel: str, why: str, filed: Path, new_id: str, best, text: str) -> FetchResult:
         """No proof the two are one recording: both copies stay, no playlist is touched, Michael is asked."""
@@ -233,7 +248,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         the *stored* verification, so a re-check decides the same way."""
         ctx = replacement.Ctx(store=store, navidrome=navidrome, navidrome_db=navidrome_db, music_root=music_root,
                               trash_root=trash_root, forget=filer.forget if filer is not None else None,
-                              reconciler=reconciler, scan_timeout_s=scan_timeout_s, poll_s=poll_s)
+                              reconciler=reconciler)
         job = replacement.open_for(store, copy_id)
         if job is None:
             v = store.verification(wanted_id)
