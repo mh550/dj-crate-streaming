@@ -192,3 +192,29 @@ def test_a_plain_copy_never_stands_in_for_a_labelled_row():
     hit = song("x", "Lovely Day - Instrumental", "Bill Withers", 250)
     m = ip.choose(Row(1, "Lovely Day - Instrumental Radio Edit", "Bill Withers", None), [hit], accept=_crate_accept())
     assert m.status == "ambiguous"
+
+
+# ---- M7 final fixes m4: an ISRC match across different labels is matched, never silently ----
+
+def test_an_isrc_match_whose_labels_differ_is_noted():
+    row = Row(1, "Good Times", "Chic", 210, isrc="USAT21234567")
+    hit = song("g", "Good Times (Instrumental)", "Chic", 210)
+    hit.raw["isrc"] = ["USAT21234567"]
+    m = ip.choose(row, [hit])
+    assert m.status == "matched" and m.how == "same recording"
+    assert m.note == "same recording by ISRC, but the labels differ: Instrumental vs no label"
+    plain = song("p", "Good Times", "Chic", 210)
+    plain.raw["isrc"] = ["USAT21234567"]
+    assert ip.choose(row, [plain]).note is None
+
+
+def test_import_notes_name_an_isrc_match_across_labels():
+    with FakeSubsonicServer() as srv:
+        srv.state.songs["g"] = dict(srv.state.songs["s1"], id="g", title="Good Times (Instrumental)", artist="Chic",
+                                    duration=210, isrc=["USAT21234567"])
+        c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
+        rep = ip.import_playlist("Disco", [Row(1, "Good Times", "Chic", 210, "sp1", isrc="USAT21234567")], c, store,
+                                 source="s", tier="medium")
+        assert rep.matched == 1
+        assert ("same recording by ISRC, but the labels differ: 1 Chic — Good Times → Good Times (Instrumental)"
+                in rep.notes)

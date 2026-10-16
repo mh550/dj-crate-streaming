@@ -71,6 +71,7 @@ class Match:
     why: str | None = None      # ambiguous: "several versions" | "other version" | "title differs" | "length differs"
     how: str | None = None      # matched: "same recording" | "same version" | "other version: <hit's label>"
     title: str | None = None    # matched: the chosen hit's title (names a stand-in in the notes)
+    note: str | None = None     # matched: a doubt the report must name (an ISRC match across different labels)
 
 
 def _blob(h: Song) -> str:
@@ -145,7 +146,11 @@ def choose(row: Row, hits: list[Song], accept: frozenset[str] = frozenset()) -> 
     if row.isrc:
         rec = [h for h in hits if row.isrc.strip().upper() in _isrcs(h)]
         if rec:
-            return _decide(row, rec, t, "same recording")
+            m = _decide(row, rec, t, "same recording")
+            if m.status == "matched" and t[m.song_id].key != want.key:     # library ISRC tags can be wrong
+                m.note = (f"same recording by ISRC, but the labels differ: {t[m.song_id].label or 'no label'} vs "
+                          f"{want.label or 'no label'}")
+            return m
     same, near = _by_title(hits, t, want, lead)
     if row.duration_s is not None:
         fit = _by_length(row, [h for h in hits if t[h.id].key == want.key], t, want)
@@ -275,6 +280,8 @@ def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: C
              for m, lead in pending if m.row.spotify_id in failed]
     notes += [f"matched with another version: {m.row.position} {m.row.artist} — {m.row.title} → {m.title}"
               for m in matches if (m.how or "").startswith("other version")]
+    notes += [f"same recording by ISRC, but the labels differ: {m.row.position} {m.row.artist} — {m.row.title} → "
+              f"{m.title}" for m in matches if m.note]
     if not dry_run:
         if existing is None:
             playlist_id = client.create_playlist(name, new_ids).id
