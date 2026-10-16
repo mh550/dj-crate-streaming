@@ -71,7 +71,8 @@ CREATE TABLE IF NOT EXISTS playlist_tracks (id INTEGER NOT NULL, playlist_id VAR
                                             media_file_id VARCHAR(255) NOT NULL);
 CREATE TABLE IF NOT EXISTS media_file (id VARCHAR(255) PRIMARY KEY, path VARCHAR(255), title VARCHAR(255),
                                        artist VARCHAR(255), album VARCHAR(255), duration REAL, suffix VARCHAR(255),
-                                       size INTEGER, missing BOOLEAN DEFAULT 0, mbz_recording_id VARCHAR(255));
+                                       size INTEGER, missing BOOLEAN DEFAULT 0, mbz_recording_id VARCHAR(255),
+                                       album_artist VARCHAR(255) DEFAULT '', year INTEGER DEFAULT 0);
 """
 
 # 1x1 transparent PNG for getCoverArt
@@ -102,10 +103,11 @@ class FakeState:
             for t in ("playlist_tracks", "playlist", "media_file"):
                 con.execute(f"DELETE FROM {t}")
             con.executemany(
-                "INSERT INTO media_file (id, path, title, artist, album, duration, suffix, size, missing, mbz_recording_id)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO media_file (id, path, title, artist, album, duration, suffix, size, missing, mbz_recording_id,"
+                " album_artist, year) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 [(i, s.get("path", ""), s.get("title", ""), s.get("artist", ""), s.get("album", ""), s.get("duration", 0),
-                  s.get("suffix", ""), s.get("size", 0), int(i in self.missing), s.get("musicBrainzId", ""))
+                  s.get("suffix", ""), s.get("size", 0), int(i in self.missing), s.get("musicBrainzId", ""),
+                  s.get("albumArtist", ""), s.get("year", 0))
                  for i, s in self.songs.items()])
             for pid, p in self.playlists.items():
                 con.execute("INSERT INTO playlist (id, name, comment, owner_id, rules) VALUES (?,?,?,?,?)",

@@ -62,6 +62,7 @@ def test_missing_song_is_hidden_but_keeps_its_position(srv):
     srv.state.sync()
     assert [s.id for s in c.playlist("pl-1").entries] == ["s1", "s3"]
     assert [p for p in c.playlists() if p.id == "pl-1"][0].song_count == 2
+    assert [p for p in c.playlists() if p.id == "pl-1"][0].duration == 501 + 383   # the hidden s2 (356 s) is not summed
     assert _positions(srv, "pl-1") == [(1, "s1"), (2, "s2"), (3, "s3")]
     assert _rows(srv, "SELECT missing FROM media_file WHERE id = 's2'") == [(1,)]
     assert "s2" not in [s.id for s in c.search_songs("feel love")]
@@ -95,3 +96,13 @@ def test_without_db_path_nothing_is_written_and_missing_still_hides():
         s.state.sync()                                   # no-op
         s.state.missing.add("s1")
         assert [x.id for x in _client(s).playlist("pl-1").entries] == ["s2", "s3"]
+
+
+def test_media_file_mirrors_album_artist_and_year(srv):
+    """dedupe_copies.py and tag_cleanup.py select these two columns; "" / 0 when the song has none."""
+    srv.state.songs["s1"]["albumArtist"] = "Chic & Co"
+    srv.state.sync()
+    assert _rows(srv, "SELECT album_artist, year FROM media_file WHERE id = 's1'") == [("Chic & Co", 1979)]
+    srv.state.songs["s3"].pop("year", None)
+    srv.state.sync()
+    assert _rows(srv, "SELECT album_artist, year FROM media_file WHERE id = 's3'") == [("", 0)]
