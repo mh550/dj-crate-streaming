@@ -942,3 +942,127 @@ def test_the_scan_wait_does_not_mistake_a_scan_not_yet_begun_for_a_finished_one(
     rep = apply(tmp_path, music, [row_for(music, p)], navidrome=nd, navidrome_db=db, poll_s=0, scan_timeout_s=5)
     assert nd.polls == 4
     assert rep.problems == ["Navidrome does not show the recording id for K/a.flac"]   # this fake never scans
+
+
+# ── review round (Task 9) ────────────────────────────────────────────────────────────────────────────────────
+
+def test_ids_must_be_canonical_and_are_written_lowercase(tmp_path, template):
+    music = tmp_path / "music"
+    a, b = rich(music, "K/a.flac", template), rich(music, "K/b.flac", template)
+    rows = [row_for(music, a, write={"mb_trackid": R1 + "\n"}), row_for(music, b, write={"mb_trackid": RA.upper()})]
+    rep = apply(tmp_path, music, rows)
+    assert dict(rep.skipped)["K/a.flac"].endswith("refused") and ib.read_ids(a)["mb_trackid"] == []
+    assert rep.written == ["K/b.flac"] and rep.fields["K/b.flac"] == {"mb_trackid": RA}
+    assert ib.read_ids(b)["mb_trackid"] == [RA]
+
+
+def test_revert_compares_stripped_values(tmp_path, template):
+    music = tmp_path / "music"
+    a = rich(music, "K/a.flac", template)
+    from scripts.tag_cleanup import write_minimal
+    write_minimal(a, {"mb_trackid": R1})
+    log = tmp_path / "old.jsonl"                                         # a log line from before canonical ids
+    log.write_text(json.dumps({"event": "write", "path": "K/a.flac", "written": {"mb_trackid": R1 + "\n"}}) + "\n")
+    assert ib.revert(log, music, say=lambda s: None) == 1 and ib.read_ids(a)["mb_trackid"] == []
+
+
+def test_a_torn_log_line_is_skipped_with_a_warning(tmp_path, template):
+    music = tmp_path / "music"
+    a = rich(music, "K/a.flac", template)
+    log = tmp_path / "out" / "apply.jsonl"
+    apply(tmp_path, music, [row_for(music, a)], log=log)
+    with open(log, "a") as fh:
+        fh.write('{"ts": "x", "event": "wri')
+    said = []
+    assert ib.revert(log, music, say=said.append) == 1 and ib.read_ids(a)["mb_trackid"] == []
+    assert any("unreadable log line" in s for s in said)
+
+
+def test_a_log_that_cannot_be_written_stops_before_the_write(tmp_path, template):
+    music = tmp_path / "music"
+    a = rich(music, "K/a.flac", template)
+    log = tmp_path / "out" / "apply.jsonl"
+    log.mkdir(parents=True)                                             # open(..., "a") fails like ENOSPC would
+    calls = []
+    rep = apply(tmp_path, music, [row_for(music, a)], log=log, writer=lambda p, c: calls.append(p))
+    assert calls == [] and rep.written == [] and any("revert log" in x for x in rep.problems)
+
+
+def test_an_unreadable_file_or_a_directory_is_skipped_and_the_run_goes_on(tmp_path, template, capsys):
+    import os
+    music = tmp_path / "music"
+    a, b, c = (rich(music, f"K/{n}.flac", template) for n in "abc")
+    rows = [row_for(music, p) for p in (a, b, c)]
+    st = a.stat()
+    a.write_bytes(b"\0" * st.st_size)
+    os.utime(a, ns=(st.st_atime_ns, st.st_mtime_ns))
+    b.unlink()
+    b.mkdir()
+    prop = proposal_file(tmp_path, rows)
+    rc = ib.main(["apply", str(prop), "--music", str(music), "--no-navidrome", "--yes",
+                  "--log", str(tmp_path / "out" / "a.jsonl")])
+    out = capsys.readouterr().out
+    assert rc == 0 and "1 written, 2 skipped, 0 problems" in out
+    assert ib.read_ids(c)["mb_trackid"] == [R1]
+
+
+def test_a_write_that_changes_another_id_is_not_confirmed(tmp_path, template):
+    music = tmp_path / "music"
+    a = rich(music, "K/a.flac", template, mb_workid=W1)
+    from scripts.tag_cleanup import write_minimal
+    rep = apply(tmp_path, music, [row_for(music, a, write={"mb_trackid": R1})],
+                writer=lambda p, c: write_minimal(p, {**c, "mb_workid": OTHER}))
+    assert any(x.startswith("WRITE NOT CONFIRMED") and "mb_workid" in x for x in rep.problems)
+
+
+def test_choose_needs_a_list_of_mbid_candidates_and_an_allowed_class(tmp_path, template):
+    music = tmp_path / "music"
+    a, b, c, d = (rich(music, f"K/{n}.flac", template) for n in "abcd")
+    rows = [row_for(music, a, "ambiguous", write={}, candidates="xx" + RA, choose=RA),
+            row_for(music, b, "conflict", write={}, candidates=[RA, RB], choose=RA),
+            row_for(music, c, "none", write={}, candidates=[RA], choose=RA),
+            row_for(music, d, "error", write={}, candidates=[RA], choose=RA),
+            row_for(music, rich(music, "K/e.flac", template), "isrc", write={"mb_trackid": RA}, candidates=[RA, RB],
+                    choose=RB)]
+    rep = apply(tmp_path, music, rows)
+    assert rep.written == ["K/c.flac"] and ib.read_ids(c)["mb_trackid"] == [RA]
+    why = dict(rep.skipped)
+    assert "not a list" in why["K/a.flac"] and "conflict" in why["K/b.flac"] and "error" in why["K/d.flac"]
+    assert "choose is honoured only on" in why["K/e.flac"]
+
+
+def test_classes_are_only_the_default_ones_search_and_ambiguous(tmp_path, template, capsys):
+    music = tmp_path / "music"
+    a = rich(music, "K/a.flac", template)
+    rows = [row_for(music, a, "none", write={"mb_trackid": R1}, candidates=[R1])]
+    for bad in ({"none"}, {"conflict"}, {"error"}):
+        with pytest.raises(ValueError):
+            apply(tmp_path, music, rows, classes=bad, dry_run=True)
+    prop = proposal_file(tmp_path, [row_for(music, a, "error", write={"mb_trackid": R1})])
+    rc = ib.main(["apply", str(prop), "--music", str(music), "--no-navidrome", "--yes", "--classes", "error",
+                  "--log", str(tmp_path / "out" / "l.jsonl")])
+    assert rc == 2 and ib.read_ids(a)["mb_trackid"] == []
+    assert apply(tmp_path, music, rows, classes={"search", "ambiguous"}, dry_run=True).written == []
+
+
+def test_an_unconfirmed_write_stops_before_the_scan_and_says_revert(tmp_path, template):
+    music = tmp_path / "music"
+    a = rich(music, "K/a.flac", template)
+    db = navidrome(tmp_path, music, ["K/a.flac"])
+    nd = FakeNavidrome(db, music)
+    from scripts.tag_cleanup import write_minimal
+    rep = apply(tmp_path, music, [row_for(music, a)], navidrome=nd, navidrome_db=db, poll_s=0,
+                writer=lambda p, c: write_minimal(p, {**c, "genres": ["X"]}))
+    assert nd.scans == 0 and len(rep.problems) == 1 and "revert" in rep.problems[0]
+
+
+def test_revert_does_not_resave_or_count_a_file_with_nothing_of_ours_left(tmp_path, mp3_template):
+    music = tmp_path / "music"
+    b = rich(music, "K/b.mp3", mp3_template)
+    log = tmp_path / "out" / "apply.jsonl"
+    apply(tmp_path, music, [row_for(music, b)], log=log)
+    _id3_txxx(b, "MusicBrainz Track Id", R1)                          # a tagger copied our id into TXXX too
+    said = []
+    assert ib.revert(log, music, say=said.append) == 1                  # our UFID goes; the TXXX copy is not ours
+    shas = sha(music)
+    assert ib.revert(log, music, say=said.append) == 0 and sha(music) == shas

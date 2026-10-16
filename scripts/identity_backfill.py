@@ -60,7 +60,7 @@ PROPOSAL = "identity-proposal.json"
 REPORT = "identity-backfill-report.md"
 CACHE = "mb-cache.jsonl"
 
-_MBID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
+_MBID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")   # canonical: fullmatch, lowercase
 _ISRC = re.compile(r"^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$")
 # Lucene operators. mb.search quotes each term as a phrase and escapes \ and "; the rest become spaces, which
 # MusicBrainz's tokeniser treats alike, so no title can turn into a query error (a 400) or an operator.
@@ -289,7 +289,7 @@ def _confirm(p: Proposal, f: FileFacts, t, mb) -> None:
     if f.id_note and "mb_trackid" in f.id_note:
         p.cls, p.why = "conflict", f"the file carries more than one recording id ({f.id_note})"
         return
-    if not _MBID.match(rid):
+    if not _MBID.fullmatch(rid.lower()):
         p.cls, p.why = "conflict", f"the file's recording id {rid!r} is not a MusicBrainz id"
         return
     r = mb.recording(rid)
@@ -643,17 +643,32 @@ def write_report(proposals: list[Proposal], facts: list[FileFacts], path: Path) 
 class ApplyReport:
     written: list[str] = field(default_factory=list)          # paths (dry run: would be written)
     skipped: list[tuple[str, str]] = field(default_factory=list)   # (path, reason): never written
-    problems: list[str] = field(default_factory=list)          # something wrong after a write: the CLI exits 1
+    problems: list[str] = field(default_factory=list)          # something wrong around a write: the CLI exits 1
     fields: dict[str, dict[str, str]] = field(default_factory=dict)   # path -> exactly what was (would be) written
 
 
 LENGTH_TOL_S = 0.5
+APPLY_CLASSES = ACCEPT | {"search", "ambiguous"}          # what --classes may name; none/conflict/error never
+CHOOSABLE = frozenset({"search", "ambiguous", "none"})    # a `none` row's candidates fit on all but the lead artist
+
+
+def _canon(v) -> str:
+    """The canonical (lowercase) id, or "" when v is not exactly one: a stray "\\n" or space would be written,
+    never read back equal (read_ids strips), and never be revertable."""
+    if not isinstance(v, str):
+        return ""
+    v = v.lower()
+    return v if _MBID.fullmatch(v) else ""
+
+
+def _same(values: list[str], v: str) -> bool:
+    return [x.casefold() for x in values] == [v.strip().casefold()]
 
 
 def _selected(row: dict, classes: set[str] | None, only) -> bool:
-    """Michael's review decides: `skip` is final; `choose` is an explicit pick; otherwise the given classes, or by
-    default only the accepted classes (a hand-set `accept` on another class does not count)."""
-    if row.get("skip") or (only and not any(fnmatch.fnmatchcase(row.get("path", ""), g) for g in only)):
+    """Michael's review decides: `skip` is final; `choose` is an explicit pick (default run); otherwise the given
+    classes, or by default only the accepted classes (a hand-set `accept` on another class does not count)."""
+    if row.get("skip") or (only and not any(fnmatch.fnmatchcase(str(row.get("path", "")), g) for g in only)):
         return False
     if not (row.get("write") or row.get("choose")):
         return False
@@ -662,36 +677,46 @@ def _selected(row: dict, classes: set[str] | None, only) -> bool:
     return bool(row.get("choose")) or (bool(row.get("accept")) and row.get("cls") in ACCEPT)
 
 
-def _target(music_root: Path, rel: str) -> Path | None:
+def _target(music_root: Path, rel) -> Path | None:
     """The row's file, or None when the (hand-editable) path would leave the library."""
-    if not rel or Path(rel).is_absolute():
+    if not rel or not isinstance(rel, str) or Path(rel).is_absolute():
         return None
     p = music_root / rel
     return p if p.resolve().is_relative_to(music_root.resolve()) else None
 
 
 def _intended(row: dict) -> tuple[dict[str, str], str]:
-    """What the row would write, or ("", reason) when it must not write anything."""
+    """What the row would write (canonical ids), or ({}, reason) when it must not write anything."""
+    cls = row.get("cls")
+    if cls not in APPLY_CLASSES | CHOOSABLE:
+        return {}, f"a {cls} row is never applied; refused"
     write = dict(row.get("write") or {})
-    choose = (row.get("choose") or "").strip()
-    if choose:
-        if choose not in (row.get("candidates") or []):
-            return {}, f"choose {choose} is not one of the row's candidates; refused"
-        if write.get("mb_trackid") != choose:                # another recording: its work/AcoustID ids do not apply
+    if row.get("choose"):
+        if cls not in CHOOSABLE:
+            return {}, f"choose is honoured only on {', '.join(sorted(CHOOSABLE))} rows, not {cls}; refused"
+        cands = row.get("candidates")
+        if not isinstance(cands, list) or not cands or not all(_canon(c) for c in cands):
+            return {}, "the row's candidates are not a list of MusicBrainz ids; refused"
+        choose = _canon(str(row["choose"]).strip())
+        if not choose or choose not in {_canon(c) for c in cands}:
+            return {}, f"choose {row['choose']!r} is not one of the row's candidates; refused"
+        if _canon(write.get("mb_trackid")) != choose:       # another recording: its work/AcoustID ids do not apply
             write = {"mb_trackid": choose}
+    elif cls not in APPLY_CLASSES:
+        return {}, f"a {cls} row is applied only with a choose; refused"
     if not write:
         return {}, "nothing to write"
     if set(write) - set(ID_FIELDS):
         return {}, f"writes fields other than the ids ({', '.join(sorted(set(write) - set(ID_FIELDS)))}); refused"
-    bad = [k for k, v in write.items() if not isinstance(v, str) or not _MBID.match(v)]
+    bad = [k for k, v in write.items() if not _canon(v)]
     if bad:
-        return {}, f"{', '.join(bad)} is not a MusicBrainz/AcoustID id; refused"
-    return write, ""
+        return {}, f"{', '.join(bad)} is not a canonical MusicBrainz/AcoustID id; refused"
+    return {k: _canon(v) for k, v in write.items()}, ""
 
 
 def _check(row: dict, music_root: Path) -> tuple[dict[str, str], str]:
     """(fields to write, "") when the file is exactly what was proposed and every target field is still empty;
-    otherwise ({}, why). Reads only."""
+    otherwise ({}, why). Reads only; an unreadable file is a reason, never an exception."""
     write, why = _intended(row)
     if why:
         return {}, why
@@ -699,12 +724,20 @@ def _check(row: dict, music_root: Path) -> tuple[dict[str, str], str]:
     if p is None:
         return {}, "path is outside the library; refused"
     try:
-        st = p.stat()
-    except OSError:
+        return _check_file(row, music_root, p, write)
+    except Exception as e:                                   # unreadable, a directory now, a mutagen error
+        return {}, f"unreadable: {type(e).__name__}: {e}"
+
+
+def _check_file(row: dict, music_root: Path, p: Path, write: dict[str, str]) -> tuple[dict[str, str], str]:
+    if not p.exists():
         return {}, "file is gone"
+    if not p.is_file():
+        return {}, "not a file any more"
+    st = p.stat()
     if (st.st_size, st.st_mtime_ns) != (row.get("size"), row.get("mtime_ns")):
         ids = read_ids(p)
-        if all(ids[k] == [v] for k, v in write.items()):
+        if all(_same(ids[k], v) for k, v in write.items()):
             return {}, "already written (an earlier apply)"
         return {}, "changed since the proposal"
     proposed = row.get("file")
@@ -798,13 +831,56 @@ def _scan(navidrome, timeout_s: float, poll_s: float) -> str:
     return ""
 
 
+def _write_one(p: Path, rel: str, row: dict, write: dict[str, str], log: Path, writer) -> tuple[str, str]:
+    """Log, write, confirm one file: (state, problem). state is "untouched" (stopped before the writer),
+    "failed" (the writer raised: the file may be half-written) or "written"; problem is "" when confirmed."""
+    try:
+        before = read_ids(p)
+        others = other_tags(p)
+        st = p.stat()
+    except Exception as e:
+        return "untouched", f"cannot read {rel} before writing ({type(e).__name__}: {e})"
+    try:
+        _append(log, {"event": "write", "path": rel, "cls": row.get("cls"), "written": write,
+                      "prior": {k: before[k] for k in write}, "size": st.st_size, "mtime_ns": st.st_mtime_ns})
+    except OSError as e:
+        return "untouched", f"cannot write the revert log {log} ({type(e).__name__}: {e}); {rel} not written"
+    try:
+        writer(p, write)
+    except Exception as e:
+        try:
+            _append(log, {"event": "failed", "path": rel, "error": f"{type(e).__name__}: {e}"})
+        except OSError:
+            pass
+        return "failed", f"write failed: {rel}: {type(e).__name__}: {e}"
+    try:
+        got, st, damaged = read_ids(p), p.stat(), other_tags(p) != others
+    except Exception as e:
+        return "written", f"WRITE NOT CONFIRMED: {rel} cannot be re-read ({type(e).__name__}: {e})"
+    want = {k: ([write[k]] if k in write else before[k]) for k in ID_FIELDS}
+    wrong = {k: got[k] for k in ID_FIELDS if [x.casefold() for x in got[k]] != [x.casefold() for x in want[k]]}
+    try:
+        _append(log, {"event": "done", "path": rel, "size": st.st_size, "mtime_ns": st.st_mtime_ns,
+                      "readback": got, "ok": not (wrong or damaged)})
+    except OSError:
+        pass                                                 # the write line is on disk; revert works from it
+    if wrong or damaged:
+        what = "; ".join(([f"reads back {wrong}"] if wrong else []) + (["other tags changed"] if damaged else []))
+        return "written", f"WRITE NOT CONFIRMED: {rel} {what}"
+    return "written", ""
+
+
 def apply(proposal: Path, music_root: Path, *, log: Path, classes: set[str] | None = None, dry_run: bool = False,
           writer=None, navidrome=None, navidrome_db: Path | None = None, scan_timeout_s: float = 600,
           poll_s: float = 2, limit: int | None = None, only=(), say=lambda s: None) -> ApplyReport:
     """Write the reviewed rows' id fields (at most `limit` files, paths matching `only`), then let Navidrome scan
     and check that its song ids held, that it reads the recording ids, and that the exported playlists still
-    match. The first failed or unconfirmed write stops the run: a surprise on the library is not repeated."""
+    match. The first failed or unconfirmed write stops the run before the scan: a surprise on the library is not
+    repeated, and Michael reverts the log first."""
     music_root, log = Path(music_root), Path(log)
+    if classes is not None and set(classes) - APPLY_CLASSES:
+        raise ValueError(f"--classes may name only {', '.join(sorted(APPLY_CLASSES))}, not "
+                         f"{', '.join(sorted(set(classes) - APPLY_CLASSES))} (a none row is applied by its choose)")
     doc = json.loads(Path(proposal).read_text(encoding="utf-8"))
     rows = [r for r in (doc["proposals"] if isinstance(doc, dict) else doc) if _selected(r, classes, only)]
     rep = ApplyReport()
@@ -821,8 +897,15 @@ def apply(proposal: Path, music_root: Path, *, log: Path, classes: set[str] | No
     for i, row in enumerate(rows):
         if limit is not None and len(rep.written) >= limit:
             break
-        rel = row.get("path", "")
+        rel = str(row.get("path", ""))
         write, why = _check(row, music_root)
+        if not why and not dry_run:                          # changed while being checked?
+            try:
+                st = (music_root / rel).stat()
+                if (st.st_size, st.st_mtime_ns) != (row.get("size"), row.get("mtime_ns")):
+                    why = "changed since the proposal"
+            except OSError as e:
+                why = f"unreadable: {type(e).__name__}: {e}"
         if why:
             rep.skipped.append((rel, why))
             say(f"skipped {rel}: {why}")
@@ -831,36 +914,16 @@ def apply(proposal: Path, music_root: Path, *, log: Path, classes: set[str] | No
             rep.written.append(rel)
             rep.fields[rel] = write
             continue
-        p = music_root / rel
-        others = other_tags(p)
-        st = p.stat()
-        if (st.st_size, st.st_mtime_ns) != (row.get("size"), row.get("mtime_ns")):   # changed while being checked
-            rep.skipped.append((rel, "changed since the proposal"))
-            continue
-        _append(log, {"event": "write", "path": rel, "cls": row.get("cls"), "written": write,
-                      "prior": {k: [] for k in write}, "size": st.st_size, "mtime_ns": st.st_mtime_ns})
-        try:
-            writer(p, write)
-        except Exception as e:
-            _append(log, {"event": "failed", "path": rel, "error": f"{type(e).__name__}: {e}"})
-            rep.problems.append(f"write failed: {rel}: {type(e).__name__}: {e}; stopped, "
-                                f"{len(rows) - i - 1} rows not tried (revert the log if the file is damaged)")
-            break
-        got = read_ids(p)
-        st = p.stat()
-        wrong = {k: got[k] for k, v in write.items() if got[k] != [v]}
-        damaged = other_tags(p) != others
-        _append(log, {"event": "done", "path": rel, "size": st.st_size, "mtime_ns": st.st_mtime_ns,
-                      "readback": got, "ok": not (wrong or damaged)})
-        rep.written.append(rel)
-        rep.fields[rel] = write
-        say(f"wrote {rel}: " + " ".join(f"{k}={v}" for k, v in write.items()))
-        if wrong or damaged:
-            what = (f"reads back {wrong}" if wrong else "") + ("; " if wrong and damaged else "") + \
-                   ("other tags changed" if damaged else "")
-            rep.problems.append(f"WRITE NOT CONFIRMED: {rel} {what}; stopped, {len(rows) - i - 1} rows not tried "
-                                f"(revert {log})")
-            break
+        state, problem = _write_one(music_root / rel, rel, row, write, log, writer)
+        if state == "written":
+            rep.written.append(rel)
+            rep.fields[rel] = write
+            say(f"wrote {rel}: " + " ".join(f"{k}={v}" for k, v in write.items()))
+        if problem:
+            touched = state != "untouched" or rep.written
+            rep.problems.append(f"{problem}; stopped, {len(rows) - i - 1} more rows not tried, no Navidrome scan"
+                                + (f"; check, then run: revert {log}" if touched else ""))
+            return rep
 
     if dry_run or not rep.written:
         return rep
@@ -877,53 +940,62 @@ def apply(proposal: Path, music_root: Path, *, log: Path, classes: set[str] | No
         shown = _navidrome_recordings(navidrome_db, rep.written)
         for rel in rep.written if shown is not None else ():
             want = rep.fields[rel].get("mb_trackid")
-            if want and rel in shown and shown[rel] != want:
+            if want and rel in shown and shown[rel].casefold() != want:
                 rep.problems.append(f"Navidrome does not show the recording id for {rel}")
         from scripts.export_playlists import check
         rep.problems += check(navidrome_db, music_root, music_root / "_playlists")
     return rep
 
 
-def remove_ids(path: Path, changes: dict) -> None:
-    """revert's writer: delete the named id fields, nothing else, keeping the ID3 version (as write_minimal does).
-    write_minimal(path, {k: ""}) would not do: mediafile stores its none value, so a FLAC would keep an empty
-    MUSICBRAINZ_TRACKID= instead of returning to the tag state it had before apply."""
+def _removable(p: Path) -> dict[str, str]:
+    """The id values revert's writer (mediafile's own storage) would delete; a copy a tagger put elsewhere (an MP3's
+    TXXX next to our UFID) is not ours and stays."""
     from mediafile import MediaFile
-    from scripts.tag_cleanup import _id3_v23
-    m = MediaFile(str(path), id3v23=_id3_v23(str(path)))
-    for k in changes:
-        if k in ID_FIELDS:
-            delattr(m, k)
-    m.save()
+    m = MediaFile(str(p))
+    return {k: str(getattr(m, k) or "").strip() for k in ID_FIELDS}
 
 
 def revert(log: Path, music_root: Path, *, writer=None, say=print) -> int:
     """Remove, newest first, each field apply wrote, but only while the file still holds exactly that value (a
-    value changed since by hand or by another tool is left alone). Returns the number of files changed."""
+    value changed since by hand or by another tool is left alone). Returns the number of files changed; a file
+    with nothing of ours left is neither re-saved nor counted. A torn log line never preceded a write."""
     music_root = Path(music_root)
-    writer = writer or remove_ids
-    entries = [json.loads(x) for x in Path(log).read_text(encoding="utf-8").splitlines() if x.strip()]
+    if writer is None:
+        from scripts.tag_cleanup import remove_ids as writer
+    entries = []
+    for n_line, line in enumerate(Path(log).read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            entries.append(json.loads(line))
+        except json.JSONDecodeError:
+            say(f"unreadable log line {n_line} skipped (torn by a crash: it never preceded a write)")
     n = 0
     for e in reversed(entries):
-        if e.get("event", "write") != "write" or not e.get("written"):
+        if not isinstance(e, dict) or e.get("event", "write") != "write" or not isinstance(e.get("written"), dict):
             continue
         p = _target(music_root, e.get("path", ""))
         if p is None or not p.is_file():
             say(f"not reverted (file is gone or outside the library): {e.get('path')}")
             continue
-        ids = read_ids(p)
-        ours = [k for k, v in e["written"].items() if k in ID_FIELDS and ids.get(k) == [v]]
-        theirs = [k for k in e["written"] if k not in ours and ids.get(k)]
+        try:
+            ids, held = read_ids(p), _removable(p)
+        except Exception as x:
+            say(f"not reverted (unreadable: {type(x).__name__}: {x}): {e['path']}")
+            continue
+        written = {k: str(v) for k, v in e["written"].items() if k in ID_FIELDS}
+        ours = [k for k, v in written.items() if _same(ids[k], v) and held[k].casefold() == v.strip().casefold()]
+        theirs = [k for k, v in written.items() if k not in ours and ids[k] and not _same(ids[k], v)]
         if theirs:
             say(f"left alone (changed since apply): {e['path']} {', '.join(theirs)}")
         if not ours:
             continue
         writer(p, {k: "" for k in ours})
+        n += 1
         left = [k for k in ours if read_ids(p)[k]]
         if left:
-            say(f"REVERT NOT CONFIRMED: {e['path']} still has {', '.join(left)}")
-        n += 1
-        say(f"reverted {e['path']}: {', '.join(ours)}")
+            say(f"REVERT NOT CONFIRMED: {e['path']} still has {', '.join(left)} (another tag holds the same value)")
+        say(f"reverted {e['path']}: {', '.join(k for k in ours if k not in left) or 'nothing'}")
     return n
 
 
@@ -943,9 +1015,10 @@ def _apply_cli(a, navidrome) -> int:
     classes = None
     if a.classes:
         classes = {c.strip() for c in a.classes.split(",") if c.strip()}
-        if classes - set(CLASSES):
-            print(f"unknown classes: {', '.join(sorted(classes - set(CLASSES)))} (known: {', '.join(CLASSES)})",
-                  file=sys.stderr)
+        if classes - APPLY_CLASSES:
+            print(f"--classes may name only {', '.join(sorted(APPLY_CLASSES))}, not "
+                  f"{', '.join(sorted(classes - APPLY_CLASSES))} (a none row is applied by its \"choose\"; "
+                  "conflict and error rows never)", file=sys.stderr)
             return 2
     if not (a.dry_run or a.yes):
         print("apply writes library tags: add --yes to write, or --dry-run to see what it would write",
@@ -967,9 +1040,13 @@ def _apply_cli(a, navidrome) -> int:
             from subsonic.client import SubsonicClient
             cfg = Config.from_env()
             navidrome = SubsonicClient(cfg.subsonic_url, cfg.username, cfg.password)
-    rep = apply(a.proposal, a.music, log=log, classes=classes, dry_run=a.dry_run, navidrome=navidrome,
-                navidrome_db=db, poll_s=a.poll, limit=a.limit, only=a.only or (),
-                say=lambda s: print(s, flush=True))
+    rep = ApplyReport()
+    try:
+        rep = apply(a.proposal, a.music, log=log, classes=classes, dry_run=a.dry_run, navidrome=navidrome,
+                    navidrome_db=db, poll_s=a.poll, limit=a.limit, only=a.only or (),
+                    say=lambda s: print(s, flush=True))
+    except Exception as e:                                   # the proposal or navidrome.db unreadable: nothing written
+        rep.problems.append(f"apply did not start: {type(e).__name__}: {e}")
     if a.dry_run:
         for rel, write in rep.fields.items():
             print(f"would write {rel}: " + " ".join(f"{k}={v}" for k, v in write.items()))

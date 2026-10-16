@@ -312,3 +312,26 @@ def test_setting_albumartist_drops_txxx_album_artist_aliases(tmp_path):
     t = ID3(m)
     assert str(t["TPE2"]) == "Robert Palmer" and not [k for k in t.keys() if k.lower() in ("txxx:album artist", "txxx:albumartist")]
     assert str(t["TXXX:Catalog"]) == "196587"
+
+
+def test_remove_ids_deletes_only_the_named_id_fields(tmp_path):
+    # M7 revert: write_minimal(path, {k: ""}) stores mediafile's none value, so a FLAC kept MUSICBRAINZ_TRACKID=""
+    # instead of having no such tag; remove_ids deletes the tag itself and nothing else.
+    rid, wid = "01010101-0101-0101-0101-010101010101", "33333333-3333-3333-3333-333333333333"
+    f = tmp_path / "a.flac"; _audio(f)
+    tags = FLAC(f); tags["TITLE"] = "Le Freak"; tags["GENRE"] = ["Disco", "Funk"]; tags.save()
+    tc.write_minimal(f, {"mb_trackid": rid, "mb_workid": wid})
+    tc.remove_ids(f, {"mb_trackid": ""})
+    t = FLAC(f)
+    assert "MUSICBRAINZ_TRACKID" not in t and t["MUSICBRAINZ_WORKID"] == [wid]
+    assert t["TITLE"] == ["Le Freak"] and t["GENRE"] == ["Disco", "Funk"]
+    m = tmp_path / "b.mp3"; _audio(m)
+    id3 = ID3(); id3.add(TIT2(encoding=1, text="Le Freak")); id3.add(TCON(encoding=1, text=["Disco", "Funk"]))
+    id3.save(m, v2_version=3)
+    tc.write_minimal(m, {"mb_trackid": rid, "mb_workid": wid})
+    tc.remove_ids(m, ["mb_trackid", "mb_workid"])
+    t = ID3(m)
+    assert t.version[:2] == (2, 3) and not [k for k in t.keys() if k.startswith(("UFID", "TXXX"))]
+    assert str(t["TIT2"]) == "Le Freak"
+    with pytest.raises(ValueError):
+        tc.remove_ids(m, ["title"])

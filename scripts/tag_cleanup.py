@@ -72,12 +72,30 @@ def write_minimal(path, changes: dict) -> None:
     path = str(path)
     m = MediaFile(path, id3v23=_id3_v23(path))
     for k, v in changes.items():
-        setattr(m, k, (bool(v) or None) if k == "comp" else (v or None))     # comp off / "" = remove the tag
+        # None is mediafile's "none" value, not a removal: Vorbis/MP4 keep an empty tag (use remove_ids for ids)
+        setattr(m, k, (bool(v) or None) if k == "comp" else (v or None))
     tags = getattr(m.mgfile, "tags", None)
     if isinstance(tags, mutagen.id3.ID3):
         stale = {a.casefold() for k in changes for a in ALIASES.get(k, ())}
         for key in [key for key in tags.keys() if key.casefold() in stale]:
             del tags[key]
+    m.save()
+
+
+ID_FIELDS = ("mb_trackid", "mb_workid", "acoustid_id")
+
+
+def remove_ids(path, fields) -> None:
+    """Delete the named MusicBrainz/AcoustID id fields (M7 revert) and nothing else, keeping the ID3 version.
+    write_minimal(path, {k: ""}) would not do: it stores mediafile's none value, so a FLAC would keep an empty
+    MUSICBRAINZ_TRACKID= instead of returning to the tag state it had before the id was written."""
+    fields = list(fields)
+    if set(fields) - set(ID_FIELDS):
+        raise ValueError(f"remove_ids removes only {', '.join(ID_FIELDS)}, not {sorted(set(fields) - set(ID_FIELDS))}")
+    path = str(path)
+    m = MediaFile(path, id3v23=_id3_v23(path))
+    for k in fields:
+        delattr(m, k)
     m.save()
 
 
