@@ -82,6 +82,9 @@ profile for `dj-crates-web` decides. It is the default only for a database that 
   `<artist>/Singles/`).
 - slskd's downloads: `/srv/incoming/soulseek` (slskd sees only this folder; `/srv/incoming/library-import` is not
   exposed to it). Staging is `.staging/` inside it.
+- Before the first `docker compose up`, create `/srv/incoming/soulseek` and `/srv/incoming/soulseek/.incomplete`
+  as uid 1000 (`mkdir -p /srv/incoming/soulseek/.incomplete`, no sudo). Otherwise compose creates the mount source as
+  root, and slskd checks for the incomplete folder but does not create it: it refuses to start and restarts in a loop.
 - Soulseek peer names never appear in events, logs or the web client: file basenames only.
 
 ```
