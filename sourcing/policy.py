@@ -128,6 +128,8 @@ def load_policy(path: Path) -> dict[str, QualityPolicy]:
         where = f"[versions.{name}]"
         if name not in out:
             raise _bad(path, where, f"no [tiers.{name}] to attach it to")
+        if not isinstance(table, dict):
+            raise _bad(path, where, "expected a table")
         for key in table:
             if key not in _VERSION_KEYS:
                 raise _bad(path, f"{where}.{key}", f"unknown key (expected {', '.join(_VERSION_KEYS)})")

@@ -77,6 +77,11 @@ def test_loader_rejects_unknown_keys_and_words(tmp_path):
         load_policy(p)
 
 
+def test_loader_rejects_a_versions_entry_that_is_not_a_table(tmp_path):
+    with pytest.raises(ValueError, match=r"\[versions\.crate\].*expected a table"):
+        load_policy(_write(tmp_path, GOOD + "[versions]\ncrate = 1\n"))
+
+
 def test_loader_rejects_a_missing_or_mistyped_key(tmp_path):
     with pytest.raises(ValueError, match="strict_verify"):
         load_policy(_write(tmp_path, GOOD.replace("strict_verify = true\n", "")))
