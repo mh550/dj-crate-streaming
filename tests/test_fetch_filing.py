@@ -252,3 +252,77 @@ def test_unreadable_navidrome_db_skips_the_reference(world, tmp_path):
     bad.write_bytes(b"not a database" * 100)
     assert fetched(world, tmp_path, navidrome_db=bad)["reference"] is None
     assert "unreadable" in kinds(world, "reference")[0]["detail"]
+
+
+# --- once filed, the path is never lost (one copy per version) --------------------------------------
+
+def test_exception_after_filing_keeps_the_filed_path_and_a_recheck_finishes(world, tmp_path, monkeypatch):
+    client, calls = world["client"], []
+    start_scan = client.start_scan
+
+    def flaky(*a, **kw):
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("navidrome restarting")
+        return start_scan(*a, **kw)
+
+    monkeypatch.setattr(client, "start_scan", flaky)
+    flac = good_flac_bytes(tmp_path)
+    with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: flac}) as srv:
+        with pytest.raises(RuntimeError):
+            run(world, srv, approve=True)
+        st = world["store"].track_status_map("pl-2")["s4"]
+        assert st["status"] == "verify", st["reason"]
+        assert st["reason"] == f"filed as {TARGET} but Navidrome has not picked it up yet (RuntimeError: navidrome restarting)"
+        new_song(world["nd"], len(flac))
+        r = run(world, srv, approve=True)                   # the re-check: no second download, no second import
+    assert r.status == "ok", r.reason
+    assert len(srv.enqueued) == 1
+    assert len([c for c in world["filer"].runner.calls if "import" in c]) == 1
+
+
+def test_beet_write_failure_after_import_keeps_the_filed_path(world, tmp_path):
+    lib = beets_items_db(tmp_path / "other-library.db")
+    beet = fake_beet(world["music"], lib, TARGET, artist="Chic", title="Good Times", matched=True)
+
+    def write_fails(cmd, **kw):
+        done = beet(cmd, **kw)
+        return done if "write" not in cmd else type(done)(cmd, 1, "", "disk full")
+
+    write_fails.calls = beet.calls
+    filer = BeetsFiler(tmp_path / "beets.yaml", library=lib, tagger=lambda p, n: [], runner=write_fails,
+                       confirm=lambda item: (True, "ok"))
+    flac = good_flac_bytes(tmp_path)
+    with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: flac}) as srv:
+        with pytest.raises(FilingError, match="disk full"):
+            run(world, srv, approve=True, filer=filer)
+    st = world["store"].track_status_map("pl-2")["s4"]
+    assert st["status"] == "verify" and st["reason"].startswith(f"filed as {TARGET} but Navidrome")
+    assert "FilingError" in st["reason"]
+
+
+def test_reference_event_is_committed_before_the_verifier_runs(world, tmp_path):
+    """The verifier decodes for minutes: crates.db must not hold a write transaction open meanwhile, or the web
+    service's writes (an approval, a crate toggle) fail with `database is locked`."""
+    from crates.reconcile import Reconciler
+    from crates.store import CrateStore
+    db = tmp_path / "crates.db"
+    store = CrateStore(db)
+    rec = Reconciler(world["client"], store)
+    rec.set_crate("pl-2", True)
+    other = CrateStore(db)                                     # the web service's connection
+    other.db.execute("PRAGMA busy_timeout = 100")
+    wrote = []
+
+    def verifier(path, duration, tier=None, reference=None, **kw):
+        assert [e["kind"] for e in other.events(limit=1)] == ["reference"]   # committed, so visible here
+        other.log(None, "s4", "approved", "while the download is verified"); other.commit()
+        wrote.append(1)
+        return verify(path, duration)
+
+    flac = good_flac_bytes(tmp_path)
+    with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: flac}) as srv:
+        new_song(world["nd"], len(flac))
+        r = run(dict(world, store=store, rec=rec), srv, approve=True, verifier=verifier, navidrome_db=tmp_path / "nope.db")
+    assert r.status == "ok", r.reason
+    assert wrote == [1]

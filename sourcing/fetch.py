@@ -18,7 +18,10 @@ unrejected; otherwise the top-ranked one is used, and a `pick` event says which 
 Re-running `fetch` on a `verify` row skips the download and just re-checks Navidrome for the
 filed path kept in the reason; a `sourcing` row older than the download timeout is treated as
 abandoned and retried; a fresh one is reported as in flight. Any exception after the row enters
-`sourcing` marks it `failed` with the exception text before propagating, so nothing is ever stuck.
+`sourcing` marks it `failed` with the exception text before propagating, so nothing is ever stuck, except
+once beets has filed the file: from then on the row is `verify` with the filed path in its reason (set right
+after filing, and again with the exception text), because the library file is the one copy of that version
+and a retry would download and file a second one.
 
 Crate rows (song already in Navidrome, just not good enough) also get the playlist entry swapped
 to the new song in every crate that holds it, in one updatePlaylist call per crate, then
@@ -38,7 +41,7 @@ from crates.reconcile import Reconciler
 from crates.store import CrateStore
 from scripts.export_playlists import open_ro
 from subsonic.client import SubsonicClient
-from .filer import BeetsFiler
+from .filer import BeetsFiler, FilingError
 from .policy import DEFAULT_TIER, TIERS, QualityPolicy, check_tier
 from .scorer import Candidate, Wanted, explain, rank
 from .slskd_client import SlskdClient, transfer_files
@@ -134,6 +137,9 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         # Navidrome's Subsonic `path` is synthesised from tags, so it only serves as a tie-break
         return next((s for s in hits if (s.path or "").endswith(rel)), hits[0] if hits else None)
 
+    def _rel(p: Path) -> Path:
+        return p.relative_to(music_root) if p.is_relative_to(music_root) else p
+
     def finish(filed: Path, best: Candidate | None, text: str, query: str | None = None) -> FetchResult:
         new = locate_in_navidrome(filed, query)
         if new is None:
@@ -189,6 +195,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
                   else f"approved candidate no longer offered; using the top-ranked {best.basename}")
 
     set_status("sourcing", f"downloading {best.basename}")
+    item = None                                                  # the library file, once beets has filed it
     try:
         # forget earlier attempts at the same file so their final state can't be mistaken for this one
         for t in transfer_files(slskd.downloads(best.username)):
@@ -218,6 +225,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
             ref, reason = _library_file(navidrome_db, wanted_id, music_root)
             if ref is None:
                 store.log(None, wanted_id, "reference", reason)
+                store.commit()                # the verifier decodes for minutes: hold no write transaction meanwhile
             rid = navidrome.song(wanted_id).music_brainz_id or None
         extra = {"recording_id": rid, "lookup": lookup} if lookup is not None else {}    # see header_only in tests
         vd = verifier(landed, wanted.duration_s, tier=row["tier"], reference=ref, **extra)   # still `sourcing`: not ours yet
@@ -230,7 +238,11 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         staging.mkdir(parents=True, exist_ok=True)
         shutil.move(landed, staging / landed.name)
         log = staging.with_suffix(".log")
-        item = filer.file(staging, log, names={"artist": wanted.artist, "title": wanted.title})
+        try:
+            item = filer.file(staging, log, names={"artist": wanted.artist, "title": wanted.title})
+        except FilingError as e:
+            item = e.item                                        # set when beets had already filed it (a failed write)
+            raise
         if item is not None and item.filled:
             store.log(None, wanted_id, "tagged", f"filled {', '.join(item.filled)} from the wanted row")
         if item is None:                                         # e.g. a duplicate beets skipped: keep the file
@@ -238,13 +250,19 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         store.log(None, wanted_id, "filed",
                   f"beets {'matched' if item.matched else 'as-is'}: {item.path.relative_to(music_root)}"
                   + (f" ({item.note})" if item.note else ""))
-        store.commit()
+        # From here the file is in the library: the row says where before anything else can go wrong (a kill
+        # during the scan wait included), so a re-check finds it instead of a retry filing a second copy.
+        set_status("verify", f"filed as {_rel(item.path)} but Navidrome has not picked it up yet")
         log.unlink(missing_ok=True)
         try:
             staging.rmdir()
         except OSError:                                          # beets left something behind: harmless, keep it
             pass
         return finish(item.path, best, text, query=f"{item.artist} {item.title}")
-    except Exception as e:                                       # never leave a row stuck in sourcing/verify
-        set_status("failed", f"{type(e).__name__}: {e}")
+    except Exception as e:                                       # never leave a row stuck in sourcing
+        if item is not None:                                     # filed: keep the path, so a re-check (not a retry) follows
+            set_status("verify", f"filed as {_rel(item.path)} but Navidrome has not picked it up yet "
+                                 f"({type(e).__name__}: {e})")
+        else:
+            set_status("failed", f"{type(e).__name__}: {e}")
         raise

@@ -51,7 +51,12 @@ class FiledItem:
 
 
 class FilingError(Exception):
-    """beets failed, or did something other than file exactly one item."""
+    """beets failed, or did something other than file exactly one item. `item` is set when the file was already
+    imported into the library before the failure (a failed `beet write`): the caller must not lose its path."""
+
+    def __init__(self, message: str, item: "FiledItem | None" = None):
+        super().__init__(message)
+        self.item = item
 
 
 def fill_missing_tags(path: Path, names: dict[str, str]) -> list[str]:
@@ -137,8 +142,13 @@ class BeetsFiler:
             return item
         ok, item.note = self.confirm(item)
         if ok:
-            done = self._beet("write", f"path:{path}")
-            if done.returncode:
-                raise FilingError(f"beet write failed ({done.returncode}): {_tail(done.stderr)}")
+            self._write(item)
             item.matched = True
         return item
+
+    def _write(self, item: FiledItem) -> None:
+        """`beet write` on the one file this call imported (a path query names exactly that file). The file is in
+        the library already, so a failure carries the item."""
+        done = self._beet("write", f"path:{item.path}")
+        if done.returncode:
+            raise FilingError(f"beet write failed ({done.returncode}): {_tail(done.stderr)}", item)
