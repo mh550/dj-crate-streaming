@@ -326,3 +326,42 @@ def test_reference_event_is_committed_before_the_verifier_runs(world, tmp_path):
         r = run(dict(world, store=store, rec=rec), srv, approve=True, verifier=verifier, navidrome_db=tmp_path / "nope.db")
     assert r.status == "ok", r.reason
     assert wrote == [1]
+
+
+# --- re-checks: the filed file's own names, and a limit -------------------------------------------------
+
+def test_recheck_searches_navidrome_by_the_filed_files_own_names(world, tmp_path, monkeypatch):
+    """The wanted row often carries Spotify's names, which Navidrome's search may never match; the file's tags are
+    what Navidrome indexed. mediafile is Debian's on the host (the worker image pip-installs it)."""
+    import subprocess
+    import sys
+    monkeypatch.setattr(sys, "path", sys.path + ["/usr/share/beets", "/usr/lib/python3/dist-packages"])
+    store = world["store"]
+    flac = good_flac_bytes(tmp_path)
+    with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: flac}) as srv:
+        r = run(world, srv, approve=True)
+        assert r.status == "verify", r.reason
+        subprocess.run(["metaflac", "--set-tag=ARTIST=Chic", f"--set-tag=TITLE={TWELVE}", str(r.filed)], check=True,
+                       stdin=subprocess.DEVNULL)
+        store.db.execute("UPDATE crate_tracks SET title='Good Times - 2018 Remaster' WHERE song_id='s4'"); store.commit()
+        new_song(world["nd"], r.filed.stat().st_size)
+        world["nd"].state.songs["s9"]["title"] = TWELVE
+        r2 = run(world, srv, approve=True)
+    assert r2.status == "ok" and r2.new_song_id == "s9", r2.reason
+
+
+def test_recheck_counts_and_gives_up_after_the_limit(world, tmp_path):
+    from sourcing.fetch import RECHECK_LIMIT
+    assert RECHECK_LIMIT == 12
+    flac = good_flac_bytes(tmp_path)
+    with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: flac}) as srv:
+        assert run(world, srv, approve=True).status == "verify"
+        reasons = []
+        for _ in range(RECHECK_LIMIT):
+            r = run(world, srv, approve=True)
+            reasons.append(world["store"].find_wanted("s4")["reason"])
+    assert reasons[0] == f"filed as {TARGET} but Navidrome has not picked it up yet (check 1)"
+    assert reasons[RECHECK_LIMIT - 2].endswith(f"(check {RECHECK_LIMIT - 1})")
+    assert r.status == "failed" and reasons[-1] == f"Navidrome never indexed {TARGET}; file is in the library"
+    assert world["store"].find_wanted("s4")["status"] == "failed"
+    assert len(srv.enqueued) == 1 and (world["music"] / TARGET).exists()

@@ -16,7 +16,9 @@ because they are what the library now calls it. Soulseek peer names never reach 
 unrejected; otherwise the top-ranked one is used, and a `pick` event says which of the two happened.
 
 Re-running `fetch` on a `verify` row skips the download and just re-checks Navidrome for the
-filed path kept in the reason; a `sourcing` row older than the download timeout is treated as
+filed path kept in the reason, searching by the filed file's own artist/title tags (what Navidrome indexed);
+each miss is counted in the reason as `(check N)`, and the RECHECK_LIMIT-th fails the row with "Navidrome
+never indexed <path>; file is in the library", so it does not wait unseen forever. A `sourcing` row older than the download timeout is treated as
 abandoned and retried; a fresh one is reported as in flight. Any exception after the row enters
 `sourcing` marks it `failed` with the exception text before propagating, so nothing is ever stuck, except
 once beets has filed the file: from then on the row is `verify` with the filed path in its reason (set right
@@ -48,6 +50,20 @@ from .slskd_client import SlskdClient, transfer_files
 from .verify import verify
 
 _FILED = re.compile(r"filed as (.+?) but Navidrome")   # the filed path rides in the reason until a jobs table exists (M4)
+_CHECK = re.compile(r"\(check (\d+)\)$")                # how many re-checks have not found it, also in the reason
+RECHECK_LIMIT = 12      # re-checks without Navidrome finding the file before the row fails, so Michael sees it
+
+
+def _file_names(path: Path) -> tuple[str, str] | None:
+    """(artist, title) from the filed file's own tags, which are what Navidrome indexes; None when unreadable or
+    untitled. mediafile is imported lazily: the worker image installs it, and without it the caller falls back."""
+    try:
+        from mediafile import MediaFile
+        mf = MediaFile(str(path))
+    except Exception:                          # ImportError, or a file mediafile cannot read
+        return None
+    title = (mf.title or "").strip()
+    return ((mf.artist or "").strip(), title) if title else None
 
 
 @dataclass
@@ -140,10 +156,15 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
     def _rel(p: Path) -> Path:
         return p.relative_to(music_root) if p.is_relative_to(music_root) else p
 
-    def finish(filed: Path, best: Candidate | None, text: str, query: str | None = None) -> FetchResult:
+    def finish(filed: Path, best: Candidate | None, text: str, query: str | None = None,
+               check: int = 0) -> FetchResult:
+        """`check` counts re-checks (0 straight after filing); the RECHECK_LIMIT-th miss fails the row."""
         new = locate_in_navidrome(filed, query)
         if new is None:
-            why = f"filed as {filed.relative_to(music_root)} but Navidrome has not picked it up yet"
+            rel = filed.relative_to(music_root)
+            if check >= RECHECK_LIMIT:
+                return fail(f"Navidrome never indexed {rel}; file is in the library", best, text)
+            why = f"filed as {rel} but Navidrome has not picked it up yet" + (f" (check {check})" if check else "")
             set_status("verify", why)
             return FetchResult("verify", why, best, filed, explain=text)
         store.set_wanted_names(wanted_id, new.artist or "", new.title)      # what the library calls it now
@@ -169,9 +190,14 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
     if status == "review":                                       # import-playlist: several library versions fit
         return FetchResult("review", f"needs a pick first ({row.get('reason')}); nothing searched")
     if status == "verify":
-        m = _FILED.search(row.get("reason") or "")
+        reason = row.get("reason") or ""
+        m = _FILED.search(reason)
         if m and (music_root / m.group(1)).exists():
-            return finish(music_root / m.group(1), None, "")
+            filed = music_root / m.group(1)
+            names = _file_names(filed)            # Navidrome indexed the file's tags, not the row's (Spotify) names
+            c = _CHECK.search(reason)
+            return finish(filed, None, "", query=" ".join(names) if names else None,
+                          check=(int(c.group(1)) if c else 0) + 1)
         return fail(f"verify row without a filed path (reason was: {row.get('reason')!r})", None, "")
     if status == "sourcing" and time.time() - (row.get("updated_at") or 0) < download_timeout_s:
         return FetchResult("sourcing", "in flight (started less than the download timeout ago)")
