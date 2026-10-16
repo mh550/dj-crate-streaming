@@ -236,7 +236,8 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         if item is None:                                         # e.g. a duplicate beets skipped: keep the file
             return fail(f"beets did not import {landed.name}; it is still in {staging}", best, text)
         store.log(None, wanted_id, "filed",
-                  f"beets {'matched' if item.matched else 'as-is'}: {item.path.relative_to(music_root)}")
+                  f"beets {'matched' if item.matched else 'as-is'}: {item.path.relative_to(music_root)}"
+                  + (f" ({item.note})" if item.note else ""))
         store.commit()
         log.unlink(missing_ok=True)
         try:

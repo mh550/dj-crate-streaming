@@ -51,7 +51,8 @@ Every task's requirements include these:
 
 Each of these changes something the controller's rulings assumed:
 
-1. **Offline fallback works without `-A`.** With `musicbrainz: {host: 127.0.0.1:9}` (connection refused),
+1. **Offline fallback works without `-A`.** With MusicBrainz unreachable (the test suite proves this offline
+   path with `test_real_beet_tests_are_offline`; the original measurement was taken online),
    `beet -c cfg import -q -s -m -W <dir>` prints `Importing as-is.`, exits 0 in about 3 s, moves the file to
    `$artist/Singles/$title.flac` and leaves the file **byte-identical** (`metaflac --export-tags-to=-` diff
    empty). The test uses the normal autotag path.
@@ -74,6 +75,14 @@ Each of these changes something the controller's rulings assumed:
 7. PyPI `beets==1.6.0` has no `imp` import (only Debian's *test* patches mention it), so it should install on
    `python:3.12-slim`. The host's working combination is mediafile 0.12.0 and confuse 2.0.1. Pin those two
    and smoke-test in the container (Task 7).
+8. **A beets match is "confident" (D22) only when MusicBrainz's recording length agrees with the file (Task 6b).**
+   beets 1.6 in quiet mode applies a MusicBrainz recording that has no length on artist + title alone
+   (distance 0.0, "strong"), which for a DJ library (radio edit vs 12") is a guess, and `beet write` would
+   stamp the wrong recording id and titles. So `BeetsFiler` takes a `confirm` hook and runs `beet write` only
+   when it says yes; with none configured, nothing is written. `sourcing/musicbrainz.py` provides
+   `confirm_recording_length` (one `recording/<id>?fmt=json` GET per download, descriptive User-Agent,
+   tolerance 4 s, never raises: a failed lookup is "unconfirmed"). `FiledItem` gains `length` and `note`; the
+   `filed` event carries the note.
 
 ## Review Focus
 

@@ -4,9 +4,12 @@
                                             └─ matched? ──beet write path:<that file>──▶ full tags
 
 The D22 rule: beets writes full tags only after it applied a MusicBrainz match, and only to the file this
-call just imported. An as-is import is never rewritten: `-W` keeps the import itself from writing, and the
-file lands byte-identical (measured on beets 1.6.0). beets 1.6 rewrites every field it knows when it
-writes, which collapses multi-valued GENRE/ISRC/ARTIST (the M2 trap, see deploy/beets.yaml), so writing
+call just imported. A match is confident only when it is confirmed: beets applies a length-less MusicBrainz
+recording on artist + title alone, which for a DJ library (radio edit vs 12") is a guess, so `beet write`
+runs only when the `confirm` hook says the recording's length agrees with the file (sourcing.musicbrainz).
+With no confirmer, nothing is ever written. An as-is import is never rewritten: `-W` keeps the import
+itself from writing, and the file lands byte-identical (measured on beets 1.6.0). beets 1.6 rewrites every
+field it knows when it writes, which collapses multi-valued GENRE/ISRC/ARTIST (the M2 trap, see deploy/beets.yaml), so writing
 an unmatched file would only do damage.
 
 Why the import log, not `mb_trackid`, says "matched": an uploader's file that already carries
@@ -30,6 +33,7 @@ import subprocess
 from contextlib import closing
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 from scripts.library_map import AUDIO_EXT
 
@@ -42,6 +46,8 @@ class FiledItem:
     mb_trackid: str     # "" when none
     matched: bool       # beets applied a MusicBrainz match (no "asis " line in this call's import log)
     filled: list[str] = field(default_factory=list)   # tag fields filled from the wanted row before import
+    length: float = 0.0     # beets items.length, seconds
+    note: str = ""          # why a beets match was or was not confirmed ("" for an as-is import)
 
 
 class FilingError(Exception):
@@ -72,8 +78,10 @@ def _tail(text: str, n=3) -> str:
 
 class BeetsFiler:
     def __init__(self, config: Path, *, library: Path | None = None, beet: str = "beet",
-                 runner=subprocess.run, tagger=fill_missing_tags, timeout_s: float = 600):
+                 runner=subprocess.run, tagger=fill_missing_tags, timeout_s: float = 600,
+                 confirm: Callable[[FiledItem], tuple[bool, str]] | None = None):
         self.config, self.beet, self.runner, self.tagger, self.timeout_s = Path(config), beet, runner, tagger, timeout_s
+        self.confirm = confirm
         if library is None:
             m = re.search(r"^library:\s*(\S+)", self.config.read_text(encoding="utf-8"), re.M)
             if not m:
@@ -112,17 +120,25 @@ class BeetsFiler:
         done = self._beet("import", "-q", "-s", "-m", "-W", "-l", str(log), str(folder))
         if done.returncode:
             raise FilingError(f"beet import failed ({done.returncode}): {_tail(done.stderr)}")
-        rows = self._rows("SELECT id, path, mb_trackid, artist, title FROM items WHERE id > ? ORDER BY id", (before,))
+        rows = self._rows("SELECT id, path, mb_trackid, artist, title, length FROM items WHERE id > ? ORDER BY id", (before,))
         if not rows:
             return None
         if len(rows) > 1:
             raise FilingError(f"beets imported {len(rows)} items from {folder}")
-        _, raw, mb_trackid, artist, title = rows[0]
+        _, raw, mb_trackid, artist, title, length = rows[0]
         path = Path(os.fsdecode(raw))
         lines = log.read_text(encoding="utf-8", errors="replace").splitlines() if log.exists() else None
         matched = lines is not None and not any(line.startswith("asis ") for line in lines)
-        if matched:
+        item = FiledItem(path, artist or "", title or "", mb_trackid or "", False, filled, float(length or 0.0))
+        if not matched:
+            return item
+        if self.confirm is None:
+            item.note = "beets matched but no confirmer is configured; tags left as-is"
+            return item
+        ok, item.note = self.confirm(item)
+        if ok:
             done = self._beet("write", f"path:{path}")
             if done.returncode:
                 raise FilingError(f"beet write failed ({done.returncode}): {_tail(done.stderr)}")
-        return FiledItem(path, artist or "", title or "", mb_trackid or "", matched, filled)
+            item.matched = True
+        return item

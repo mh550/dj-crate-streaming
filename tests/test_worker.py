@@ -152,8 +152,8 @@ def test_cli_fetch_approve_records_an_approval(tmp_path, monkeypatch, capsys):
     music, dl = tmp_path / "m", tmp_path / "dl"
     music.mkdir(); dl.mkdir()
     lib = beets_items_db(tmp_path / "library.db")
-    monkeypatch.setattr(cli, "BeetsFiler", lambda cfg: BeetsFiler(
-        cfg, library=lib, tagger=lambda p, n: [],
+    monkeypatch.setattr(cli, "BeetsFiler", lambda cfg, **kw: BeetsFiler(
+        cfg, library=lib, tagger=lambda p, n: [], **kw,
         runner=fake_beet(music, lib, "Chic/Risqué (1979)/03 - Good Times.flac", artist="Chic", title="Good Times")))
     flac = good_flac_bytes(tmp_path)
     with FakeSubsonicServer() as nd, FakeSlskdServer(RESPONSES, dl, files={GOOD: flac}) as sl:

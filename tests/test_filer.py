@@ -178,7 +178,7 @@ def test_confident_match_runs_beet_write_on_the_new_file_only(fake):
     music, cfg, staging, log = fake["music"], fake["cfg"], fake["staging"], fake["log"]
     runner = fake_beet(music, fake["library"], "Chic/Singles/Good Times.flac", artist="Chic", title="Good Times",
                        mb_trackid="rec-1", matched=True)
-    item = BeetsFiler(cfg, runner=runner).file(staging, log)
+    item = BeetsFiler(cfg, runner=runner, confirm=lambda i: (True, "")).file(staging, log)
     assert runner.calls[0] == ["beet", "-c", str(cfg), "import", "-q", "-s", "-m", "-W", "-l", str(log), str(staging)]
     assert runner.calls[1] == ["beet", "-c", str(cfg), "write", f"path:{music / 'Chic/Singles/Good Times.flac'}"]
     assert len(runner.calls) == 2
@@ -239,9 +239,55 @@ def test_a_stale_log_cannot_hide_a_real_match(fake):
     fake["log"].write_text("asis x\n")                 # left over from an earlier attempt at this path
     runner = fake_beet(fake["music"], fake["library"], "Chic/Singles/Good Times.flac", mb_trackid="rec-1",
                        matched=True)
-    item = BeetsFiler(fake["cfg"], runner=runner).file(fake["staging"], fake["log"])
+    item = BeetsFiler(fake["cfg"], runner=runner, confirm=lambda i: (True, "")).file(fake["staging"], fake["log"])
     assert item.matched is True
     assert runner.calls[1][3] == "write"
+
+
+# --- D22: a match is confident only when a confirmer (MusicBrainz length) agrees -----------------------
+
+def matched_runner(fake, **kw):
+    return fake_beet(fake["music"], fake["library"], "Chic/Singles/Good Times.flac", artist="Chic", title="Good Times",
+                     mb_trackid="rec-1", matched=True, **kw)
+
+
+def test_matched_without_a_confirmer_is_not_written(fake):
+    runner = matched_runner(fake)
+    item = BeetsFiler(fake["cfg"], runner=runner).file(fake["staging"], fake["log"])
+    assert len(runner.calls) == 1
+    assert item.matched is False and "no confirmer" in item.note
+
+
+def test_confirmed_match_runs_beet_write(fake):
+    runner = matched_runner(fake)
+    item = BeetsFiler(fake["cfg"], runner=runner, confirm=lambda i: (True, "ok")).file(fake["staging"], fake["log"])
+    assert len(runner.calls) == 2 and runner.calls[1][3] == "write"
+    assert item.matched is True and item.note == "ok"
+
+
+def test_rejected_match_is_not_written(fake):
+    runner = matched_runner(fake)
+    item = BeetsFiler(fake["cfg"], runner=runner, confirm=lambda i: (False, "Δ79 s")).file(fake["staging"], fake["log"])
+    assert len(runner.calls) == 1
+    assert item.matched is False and item.note == "Δ79 s"
+
+
+def test_confirmer_sees_the_filed_item(fake):
+    seen = []
+    BeetsFiler(fake["cfg"], runner=matched_runner(fake, length=333.0),
+               confirm=lambda i: seen.append(i) or (False, "")).file(fake["staging"], fake["log"])
+    assert [(i.mb_trackid, i.length, i.matched) for i in seen] == [("rec-1", 333.0, False)]
+
+
+def test_as_is_import_never_asks_the_confirmer(fake):
+    runner = fake_beet(fake["music"], fake["library"], "Chic/Singles/Good Times.flac")
+    item = BeetsFiler(fake["cfg"], runner=runner, confirm=lambda i: 1 / 0).file(fake["staging"], fake["log"])
+    assert item.matched is False and item.note == "" and len(runner.calls) == 1
+
+
+def test_item_length_comes_from_library_db(fake):
+    runner = fake_beet(fake["music"], fake["library"], "Chic/Singles/Good Times.flac", length=333.0)
+    assert BeetsFiler(fake["cfg"], runner=runner).file(fake["staging"], fake["log"]).length == 333.0
 
 
 def test_refuses_a_folder_without_exactly_one_audio_file(fake):

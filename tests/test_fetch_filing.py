@@ -40,6 +40,21 @@ def test_fetch_hands_the_download_to_beets_from_a_fresh_staging_folder(world, tm
     assert [e["detail"] for e in kinds(world, "filed")] == ["beets as-is: Chic/Risqué (1979)/03 - Good Times.flac"]
 
 
+def test_filed_event_carries_the_note_when_a_match_is_rejected(world, tmp_path):
+    lib = beets_items_db(tmp_path / "other-library.db")
+    filer = BeetsFiler(tmp_path / "beets.yaml", library=lib, tagger=lambda path, names: [],
+                       confirm=lambda item: (False, "Δ79 s"),
+                       runner=fake_beet(world["music"], lib, TARGET, artist="Chic", title="Good Times", matched=True))
+    flac = good_flac_bytes(tmp_path)
+    with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: flac}) as srv:
+        new_song(world["nd"], len(flac))
+        r = run(world, srv, approve=True, filer=filer)
+    assert r.status == "ok", r.reason
+    (detail,) = [e["detail"] for e in kinds(world, "filed")]
+    assert "as-is" in detail and "Δ79 s" in detail
+    assert len(filer.runner.calls) == 1
+
+
 @pytest.mark.parametrize("outcome", ["ok", "failed"])
 def test_no_peer_name_reaches_events_or_row_reasons(world, tmp_path, outcome):
     """Every reason written during the run is recorded as it is written (later statuses overwrite the
