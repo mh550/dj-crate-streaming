@@ -127,3 +127,24 @@ def test_exportify_isrc_is_read():
            "spotify:track:b,Le Freak,C'est Chic,Chic,330000,\n")
     rows = rows_from_csv(csv)
     assert rows[0].isrc == "USAT21234567" and rows[1].isrc is None
+
+
+def test_a_stand_in_needs_every_kind_of_its_version_accepted():
+    # Task 4 review: at medium (accept extended) a 12" Dub is a dub, not the vocal row's stand-in.
+    acc = frozenset({"extended"})
+    for label in ('12" Dub', '12" Instrumental', "Extended Remix", 'Live 12" Version'):
+        hit = song("x", f"My Love Is Free ({label})", "Double Exposure", 581)
+        m = ip.choose(Row(1, "My Love Is Free", "Double Exposure", None), [hit], accept=acc)
+        assert m.status == "ambiguous" and m.why == "other version", label
+        m = ip.choose(Row(1, "My Love Is Free", "Double Exposure", 581), [hit], accept=acc)
+        assert m.status == "ambiguous" and m.why == "other version", label
+    for label in ('12" Version', "Extended Mix"):
+        hit = song("x", f"My Love Is Free ({label})", "Double Exposure", 581)
+        m = ip.choose(Row(1, "My Love Is Free", "Double Exposure", 459), [hit], accept=acc)
+        assert m.status == "matched" and m.how == f"other version: {label}", label
+
+
+def test_other_version_reason_needs_the_same_song():
+    # "Love" fits inside "Love and Happiness (Live)", but that is another song: its length says nothing of versions
+    m = ip.choose(Row(1, "Love", "Al Green", 300), [song("h", "Love and Happiness (Live)", "Al Green", 300)])
+    assert m.status == "ambiguous" and m.why == "length differs"

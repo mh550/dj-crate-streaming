@@ -20,7 +20,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from sourcing.identity import loose
+from sourcing.identity import lead_artist, loose
 from sourcing.policy import DEFAULT_TIER, STREAM_DEFAULT, check_stream, check_tier
 
 SCHEMA = """
@@ -357,15 +357,17 @@ class CrateStore:
 
     # --- external wanted (not in Navidrome at all; seeded from Spotify etc.)
     def find_external(self, artist: str, title: str) -> dict | None:
-        """A live (not failed) external row for the same artist/title, ignoring case and punctuation. A row
+        """A live (not failed) external row for the same lead artist/title, ignoring case and punctuation. A row
         renamed from Navidrome (set_wanted_names) also matches the names it was first asked for. A failed row
         whose file was filed (filed_path) counts as live: re-seeding must not queue a second download of it."""
-        key = _loose(artist) + "|" + _loose(title)
+        def k(a, t):                     # lead artists: an old "Chic feat. Nile Rodgers" row is a "Chic" ask
+            return _loose(lead_artist(a)) + "|" + _loose(t)
+        key = k(artist, title)
         for r in self.db.execute("SELECT * FROM external_wanted"):
             if r["status"] == "failed" and filed_path(r["reason"]) is None:
                 continue
-            asked = _loose(r["asked_artist"]) + "|" + _loose(r["asked_title"]) if r["asked_title"] is not None else None
-            if key in (_loose(r["artist"]) + "|" + _loose(r["title"]), asked):
+            asked = k(r["asked_artist"], r["asked_title"]) if r["asked_title"] is not None else None
+            if key in (k(r["artist"], r["title"]), asked):
                 return self._ext_row(r)
         return None
 

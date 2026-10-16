@@ -7,9 +7,9 @@ questions are asked in order:
   1. same recording: the row's ISRC (Exportify) is among the hit's ISRCs, whatever the titles say;
   2. same version: the same version key (label kinds + credit; "original mix" is neutral). With a row length:
      hits within ±4 s whose base title fits; without one: the lead artist and the *same* base title;
-  3. an accepted other version: the lead artist, the same base title, another key whose kinds the tier's
-     policy accepts (deploy/policy.toml `accept`, D16: a 12" may stand in). Matched, `how` names the label,
-     and the report notes it, so a stand-in is never silent.
+  3. an accepted other version: the lead artist, the same base title, another key every kind of which the
+     tier's policy accepts (deploy/policy.toml `accept`, D16: a 12" may stand in; a 12" Dub is a dub too).
+     Matched, `how` names the label, and the report notes it, so a stand-in is never silent.
 Otherwise the row is `ambiguous` (a review row): "other version" (the same song with a label the tier does not
 accept), "length differs" (the same song at another length), "title differs" (no length; a title that only
 *contains* the row's), "several versions" (more than one candidate version). A wrong match puts the wrong
@@ -156,7 +156,8 @@ def choose(row: Row, hits: list[Song], accept: frozenset[str] = frozenset()) -> 
         if fit:
             return _decide(row, fit, t, "same version")
     # A stand-in must be the same song by the same artist: the same base title, never one that only fits.
-    other = [h for h in same if t[h.id].key != want.key and t[h.id].kinds & accept]
+    # Every kind of its version must be accepted: at "extended" a 12" Dub is a dub, not the vocal row's stand-in.
+    other = [h for h in same if t[h.id].key != want.key and t[h.id].key[0] and set(t[h.id].key[0]) <= accept]
     if other:
         m = _decide(row, other, t, "other version")
         if m.status == "matched":
@@ -165,7 +166,7 @@ def choose(row: Row, hits: list[Song], accept: frozenset[str] = frozenset()) -> 
     if row.duration_s is not None:
         if same or near:                                 # right song name, another length or label
             relabelled = any(t[h.id].key != want.key and h.duration is not None
-                             and abs(h.duration - row.duration_s) <= TOLERANCE_S for h in same + near)
+                             and abs(h.duration - row.duration_s) <= TOLERANCE_S for h in same)
             return Match(row, "ambiguous", candidates=[h.id for h in same + near],
                          why="other version" if relabelled else "length differs")
     elif same:                                           # the same song, a label the tier does not accept

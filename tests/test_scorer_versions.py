@@ -70,3 +70,21 @@ def test_an_accepted_12_inch_earns_the_length_points_so_it_outranks_the_edit_in_
     flac_12 = rank([TWELVE, edit], w, TIERS["crate"])
     assert [c.username for c in flac_12] == ["twelve", "edit"]
     assert [c.username for c in rank([lossy, edit], w, TIERS["crate"])] == ["edit", "lossy"]
+
+
+def test_a_12_inch_dub_is_not_an_accepted_extended_version():
+    # Task 4 review: every kind of a file's version must be accepted (preferred) before it stands in or earns a bonus.
+    dub = response("dub", r'music\Chic\Risque\03 - Good Times (12" Dub).flac', 35_000_000, "flac", length=501)
+    club = response("club", r'music\Chic\Risque\03 - Good Times (12" Club Mix).flac', 35_000_000, "flac", length=501)
+    cands = rank([dub, club], Wanted("Chic", "Good Times", duration_s=210), TIERS["crate"])
+    d, c = by_user(cands, "dub"), by_user(cands, "club")
+    assert not any(r.startswith("prefers") or "fits another version" in r for r in d.reasons)
+    assert any(r.startswith("duration off") for r in d.reasons)
+    assert "prefers extended +6" in c.reasons and any("fits another version" in r for r in c.reasons)
+
+
+def test_an_original_mix_is_no_accepted_stand_in_for_another_version():
+    # "original" is neutral: it names no accepted kind, so it never earns the other-version length points
+    orig = response("orig", r"music\Chic\Risque\03 - Good Times (Original Mix).flac", 35_000_000, "flac", length=501)
+    [c] = rank([orig], Wanted("Chic", "Good Times (Live)", duration_s=210), TIERS["crate"])
+    assert not any("fits another version" in r for r in c.reasons) and any(r.startswith("duration off") for r in c.reasons)

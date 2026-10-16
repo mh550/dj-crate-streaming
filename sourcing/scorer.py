@@ -19,7 +19,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from difflib import SequenceMatcher
 
-from .identity import parse_title, words
+from .identity import NEUTRAL, Title, parse_title, words
 from .policy import QualityPolicy, DEFAULT_POLICY
 
 
@@ -75,6 +75,12 @@ class Candidate:
 
 
 # ---------- text normalization ----------
+
+def _all_in(got: Title, kinds) -> bool:
+    """Every kind of the file's version is in `kinds` ("original" is neutral): an accepted or preferred
+    version, never one that merely shares a word with it (a 12" Dub, an Extended Remix, a Live 12")."""
+    return got.kinds - NEUTRAL <= set(kinds)
+
 
 def norm(s: str) -> str:
     """The name-match fold: identity's words with the noise words (feat, remaster, explicit...) dropped.
@@ -189,7 +195,7 @@ def score_candidate(c: Candidate, w: Wanted, policy: QualityPolicy = DEFAULT_POL
             s += 2; c.reasons.append("hi-res")
 
     # --- duration vs known length (−15..+15)
-    if (w.duration_s and c.length_s and other and got.kinds & set(policy.accept_versions)
+    if (w.duration_s and c.length_s and other and got.key[0] and _all_in(got, policy.accept_versions)
             and c.length_s >= w.duration_s - policy.duration_tolerance_s):
         # The tier accepts this version and it is no shorter than the one asked for (an extended or club
         # version never is), so the wanted length cannot rule it out: it earns what a matching length would.
@@ -205,8 +211,9 @@ def score_candidate(c: Candidate, w: Wanted, policy: QualityPolicy = DEFAULT_POL
     elif w.duration_s and not c.length_s:
         c.reasons.append("no length reported")
 
-    # --- version preference (D16, deploy/policy.toml): the best-ranked kind the file has; one bonus only
-    for i, kind in enumerate(policy.prefer_versions):
+    # --- version preference (D16, deploy/policy.toml): the best-ranked kind the file has, when the policy
+    # names every kind it has (a 12" Dub is a dub too: no extended bonus); one bonus only
+    for i, kind in enumerate(policy.prefer_versions if _all_in(got, policy.prefer_versions) else ()):
         if kind in got.kinds:
             bonus = max(2, 6 - 2 * i)
             s += bonus; c.reasons.append(f"prefers {kind} +{bonus}")

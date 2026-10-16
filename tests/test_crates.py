@@ -174,3 +174,15 @@ def test_publish_makes_playlists_public(env, monkeypatch, tmp_path, capsys):
     assert st["pl-1"]["public"] is True and st["pl-2"]["public"] is False
     assert main(["publish"]) == 0 and all(p["public"] for p in st.values())
     assert "public already" in capsys.readouterr().out
+
+
+def test_find_external_compares_lead_artists():
+    # Task 4 review: an old "Chic feat. Nile Rodgers" row and a new "Chic" ask are one song, both ways round.
+    s = CrateStore()
+    old = s.add_external_wanted("Chic feat. Nile Rodgers", "Good Times")
+    assert s.find_external("Chic", "Good Times")["song_id"] == old
+    assert s.add_external_wanted("Chic", "Good Times") == old
+    s2 = CrateStore()
+    new = s2.add_external_wanted("Chic", "Le Freak")
+    assert s2.find_external("Chic feat. Nile Rodgers", "Le Freak")["song_id"] == new
+    assert s2.find_external("Sister Sledge", "Le Freak") is None
