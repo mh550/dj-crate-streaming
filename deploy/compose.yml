@@ -74,12 +74,14 @@ services:
       WORKER_POLL_S: "30"
       WORKER_RECHECK_S: "300"                # a `verify` row is re-checked (one Navidrome scan) at most this often
       WORKER_RECONCILE_S: "600"              # playlist comments re-read, tiers re-derived (Amperfy edits take effect)
+      TRASH_ROOT: /srv/docker/_trash         # copy replacement moves the old copy here (never deleted)
     volumes:                               # identical paths: beets stores absolute paths in library.db
       - /srv/music:/srv/music
       - /srv/docker/beets:/srv/docker/beets
       - /srv/incoming/soulseek:/srv/incoming/soulseek
       - /srv/docker/crates:/data
       - /srv/docker/navidrome:/srv/docker/navidrome:ro
+      - /srv/docker/_trash:/srv/docker/_trash
     depends_on: [navidrome, gluetun]
     restart: unless-stopped
 
