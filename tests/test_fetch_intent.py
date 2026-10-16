@@ -129,6 +129,25 @@ def test_copy_upgrade_matching_its_reference_is_replaceable(audio):
 
 
 @needs_tools
+def test_truncated_prefix_of_the_reference_matches_but_is_not_replaceable(audio, tmp_path):
+    short = convert(audio["true"], tmp_path / "short.flac", "-t", "10")       # the first half: ber over the overlap is 0
+    v = verify(short, 10, tier="low", reference=audio["true"], intent="copy")
+    assert v.measurements["fingerprint_ber"] <= 0.2 and v.measurements["replaceable"] is False
+
+
+@needs_tools
+def test_a_failing_download_with_a_matching_fingerprint_is_not_replaceable(audio):
+    v = verify(audio["mp3"], 99, tier="low", reference=audio["true"], intent="copy")      # wrong expected length
+    assert not v.ok and v.measurements["fingerprint_ber"] <= 0.2 and v.measurements["replaceable"] is False
+
+
+@needs_tools
+def test_a_file_is_not_a_replacement_for_itself(audio):
+    v = verify(audio["true"], 20, tier="low", reference=audio["true"], intent="copy")
+    assert v.ok and v.measurements["reference_compared"] is True and v.measurements["replaceable"] is False
+
+
+@needs_tools
 def test_copy_upgrade_of_a_different_version_fails_hard_and_is_not_replaceable(audio):
     v = verify(audio["other"], 20, tier="low", reference=audio["true"], intent="copy")
     assert not v.ok and "different recording" in v.problems[0] and v.measurements["replaceable"] is False

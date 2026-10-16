@@ -256,6 +256,15 @@ def verify(path: Path, expected_duration_s: float | None = None, tier: str | Non
             if check == "implied_kbps" and full_band(m):     # the measured spectrum outranks the size guess
                 check, msg = "low_kbps", f"{msg}, but the full spectrum is there: quiet or simple material"
             (problems if check in hard else warnings).append(msg)
+        if intent == "copy":
+            # M8 deletes the old copy when this is True, so it implies ok: the fingerprint matched over the overlap
+            # (a truncated prefix matches perfectly, hence the length test against the reference), the reference is
+            # a different file, and nothing else is wrong with the download.
+            ref_s = m.get("reference_duration_s")
+            m["replaceable"] = bool(
+                not problems and m.get("reference_compared") and m.get("fingerprint_ber", 1.0) <= MAX_SAME_BER
+                and ref_s and info and info.duration_s and abs(info.duration_s - ref_s) <= tolerance_s
+                and reference is not None and not _same_file(path, reference))
         return Verdict(not problems, problems, info, warnings, finite(m))
 
     if not path.exists():
@@ -322,6 +331,13 @@ def finite(v):
     return None if isinstance(v, float) and not math.isfinite(v) else v
 
 
+def _same_file(a: Path, b: Path) -> bool:
+    try:
+        return a.samefile(b)
+    except OSError:
+        return a.resolve() == b.resolve()
+
+
 MAX_SAME_BER = 0.20      # same audio is under this, a different recording well over
 
 
@@ -333,7 +349,9 @@ def _recording_check(path: Path, reference: Path, findings: list, m: dict, whole
         return
     length = FINGERPRINT_S
     if whole:
-        secs = [i.duration_s for i in (probe(path), probe(reference)) if i and i.duration_s]
+        mine, theirs = probe(path), probe(reference)
+        m["reference_duration_s"] = theirs.duration_s if theirs else None
+        secs = [i.duration_s for i in (mine, theirs) if i and i.duration_s]
         length = min(FINGERPRINT_MAX_S, math.ceil(max(secs))) if secs else FINGERPRINT_S
     try:
         a, b = fingerprint(path, length), fingerprint(reference, length)
@@ -344,7 +362,7 @@ def _recording_check(path: Path, reference: Path, findings: list, m: dict, whole
         return
     m["fingerprint_ber"] = ber = round(fingerprint_ber(a, b), 3)
     if whole:
-        m["reference_compared"], m["replaceable"] = True, ber <= MAX_SAME_BER
+        m["reference_compared"] = True
     if ber > MAX_SAME_BER:
         findings.append(("recording", f"different recording from {reference.name} "
                                       f"(fingerprint bit-error rate {ber:.2f}; same audio is under {MAX_SAME_BER:.2f})"))
