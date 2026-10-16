@@ -55,7 +55,8 @@ def loose(s: str | None) -> str:
     return words(s).replace(" ", "")
 
 
-_LEAD_SPLIT = re.compile(r"\s+•\s+|;|\s+(?:feat|ft)\.|\s+featuring\s", re.I)
+# "feat"/"ft" with or without the dot, also bracketed ("Chic (feat. X)"); a word must follow ("Swift ft" is a name).
+_LEAD_SPLIT = re.compile(r"\s+•\s+|;|(?:\s+|\s*[(\[])(?:feat|ft|featuring)\b\.?(?=\s)", re.I)
 
 
 def lead_artist(artist: str | None) -> str:
@@ -128,6 +129,8 @@ def _label(dec: str) -> tuple[frozenset[str], str]:
         kinds.add("remix")
     elif not kinds and named_version and by:             # "Disco Version", "Sax Version"
         kinds.add("alt")
+        if by.isdigit():                                 # "Version 2" is not "Take 2" (a take is another recording)
+            by = "version" + by
     if kinds == {"edit"} and by:                         # "Dominique Torti's Wild Style Edit"
         kinds = {"reedit"}
     return frozenset(kinds), by if kinds else ""

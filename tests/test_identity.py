@@ -392,3 +392,24 @@ def test_is_placeholder():
     for artist, title in [("Chic", "Good Times"), ("Chic feat. X", "Good Times (Live)"), ("Prince", "1999"),
                           ("Chic", "Intro"), ("Smokey Robinson", "100 - Smokey Robinson - Why You Wanna See My Bad Side.mp3")]:
         assert not is_placeholder(artist, title), (artist, title)
+
+
+# ---- M7 final fixes m8: feat/ft with or without the dot, and a bracketed "(feat. X)" in the artist ----
+
+@pytest.mark.parametrize("artist", ["Chic feat Nile Rodgers", "Chic ft Nile Rodgers", "Chic (feat. Nile Rodgers)",
+                                    "Chic (ft. Nile Rodgers)", "Chic [feat. Nile Rodgers]", "Chic (featuring Nile Rodgers)"])
+def test_lead_artist_splits_every_feat_spelling(artist):
+    assert lead_artist(artist) == "Chic"
+
+
+def test_lead_artist_does_not_split_inside_a_word():
+    assert lead_artist("Lil Feather") == "Lil Feather" and lead_artist("Daft Punk") == "Daft Punk"
+    assert lead_artist("Swift ft") == "Swift ft"                      # nothing credited after it
+
+
+# ---- M7 final fixes m9: a numbered version and a numbered take are different versions ----
+
+def test_version_number_and_take_number_have_different_keys():
+    assert parse_title("Song (Version 2)").key != parse_title("Song (Take 2)").key
+    assert not same_version(_c("Song (Version 2)", 300), _c("Song (Take 2)", 300))
+    assert parse_title("Song (Version 2)").key == parse_title("Song - Version 2").key
