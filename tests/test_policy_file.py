@@ -93,3 +93,33 @@ def test_loader_rejects_a_broken_file(tmp_path):
 
 def test_dockerfile_ships_the_policy_file():
     assert "COPY deploy/policy.toml deploy/policy.toml" in (ROOT / "Dockerfile").read_text()
+
+
+@pytest.mark.parametrize("old, new, key", [
+    ("speed_weight = 0", "speed_weight = 1.5", "speed_weight"),
+    ("speed_weight = 0", "speed_weight = -0.1", "speed_weight"),
+    ("min_lossy_bitrate = 320", "min_lossy_bitrate = -1", "min_lossy_bitrate"),
+    ("download_cap_Bps = 0", "download_cap_Bps = -5", "download_cap_Bps"),
+    ("arrival_budget_s = 60", "arrival_budget_s = 0", "arrival_budget_s"),   # 0 would divide by zero in the scorer
+    ("arrival_budget_s = 60", "arrival_budget_s = -60", "arrival_budget_s"),
+])
+def test_loader_rejects_out_of_range_numbers(tmp_path, old, new, key):
+    with pytest.raises(ValueError, match=key) as e:
+        load_policy(_write(tmp_path, GOOD.replace(old, new)))
+    assert "policy.toml" in str(e.value)
+
+
+def test_shipped_file_has_every_tier_the_code_names():
+    from sourcing import policy
+    for name in (policy.DEFAULT_TIER, policy.IMPORT_TIER, *(k for k in policy.STREAM if k != "server")):
+        assert name in policy.TIERS
+
+
+def test_a_missing_required_tier_names_the_file_and_tier(tmp_path):
+    from sourcing.policy import require_tiers
+    p = _write(tmp_path, GOOD)
+    tiers = load_policy(p)
+    require_tiers(p, tiers, ["crate"])
+    with pytest.raises(ValueError, match=r"\[tiers.medium\]") as e:
+        require_tiers(p, tiers, ["crate", "medium"])
+    assert "policy.toml" in str(e.value)

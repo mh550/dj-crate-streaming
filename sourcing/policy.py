@@ -64,6 +64,8 @@ POLICY_FILE = Path(__file__).resolve().parent.parent / "deploy" / "policy.toml"
 
 _TIER_KEYS = {"allow": list, "deny": list, "min_lossy_bitrate": int, "speed_weight": (int, float),
               "arrival_budget_s": (int, float), "download_cap_Bps": int, "strict_verify": bool}
+_RANGES = {"speed_weight": (0, 1), "min_lossy_bitrate": (0, None), "download_cap_Bps": (0, None),
+           "arrival_budget_s": (0, None)}
 _VERSION_KEYS = {"prefer": "prefer_versions", "accept": "accept_versions"}
 
 
@@ -76,6 +78,18 @@ def _typed(path: Path, where: str, key: str, value, want) -> None:
     if not ok:
         names = want.__name__ if isinstance(want, type) else "number"
         raise _bad(path, f"{where}.{key}", f"expected {names}, got {value!r}")
+    if key not in _RANGES:
+        return
+    lo, hi = _RANGES[key]
+    if value < lo or (hi is not None and value > hi) or (key == "arrival_budget_s" and value <= 0):
+        raise _bad(path, f"{where}.{key}", f"{value!r} out of range ({'> 0' if key == 'arrival_budget_s' else f'{lo} to {hi}' if hi is not None else f'>= {lo}'})")
+
+
+def require_tiers(path: Path, tiers: dict[str, QualityPolicy], names) -> None:
+    """The code names some tiers (default, import, stream presets): a file without one stops the start."""
+    for name in names:
+        if name not in tiers:
+            raise _bad(Path(path), f"[tiers.{name}]", "missing, but the code uses this tier")
 
 
 def load_policy(path: Path) -> dict[str, QualityPolicy]:
@@ -138,6 +152,8 @@ DEFAULT_POLICY = TIERS[DEFAULT_TIER]
 STREAM: dict[str, tuple[str | None, int | None]] = {
     "server": (None, None), "low": ("opus", 64), "medium": ("opus", 96), "high": ("opus", 160), "crate": ("raw", None)}
 STREAM_DEFAULT = "server"
+
+require_tiers(POLICY_FILE, TIERS, [DEFAULT_TIER, IMPORT_TIER, *(k for k in STREAM if k != "server")])
 
 
 def check_tier(name: str) -> str:
