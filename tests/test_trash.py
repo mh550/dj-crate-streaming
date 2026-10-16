@@ -158,3 +158,31 @@ def test_restore_puts_a_trashed_file_back_and_never_overwrites(tmp_path):
     with pytest.raises(FileExistsError):
         trash.restore(dst, "A/x.flac", music)
     assert dst.exists() and (music / "A/x.flac").read_text() == "someone filed another file here"
+
+
+def test_exdev_between_bind_mounts_of_one_filesystem_takes_the_copy_path(tmp_path, monkeypatch):
+    """Docker bind mounts of one host filesystem share st_dev, yet link/rename across them fail with EXDEV."""
+    import errno
+    import shlex
+    music, tr = _library(tmp_path, "A/x.flac"), tmp_path / "trash"
+    real_link, real_rename = os.link, os.rename
+
+    def across(a, b) -> bool:
+        return Path(a).relative_to(tmp_path).parts[0] != Path(b).relative_to(tmp_path).parts[0]
+
+    def link(a, b):
+        if across(a, b):
+            raise OSError(errno.EXDEV, "Invalid cross-device link")
+        return real_link(a, b)
+
+    def rename(a, b):
+        if across(a, b):
+            raise OSError(errno.EXDEV, "Invalid cross-device link")
+        return real_rename(a, b)
+    monkeypatch.setattr(trash.os, "link", link)
+    monkeypatch.setattr(trash.os, "rename", rename)
+    dst = trash.move_to_trash("A/x.flac", music, tr, day="2026-10-16")
+    assert dst == tr / "2026-10-16/A/x.flac" and dst.read_text() == "A/x.flac"
+    assert not (music / "A/x.flac").exists()
+    assert [p.name for p in dst.parent.iterdir()] == ["x.flac"]
+    assert shlex.split((tr / "2026-10-16/MOVES.txt").read_text()) == ["mv", str(dst), str(music / "A/x.flac")]

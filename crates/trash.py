@@ -13,6 +13,7 @@ A `.partial-` file is never trash: `summary` ignores it and the next move of the
 from __future__ import annotations
 
 import datetime
+import errno
 import os
 import re
 import shlex
@@ -81,26 +82,34 @@ def _place(src: Path, dst: Path) -> None:
 
 def durable_move(src: Path, dst: Path) -> None:
     """Move one file to `dst` (whose folder exists and whose name must be free) so that a crash leaves it at `src`,
-    at `dst`, or (between the steps of a same-filesystem move) at both, never nowhere; see the module docstring."""
+    at `dst`, or (between the steps of a same-filesystem move) at both, never nowhere; see the module docstring.
+    Two Docker bind mounts of one host filesystem share st_dev but refuse links and renames between them (EXDEV):
+    that is a cross-filesystem move, so the copy path is taken."""
     src, dst = Path(src), Path(dst)
     for old in dst.parent.glob(f"{PARTIAL}*-{src.name}"):      # an earlier attempt's half copy of this file
         old.unlink(missing_ok=True)
     if _same_fs(src, dst.parent):
-        _place(src, dst)                                       # link, unlink: one inode, two names for a moment
-        _fsync_dir(dst.parent)
-    else:
-        tmp = dst.parent / f"{PARTIAL}{uuid.uuid4().hex}-{src.name}"
         try:
-            shutil.copy2(src, tmp)                             # data and mtime
-            with tmp.open("rb") as fh:
-                os.fsync(fh.fileno())
-            _place(tmp, dst)
-        except BaseException:
-            if tmp.exists() and dst.exists() and os.path.samefile(tmp, dst):
-                tmp.unlink()                                   # placed: only the temp name is left over
-            raise
-        _fsync_dir(dst.parent)                                 # the copy is durable under its name...
-        src.unlink()                                           # ...before the original goes
+            _place(src, dst)                                   # link, unlink: one inode, two names for a moment
+        except OSError as e:
+            if e.errno != errno.EXDEV:
+                raise
+        else:
+            _fsync_dir(dst.parent)
+            _fsync_dir(src.parent)
+            return
+    tmp = dst.parent / f"{PARTIAL}{uuid.uuid4().hex}-{src.name}"
+    try:
+        shutil.copy2(src, tmp)                                 # data and mtime
+        with tmp.open("rb") as fh:
+            os.fsync(fh.fileno())
+        _place(tmp, dst)                                       # within the destination folder
+    except BaseException:
+        if tmp.exists() and dst.exists() and os.path.samefile(tmp, dst):
+            tmp.unlink()                                       # placed: only the temp name is left over
+        raise
+    _fsync_dir(dst.parent)                                     # the copy is durable under its name...
+    src.unlink()                                               # ...before the original goes
     _fsync_dir(src.parent)
 
 
