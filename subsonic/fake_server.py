@@ -6,16 +6,26 @@ add-by-id/remove-by-index, per-player transcoding decision), toy everywhere else
 
     python -m subsonic.fake_server --port 4533          # then point anything Subsonic at it
     user: demo / password: demo
+
+Navidrome v0.64.2 hides songs whose file is gone: `GetWithTracks` filters `missing = false`, so getPlaylist, songCount,
+search3 and getSong leave them out, yet their `playlist_tracks` rows stay and keep their positions, and
+`songIndexToRemove=N` deletes position N+1 counting those hidden rows. Editing a playlist by the index you *see* can
+therefore remove the wrong song (the M2 breakage). The fake reproduces exactly that (`state.missing`), and with
+`db_path` it mirrors the tables the code reads from navidrome.db (`NAVIDROME_SCHEMA`) so index guards can be tested
+against both views. Without `db_path` nothing of this touches a file.
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
+import sqlite3
 import threading
 import unicodedata
 import uuid
+from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 API_VERSION = "1.16.1"
@@ -52,19 +62,60 @@ SAMPLE_PLAYLISTS = [
     {"id": "pl-3", "name": "Sunday Listening", "comment": "", "owner": "demo", "public": False, "songs": ["s2"]},
 ]
 
+# The subset of Navidrome v0.64.2's schema that M8 reads (names as in the live navidrome.db).
+# playlist_tracks.id is the 1-based position, hidden (missing) rows included; rules is NULL unless the playlist is smart.
+NAVIDROME_SCHEMA = """
+CREATE TABLE IF NOT EXISTS playlist (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255), comment VARCHAR(255),
+                                     owner_id VARCHAR(255), rules TEXT);
+CREATE TABLE IF NOT EXISTS playlist_tracks (id INTEGER NOT NULL, playlist_id VARCHAR(255) NOT NULL,
+                                            media_file_id VARCHAR(255) NOT NULL);
+CREATE TABLE IF NOT EXISTS media_file (id VARCHAR(255) PRIMARY KEY, path VARCHAR(255), title VARCHAR(255),
+                                       artist VARCHAR(255), album VARCHAR(255), duration REAL, suffix VARCHAR(255),
+                                       size INTEGER, missing BOOLEAN DEFAULT 0, mbz_recording_id VARCHAR(255));
+"""
+
 # 1x1 transparent PNG for getCoverArt
 _PNG = bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0300050001c3da3a9a0000000049454e44ae426082")
 
 
 class FakeState:
-    def __init__(self, username: str = "demo", password: str = "demo"):
+    def __init__(self, username: str = "demo", password: str = "demo", db_path: Path | None = None):
         self.username, self.password = username, password
+        self.db_path = Path(db_path) if db_path else None
+        self.missing: set[str] = set()                   # song ids whose file is "gone": hidden, rows kept
+        self.smart: set[str] = set()                     # playlist ids with rules: track edits refused
         self.songs = {s["id"]: dict(s) for s in SAMPLE_SONGS}
         self.playlists = {p["id"]: dict(p, songs=list(p["songs"])) for p in SAMPLE_PLAYLISTS}
         self.players: dict[tuple[str, str], dict] = {}   # (user, client) → {"format": ..., "maxBitRate": ...}
         self.scanning = False
         self.requests: list[tuple[str, dict]] = []       # (method, params) log for tests
         self.lock = threading.Lock()
+        self.sync()
+
+    def sync(self) -> None:
+        """Rewrite the navidrome.db mirror from the in-memory state (no-op without db_path). One transaction on a
+        rollback-journal file, so a reader opening it read-only sees either the old or the new state."""
+        if self.db_path is None:
+            return
+        with closing(sqlite3.connect(self.db_path)) as con, con:
+            con.executescript(NAVIDROME_SCHEMA)
+            for t in ("playlist_tracks", "playlist", "media_file"):
+                con.execute(f"DELETE FROM {t}")
+            con.executemany(
+                "INSERT INTO media_file (id, path, title, artist, album, duration, suffix, size, missing, mbz_recording_id)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?)",
+                [(i, s.get("path", ""), s.get("title", ""), s.get("artist", ""), s.get("album", ""), s.get("duration", 0),
+                  s.get("suffix", ""), s.get("size", 0), int(i in self.missing), s.get("musicBrainzId", ""))
+                 for i, s in self.songs.items()])
+            for pid, p in self.playlists.items():
+                con.execute("INSERT INTO playlist (id, name, comment, owner_id, rules) VALUES (?,?,?,?,?)",
+                            (pid, p["name"], p.get("comment", ""), p.get("owner", ""), "{}" if pid in self.smart else None))
+                con.executemany("INSERT INTO playlist_tracks (id, playlist_id, media_file_id) VALUES (?,?,?)",
+                                [(n, pid, sid) for n, sid in enumerate(p["songs"], 1)])
+
+    def visible(self, song_ids) -> list[dict]:
+        """What Navidrome shows: songs it knows and whose file is not missing."""
+        return [self.songs[s] for s in song_ids if s in self.songs and s not in self.missing]
 
     def auth_ok(self, q: dict) -> bool:
         if q.get("u") != self.username:
@@ -79,7 +130,7 @@ class FakeState:
         return False
 
     def playlist_json(self, p: dict, with_entries: bool) -> dict:
-        songs = [self.songs[s] for s in p["songs"] if s in self.songs]
+        songs = self.visible(p["songs"])
         d = {"id": p["id"], "name": p["name"], "comment": p.get("comment", ""), "owner": p["owner"],
              "songCount": len(songs), "duration": sum(s["duration"] for s in songs),
              "created": "2026-09-17T00:00:00Z", "changed": "2026-09-17T00:00:00Z"}
@@ -171,12 +222,15 @@ def make_handler(state: FakeState):
             pid = "pl-" + uuid.uuid4().hex[:6]
             state.playlists[pid] = {"id": pid, "name": q["name"], "comment": "", "owner": q["u"], "public": False,
                                     "songs": [s for s in m.get("songId", []) if s in state.songs]}
+            state.sync()
             self._send(_resp({"playlist": state.playlist_json(state.playlists[pid], True)}))
 
         def m_updatePlaylist(self, q, m):
             p = state.playlists.get(q.get("playlistId", ""))
             if not p:
                 return self._send(_resp(error=(70, "Playlist not found")))
+            if p["id"] in state.smart and (m.get("songIdToAdd") or m.get("songIndexToRemove")):
+                return self._send(_resp(error=(50, "Playlist is not editable")))   # Navidrome: smart playlists
             if "name" in q: p["name"] = q["name"]
             if "comment" in q: p["comment"] = q["comment"]
             if "public" in q: p["public"] = q["public"] == "true"
@@ -184,21 +238,24 @@ def make_handler(state: FakeState):
                 if 0 <= idx < len(p["songs"]):
                     p["songs"].pop(idx)
             p["songs"].extend(s for s in m.get("songIdToAdd", []) if s in state.songs)
+            state.sync()
             self._send(_resp())
 
         def m_deletePlaylist(self, q, m):
             state.playlists.pop(q.get("id", ""), None)
+            state.smart.discard(q.get("id", ""))
+            state.sync()
             self._send(_resp())
 
         def m_getSong(self, q, m):
             s = state.songs.get(q.get("id", ""))
-            if not s:
+            if not s or s["id"] in state.missing:
                 return self._send(_resp(error=(70, "Song not found")))
             self._send(_resp({"song": dict(s, isDir=False, type="music")}))
 
         def m_search3(self, q, m):
             words = _fold(q.get("query", "")).split()      # Navidrome: every word must match somewhere
-            hits = [dict(s, isDir=False, type="music") for s in state.songs.values()
+            hits = [dict(s, isDir=False, type="music") for s in state.visible(state.songs)
                     if all(w in _fold(f"{s['title']} {s['artist']} {s['album']}") for w in words)]
             n, off = int(q.get("songCount", 20)), int(q.get("songOffset", 0))
             self._send(_resp({"searchResult3": {"song": hits[off:off + n]}}))
@@ -247,8 +304,8 @@ def make_handler(state: FakeState):
 class FakeSubsonicServer:
     """Context-manager wrapper: `with FakeSubsonicServer() as srv: SubsonicClient(srv.url, 'demo', 'demo')`."""
 
-    def __init__(self, port: int = 0, username: str = "demo", password: str = "demo"):
-        self.state = FakeState(username, password)
+    def __init__(self, port: int = 0, username: str = "demo", password: str = "demo", db_path: Path | None = None):
+        self.state = FakeState(username, password, db_path)
         self.httpd = ThreadingHTTPServer(("127.0.0.1", port), make_handler(self.state))
         self.httpd.daemon_threads = True
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
