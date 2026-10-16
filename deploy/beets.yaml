@@ -17,7 +17,7 @@ import:
   write: yes           # tags are written to the *copy* in /srv/music
   log: /srv/docker/beets/import.log
   quiet_fallback: asis # unmatched albums go in on their existing tags (-q runs)
-  duplicate_action: skip
+  duplicate_action: keep   # copies and versions of one song coexist (spec Part 2); skip would drop every copy upgrade
   resume: yes          # never prompt: these runs are unattended
   incremental: yes     # re-running skips directories already seen — including skipped ones,
                        # so new files must land in a fresh /srv/incoming/<batch>/ dir (or use -I)

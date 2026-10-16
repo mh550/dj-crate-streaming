@@ -1,7 +1,13 @@
 """Shared test helpers (plain functions, no pytest fixtures)."""
 import json
+import os
+import shutil
+import sqlite3
 import struct
+import subprocess
+from contextlib import closing
 from pathlib import Path
+from typing import Callable
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 
@@ -55,3 +61,38 @@ def make_audio(path: Path, *, seconds=8, seed=42, rate=44100, sample_fmt="s16", 
     if tmp:
         tmp.unlink()
     return path
+
+
+def beets_items_db(path: Path) -> Path:
+    """An empty beets library.db with just the `items` columns the filer reads, with the real column types
+    (measured on beets 1.6.0: path is a BLOB)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute("CREATE TABLE items(id INTEGER PRIMARY KEY, path BLOB, mb_trackid TEXT, artist TEXT, title TEXT)")
+    return path
+
+
+def fake_beet(music: Path, library: Path, target_rel: str, *, artist="", title="", mb_trackid="",
+              matched=False, import_nothing=False, rc=0) -> Callable:
+    """A subprocess.run stand-in for `beet`. Every cmd lands in `.calls`. On `import` it moves the single
+    file in cmd[-1] to music/target_rel, adds an `items` row and writes this call's -l log the way beets
+    1.6.0 does: `asis <src>` for an as-is import, nothing for an applied match, `duplicate-skip <src>` (and
+    no move) with `import_nothing`."""
+    def run(cmd, **kwargs):
+        run.calls.append(list(cmd))
+        if "import" in cmd and not rc:
+            src = next(p for p in Path(cmd[-1]).iterdir() if p.is_file())
+            log = Path(cmd[cmd.index("-l") + 1])
+            if import_nothing:
+                log.write_text(f"duplicate-skip {src}\n")
+            else:
+                dst = music / target_rel
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(src, dst)
+                with closing(sqlite3.connect(library)) as db, db:
+                    db.execute("INSERT INTO items(path, mb_trackid, artist, title) VALUES (?, ?, ?, ?)",
+                               (os.fsencode(dst.absolute()), mb_trackid, artist, title))
+                log.write_text("" if matched else f"asis {src}\n")
+        return subprocess.CompletedProcess(cmd, rc, "", "boom" if rc else "")
+    run.calls = []
+    return run
