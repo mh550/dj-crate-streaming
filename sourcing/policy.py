@@ -69,11 +69,21 @@ DEFAULT_TIER = "crate"
 IMPORT_TIER = "medium"      # D15 (Michael, 2026-10-15): new rows from import-playlist / seed-spotify, unless --tier
 DEFAULT_POLICY = TIERS[DEFAULT_TIER]
 
-# The stream transcode follows the same name (spec §1 "Stream"): (Subsonic format, maxBitRate kbps).
-STREAM: dict[str, tuple[str, int | None]] = {"low": ("opus", 64), "medium": ("opus", 96), "high": ("opus", 160), "crate": ("raw", None)}
+# D19: a sourcing tier only says which file we keep; stream quality belongs to the client. "server" sends no
+# format and no maxBitRate, so Navidrome's per-player transcoding profile decides. The opus presets and
+# "crate" (original bytes) stay as explicit overrides: (Subsonic format, maxBitRate kbps).
+STREAM: dict[str, tuple[str | None, int | None]] = {
+    "server": (None, None), "low": ("opus", 64), "medium": ("opus", 96), "high": ("opus", 160), "crate": ("raw", None)}
+STREAM_DEFAULT = "server"
 
 
 def check_tier(name: str) -> str:
     if name not in TIERS:
         raise ValueError(f"unknown tier {name!r} (one of {', '.join(TIERS)})")
+    return name
+
+
+def check_stream(name: str) -> str:
+    if name not in STREAM:
+        raise ValueError(f"unknown stream {name!r} (one of {', '.join(STREAM)})")
     return name

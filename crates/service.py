@@ -26,7 +26,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from sourcing.fetch import fetch
-from sourcing.policy import DEFAULT_POLICY, STREAM, QualityPolicy, check_tier
+from sourcing.policy import DEFAULT_POLICY, STREAM, QualityPolicy, check_stream
 from sourcing.slskd_client import SlskdClient
 from subsonic.client import SubsonicClient, SubsonicError
 from .reconcile import Reconciler
@@ -278,7 +278,7 @@ def make_handler(app: CrateApp):
                                        "tiers": {t: {"format": f, "maxBitRate": b} for t, (f, b) in STREAM.items()}})
                 if head == "stream" and len(p) == 2:
                     if "tier" in q:                                  # spec §1: the stream follows the tier's name
-                        fmt, mbr = STREAM[check_tier(q["tier"])]
+                        fmt, mbr = STREAM[check_stream(q["tier"])]
                         return self._redirect(app.stream_url(p[1], mbr, fmt))
                     mbr = q.get("maxBitRate")
                     return self._redirect(app.stream_url(p[1], int(mbr) if mbr else None, q.get("format")))

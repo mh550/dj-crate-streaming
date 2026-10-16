@@ -64,10 +64,11 @@
     <div id="np-sub" class="muted"></div>
   </div>
   <select id="quality" title="Stream tier: how Navidrome sends audio to this app (saved on the server)">
+    <option value="server" selected>server · Navidrome decides</option>
     <option value="low">low · opus 64k</option>
     <option value="medium">medium · opus 96k</option>
     <option value="high">high · opus 160k</option>
-    <option value="crate" selected>crate · original</option>
+    <option value="crate">crate · original</option>
   </select>
   <audio id="audio" controls preload="none"></audio>
 </footer>

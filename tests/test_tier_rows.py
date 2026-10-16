@@ -51,9 +51,9 @@ def test_crate_rows_carry_tier_crate():
         assert st.find_wanted(rows[0]["song_id"])["tier"] == "crate"
 
 
-def test_stream_tier_setting_defaults_to_crate():
+def test_stream_tier_setting_defaults_to_server():
     st = CrateStore()
-    assert st.stream_tier() == "crate"
+    assert st.stream_tier() == "server"
     st.set_stream_tier("medium")
     assert st.stream_tier() == "medium"
     with pytest.raises(ValueError):
@@ -61,8 +61,9 @@ def test_stream_tier_setting_defaults_to_crate():
 
 
 def test_stream_mapping_matches_the_spec():
-    assert STREAM == {"low": ("opus", 64), "medium": ("opus", 96), "high": ("opus", 160), "crate": ("raw", None)}
-    assert list(STREAM) == list(TIERS)
+    assert STREAM == {"server": (None, None), "low": ("opus", 64), "medium": ("opus", 96), "high": ("opus", 160),
+                      "crate": ("raw", None)}
+    assert list(STREAM) == ["server", *TIERS]
 
 
 # --- rank --tier
@@ -143,7 +144,7 @@ def test_seed_spotify_and_import_playlist_take_a_tier(tmp_path, monkeypatch, cap
 def test_stream_tier_endpoint_and_stream_by_tier(svc):  # noqa: F811
     fake, app, srv = svc
     s, _, v = get(srv.url + "/api/stream-tier")
-    assert s == 200 and v["tier"] == "crate" and v["tiers"]["high"] == {"format": "opus", "maxBitRate": 160}
+    assert s == 200 and v["tier"] == "server" and v["tiers"]["high"] == {"format": "opus", "maxBitRate": 160}
     assert v["tiers"]["crate"] == {"format": "raw", "maxBitRate": None}
     assert post(srv.url + "/api/stream-tier", {"tier": "low"}) == (200, {"tier": "low"})
     assert get(srv.url + "/api/stream-tier")[2]["tier"] == "low"

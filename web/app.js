@@ -154,9 +154,9 @@ async function loadStreamTier() {   // the menu comes from the server's table; t
   try {
     const s = await api("/api/stream-tier"), sel = $("#quality"); sel.innerHTML = "";
     for (const [name, t] of Object.entries(s.tiers))
-      sel.append(new Option(`${name} · ${t.format === "raw" ? "original" : `${t.format} ${t.maxBitRate}k`}`, name));
+      sel.append(new Option(t.format == null ? `${name} · Navidrome decides` : t.format === "raw" ? `${name} · original` : `${name} · ${t.format} ${t.maxBitRate}k`, name));
     sel.value = s.tier;
-  } catch (e) { /* keep the static menu, crate selected (= the server's default) */ }
+  } catch (e) { /* keep the static menu, server selected (= the server's default) */ }
 }
 function playTrack(t) {
   state.playingId = t.id;

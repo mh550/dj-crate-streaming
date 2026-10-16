@@ -20,7 +20,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from sourcing.policy import DEFAULT_TIER, check_tier
+from sourcing.policy import DEFAULT_TIER, STREAM_DEFAULT, check_stream, check_tier
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS crates (
@@ -379,13 +379,13 @@ class CrateStore:
 
     # --- settings
     def stream_tier(self) -> str:
-        """The web client's stream tier (spec §1 "Stream"); crate (= original file) until one is chosen."""
+        """The web client's stream tier (spec §1 "Stream", D19); "server" (Navidrome's player profile decides) until one is chosen."""
         r = self.db.execute("SELECT value FROM settings WHERE key='stream_tier'").fetchone()
-        return r[0] if r else DEFAULT_TIER
+        return r[0] if r else STREAM_DEFAULT
 
     def set_stream_tier(self, tier: str) -> None:
         self.db.execute("INSERT INTO settings(key, value) VALUES('stream_tier', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-                        (check_tier(tier),))
+                        (check_stream(tier),))
         self.db.commit()
 
     # --- events
