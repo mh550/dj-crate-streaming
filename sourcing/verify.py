@@ -210,8 +210,12 @@ def analyse(path: Path, sample_rate: int | None, duration_s: float | None = None
     return m
 
 
-def fingerprint(path: Path) -> list[int] | None:
-    run = subprocess.run(["fpcalc", "-raw", "-json", "-length", "120", str(path)], stdin=subprocess.DEVNULL,
+FINGERPRINT_S = 120          # the default window; a copy upgrade fingerprints the whole file (cap below)
+FINGERPRINT_MAX_S = 900
+
+
+def fingerprint(path: Path, length: int = FINGERPRINT_S) -> list[int] | None:
+    run = subprocess.run(["fpcalc", "-raw", "-json", "-length", str(length), str(path)], stdin=subprocess.DEVNULL,
                          capture_output=True, timeout=300, **TEXT)
     try:
         return json.loads(run.stdout)["fingerprint"]
@@ -227,7 +231,8 @@ HARD_WHEN_STRICT = {"transcode", "fake_24bit", "fake_hires", "implied_kbps", "sa
 
 def verify(path: Path, expected_duration_s: float | None = None, tier: str | None = None, reference: Path | None = None,
            tolerance_s: float | None = None, min_lossless_kbps: int | None = None, recording_id: str | None = None,
-           lookup: Callable[[Path], list[dict]] | None = None, intent: str | None = None) -> Verdict:
+           lookup: Callable[[Path], list[dict]] | None = None, intent: str | None = None,
+           listed_length_s: float | None = None) -> Verdict:
     """Header checks always; with a `tier`, the decoded checks too (module docstring). The tier's policy sets the
     thresholds and how strict it is. Without a tier: header checks only, judged like crate (pre-M5 behaviour).
     With a tier and a `lookup` (AcoustID), the file's recording is looked up and compared with `recording_id`.
@@ -263,13 +268,23 @@ def verify(path: Path, expected_duration_s: float | None = None, tier: str | Non
     m.update(codec=info.codec, sample_rate=info.sample_rate, bit_depth=info.bit_depth, duration_s=info.duration_s)
     if intent is not None:
         m["intent"] = intent
+    if intent == "copy":     # M8 deletes the old copy only when a fingerprint comparison actually passed
+        m["reference_compared"], m["replaceable"] = False, False
     def check_length(length: float | None) -> None:
         if expected_duration_s and length and abs(length - expected_duration_s) > tolerance_s:
             findings.insert(0, ("duration", f"duration {length:.0f}s vs expected {expected_duration_s:.0f}s "
                                             f"(Δ{abs(length - expected_duration_s):.0f}s)"))
 
+    def check_listing(length: float | None) -> None:
+        """A new version has no expected length, but the peer listed one for this very file: what arrived must be
+        close to it (not the candidate vouching for itself: it is the peer's listing against our own measurement)."""
+        if intent == "version" and listed_length_s and length and abs(length - listed_length_s) > max(10, 0.05 * listed_length_s):
+            findings.insert(0, ("duration", f"arrived length differs from the peer's listing ({length:.0f}s vs "
+                                            f"{listed_length_s:.0f}s listed)"))
+
     if tier is None or info.duration_exact:      # else the decoded length decides, below
         check_length(info.duration_s)
+        check_listing(info.duration_s)
     if info.duration_s:
         kbps = path.stat().st_size * 8 / info.duration_s / 1000
         m["kbps"] = round(kbps)
@@ -290,8 +305,9 @@ def verify(path: Path, expected_duration_s: float | None = None, tier: str | Non
             findings.append(("skipped", f"decoded checks timed out after {e.timeout:.0f}s and were skipped"))
     if not info.duration_exact:
         check_length(m.get("decoded_s") or info.duration_s)
+        check_listing(m.get("decoded_s") or info.duration_s)
     if reference is not None:
-        _recording_check(path, reference, findings, m)
+        _recording_check(path, reference, findings, m, whole=intent == "copy")
     elif intent == "copy":
         findings.append(("reference", "copy upgrade without a reference: the recording was not compared"))
     if lookup is not None:
@@ -306,21 +322,32 @@ def finite(v):
     return None if isinstance(v, float) and not math.isfinite(v) else v
 
 
-def _recording_check(path: Path, reference: Path, findings: list, m: dict) -> None:
+MAX_SAME_BER = 0.20      # same audio is under this, a different recording well over
+
+
+def _recording_check(path: Path, reference: Path, findings: list, m: dict, whole: bool = False) -> None:
+    """Fingerprint both files and compare. `whole` (a copy upgrade) fingerprints their full length, so two edits
+    that share an intro cannot pass as one recording, and sets `reference_compared` / `replaceable`."""
     if not shutil.which("fpcalc"):
         findings.append(("skipped", "fpcalc not on PATH: recording check skipped"))
         return
+    length = FINGERPRINT_S
+    if whole:
+        secs = [i.duration_s for i in (probe(path), probe(reference)) if i and i.duration_s]
+        length = min(FINGERPRINT_MAX_S, math.ceil(max(secs))) if secs else FINGERPRINT_S
     try:
-        a, b = fingerprint(path), fingerprint(reference)
+        a, b = fingerprint(path, length), fingerprint(reference, length)
     except subprocess.TimeoutExpired:
         a = b = None
     if not (a and b):
         findings.append(("skipped", "fpcalc could not fingerprint one of the files: recording check skipped"))
         return
     m["fingerprint_ber"] = ber = round(fingerprint_ber(a, b), 3)
-    if ber > 0.20:
+    if whole:
+        m["reference_compared"], m["replaceable"] = True, ber <= MAX_SAME_BER
+    if ber > MAX_SAME_BER:
         findings.append(("recording", f"different recording from {reference.name} "
-                                      f"(fingerprint bit-error rate {ber:.2f}; same audio is under 0.20)"))
+                                      f"(fingerprint bit-error rate {ber:.2f}; same audio is under {MAX_SAME_BER:.2f})"))
 
 
 def _acoustid_check(path: Path, lookup: Callable[[Path], list[dict]], recording_id: str | None,

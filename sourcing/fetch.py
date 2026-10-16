@@ -98,7 +98,7 @@ def _owned(wanted: Wanted, navidrome: SubsonicClient, song_id: str, external: bo
         return wanted
     try:
         title = navidrome.song(song_id).title
-    except SubsonicError:
+    except (SubsonicError, OSError, ValueError):
         return wanted
     return replace(wanted, title=title) if title else wanted
 
@@ -226,9 +226,11 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         return FetchResult("sourcing", "in flight (started less than the download timeout ago)")
 
     sid = slskd.search(f"{wanted.artist} {wanted.title}".strip())
-    slskd.wait_search(sid, poll_s=poll_s, max_s=30)
-    cands = rank(slskd.search_responses(sid), _owned(wanted, navidrome, wanted_id, external), policy)
-    slskd.delete_search(sid)
+    try:
+        slskd.wait_search(sid, poll_s=poll_s, max_s=30)
+        cands = rank(slskd.search_responses(sid), _owned(wanted, navidrome, wanted_id, external), policy)
+    finally:
+        slskd.delete_search(sid)
     text = explain(cands, peers=False)
     best = next((c for c in cands if not c.rejected), None)
     if best is None:
@@ -254,7 +256,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         got = parse_title(Path(best.basename).stem, wanted.artist)
         if got.key != parse_title(wanted.title, wanted.artist).key:
             intent, expected = "version", None
-            store.log(None, wanted_id, "pick", f"another version ({got.label}) of {wanted.title}: {best.basename}")
+            store.log(None, wanted_id, "pick", f"another version ({got.label or "no label"}) of {wanted.title}: {best.basename}")
 
     set_status("sourcing", f"downloading {best.basename}")
     item = None                                                  # the library file, once beets has filed it
@@ -290,6 +292,8 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
                 store.commit()                # the verifier decodes for minutes: hold no write transaction meanwhile
             rid = navidrome.song(wanted_id).music_brainz_id or None
         extra = {"recording_id": rid, "lookup": lookup} if lookup is not None else {}    # see header_only in tests
+        if intent == "version" and best.length_s:        # the peer's listing of this file, checked against what arrived
+            extra["listed_length_s"] = best.length_s
         vd = verifier(landed, expected, tier=row["tier"], reference=ref, intent=intent, **extra)   # still `sourcing`: not ours yet
         store.set_verification(wanted_id, vd.as_dict(row["tier"]) | {"file": landed.name})
         if not vd.ok:
