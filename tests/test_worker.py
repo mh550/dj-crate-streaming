@@ -216,3 +216,108 @@ def test_same_filename_from_another_peer_is_not_the_preferred_candidate(world, t
         worker(world, srv).tick()
     assert srv.enqueued[0][0] == "vinylhead77"
     assert pick_events(world) == ["approved candidate no longer offered; using the top-ranked 03 - Good Times.flac"]
+
+
+# --- re-checks are throttled per row (WORKER_RECHECK_S) ------------------------------------------------
+
+def test_verify_rows_are_rechecked_at_most_once_per_interval(world):
+    store, seen = world["store"], []
+    store.set_wanted_status("s4", "verify", "filed as x but Navidrome has not picked it up yet")
+
+    def fetcher(wanted_id, **kw):
+        seen.append(wanted_id)
+        store.set_wanted_status(wanted_id, "verify", "filed as x but Navidrome has not picked it up yet (check 1)")
+        return FetchResult("verify", "still not indexed")
+
+    with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
+        w = worker(world, srv, fetcher=fetcher, recheck_s=300)
+        assert w.tick().rechecked == 0                                  # just filed: Navidrome gets time
+        store.db.execute("UPDATE crate_tracks SET updated_at = updated_at - 301 WHERE song_id='s4'"); store.commit()
+        assert w.tick().rechecked == 1
+        assert w.tick().rechecked == 0                                  # the re-check itself restarted the clock
+    assert seen == ["s4"]
+
+
+def test_cli_worker_takes_the_recheck_interval_from_the_environment(tmp_path, monkeypatch):
+    import sourcing.worker
+    seen = []
+
+    class Spy(Worker):
+        def __init__(self, **kw):
+            seen.append(kw.get("recheck_s"))
+            super().__init__(**kw)
+
+    monkeypatch.setattr(sourcing.worker, "Worker", Spy)
+    shutil.copy(cli.DEFAULT_BEETS_CONFIG, tmp_path / "beets.yaml")
+    with FakeSubsonicServer() as nd, FakeSlskdServer(RESPONSES, tmp_path / "dl", files={}) as sl:
+        _cli_env(monkeypatch, tmp_path, nd, sl)
+        monkeypatch.delenv("WORKER_RECHECK_S", raising=False)
+        assert cli.main(["worker", "--once"]) == 0
+        monkeypatch.setenv("WORKER_RECHECK_S", "60")
+        assert cli.main(["worker", "--once"]) == 0
+    assert seen == [300.0, 60.0]
+
+
+# --- a worker stopped mid-fetch leaves honest records ------------------------------------------------------
+
+def test_recover_marks_started_approvals_interrupted_and_fails_their_sourcing_rows(world):
+    store = world["store"]
+    ext = store.add_external_wanted("Chic", "Everybody Dance")
+    a1 = store.approve("s4", "michael", None, "crate"); store.claim_approval(a1)
+    store.set_wanted_status("s4", "sourcing", "downloading 03 - Good Times.flac")      # then SIGTERM
+    a2 = store.approve(ext, "michael", None, "crate")                                   # not taken yet: untouched
+    used_at = store.approval("s4")["used_at"]
+    assert store.recover_interrupted() == ["s4"]
+    a = store.approval("s4")
+    assert a["result"] == "interrupted: worker restarted" and a["used_at"] == used_at
+    row = store.find_wanted("s4")
+    assert (row["status"], row["reason"]) == ("failed", "interrupted: worker restarted")
+    assert [p["id"] for p in store.pending_approvals()] == [a2]
+    assert store.recover_interrupted() == []                            # once is enough
+
+
+def test_recover_keeps_a_filed_row_in_verify(world):
+    store = world["store"]
+    a = store.approve("s4", "michael", None, "crate"); store.claim_approval(a)
+    store.set_wanted_status("s4", "verify", "filed as x but Navidrome has not picked it up yet")   # killed while scanning
+    assert store.recover_interrupted() == ["s4"]
+    assert store.approval("s4")["result"] == "interrupted: worker restarted"
+    assert store.find_wanted("s4")["status"] == "verify"                # the re-check finds the file, no second copy
+
+
+def test_a_tick_after_recovery_does_not_fetch_the_interrupted_row(world):
+    store, fetched, lines = world["store"], [], []
+    a = store.approve("s4", "michael", None, "crate"); store.claim_approval(a)
+    store.set_wanted_status("s4", "sourcing", "downloading 03 - Good Times.flac")
+
+    def fetcher(wanted_id, **kw):
+        fetched.append(wanted_id)
+        return FetchResult("ok", "fine")
+
+    with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
+        w = worker(world, srv, lines, fetcher=fetcher)
+        w.run(0, ticks=1)                                               # run() recovers once, before the first tick
+    assert fetched == [] and store.find_wanted("s4")["status"] == "failed"
+    assert any("interrupted" in l and "s4" in l for l in lines)
+
+
+def test_cli_worker_once_recovers_before_its_tick(tmp_path, monkeypatch, capsys):
+    shutil.copy(cli.DEFAULT_BEETS_CONFIG, tmp_path / "beets.yaml")
+    with FakeSubsonicServer() as nd, FakeSlskdServer(RESPONSES, tmp_path / "dl", files={}) as sl:
+        _cli_env(monkeypatch, tmp_path, nd, sl)
+        st = CrateStore(tmp_path / "c.db")
+        ext = st.add_external_wanted("Chic", "Everybody Dance")
+        st.claim_approval(st.approve(ext, "michael", None, "crate"))
+        st.set_wanted_status(ext, "sourcing", "downloading x.flac")
+        assert cli.main(["worker", "--once"]) == 0
+    assert "0 approvals" in capsys.readouterr().out
+    assert CrateStore(tmp_path / "c.db").external(ext)["status"] == "failed"
+
+
+def test_wanted_lists_rows_in_progress(world):
+    store = world["store"]
+    ext = store.add_external_wanted("Chic", "Everybody Dance")
+    store.set_wanted_status("s4", "verify", "filed as x but Navidrome has not picked it up yet")
+    store.set_wanted_status(ext, "sourcing", "downloading x.flac")
+    by_id = {w["song_id"]: w["status"] for w in store.wanted()}
+    assert by_id["s4"] == "verify" and by_id[ext] == "sourcing"

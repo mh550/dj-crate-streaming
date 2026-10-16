@@ -98,6 +98,7 @@ async function loadWanted() {
     grow.append(el("div", "sub", `${t.album || ""} ${t.year || ""} · ${dur(t.duration)} · ${t.crates.length ? "in " + t.crates.join(", ") : "external"} · tier ${t.tier}`));
     if (t.verify) grow.append(el("div", "sub", verifyLine(t.verify)));
     const pending = t.approval && !t.approval.used_at, pk = t.preview && t.preview.pick;
+    const busy = t.status === "sourcing" || t.status === "verify";   // in progress: shown, not offered again
     if (pending) grow.append(el("div", "sub", "approved · waiting for worker"));
     else if (t.approval) grow.append(el("div", "sub", `worker: ${t.approval.result}`));
     if (pk && !pending) {                      // basename only: the peer's name stays out of the UI
@@ -105,7 +106,7 @@ async function loadWanted() {
       const d = el("details"); d.append(el("summary", null, "why"), el("pre", "sub", t.preview.explain || "")); grow.append(d);
     } else if (t.preview && !pending) grow.append(el("div", "sub", "no acceptable candidate"));
     li.append(grow);
-    if (!pending) {
+    if (!pending && !busy) {
       const pv = el("button", null, "Preview");
       pv.onclick = async () => {
         pv.disabled = true; pv.textContent = "searching…";
@@ -114,7 +115,7 @@ async function loadWanted() {
       };
       li.append(pv);
     }
-    if (pk && !pending) {
+    if (pk && !pending && !busy) {
       const ap = el("button", null, "Approve");
       ap.onclick = async () => {
         ap.disabled = true;
@@ -123,7 +124,7 @@ async function loadWanted() {
       };
       li.append(ap);
     }
-    li.append(el("span", "badge " + t.status, t.reason)); ul.append(li);
+    li.append(el("span", "badge " + t.status, busy ? `${t.status} · ${t.reason || ""}` : t.reason)); ul.append(li);
   }
 }
 

@@ -196,9 +196,12 @@ class CrateStore:
         return list(out.values())
 
     def wanted(self) -> list[dict]:
-        """Every track across enabled crates that still needs a file, plus external rows — the sourcing queue."""
-        ext = self.db.execute("SELECT * FROM external_wanted WHERE status IN ('needs_source','failed') ORDER BY id")
-        rows = self._crate_wanted("t.status IN ('needs_source','failed')") + [self._ext_row(r) for r in ext]
+        """Every track across enabled crates that still needs a file, plus external rows — the sourcing queue.
+        Rows in progress (`sourcing`, `verify`) are listed too, so none is invisible; the web client shows them
+        with their status and reason and offers no Preview/Approve for them."""
+        live = "('needs_source','failed','sourcing','verify')"
+        ext = self.db.execute(f"SELECT * FROM external_wanted WHERE status IN {live} ORDER BY id")
+        rows = self._crate_wanted(f"t.status IN {live}") + [self._ext_row(r) for r in ext]
         checks = dict(self.db.execute("SELECT song_id, result FROM verifications").fetchall())   # parse only rows shown
         previews = dict(self.db.execute("SELECT song_id, result FROM previews").fetchall())
         for row in rows:
@@ -207,13 +210,16 @@ class CrateStore:
             row["approval"] = self.approval(row["song_id"])
         return rows
 
-    def verify_ids(self) -> list[str]:
+    def verify_ids(self, updated_before: float | None = None) -> list[str]:
         """Wanted ids (crate songs in enabled crates, then `ext-N`) whose file is filed but not yet seen by
-        Navidrome: the worker re-checks these without downloading again."""
+        Navidrome: the worker re-checks these without downloading again. With `updated_before`, only rows last
+        updated before that time (the worker's re-check throttle: each re-check rewrites the reason)."""
+        cut = float("inf") if updated_before is None else updated_before
         crate = [r[0] for r in self.db.execute(
             "SELECT DISTINCT t.song_id FROM crate_tracks t JOIN crates c USING(playlist_id) "
-            "WHERE c.enabled=1 AND t.status='verify' ORDER BY t.song_id")]
-        ext = [f"ext-{r[0]}" for r in self.db.execute("SELECT id FROM external_wanted WHERE status='verify' ORDER BY id")]
+            "WHERE c.enabled=1 AND t.status='verify' AND t.updated_at <= ? ORDER BY t.song_id", (cut,))]
+        ext = [f"ext-{r[0]}" for r in self.db.execute(
+            "SELECT id FROM external_wanted WHERE status='verify' AND updated_at <= ? ORDER BY id", (cut,))]
         return crate + ext
 
     def find_wanted(self, song_id: str) -> dict | None:
@@ -304,6 +310,23 @@ class CrateStore:
                               (time.time(), approval_id))
         self.db.commit()
         return cur.rowcount == 1
+
+    def recover_interrupted(self) -> list[str]:
+        """After a worker (re)start: an approval still `started` belongs to a fetch that was killed (SIGTERM on
+        `docker compose stop`), so its record says so (used_at kept: it was spent) and its row, if still
+        `sourcing`, becomes `failed` so it shows in the queue to approve again. A `verify` row keeps its status:
+        its file is in the library and the re-check finds it. Returns the wanted ids, in approval order."""
+        why = "interrupted: worker restarted"
+        ids = []
+        for aid, wanted_id in self.db.execute("SELECT id, wanted_id FROM approvals WHERE result='started' ORDER BY id").fetchall():
+            self.db.execute("UPDATE approvals SET result=? WHERE id=?", (why, aid))
+            row = self.find_wanted(wanted_id)
+            if row is not None and row["status"] == "sourcing":
+                self.set_wanted_status(wanted_id, "failed", why)
+            self.log(None, wanted_id, "interrupted", f"approval #{aid}")
+            ids.append(wanted_id)
+        self.db.commit()
+        return ids
 
     def mark_approval_used(self, approval_id: int, result: str) -> None:
         self.db.execute("UPDATE approvals SET used_at=?, result=? WHERE id=?", (time.time(), result, approval_id))

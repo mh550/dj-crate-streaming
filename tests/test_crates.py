@@ -124,7 +124,7 @@ def test_external_wanted_rows_join_the_queue():
     assert w[0]["external"] is True and w[0]["crates"] == [] and w[0]["duration"] == 501
     store.set_external_status(ext, "sourcing")
     assert store.external(ext)["status"] == "sourcing"
-    assert store.wanted() == []                      # in flight → not offered again
+    assert [x["status"] for x in store.wanted()] == ["sourcing"]   # in flight: listed (no Preview/Approve in the UI)
     store.set_external_status(ext, "failed", "download timed out")
     assert store.wanted()[0]["reason"] == "download timed out"
 

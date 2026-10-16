@@ -9,13 +9,21 @@ and never touches `/srv/music` or `/srv/incoming`.
 A tick runs every `WORKER_POLL_S` seconds (30 by default), in this order:
 
 1. **Re-check.** Every row that was filed but not yet seen by Navidrome (status `verify`) is asked again whether the
-   song has appeared. Nothing is downloaded for these.
+   song has appeared, at most once every `WORKER_RECHECK_S` seconds per row (300 by default), because each re-check
+   starts a Navidrome scan. It searches by the filed file's own artist and title tags (what Navidrome indexes), not
+   the wanted row's names. Nothing is downloaded for these. Each miss is counted in the reason (`(check N)`); after 12
+   the row fails with "Navidrome never indexed <path>; file is in the library", so you see it. Approving that row
+   again would download a second copy: look in Navidrome first (a rescan, or the file's tags).
 2. **Approvals.** Each unused approval is claimed, then fetched: search slskd, prefer the exact file you saw in
    Preview while it is still offered (otherwise the top-ranked one), download it, verify it, file it, ask
    Navidrome to rescan, and swap it into the crates. The outcome is written back on the approval.
 
 One bad row never stops the tick, and a tick that fails (slskd or Navidrome down, database locked) never stops the
 worker; the next tick tries again. `python -m sourcing.cli worker --once` runs a single tick and exits.
+
+Once beets has filed a download, the row never goes back to `failed` on an error: it becomes `verify` with the filed
+path in its reason, so the re-check picks it up and nothing downloads a second copy. Rows in progress (`sourcing`,
+`verify`) stay in the Wanted tab with their status and reason, without Preview or Approve.
 
 ## Approvals
 
@@ -90,7 +98,8 @@ profile for `dj-crates-web` decides. It is the default only for a database that 
 ```
 cd /srv/docker
 docker compose logs -f worker      # watch it work
-docker compose stop worker         # stop (approvals stay queued; start it again to resume)
+docker compose stop worker         # stop (queued approvals wait; a stop mid-download marks that approval
+                                   # "interrupted: worker restarted" and the row failed at the next start: approve again)
 docker compose up -d worker        # start / resume
 ```
 
