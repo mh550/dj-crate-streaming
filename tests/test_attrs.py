@@ -76,3 +76,21 @@ def test_max_tier():
     assert tier_rank("low") < tier_rank("crate")
     with pytest.raises(ValueError):
         tier_rank("nope")
+
+
+def test_rewriting_the_tier_a_comment_already_has_changes_nothing():
+    # Task 1 review: re-setting the same tier used to move the token to the end.
+    assert write("a #tier:medium b", tier="medium") == "a #tier:medium b"
+    assert write("a #TIER:Medium\tb", tier="medium") == "a #TIER:Medium\tb"
+    # a problem in the #tier: tokens is still rewritten
+    assert write("a #tier:low #tier:medium b", tier="medium") == "a b #tier:medium"
+    assert write("a #tier:hgh", tier="medium") == "a #tier:medium"
+
+
+def test_changing_the_tier_keeps_a_crate_spelled_tier_crate():
+    # Task 1 review: write(tier=…) removes every #tier: token, #tier:crate included; the crate flag stays.
+    for c in ("#tier:crate", "mix #tier:crate", "#tier:crate #tier:low"):
+        for t in (None, "low", "high"):
+            a = parse(write(c, tier=t))
+            assert a.crate and a.tier == t, (c, t)
+    assert not parse(write("#tier:crate", crate=False, tier="low")).crate

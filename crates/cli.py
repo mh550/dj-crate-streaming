@@ -2,7 +2,8 @@
 
   python -m crates.cli status
   python -m crates.cli playlists                 # every Navidrome playlist, crate flag + provisioning summary
-  python -m crates.cli toggle <playlist-id> on|off
+  python -m crates.cli toggle <playlist-id> on|off   # writes #crate into the playlist comment (which owns it)
+  python -m crates.cli tier <playlist-id> low|medium|high|crate|none   # writes #tier:<t> (none clears it)
   python -m crates.cli reconcile                 # sync crate state from Navidrome, re-judge every track
   python -m crates.cli wanted                    # the sourcing queue (feeds `sourcing.cli rank`)
   python -m crates.cli rename <playlist-id> <new-name>
@@ -20,6 +21,8 @@ import json
 import sys
 import threading
 
+from sourcing.policy import TIERS
+from .reconcile import CommentNotKept, NameMarked
 from .service import Config, CrateApp, CrateServer
 
 
@@ -34,6 +37,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("status")
     sub.add_parser("playlists")
     t = sub.add_parser("toggle"); t.add_argument("playlist_id"); t.add_argument("state", choices=["on", "off"])
+    tr = sub.add_parser("tier"); tr.add_argument("playlist_id"); tr.add_argument("tier", choices=[*TIERS, "none"])
     sub.add_parser("reconcile")
     w = sub.add_parser("wanted"); w.add_argument("--json", action="store_true")
     p = sub.add_parser("publish", help="make playlists visible to every Navidrome user (public)"); p.add_argument("names", nargs="*", help="playlist names (default: all)")
@@ -73,8 +77,13 @@ def main(argv: list[str] | None = None) -> int:
             summ = p["summary"]
             extra = f"  ok {summ['ok']}/{summ['total']}  need {summ['needs_source']}" if summ else ""
             print(f"{flag}  {p['id']:<12} {p['name']:<32} {p['songCount']:>3} tracks {fmt_dur(p['duration']):>7}{extra}")
-    elif a.cmd == "toggle":
-        v = app.set_crate(a.playlist_id, a.state == "on")
+    elif a.cmd in ("toggle", "tier"):
+        try:
+            v = (app.set_crate(a.playlist_id, a.state == "on") if a.cmd == "toggle"
+                 else app.set_tier(a.playlist_id, None if a.tier == "none" else a.tier))
+        except (NameMarked, CommentNotKept) as e:
+            print(f"{a.cmd}: {e}", file=sys.stderr)
+            return 1
         print(json.dumps(v, indent=2))
     elif a.cmd == "reconcile":
         print(json.dumps(app.reconcile(), indent=2))

@@ -84,12 +84,22 @@ def write(comment: str | None, *, crate: bool | None = None, tier: str | None | 
     ``#tier:`` token with ``#tier:<t>``; tier ``"crate"`` means ``crate=True``; ``tier=None`` removes every
     ``#tier:`` token. An unknown tier raises ValueError (it is never written); an unknown tier already in the
     comment is left alone unless ``tier=`` is given.
+
+    Setting the tier the comment already has (and no ``#tier:`` problem) leaves the tokens where they are.
+    Without ``crate=``, the crate flag is kept as it is, even when it was spelled ``#tier:crate`` (which a tier
+    change removes with every other ``#tier:`` token): it is then written back as ``#crate``.
     """
     c = comment or ""
     if tier is not UNSET and tier is not None:
         check_tier(tier)
         if tier == DEFAULT_TIER:
             crate = True
+    if tier is not UNSET and tier != DEFAULT_TIER:
+        now = parse(c)
+        if tier == now.tier and not now.problems:
+            tier = UNSET                                  # already so: touch nothing
+        elif crate is None and now.crate:
+            crate = True                                  # a tier change never clears the flag by itself
     if tier is not UNSET:
         keep = (lambda t: not _is_tier(t) or _is_crate(t)) if tier == DEFAULT_TIER else (lambda t: not _is_tier(t))
         c = _remove(c, lambda t: not keep(t))

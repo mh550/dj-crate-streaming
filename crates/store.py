@@ -1,8 +1,9 @@
-"""SQLite state for crates. Navidrome owns *playlists*; we own *which playlists are
-crates* and *what we know about each track's provisioning*.
+"""SQLite state for crates. Navidrome owns *playlists*, and each playlist's comment owns whether it is a crate
+and its tier (D21, spec fact #6: `#crate`, `#tier:<t>`, read by crates.attrs); the `crates` table only caches
+those, and reconcile rebuilds it from the comments. We own *what we know about each track's provisioning*.
 
 Tables
-  crates        one row per playlist we have ever looked at as a crate
+  crates        one row per playlist that is or was a crate or tiered: the cached flag and tier
   crate_tracks  per (crate, song): last-seen library facts + provisioning status
   events        append-only log so the UI can show "what did the reconciler do"
   external_wanted  tracks wanted that aren't in Navidrome at all (seeded from Spotify etc.)
@@ -28,11 +29,12 @@ CREATE TABLE IF NOT EXISTS crates (
   playlist_id   TEXT PRIMARY KEY,
   name          TEXT NOT NULL,
   enabled       INTEGER NOT NULL DEFAULT 0,      -- 1 = this playlist is a crate
-  source        TEXT NOT NULL DEFAULT 'app',     -- 'app' (toggled here) | 'comment' (#crate in Navidrome comment)
+  source        TEXT NOT NULL DEFAULT 'app',     -- 'comment' (cached from the playlist comment, D21) | 'app' (before M8)
   devices       TEXT NOT NULL DEFAULT '[]',      -- JSON list of device names (Phase 4)
   created_at    REAL NOT NULL,
   updated_at    REAL NOT NULL,
-  last_reconciled_at REAL
+  last_reconciled_at REAL,
+  tier          TEXT                             -- the comment's #tier:<t> (a cache); NULL = none
 );
 CREATE TABLE IF NOT EXISTS crate_tracks (
   playlist_id   TEXT NOT NULL,
@@ -113,11 +115,12 @@ class Crate:
     created_at: float
     updated_at: float
     last_reconciled_at: float | None
+    tier: str | None = None             # the comment's #tier:<t>, cached
 
     @classmethod
     def from_row(cls, r: sqlite3.Row) -> "Crate":
         return cls(r["playlist_id"], r["name"], bool(r["enabled"]), r["source"], json.loads(r["devices"]),
-                   r["created_at"], r["updated_at"], r["last_reconciled_at"])
+                   r["created_at"], r["updated_at"], r["last_reconciled_at"], r["tier"])
 
 
 class CrateStore:
@@ -136,6 +139,8 @@ class CrateStore:
                          ("asked_artist", "TEXT"), ("asked_title", "TEXT")):
             if col not in have:
                 self.db.execute(f"ALTER TABLE external_wanted ADD COLUMN {col} {typ}")
+        if "tier" not in {r[1] for r in self.db.execute("PRAGMA table_info(crates)")}:
+            self.db.execute("ALTER TABLE crates ADD COLUMN tier TEXT")
         self.db.commit()
 
     # --- crates
@@ -148,6 +153,8 @@ class CrateStore:
         return [Crate.from_row(r) for r in self.db.execute(q)]
 
     def set_enabled(self, playlist_id: str, name: str, enabled: bool, source: str = "app") -> Crate:
+        """Write the flag directly. Only tests use it: the comment owns the flag (D21), so production code caches
+        it through set_attrs, and the next reconcile overwrites whatever this wrote."""
         now = time.time()
         self.db.execute(
             "INSERT INTO crates(playlist_id,name,enabled,source,created_at,updated_at) VALUES(?,?,?,?,?,?) "
@@ -157,6 +164,31 @@ class CrateStore:
         self.log(playlist_id, None, "crate_on" if enabled else "crate_off", source)
         self.db.commit()
         return self.get(playlist_id)  # type: ignore[return-value]
+
+    def set_attrs(self, playlist_id: str, name: str, crate: bool, tier: str | None) -> tuple[bool, str | None] | None:
+        """Cache what the playlist's comment says (source 'comment'). Returns the OLD (crate, tier) when either
+        changed, None otherwise. A playlist that is neither a crate nor tiered gets no row until it is one."""
+        if tier is not None:
+            check_tier(tier)
+        c = self.get(playlist_id)
+        old = (c.enabled, c.tier) if c else (False, None)
+        if (crate, tier) == old:
+            if c and c.name != name:
+                self.db.execute("UPDATE crates SET name=? WHERE playlist_id=?", (name, playlist_id))
+                self.db.commit()
+            return None
+        now = time.time()
+        self.db.execute(
+            "INSERT INTO crates(playlist_id,name,enabled,source,tier,created_at,updated_at) VALUES(?,?,?,'comment',?,?,?) "
+            "ON CONFLICT(playlist_id) DO UPDATE SET name=excluded.name, enabled=excluded.enabled, "
+            "source=excluded.source, tier=excluded.tier, updated_at=excluded.updated_at",
+            (playlist_id, name, int(crate), tier, now, now))
+        if crate != old[0]:
+            self.log(playlist_id, None, "crate_on" if crate else "crate_off", "comment")
+        if tier != old[1]:
+            self.log(playlist_id, None, "tier", f"{old[1] or 'none'} → {tier or 'none'}")
+        self.db.commit()
+        return old
 
     def set_devices(self, playlist_id: str, devices: list[str]) -> None:
         self.db.execute("UPDATE crates SET devices=?, updated_at=? WHERE playlist_id=?", (json.dumps(devices), time.time(), playlist_id))
@@ -455,6 +487,14 @@ class CrateStore:
     def log(self, playlist_id: str | None, song_id: str | None, kind: str, detail: str | None = None) -> None:
         self.db.execute("INSERT INTO events(ts,playlist_id,song_id,kind,detail) VALUES(?,?,?,?,?)",
                         (time.time(), playlist_id, song_id, kind, detail))
+
+    def log_once(self, playlist_id: str | None, kind: str, detail: str) -> None:
+        """Log unless the latest `kind` event for this playlist says the same: reconcile runs every few minutes,
+        and a standing problem must not bury the rest of the log."""
+        last = self.db.execute("SELECT detail FROM events WHERE playlist_id IS ? AND kind=? ORDER BY id DESC LIMIT 1",
+                               (playlist_id, kind)).fetchone()
+        if not last or last["detail"] != detail:
+            self.log(playlist_id, None, kind, detail)
 
     def events(self, limit: int = 50) -> list[dict]:
         return [dict(r) for r in self.db.execute("SELECT * FROM events ORDER BY id DESC LIMIT ?", (limit,))]

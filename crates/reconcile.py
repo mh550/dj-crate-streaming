@@ -1,17 +1,19 @@
-"""Reconcile: make our crate state match Navidrome's playlists, and decide per track
-whether the library file is crate-worthy or must be sourced.
+"""Reconcile: rebuild the cache of which playlists are crates (and their tiers) from the playlists' own
+comments, and decide per track whether the library file is crate-worthy or must be sourced.
 
-This is deliberately *read-only against Navidrome* except for one optional thing:
-mirroring the crate flag into the playlist comment (`#crate`) so any Subsonic client
-shows it. Toggling from another client works two ways: edit the comment (where the
-client allows it) or rename the playlist with a marker ("… [crate]" / "🎛 …"), which
-every client can do. The store wins when the two disagree on a toggle made here.
+The playlist's comment owns the crate flag and the tier (D21, spec fact #6): `#crate` and `#tier:<t>`, read and
+written only through crates.attrs, so Michael's own text survives byte for byte. crates.db caches them; when the
+cache and a comment disagree, the comment wins and an `attrs` event records both. The setters (set_crate,
+set_tier) write the comment first, read it back, and only then refresh the cache: a failed write or a crash in
+between leaves the owner right and the cache rebuildable by the next run(), never the reverse. Clients that can
+rename a playlist but not edit its comment (most phone apps) can mark it by name ("… [crate]" / "🎛 …"); such a
+crate is turned off only by renaming it.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from sourcing.policy import QualityPolicy, DEFAULT_POLICY
+from sourcing.policy import DEFAULT_POLICY, DEFAULT_TIER, QualityPolicy, check_tier
 from sourcing.scorer import Wanted
 from subsonic.client import Playlist, Song, SubsonicClient
 from . import attrs
@@ -20,6 +22,15 @@ from .store import CrateStore, filed_path
 # Name markers, for clients that can rename a playlist but not edit its comment
 # (most phone apps). "Disco Edits [crate]" or "🎛 Disco Edits" both count.
 NAME_MARKERS = ("[crate]", "🎛")
+
+
+class NameMarked(Exception):
+    """The playlist's *name* carries a crate marker ([crate] / 🎛): only renaming it turns the crate off."""
+
+
+class CommentNotKept(Exception):
+    """The comment read back after our write does not say what we wrote (another client edited it in between,
+    or Navidrome stored it differently). The cache is left alone."""
 
 
 def has_crate_tag(comment: str | None) -> bool:
@@ -79,34 +90,68 @@ class ReconcileReport:
     tracks_ok: int = 0
     tracks_needing_source: int = 0
     tracks_removed: int = 0
-    toggled_from_comment: list[str] = field(default_factory=list)
+    toggled_from_comment: list[str] = field(default_factory=list)   # crates turned on/off by a comment or name
     errors: list[str] = field(default_factory=list)
+    attr_changes: list[str] = field(default_factory=list)   # "<name>: crate off→on (comment wins)"
+    problems: list[str] = field(default_factory=list)       # attrs problems: "<name>: unknown tier …"
 
     def as_dict(self) -> dict:
         return self.__dict__.copy()
 
 
-class Reconciler:
-    def __init__(self, client: SubsonicClient, store: CrateStore, policy: QualityPolicy = DEFAULT_POLICY,
-                 mirror_tag: bool = True):
-        self.client, self.store, self.policy, self.mirror_tag = client, store, policy, mirror_tag
+def _onoff(b: bool) -> str:
+    return "on" if b else "off"
 
-    # --- toggling
+
+class Reconciler:
+    def __init__(self, client: SubsonicClient, store: CrateStore, policy: QualityPolicy = DEFAULT_POLICY):
+        self.client, self.store, self.policy = client, store, policy
+
+    # --- setters: the comment first, then the cache
     def set_crate(self, playlist_id: str, enabled: bool) -> dict:
         pl = self.client.playlist(playlist_id)
-        self.store.set_enabled(pl.id, pl.name, enabled, source="app")
-        if self.mirror_tag and has_crate_tag(pl.comment) != enabled:
-            try:
-                self.client.update_playlist(pl.id, comment=with_crate_tag(pl.comment, enabled))
-            except Exception as e:   # mirroring is best-effort
-                self.store.log(pl.id, None, "mirror_failed", str(e))
-        if enabled:
+        if not enabled and has_name_marker(pl.name):
+            raise NameMarked(f"{pl.name!r} is a crate by its name: rename it (drop \"[crate]\" / \"🎛\") to turn it off")
+        return self._write_attrs(pl, crate=enabled)
+
+    def set_tier(self, playlist_id: str, tier: str | None) -> dict:
+        """`None` clears `#tier:`; `"crate"` sets the crate flag; any other tier keeps the flag as it is."""
+        if tier is not None:
+            check_tier(tier)
+        return self._write_attrs(self.client.playlist(playlist_id), tier=tier)
+
+    def _write_attrs(self, pl: Playlist, **change) -> dict:
+        new = attrs.write(pl.comment, **change)
+        if new != (pl.comment or ""):
+            self.client.update_playlist(pl.id, comment=new)      # an exception propagates: the cache is untouched
+            back = self.client.playlist(pl.id)
+            if (back.comment or "") != new:
+                raise CommentNotKept(f"{pl.name}: wrote comment {new!r} but Navidrome now has {back.comment or ''!r}; "
+                                     "nothing changed here, try again")
+            pl = back
+        self.refresh_cache(pl)
+        # Until derived tiers (M8 Task 5): today's per-playlist reconcile of the crate's tracks.
+        if (c := self.store.get(pl.id)) and c.enabled:
             self.reconcile_playlist(pl)
         else:
             for t in self.store.tracks(pl.id):
                 self.store.set_track_status(pl.id, t["song_id"], "removed", "crate disabled")
         self.store.commit()
         return self.crate_view(pl)
+
+    def refresh_cache(self, pl: Playlist) -> list[str]:
+        """cache := what the comment (or a name marker) says. Returns the changes as text, empty when none."""
+        a = attrs.parse(pl.comment)
+        crate = a.crate or has_name_marker(pl.name)
+        old = self.store.set_attrs(pl.id, pl.name, crate, a.tier)
+        if old is None:
+            return []
+        out = []
+        if old[0] != crate:
+            out.append(f"{pl.name}: crate {_onoff(old[0])}→{_onoff(crate)}")
+        if old[1] != a.tier:
+            out.append(f"{pl.name}: tier {old[1] or 'none'}→{a.tier or 'none'}")
+        return out
 
     # --- reconcile
     def run(self) -> ReconcileReport:
@@ -115,18 +160,19 @@ class Reconciler:
         rep.crates_seen = len(playlists)
         known = {c.playlist_id: c for c in self.store.all()}
         for p in playlists:
-            c = known.get(p.id)
-            tagged = is_marked(p.name, p.comment)
-            # A #crate comment or a name marker added outside this app turns the crate on; removing
-            # it turns it off — but only if that is how it got enabled (don't fight an in-app toggle).
-            if tagged and not (c and c.enabled):
-                self.store.set_enabled(p.id, p.name, True, source="comment")
+            was = known.get(p.id)
+            for prob in attrs.parse(p.comment).problems:
+                rep.problems.append(f"{p.name}: {prob}")
+                self.store.log_once(p.id, "attrs_problem", f"{p.name}: {prob}")
+            changes = self.refresh_cache(p)
+            c = self.store.get(p.id)
+            if changes and was is not None:
+                self.store.log(p.id, None, "attrs",
+                               f"{p.name}: cache said crate={_onoff(was.enabled)} tier={was.tier or 'none'}; comment says "
+                               f"crate={_onoff(c.enabled)} tier={c.tier or 'none'} (comment wins)")
+                rep.attr_changes += [f"{x} (comment wins)" for x in changes]
+            if bool(was and was.enabled) != bool(c and c.enabled):
                 rep.toggled_from_comment.append(p.name)
-                c = self.store.get(p.id)
-            elif not tagged and c and c.enabled and c.source == "comment":
-                self.store.set_enabled(p.id, p.name, False, source="comment")
-                rep.toggled_from_comment.append(p.name)
-                c = self.store.get(p.id)
             if not (c and c.enabled):
                 continue
             rep.crates_enabled += 1
@@ -176,8 +222,11 @@ class Reconciler:
     # --- views for the API/UI
     def crate_view(self, pl: Playlist) -> dict:
         c = self.store.get(pl.id)
+        crate = bool(c and c.enabled)
         return {"id": pl.id, "name": pl.name, "songCount": pl.song_count, "duration": pl.duration,
-                "comment": pl.comment or "", "crate": bool(c and c.enabled),
+                "comment": pl.comment or "", "crate": crate,
+                "tier": DEFAULT_TIER if crate else (c.tier if c else None),     # effective, from the cache
+                "tierTag": attrs.parse(pl.comment).tier, "crateByName": has_name_marker(pl.name),
                 "crateSource": c.source if c else None, "devices": c.devices if c else [],
                 "summary": self.store.summary(pl.id) if c and c.enabled else None,
                 "lastReconciledAt": c.last_reconciled_at if c else None}

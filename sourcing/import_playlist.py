@@ -24,6 +24,8 @@ from __future__ import annotations
 import unicodedata
 from dataclasses import dataclass, field
 
+from crates import attrs
+from crates.reconcile import CommentNotKept, Reconciler
 from crates.store import CrateStore
 from subsonic.client import Song, SubsonicClient
 from .identity import Title, loose, parse_title, stands_in
@@ -243,6 +245,24 @@ class Report:
         return "\n".join(lines)
 
 
+def _rerun_comment(existing_comment: str | None, ours: bool, tier: str | None) -> str | None:
+    """The comment a re-run writes, None to leave it alone: adopting (merge) appends MARKER; a given `tier`
+    rewrites `#tier:` (D15: a plain re-run never changes the tier). Every other byte stays."""
+    old = existing_comment or ""
+    new = old if ours else old + ("" if not old or old.endswith("\n") else " ") + MARKER
+    if tier is not None:
+        new = attrs.write(new, tier=tier)
+    return None if new == old else new
+
+
+def _comment_kept(client: SubsonicClient, store: CrateStore, playlist_id: str, wrote: str) -> None:
+    """D21: the comment owns #crate/#tier; read it back and only then cache what it says."""
+    back = client.playlist(playlist_id)
+    if (back.comment or "") != wrote:
+        raise CommentNotKept(f"{back.name}: wrote comment {wrote!r} but Navidrome now has {back.comment or ''!r}")
+    Reconciler(client, store).refresh_cache(back)
+
+
 def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: CrateStore,
                     source: str, dry_run: bool = False, merge: bool = False, resolve=track_lead, tier: str | None = None) -> Report:
     """Create or update the playlist `name`: matched tracks in row order (appending only what is
@@ -250,7 +270,10 @@ def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: C
     that remembers the playlist and position. Ambiguous rows are parked as `verify` with the ids.
 
     A same-named playlist that this tool did not create (no `#imported` in its comment) raises
-    NameCollision unless `merge=True`, which adopts it (adds the marker, leaves its visibility alone)."""
+    NameCollision unless `merge=True`, which adopts it (adds the marker, leaves its visibility alone).
+
+    The tier lives in the comment (D21): a created playlist gets `#imported #tier:<tier or IMPORT_TIER>`; a re-run
+    rewrites `#tier:` only when `tier` is given. A written comment is read back before crates.db caches it."""
     accept = frozenset(TIERS[tier or IMPORT_TIER].accept_versions)
     matches = [match(client, r, accept) for r in rows]
     existing = next((p for p in client.playlists() if p.name == name), None)
@@ -285,10 +308,13 @@ def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: C
     if not dry_run:
         if existing is None:
             playlist_id = client.create_playlist(name, new_ids).id
-            client.update_playlist(playlist_id, public=True, comment=MARKER)      # spec §2a: visible to every user
+            comment = attrs.write(MARKER, tier=tier or IMPORT_TIER)                # D15: the import tier, owned by the comment
+            client.update_playlist(playlist_id, public=True, comment=comment)     # spec §2a: visible to every user
         else:                                       # visibility is set once, at creation: Michael may change it
-            client.update_playlist(existing.id, add_song_ids=new_ids,
-                                   comment=None if ours else ((existing.comment or "") + " " + MARKER).strip())
+            comment = _rerun_comment(existing.comment, ours, tier)
+            client.update_playlist(existing.id, add_song_ids=new_ids, comment=comment)
+        if comment is not None:
+            _comment_kept(client, store, playlist_id, comment)
         store.mark_imported(playlist_id, ordered)
         queued = {r["position"]: r for r in store.external_for_playlist(playlist_id)}
         for m in matches:                           # a wanted row whose track is now in the library is done

@@ -29,7 +29,7 @@ from sourcing.fetch import fetch
 from sourcing.policy import DEFAULT_POLICY, STREAM, QualityPolicy, check_stream
 from sourcing.slskd_client import SlskdClient
 from subsonic.client import SubsonicClient, SubsonicError
-from .reconcile import Reconciler
+from .reconcile import CommentNotKept, NameMarked, Reconciler
 from . import trash
 from .store import CrateStore
 
@@ -137,6 +137,10 @@ class CrateApp:
     def set_crate(self, pid: str, enabled: bool) -> dict:
         with self._lock:
             return self.reconciler.set_crate(pid, enabled)
+
+    def set_tier(self, pid: str, tier: str | None) -> dict:
+        with self._lock:
+            return self.reconciler.set_tier(pid, tier)
 
     def reconcile(self) -> dict:
         with self._lock:
@@ -258,6 +262,10 @@ def make_handler(app: CrateApp):
                 return self._api(method, parts[1:], q)
             except ApiError as e:
                 return self._json({"error": str(e)}, e.status)
+            except NameMarked as e:                 # turn it off by renaming the playlist
+                return self._json({"error": str(e)}, 409)
+            except CommentNotKept as e:             # Navidrome did not keep what we wrote; nothing was cached
+                return self._json({"error": str(e)}, 502)
             except SubsonicError as e:
                 return self._json({"error": str(e), "code": e.code}, 502 if e.code == 0 else 400)
             except (ConnectionError, OSError) as e:
@@ -300,6 +308,11 @@ def make_handler(app: CrateApp):
                 body = self._body()
                 if head == "playlists" and len(p) == 3 and p[2] == "crate":
                     return self._json(app.set_crate(p[1], bool(body.get("enabled", True))))
+                if head == "playlists" and len(p) == 3 and p[2] == "tier":
+                    tier = body.get("tier")
+                    if tier is not None and not isinstance(tier, str):
+                        raise ApiError(400, "tier must be a tier name or null")
+                    return self._json(app.set_tier(p[1], tier))
                 if head == "playlists" and len(p) == 3 and p[2] == "songs":
                     return self._json(app.add_to_playlist(p[1], list(body.get("songIds", []))))
                 if head == "playlists" and len(p) == 1:
