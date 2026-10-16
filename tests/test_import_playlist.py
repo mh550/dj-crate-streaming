@@ -311,3 +311,33 @@ def test_a_lookalike_marker_is_a_foreign_playlist_for_import():
             ip.import_playlist("Tea tent", ROWS, c, store, source="s")
         ip.import_playlist("Tea tent", ROWS, c, store, source="s", merge=True)
         assert c.playlist(existing.id).comment == "old #imported-old #imported"      # adopted: a real marker is appended
+
+
+def _comment_update_raises(monkeypatch, exc):
+    real = SubsonicClient.update_playlist
+
+    def flaky(self, pid, **k):
+        if k.get("comment") is not None:
+            raise exc
+        return real(self, pid, **k)
+    monkeypatch.setattr(SubsonicClient, "update_playlist", flaky)
+
+
+def test_a_comment_write_error_after_the_add_still_records_our_facts_and_reports(monkeypatch):
+    # Any error from the comment write (not only CommentNotKept) is handled like Task 3's CommentNotKept.
+    import pytest
+    from urllib.error import URLError
+    from crates.reconcile import CommentNotKept
+    from subsonic.client import SubsonicError
+    for exc in (SubsonicError(0, "boom"), URLError("reset")):
+        with FakeSubsonicServer() as srv:
+            _lib(srv)
+            c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
+            _comment_update_raises(monkeypatch, exc)
+            with pytest.raises(CommentNotKept) as e:
+                ip.import_playlist("Tea tent", ROWS, c, store, source="s")
+            pid = e.value.report.playlist_id
+            assert [x.id for x in c.playlist(pid).entries] == ["w1", "k1"]             # the songs are in
+            assert store.imported(pid) == {"w1", "k1"}                                  # removed-stays-removed still works
+            assert {x["title"] for x in store.external_for_playlist(pid)} == {"Piano Joint (This Kind Of Love)", "The Magician"}
+            assert type(exc).__name__ in str(e.value) and e.value.report.table()

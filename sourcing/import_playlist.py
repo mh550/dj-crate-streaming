@@ -331,6 +331,9 @@ def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: C
                 _write_comment_and_cache(client, store, target, comment)
             except CommentNotKept as e:          # the songs are in: still record our own facts, then raise
                 not_kept = e
+            except Exception as e:               # SubsonicError, URLError...: the same, so the CLI prints the report, exit 1
+                not_kept = CommentNotKept(f"{target.name}: could not write comment {comment!r}: {type(e).__name__}: {e}")
+                not_kept.__cause__ = e
         store.mark_imported(playlist_id, ordered)
         queued = {r["position"]: r for r in store.external_for_playlist(playlist_id)}
         for m in matches:                           # a wanted row whose track is now in the library is done
