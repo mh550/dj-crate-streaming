@@ -8,8 +8,15 @@ const fmt = t => [t.suffix, t.bitRate ? `${t.bitRate}k` : null, t.bitDepth ? `${
 async function api(path, opts) {
   const r = await fetch(path, opts && { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(opts) });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || r.statusText);
+  if (!r.ok) { const e = new Error(j.error || r.statusText); e.status = r.status; throw e; }
   return j;
+}
+// what a failed playlist change means, in words for a phone (the server's own text is the fallback)
+function changeError(e) {
+  if (e.status === 409) return "This playlist is a crate by its name: remove [crate]/🎛 from the name to change this.";
+  if (e.status === 502) return "Navidrome didn't keep the change; nothing was changed here.";
+  if (e.status === 503) return "Navidrome or the worker is busy, try again in a moment.";
+  return e.message;
 }
 
 const state = { playlists: [], current: null, playingId: null };
@@ -18,7 +25,7 @@ const state = { playlists: [], current: null, playingId: null };
 document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
   document.querySelectorAll(".tabs button, .tab").forEach(x => x.classList.remove("active"));
   b.classList.add("active"); $("#tab-" + b.dataset.tab).classList.add("active");
-  ({ wanted: loadWanted, log: loadEvents })[b.dataset.tab]?.();
+  ({ wanted: loadWanted, log: loadEvents })[b.dataset.tab]?.()?.catch(e => alert(e.message));
 });
 
 // ---- status
@@ -42,6 +49,7 @@ async function loadPlaylists() {
     grow.append(el("div", "sub", sub));
     li.append(grow);
     if (p.crate) li.append(el("span", "badge crate", "crate"));
+    else if (p.tier) li.append(el("span", "badge tier", p.tier));
     li.onclick = () => openPlaylist(p.id);
     ul.append(li);
   }
@@ -53,9 +61,11 @@ async function openPlaylist(id) {
   $("#playlists").classList.add("hidden"); $("#detail").classList.remove("hidden");
   $("#detail-name").textContent = p.name;
   $("#detail-crate").checked = p.crate;
+  renderTier(p);
+  const label = p.crate ? "crate" : p.tier ? `tier ${p.tier}` : null;
   $("#detail-summary").textContent = p.summary
-    ? `crate · ${p.summary.ok} ready · ${p.summary.needs_source} need sourcing` + (p.summary.sourcing ? ` · ${p.summary.sourcing} downloading` : "") + (p.summary.failed ? ` · ${p.summary.failed} failed` : "")
-    : `${p.songCount} tracks · ${dur(p.duration)} · not a crate`;
+    ? `${label || "tiered"} · ${p.summary.ok} ready · ${p.summary.needs_source} need sourcing` + (p.summary.sourcing ? ` · ${p.summary.sourcing} downloading` : "") + (p.summary.failed ? ` · ${p.summary.failed} failed` : "")
+    : `${p.songCount} tracks · ${dur(p.duration)} · ${label || "not a crate"}`;
   const ol = $("#tracks"); ol.innerHTML = "";
   p.entries.forEach(t => {
     const li = el("li");
@@ -66,6 +76,7 @@ async function openPlaylist(id) {
     grow.append(el("div", "sub", `${t.artist || "?"} · ${t.album || ""}`));
     li.append(play, grow, el("span", "fmt", fmt(t) + " · " + dur(t.duration)));
     if (t.crateStatus) { const b = el("span", "badge " + t.crateStatus, t.crateStatus.replace("_", " ")); b.title = t.crateReason || ""; li.append(b); }
+    if (t.crateReason && ["review", "failed"].includes(t.crateStatus)) li.append(el("div", "reason", t.crateReason));   // a phone has no hover
     ol.append(li);
   });
 }
@@ -73,8 +84,28 @@ $("#back").onclick = () => { $("#detail").classList.add("hidden"); $("#playlists
 $("#detail-crate").onchange = async e => {
   const p = state.current; e.target.disabled = true;
   try { await api(`/api/playlists/${p.id}/crate`, { enabled: e.target.checked }); await openPlaylist(p.id); await loadStatus(); }
-  catch (err) { alert(err.message); e.target.checked = !e.target.checked; }
+  catch (err) { alert(changeError(err)); e.target.checked = !e.target.checked; }
   finally { e.target.disabled = false; }
+};
+
+// The comment owns crate and tier (D21). A crate always wins: while crate is on, the stored tier (tierTag) is shown
+// but the menu is off and says when it applies, so it never looks like it did nothing.
+function renderTier(p) {
+  const sel = $("#detail-tier"), note = $("#detail-tier-note");
+  sel.value = (p.crate ? p.tierTag : p.tier) || "";
+  sel.disabled = !!p.crate;
+  let text = "";
+  if (p.crate) {
+    text = p.tierTag ? `crate (tier ${p.tierTag} applies when crate is off)` : "crate (no other tier set; pick one once crate is off)";
+    if (p.crateByName) text += " · crate by name: remove [crate]/🎛 from the name to turn it off";
+  }
+  note.textContent = text; note.classList.toggle("hidden", !text);
+}
+$("#detail-tier").onchange = async e => {
+  const p = state.current, sel = e.target; sel.disabled = true;
+  try { await api(`/api/playlists/${p.id}/tier`, { tier: sel.value || null }); await openPlaylist(p.id); await loadStatus(); }
+  catch (err) { alert(changeError(err)); renderTier(p); }          // back to what the playlist really has
+  finally { sel.disabled = !!state.current.crate; }
 };
 
 // ---- wanted
@@ -89,24 +120,59 @@ function verifyLine(v) {
   return `last download ${v.ok ? "passed" : "rejected"} (${v.tier}): ${v.file} · ${bits.join(" · ")}${why.length ? " · " + why.join(" · ") : ""}`;
 }
 
+// proposals (D23): a new version never replaces anything by itself. Swap edits that one slot, Keep leaves it as it is.
+const KIND = { version_swap: "new version", unproven_copy: "better copy, not proven the same recording" };
+async function loadProposals() {
+  const items = await api("/api/proposals"), ul = $("#proposals"); ul.innerHTML = "";
+  $("#proposals-box").classList.toggle("hidden", !items.length);
+  for (const p of items) {
+    const li = el("li", "proposal"), grow = el("div", "grow");
+    grow.append(el("div", "title", p.playlist_name), el("div", "sub wrap", KIND[p.kind] || p.kind), el("div", "wrap", p.summary));
+    const swap = el("button", "primary", "Swap"), keep = el("button", null, "Keep");
+    const answer = (action, btn) => async () => {
+      swap.disabled = keep.disabled = true; const label = btn.textContent; btn.textContent = "…";
+      try {
+        const r = await api(`/api/proposals/${p.id}` + (action === "accept" ? "/accept" : "/decline"), {});
+        // an accept can end `stale` (the slot changed, the edit was not confirmed): say why instead of claiming success
+        if (action === "accept" && r.decision !== "accepted") alert(`Not swapped: ${r.result || r.decision}`);
+        await loadAfterProposal();
+      } catch (err) {
+        alert(err.status === 409 ? `Already answered: ${err.message}` : err.message);
+        if (err.status === 409) await loadAfterProposal(); else { swap.disabled = keep.disabled = false; btn.textContent = label; }
+      }
+    };
+    swap.onclick = answer("accept", swap); keep.onclick = answer("decline", keep);
+    const row = el("div", "actions"); row.append(swap, keep);
+    li.append(grow, row); ul.append(li);
+  }
+}
+async function loadAfterProposal() {
+  await loadWanted(); await loadStatus();
+  if (state.current) await openPlaylist(state.current.id);        // the slot may have changed under an open playlist
+}
+
 async function loadWanted() {
+  await loadProposals().catch(e => { $("#proposals-box").classList.add("hidden"); alert(e.message); });
   const items = await api("/api/wanted"); const ul = $("#wanted"); ul.innerHTML = "";
-  if (!items.length) ul.append(el("li", "muted", "nothing to source — every crate track meets policy"));
+  if (!items.length) ul.append(el("li", "muted", "nothing to source — every tiered track meets its tier"));
   for (const t of items) {
-    const li = el("li"); const grow = el("div", "grow");
+    const li = el("li", "wrow"); const grow = el("div", "grow");
+    const review = t.status === "review";     // keep-both / declined / ambiguous: a decision is waiting, not a download
     grow.append(el("div", "title", `${t.artist} — ${t.title}`));
-    grow.append(el("div", "sub", `${t.album || ""} ${t.year || ""} · ${dur(t.duration)} · ${t.crates.length ? "in " + t.crates.join(", ") : "external"} · tier ${t.tier}`));
-    if (t.verify) grow.append(el("div", "sub", verifyLine(t.verify)));
+    grow.append(el("div", "sub wrap", `${t.album || ""} ${t.year || ""} · ${dur(t.duration)} · ${t.crates.length ? "in " + t.crates.join(", ") : "external"} · tier ${t.tier}`));
+    if (t.reason) grow.append(el("div", "reason", t.reason));
+    if (t.verify) grow.append(el("div", "sub wrap", verifyLine(t.verify)));
     const pending = t.approval && !t.approval.used_at, pk = t.preview && t.preview.pick;
     const busy = t.status === "sourcing" || t.status === "verify";   // in progress: shown, not offered again
-    if (pending) grow.append(el("div", "sub", "approved · waiting for worker"));
-    else if (t.approval) grow.append(el("div", "sub", `worker: ${t.approval.result}`));
+    if (pending) grow.append(el("div", "sub wrap", "approved · waiting for worker"));
+    else if (t.approval) grow.append(el("div", "sub wrap", `worker: ${t.approval.result}`));
     if (pk && !pending) {                      // basename only: the peer's name stays out of the UI
-      grow.append(el("div", "sub", `pick: ${pk.basename} · ${pk.extension} · ${pk.bit_rate ?? "?"}k · score ${pk.score.toFixed(2)}`));
-      const d = el("details"); d.append(el("summary", null, "why"), el("pre", "sub", t.preview.explain || "")); grow.append(d);
-    } else if (t.preview && !pending) grow.append(el("div", "sub", "no acceptable candidate"));
+      grow.append(el("div", "sub wrap", `pick: ${pk.basename} · ${pk.extension} · ${pk.bit_rate ?? "?"}k · score ${pk.score.toFixed(2)}`));
+      const d = el("details"); d.append(el("summary", null, "why"), el("pre", "sub wrap", t.preview.explain || "")); grow.append(d);
+    } else if (t.preview && !pending) grow.append(el("div", "sub wrap", "no acceptable candidate"));
     li.append(grow);
-    if (!pending && !busy && t.filed) {        // failed after filing ("never indexed"): nothing to preview or pick
+    if (review) { /* nothing to search or approve: the reason above says what is waiting */ }
+    else if (!pending && !busy && t.filed) {        // failed after filing ("never indexed"): nothing to preview or pick
       const rc = el("button", null, "Re-check");
       rc.onclick = async () => {
         rc.disabled = true;
@@ -123,7 +189,7 @@ async function loadWanted() {
       };
       li.append(pv);
     }
-    if (pk && !pending && !busy) {
+    if (pk && !pending && !busy && !review) {
       const ap = el("button", null, "Approve");
       ap.onclick = async () => {
         ap.disabled = true;
@@ -132,7 +198,7 @@ async function loadWanted() {
       };
       li.append(ap);
     }
-    li.append(el("span", "badge " + t.status, busy ? `${t.status} · ${t.reason || ""}` : t.reason)); ul.append(li);
+    li.append(el("span", "badge " + t.status, t.status.replace("_", " "))); ul.append(li);
   }
 }
 

@@ -37,14 +37,26 @@
         <label class="switch" title="Toggle crate: every track must have a crate-quality file, analysis, stems, and a place on your DJ devices">
           <input type="checkbox" id="detail-crate"><span class="slider"></span><span class="switch-label">crate</span>
         </label>
+        <select id="detail-tier" aria-label="Sourcing tier" title="Tier: how good the files of this playlist's tracks must be. A crate always wins; the tier applies when crate is off.">
+          <option value="">tier: —</option>
+          <option value="low">tier: low</option>
+          <option value="medium">tier: medium</option>
+          <option value="high">tier: high</option>
+        </select>
       </div>
+      <div id="detail-tier-note" class="muted note hidden"></div>
       <div id="detail-summary" class="muted"></div>
       <ol id="tracks" class="list tracks"></ol>
     </div>
   </section>
 
   <section id="tab-wanted" class="tab">
-    <p class="muted">Tracks in crates whose library file doesn't meet the crate policy. This is the queue the Soulseek sourcer works through.</p>
+    <div id="proposals-box" class="hidden">
+      <h3>Proposals</h3>
+      <p class="muted">A new version or an unproven copy arrived. Nothing changes in a playlist until you answer: Swap uses the new one in that slot, Keep leaves the playlist as it is.</p>
+      <ul id="proposals" class="list"></ul>
+    </div>
+    <p class="muted">Tracks in tiered playlists (crates included) whose library file doesn't meet their tier. Rows marked review need a decision, not a download. This is the queue the Soulseek sourcer works through.</p>
     <ul id="wanted" class="list"></ul>
   </section>
 
