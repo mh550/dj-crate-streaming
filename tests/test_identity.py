@@ -304,3 +304,31 @@ def test_rereview_pairs_are_different_versions(a, b):
 
 def test_a_feat_decoration_with_an_unknown_tail_stays_in_the_base():
     assert parse_title("Song (feat. X - Acoustic)").base == "Song (feat. X - Acoustic)"
+
+
+@pytest.mark.parametrize("s", ["Catendé - Live!", "Chic & Nile", "Earth, Wind & Fire", "Jettin’", "It's #1, Baby"])
+def test_normalisers_agree(s):
+    # one owner for "is this the same text": every caller folds through identity (M7 Task 2)
+    from crates import store
+    from scripts import dedupe_copies, tag_rules
+    from sourcing import import_playlist, scorer
+    want = loose(s)
+    assert import_playlist.norm(s) == store._loose(s) == dedupe_copies._norm(s) == want
+    assert tag_rules._same(s, s.upper())
+    assert scorer.norm(s) == words(s, noise=True)
+
+
+def test_rulings_ampersand_accents_and_original_mix():
+    from crates import store
+    from scripts import dedupe_copies, tag_rules
+    from sourcing import import_playlist, scorer
+    # "&" is "and" on both sides, in every caller except Navidrome's search tokeniser
+    assert import_playlist.norm("X & Y") == import_playlist.norm("X and Y")
+    assert store._loose("X & Y") == store._loose("X and Y") and dedupe_copies._norm("X & Y") == dedupe_copies._norm("X and Y")
+    assert import_playlist.query_words("Chic & Nile") == ["chic", "nile"]      # Navidrome's search drops "&": untouched
+    # accents are ignored by find_external's key, dedupe and the sockseek rule
+    assert store._loose("Catendé") == store._loose("Catende")
+    assert dedupe_copies._norm("Catendé") == dedupe_copies._norm("Catende")
+    assert tag_rules._same("Catendé", "Catende")
+    # "original mix" is a version label (D16): the scorer keeps it in names
+    assert scorer.norm("Glide (Original Mix)") == "glide original mix"

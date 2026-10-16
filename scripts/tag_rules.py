@@ -17,6 +17,14 @@ Running `clean` on its own output changes nothing.
 from __future__ import annotations
 
 import re
+import sys
+from pathlib import Path
+
+try:
+    from sourcing.identity import loose                                  # python3 -m scripts.tag_rules
+except ImportError:                                                      # python3 scripts/tag_rules.py
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from sourcing.identity import loose
 
 PLACEHOLDERS = {"", "[unknown artist]", "unknown artist", "[unknown album]", "unknown album"}
 _JUNK = re.compile(r"^\d+\s*-\s*(?P<artist>.+?)\s+-\s+(?P<title>.+?)(\.(mp3|flac|m4a|wav))+$", re.I)
@@ -35,7 +43,7 @@ def usable_artist(artist: str | None) -> bool:
 
 
 def _same(a: str, b: str) -> bool:
-    return re.sub(r"\W+", "", a.casefold()) == re.sub(r"\W+", "", b.casefold())
+    return loose(a) == loose(b)
 
 
 def clean(fields: dict) -> tuple[dict, list[str]]:

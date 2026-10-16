@@ -16,10 +16,10 @@ from __future__ import annotations
 
 import math
 import re
-import unicodedata
 from dataclasses import asdict, dataclass, field
 from difflib import SequenceMatcher
 
+from .identity import words
 from .policy import QualityPolicy, DEFAULT_POLICY
 
 
@@ -73,17 +73,10 @@ class Candidate:
 
 # ---------- text normalization ----------
 
-_NOISE = re.compile(r"\b(feat|ft|featuring|remaster(?:ed)?|\d{4} remaster|album version|original mix|explicit|clean|hq|hd)\b", re.I)
-
-
 def norm(s: str) -> str:
-    s = unicodedata.normalize("NFKD", s)
-    s = "".join(c for c in s if not unicodedata.combining(c))
-    s = s.lower().replace("&", " and ")
-    s = re.sub(r"[_\-\.]+", " ", s)
-    s = re.sub(r"[^\w\s]", " ", s)
-    s = _NOISE.sub(" ", s)
-    return re.sub(r"\s+", " ", s).strip()
+    """The name-match fold: identity's words with the noise words (feat, remaster, explicit...) dropped.
+    "original mix" stays: under D16 it is a version label, not noise."""
+    return words(s, noise=True)
 
 
 _TRACKNO = re.compile(r"^\s*(?:[a-d]\d|\d{1,2})\s*[-._ ]+\s*", re.I)

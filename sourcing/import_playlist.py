@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 
 from crates.store import CrateStore
 from subsonic.client import Song, SubsonicClient
+from .identity import loose
 from .playlist_sources import Row, lead_artist, track_lead
 from .policy import IMPORT_TIER
 
@@ -38,13 +39,13 @@ class NameCollision(Exception):
 
 
 def _fold(s: str | None) -> str:
-    """Case-, accent- and punctuation-insensitive, like Navidrome's search: letters/digits and spaces only."""
+    """Case-, accent- and punctuation-insensitive, like Navidrome's search: letters/digits and spaces only.
+    Mirrors Navidrome's search tokeniser, not identity (it drops "&"; identity makes it "and")."""
     s = unicodedata.normalize("NFKD", s or "")
     return "".join(ch if ch.isalnum() or ch.isspace() else " " for ch in s if not unicodedata.combining(ch)).casefold()
 
 
-def norm(s: str | None) -> str:
-    return "".join(_fold(s).split())
+norm = loose                      # "is this the same text": identity owns it (accents and "&" included)
 
 
 def query_words(*parts: str) -> list[str]:

@@ -17,7 +17,6 @@ import argparse
 import datetime
 import json
 import os
-import re
 import shlex
 import shutil
 import subprocess
@@ -28,7 +27,10 @@ from pathlib import Path
 try:
     from scripts.export_playlists import open_ro                         # python3 -m scripts.dedupe_copies
     from scripts.library_map import _copy_rank, read_csv, write_csv
+    from sourcing.identity import loose
 except ImportError:                                                      # python3 scripts/dedupe_copies.py
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from sourcing.identity import loose
     from export_playlists import open_ro
     from library_map import _copy_rank, read_csv, write_csv
 
@@ -47,8 +49,7 @@ def decoded_md5(path) -> str:
     return out.strip().removeprefix("MD5=")
 
 
-def _norm(s) -> str:
-    return re.sub(r"\W+", "", str(s or "").casefold())
+_norm = loose                     # identity owns "is this the same text"
 
 
 def free_path(target: Path) -> Path:

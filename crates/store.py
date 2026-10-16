@@ -20,6 +20,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from sourcing.identity import loose
 from sourcing.policy import DEFAULT_TIER, STREAM_DEFAULT, check_stream, check_tier
 
 SCHEMA = """
@@ -95,8 +96,7 @@ def never_indexed(rel) -> str:
     return f"Navidrome never indexed {rel}; file is in the library"
 
 
-def _loose(s: str | None) -> str:
-    return re.sub(r"[^\w]+", "", (s or "").casefold())
+_loose = loose                    # identity owns "is this the same text" (accents ignored, "&" is "and")
 
 
 def _ext_pk(ext_id: str) -> int:
