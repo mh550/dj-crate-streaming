@@ -108,3 +108,16 @@ def test_a_12_inch_instrumental_stands_in_for_an_instrumental_row_at_crate():
     assert [c.username for c in cands] == ["i", "v"]
     i = by_user(cands, "i")
     assert any("fits another version" in r for r in i.reasons) and "prefers extended +6" in i.reasons
+
+
+# ---- M7 final fixes m2: file junk after the label ([FLAC], [320], (1979)) does not hide it ----
+
+def test_a_labelled_file_with_trailing_junk_is_still_another_version_for_a_crate_copy():
+    for name in ('03 - Good Times (12" Version) [FLAC].flac', "03 - Good Times (Extended Mix) [320].flac",
+                 "Good Times (Live) (1979).flac"):
+        f = response("x", rf"music\Chic\Risque\{name}", 35_000_000, "flac", length=501)
+        [c] = rank([f], Wanted("Chic", "Good Times", duration_s=501, copy=True), TIERS["crate"])
+        assert c.rejected and "another version" in c.rejected, name
+    plain = response("p", r"music\Chic\Risque\03 - Good Times (1979) [FLAC].flac", 35_000_000, "flac", length=501)
+    [c] = rank([plain], Wanted("Chic", "Good Times", duration_s=501, copy=True), TIERS["crate"])
+    assert c.rejected is None

@@ -264,6 +264,31 @@ def stands_in(got: Title, want: Title, accept) -> bool:
             and want.kinds - _DROPPABLE <= got.kinds and credits <= set(got.by.split("|")))
 
 
+_TRACKNO = re.compile(r"^\s*(?:[a-d]\d|\d{1,2})\s*[-._ ]+\s*", re.I)     # "03 - ", "03. ", "A1 " (vinyl side)
+_EXT = re.compile(r"\.[A-Za-z0-9]{2,5}$")
+# A trailing decoration that only describes the file: a bitrate, format, source, sample format or a bare year.
+# It ends the name, so it would stop the label peel ("Song (Extended Mix) [320]" would read as unlabelled).
+_FILE_JUNK = re.compile(
+    r"\s*[(\[]\s*(?:\d{2,4}\s*(?:k|kbps|kbit/?s)?|flac|mp3|aac|alac|wav|aiff|ogg|opus|web|web[- ]?dl|cd|cd ?rip"
+    r"|vinyl|vinyl ?rip|lossless|hi[- ]?res|v0|v2|\d{2}\s*bit|\d{2}\s*(?:bit)?\s*[-/ ]\s*\d{2,3}(?:[.,]\d)?\s*(?:k?hz)?)"
+    r"\s*[)\]]$", re.I)
+
+
+def strip_trackno(s: str) -> str:
+    """A leading track number ("03 - ", "A1 "), as Soulseek file names carry it."""
+    return _TRACKNO.sub("", s)
+
+
+def parse_filename(basename: str, artist: str | None = None) -> Title:
+    """`parse_title` for a file name (a Soulseek basename): the extension, the track number and trailing file junk
+    ("[320]", "[FLAC]", "(320 kbps)", "[WEB]", "(1979)") go first, so they cannot hide the label before them.
+    The scorer and fetch both read candidates with this, so they agree on which version a file is."""
+    t = strip_trackno(_EXT.sub("", basename or "").strip())
+    while (u := _FILE_JUNK.sub("", t)) != t and u.strip():
+        t = u.rstrip()
+    return parse_title(t, artist)
+
+
 def song_key(artist: str | None, title: str | None) -> str:
     """Which versions make one song, when no work id says so: lead artist + base title."""
     return f"{loose(lead_artist(artist))}|{loose(parse_title(title, artist).base)}"

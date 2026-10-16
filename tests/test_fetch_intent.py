@@ -285,3 +285,19 @@ def test_copy_verification_records_the_compared_reference(audio):
     assert v.measurements["replaceable"] is True
     assert v.measurements["reference"] == {"path": str(audio["true"]), "size": st.st_size, "mtime_ns": st.st_mtime_ns}
     assert json.loads(json.dumps(v.as_dict("low")))["measurements"]["reference"]["mtime_ns"] == st.st_mtime_ns
+
+
+# ---- M7 final fixes m2: fetch reads the file name as the scorer does (track number, then file junk) ----
+
+def test_external_row_getting_its_own_label_behind_file_junk_keeps_its_length(world, tmp_path):
+    ext = world["store"].add_external_wanted("Chic", "Good Times (Extended Mix)", album="Risqué", duration_s=501,
+                                             year=1979)
+    responses = copy.deepcopy(RESPONSES)
+    name = '@@music\\Chic\\Risqué (1979) [FLAC]\\03 - Good Times (Extended Mix) [FLAC].flac'
+    responses[0]["files"][0]["filename"] = name
+    flac, seen = good_flac_bytes(tmp_path), {}
+    with FakeSlskdServer(responses, world["dl"], files={name: flac}) as srv:
+        new_song(world["nd"], len(flac))
+        r = run(world, srv, approve=True, wanted_id=ext, verifier=spy_verifier(seen))
+    assert r.pick is not None and "Extended Mix" in r.pick.basename
+    assert seen["kw"]["intent"] is None and seen["duration"] == 501

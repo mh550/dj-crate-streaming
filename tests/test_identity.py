@@ -1,7 +1,7 @@
 """sourcing.identity: song / version / copy, from real library titles (M7 plan, measured fact 3)."""
 import pytest
 
-from sourcing.identity import Copy, is_placeholder, lead_artist, loose, parse_title, same_version, song_key, version_groups, words
+from sourcing.identity import Copy, is_placeholder, lead_artist, parse_filename, loose, parse_title, same_version, song_key, version_groups, words
 
 
 def test_words_and_loose():
@@ -413,3 +413,25 @@ def test_version_number_and_take_number_have_different_keys():
     assert parse_title("Song (Version 2)").key != parse_title("Song (Take 2)").key
     assert not same_version(_c("Song (Version 2)", 300), _c("Song (Take 2)", 300))
     assert parse_title("Song (Version 2)").key == parse_title("Song - Version 2").key
+
+
+# ---- M7 final fixes m2: a Soulseek file name's trailing format/bitrate/year junk does not hide its label ----
+
+@pytest.mark.parametrize("name, base, kinds", [
+    ("03 - Good Times (Extended Mix) [320].mp3", "Good Times", {"extended"}),
+    ("Good Times (Extended) [FLAC].flac", "Good Times", {"extended"}),
+    ("Good Times (Extended Mix) (320 kbps).mp3", "Good Times", {"extended"}),
+    ("Good Times (Live) [WEB].flac", "Good Times", {"live"}),
+    ("Good Times (12\" Version) [24-96] [FLAC].flac", "Good Times", {"extended"}),
+    ("A1 Good Times (Dub) (1979).flac", "Good Times", {"dub"}),
+    ("Chic - Good Times (1979).flac", "Good Times", set()),
+    ("03. Good Times [320kbps].mp3", "Good Times", set()),
+    ("Good Times (Live 1977).flac", "Good Times", {"live"}),
+])
+def test_parse_filename_peels_file_junk_before_the_label(name, base, kinds):
+    t = parse_filename(name, "Chic")
+    assert (t.base, set(t.kinds)) == (base, kinds)
+
+
+def test_parse_filename_keeps_a_years_credit_inside_a_label():
+    assert parse_filename("Good Times (Live 1977).flac", "Chic").key != parse_filename("Good Times (Live 1979).flac", "Chic").key

@@ -19,7 +19,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from difflib import SequenceMatcher
 
-from .identity import NEUTRAL, parse_title, stands_in, words
+from .identity import NEUTRAL, parse_filename, parse_title, stands_in, strip_trackno, words
 from .policy import QualityPolicy, DEFAULT_POLICY
 
 
@@ -80,13 +80,6 @@ def norm(s: str) -> str:
     """The name-match fold: identity's words with the noise words (feat, remaster, explicit...) dropped.
     "original mix" stays: under D16 it is a version label, not noise."""
     return words(s, noise=True)
-
-
-_TRACKNO = re.compile(r"^\s*(?:[a-d]\d|\d{1,2})\s*[-._ ]+\s*", re.I)
-
-
-def strip_trackno(s: str) -> str:
-    return _TRACKNO.sub("", s)
 
 
 def ratio(a: str, b: str) -> float:
@@ -160,7 +153,7 @@ def score_candidate(c: Candidate, w: Wanted, policy: QualityPolicy = DEFAULT_POL
 
     # --- version: which version the file is, read from its name (identity.parse_title)
     want = parse_title(w.title, w.artist)
-    got = parse_title(strip_trackno(re.sub(r"\.[^.]+$", "", c.basename)), w.artist)
+    got = parse_filename(c.basename, w.artist)
     other = got.key != want.key
     stand_in = other and stands_in(got, want, policy.accept_versions)     # e.g. a 12" for the radio edit
     if w.copy and other:

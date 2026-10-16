@@ -45,7 +45,7 @@ from crates.store import CrateStore, filed_path, never_indexed
 from scripts.export_playlists import open_ro
 from subsonic.client import SubsonicClient, SubsonicError
 from .filer import BeetsFiler, FilingError
-from .identity import parse_title
+from .identity import parse_filename, parse_title
 from .policy import DEFAULT_TIER, TIERS, QualityPolicy, check_tier
 from .scorer import Candidate, Wanted, explain, rank
 from .slskd_client import SlskdClient, transfer_files
@@ -253,7 +253,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
     if not external:
         intent = "copy"
     else:
-        got = parse_title(Path(best.basename).stem, wanted.artist)
+        got = parse_filename(best.basename, wanted.artist)        # read as the scorer read it
         if got.key != parse_title(wanted.title, wanted.artist).key:
             intent, expected = "version", None
             store.log(None, wanted_id, "pick", f"another version ({got.label or "no label"}) of {wanted.title}: {best.basename}")
