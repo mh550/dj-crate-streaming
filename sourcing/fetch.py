@@ -15,7 +15,8 @@ because they are what the library now calls it. Soulseek peer names never reach 
 `prefer` (an approval's candidate, D18) makes the download that exact file while it is still offered and
 unrejected; otherwise the top-ranked one is used, and a `pick` event says which of the two happened.
 
-Re-running `fetch` on a `verify` row skips the download and just re-checks Navidrome for the
+Re-running `fetch` on a `verify` row (or on a row failed as "Navidrome never indexed <path>", see
+filed_path) skips the download and just re-checks Navidrome for the
 filed path kept in the reason, searching by the filed file's own artist/title tags (what Navidrome indexed);
 each miss is counted in the reason as `(check N)`, and the RECHECK_LIMIT-th fails the row with "Navidrome
 never indexed <path>; file is in the library", so it does not wait unseen forever. A `sourcing` row older
@@ -49,7 +50,21 @@ from .scorer import Candidate, Wanted, explain, rank
 from .slskd_client import SlskdClient, transfer_files
 from .verify import verify
 
-_FILED = re.compile(r"filed as (.+?) but Navidrome")   # the filed path rides in the reason until a jobs table exists (M4)
+# The filed path rides in the reason until a jobs table exists (M4), in one of two shapes: a `verify` row's
+# "filed as <rel> but Navidrome has not picked it up yet…" and, after RECHECK_LIMIT misses, a `failed` row's
+# "Navidrome never indexed <rel>; file is in the library". Both mean: the file is in the library, never fetch it again.
+_FILED = re.compile(r"filed as (.+?) but Navidrome|^Navidrome never indexed (.+); file is in the library$")
+
+
+def filed_path(reason: str | None) -> str | None:
+    """The library-relative path a row's reason says was filed, from either shape; None for any other reason."""
+    m = _FILED.search(reason or "")
+    return (m.group(1) or m.group(2)) if m else None
+
+
+def _never_indexed(rel) -> str:
+    return f"Navidrome never indexed {rel}; file is in the library"
+
 _CHECK = re.compile(r"\(check (\d+)\)$")                # how many re-checks have not found it, also in the reason
 RECHECK_LIMIT = 12      # re-checks without Navidrome finding the file before the row fails, so Michael sees it
 
@@ -74,6 +89,7 @@ class FetchResult:
     filed: Path | None = None
     new_song_id: str | None = None
     explain: str = ""
+    approval_result: str = ""      # set when an approval must record something other than "<status>: <reason>"
 
 
 def _find_landed(downloads_root: Path, best: Candidate) -> Path | None:
@@ -163,7 +179,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         if new is None:
             rel = filed.relative_to(music_root)
             if check >= RECHECK_LIMIT:
-                return fail(f"Navidrome never indexed {rel}; file is in the library", best, text)
+                return fail(_never_indexed(rel), best, text)
             why = f"filed as {rel} but Navidrome has not picked it up yet" + (f" (check {check})" if check else "")
             set_status("verify", why)
             return FetchResult("verify", why, best, filed, explain=text)
@@ -189,15 +205,19 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         return FetchResult("ok", "already ok; nothing to do")
     if status == "review":                                       # import-playlist: several library versions fit
         return FetchResult("review", f"needs a pick first ({row.get('reason')}); nothing searched")
-    if status == "verify":
-        reason = row.get("reason") or ""
-        m = _FILED.search(reason)
-        if m and (music_root / m.group(1)).exists():
-            filed = music_root / m.group(1)
+    reason = row.get("reason") or ""
+    rel = filed_path(reason)
+    if status == "verify" or (status == "failed" and rel is not None):    # filed already: re-check, never download
+        if rel is not None and (music_root / rel).exists():
+            filed = music_root / rel
             names = _file_names(filed)            # Navidrome indexed the file's tags, not the row's (Spotify) names
-            c = _CHECK.search(reason)
-            return finish(filed, None, "", query=" ".join(names) if names else None,
-                          check=(int(c.group(1)) if c else 0) + 1)
+            c = _CHECK.search(reason)             # a never-indexed row starts counting again at 1
+            r = finish(filed, None, "", query=" ".join(names) if names else None,
+                       check=(int(c.group(1)) if c else 0) + 1)
+            r.approval_result = f"recheck: already filed as {rel}"
+            return r
+        if status == "failed":                    # the file is gone: say so now, a later approval may fetch again
+            return fail(f"filed as {rel} earlier, but it is no longer in the library", None, "")
         return fail(f"verify row without a filed path (reason was: {row.get('reason')!r})", None, "")
     if status == "sourcing" and time.time() - (row.get("updated_at") or 0) < download_timeout_s:
         return FetchResult("sourcing", "in flight (started less than the download timeout ago)")
