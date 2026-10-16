@@ -302,3 +302,179 @@ def test_adding_a_song_to_a_tiered_playlist_judges_it_at_once(svc):
     s, _ = post(srv.url + "/api/playlists/pl-3/songs", {"songIds": ["s4"]})
     assert s == 200
     assert app.store.find_wanted("s4")["tier"] == "high" and app.store.find_wanted("s4")["status"] == "needs_source"
+
+
+# --- Task 5 review
+FILED = "filed as A/B/x.flac but Navidrome has not picked it up yet"
+IN_FLIGHT = [("sourcing", "downloading x.flac"), ("verify", FILED), ("failed", never_indexed("A/B/x.flac"))]
+
+
+@pytest.mark.parametrize("status,reason", IN_FLIGHT)
+def test_an_in_flight_row_keeps_its_status_whatever_the_new_verdict(env, status, reason):
+    srv, client, store, rec = env
+    rec.run()
+    store.set_track_status("pl-2", "s3", status, reason)              # s3: 320 mp3, needs_source at crate
+    client.update_playlist("pl-2", comment="#tier:medium")             # ok at medium
+    rec.run()
+    assert (row(store, "pl-2", "s3")["status"], row(store, "pl-2", "s3")["reason"]) == (status, reason)
+
+
+@pytest.mark.parametrize("status,reason", IN_FLIGHT + [("review", "keep both?")])
+def test_untiering_keeps_in_flight_rows_reachable(env, status, reason):
+    srv, client, store, rec = env
+    rec.run()
+    store.set_track_status("pl-2", "s4", status, reason)
+    client.update_playlist("pl-2", comment="warmup")                   # loses #crate
+    rec.run()
+    assert (row(store, "pl-2", "s4")["status"], row(store, "pl-2", "s4")["reason"]) == (status, reason)
+    assert row(store, "pl-2", "s3")["status"] == "removed"             # the others go
+    w = store.find_wanted("s4")
+    assert w is not None and w["status"] == status and w["tier"] in TIERS
+    assert ("s4" in store.verify_ids()) == (status == "verify")
+    store.set_wanted_status("s4", "failed", "download ended: Completed, Errored")
+    assert row(store, "pl-2", "s4")["status"] == "failed"              # fetch can still finish it
+    rec.run()
+    assert row(store, "pl-2", "s4")["status"] == "removed"             # finished: now it goes
+
+
+def test_set_crate_off_while_sourcing_then_filed_reaches_the_row(env):
+    srv, client, store, rec = env
+    rec.run()
+    store.set_track_status("pl-2", "s4", "sourcing", "downloading x.flac")
+    rec.set_crate("pl-2", False)
+    assert row(store, "pl-2", "s4")["status"] == "sourcing"
+    store.set_wanted_status("s4", "verify", FILED)
+    assert row(store, "pl-2", "s4")["status"] == "verify" and store.verify_ids() == ["s4"]
+
+
+def test_a_download_finished_after_its_crate_was_turned_off_is_not_rechecked_forever(world, tmp_path):
+    from sourcing.fake_slskd import FakeSlskdServer
+    from tests.test_fetch import GOOD, RESPONSES, good_flac_bytes, header_only, new_song, run
+    nd, client, store, rec = world["nd"], world["client"], world["store"], world["rec"]
+
+    def verifier(*a, **k):                                             # Michael un-flags the crate mid-download
+        rec.set_crate("pl-2", False)
+        return header_only(*a, **k)
+    flac = good_flac_bytes(tmp_path)
+    with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: flac}) as srv:
+        new_song(nd, len(flac))
+        r = run(world, srv, approve=True, verifier=verifier)
+    assert r.status == "ok", r.reason
+    assert row(store, "pl-2", "s4")["status"] == "ok" and store.verify_ids() == []
+    assert [e.id for e in client.playlist("pl-2").entries] == ["s3", "s4", "s5"]   # not a tiered playlist: untouched
+    rec.run()
+    assert row(store, "pl-2", "s4")["status"] == "removed"
+
+
+HOLD = """
+import fcntl, sys, time
+fd = open(sys.argv[1], "a")
+fcntl.flock(fd, fcntl.LOCK_EX)
+print("held", flush=True)
+sys.stdin.read()
+"""
+
+
+def test_reconcile_waits_for_another_process_and_gives_up_busy(tmp_path):
+    import subprocess
+    import sys
+    from crates.reconcile import ReconcileBusy
+    with FakeSubsonicServer() as srv:
+        client = SubsonicClient(srv.url, "demo", "demo")
+        store = CrateStore(tmp_path / "crates.db")
+        rec = Reconciler(client, store, lock_timeout_s=0.3)
+        p = subprocess.Popen([sys.executable, "-c", HOLD, str(tmp_path / "reconcile.lock")],
+                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, encoding="utf-8")
+        try:
+            assert p.stdout.readline().strip() == "held"
+            with pytest.raises(ReconcileBusy):
+                rec.run()
+            with pytest.raises(ReconcileBusy):
+                rec.set_crate("pl-1", True)
+            assert srv.state.playlists["pl-1"]["comment"] == ""        # busy: nothing written
+        finally:
+            p.communicate("")
+        rec.run()                                                      # released: runs, nested re-judging included
+        assert rec.set_crate("pl-1", True)["crate"] and store.tracks("pl-1")
+
+
+def test_a_busy_reconcile_is_a_503_in_the_web_client(tmp_path):
+    from crates.reconcile import hold_reconcile_lock
+    from crates.service import Config, CrateApp, CrateServer
+    from tests.test_service import post
+    with FakeSubsonicServer() as fake:
+        cfg = Config(subsonic_url=fake.url, username="demo", password="demo", db_path=str(tmp_path / "c.db"), port=0,
+                     public_url="http://x.example:4533")
+        app = CrateApp(cfg, store=CrateStore(tmp_path / "c.db"))
+        app.reconciler.lock_timeout_s = 0.2
+        with CrateServer(app) as srv, hold_reconcile_lock(tmp_path / "reconcile.lock", 1):
+            s, d = post(srv.url + "/api/playlists/pl-1/crate", {"enabled": True})
+            assert s == 503 and "busy" in d["error"]
+            s, d = post(srv.url + "/api/reconcile", {})
+            assert s == 503
+        assert fake.state.playlists["pl-1"]["comment"] == ""
+
+
+def test_worker_skips_a_busy_reconcile_and_ticks_on():
+    from crates.reconcile import ReconcileBusy
+
+    class Busy:
+        def run(self):
+            raise ReconcileBusy("another reconcile holds the lock")
+    lines = []
+    report = _worker(Busy(), [0.0], lines, reconcile_s=600).tick()
+    assert report.approvals == 0 and any("reconcile skipped" in x and "holds the lock" in x for x in lines)
+
+
+def test_import_into_a_playlist_named_as_a_crate_matches_and_queues_at_crate(env):
+    srv, client, store, rec = env
+    srv.state.songs["s1"]["title"] = "Good Times (Club Mix)"
+    pl = client.create_playlist("Tea tent [crate]", [])
+    client.update_playlist(pl.id, comment="#imported")
+    rep = ip.import_playlist("Tea tent [crate]", ROWS2, client, store, source="s")
+    assert rep.matches[0].status == "matched" and rep.matches[0].song_id == "s1"
+    assert [r["tier"] for r in store.external_for_playlist(pl.id)] == ["crate"]
+
+
+def test_worker_once_no_reconcile(tmp_path, monkeypatch):
+    import shutil
+    import sourcing.worker
+    from sourcing.fake_slskd import FakeSlskdServer
+    from tests.test_fetch import RESPONSES
+    from tests.test_tier_rows import _cli_env
+    seen = []
+
+    class Spy(sourcing.worker.Worker):
+        def __init__(self, **kw):
+            seen.append(kw["reconcile_s"])
+            super().__init__(**kw)
+    monkeypatch.setattr(sourcing.worker, "Worker", Spy)
+    shutil.copy(cli.DEFAULT_BEETS_CONFIG, tmp_path / "beets.yaml")
+    with FakeSubsonicServer() as nd, FakeSlskdServer(RESPONSES, tmp_path / "dl", files={}) as sl:
+        _cli_env(monkeypatch, tmp_path, nd, sl)
+        monkeypatch.setenv("BEETS_CONFIG", str(tmp_path / "beets.yaml"))
+        monkeypatch.setenv("DJ_WORKER", "1")
+        monkeypatch.delenv("WORKER_RECONCILE_S", raising=False)
+        assert cli.main(["worker", "--once", "--no-reconcile"]) == 0
+        assert CrateStore(tmp_path / "c.db").get("pl-2") is None        # the cache was not written
+        assert cli.main(["worker", "--once"]) == 0
+        assert CrateStore(tmp_path / "c.db").get("pl-2").enabled        # default: reconciles on the first tick
+    assert seen == [0.0, 600.0]
+
+
+def test_crates_cli_reconcile_and_tier_say_busy_and_exit_1(tmp_path, monkeypatch, capsys):
+    import functools
+    import crates.service
+    from crates.cli import main as crates_main
+    from crates.reconcile import hold_reconcile_lock
+    monkeypatch.setattr(crates.service, "Reconciler", functools.partial(Reconciler, lock_timeout_s=0.2))
+    with FakeSubsonicServer() as nd:
+        for k, v in dict(SUBSONIC_URL=nd.url, SUBSONIC_USER="demo", SUBSONIC_PASS="demo",
+                         CRATES_DB=str(tmp_path / "c.db")).items():
+            monkeypatch.setenv(k, v)
+        with hold_reconcile_lock(tmp_path / "reconcile.lock", 1):
+            assert crates_main(["reconcile"]) == 1
+            assert "try again" in capsys.readouterr().err
+            assert crates_main(["tier", "pl-1", "high"]) == 1
+            assert "try again" in capsys.readouterr().err
+        assert nd.state.playlists["pl-1"]["comment"] == ""

@@ -24,7 +24,7 @@ import threading
 from pathlib import Path
 
 from sourcing.policy import TIERS
-from .reconcile import CommentNotKept, NameMarked
+from .reconcile import CommentNotKept, NameMarked, ReconcileBusy
 from .service import Config, CrateApp, CrateServer
 
 
@@ -86,7 +86,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             v = (app.set_crate(a.playlist_id, a.state == "on") if a.cmd == "toggle"
                  else app.set_tier(a.playlist_id, None if a.tier == "none" else a.tier))
-        except (NameMarked, CommentNotKept) as e:
+        except (NameMarked, CommentNotKept, ReconcileBusy) as e:
             print(f"{a.cmd}: {e}", file=sys.stderr)
             return 1
         print(json.dumps(v, indent=2))
@@ -108,7 +108,11 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"refused: {r}", file=sys.stderr)
             return 1 if refused else 0
     elif a.cmd == "reconcile":
-        print(json.dumps(app.reconcile(), indent=2))
+        try:
+            print(json.dumps(app.reconcile(), indent=2))
+        except ReconcileBusy as e:
+            print(f"reconcile: {e}", file=sys.stderr)
+            return 1
     elif a.cmd == "wanted":
         items = app.store.wanted()
         if a.json:

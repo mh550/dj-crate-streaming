@@ -29,7 +29,7 @@ from sourcing.fetch import fetch
 from sourcing.policy import DEFAULT_POLICY, STREAM, QualityPolicy, check_stream
 from sourcing.slskd_client import SlskdClient
 from subsonic.client import SubsonicClient, SubsonicError
-from .reconcile import CommentNotKept, NameMarked, Reconciler
+from .reconcile import CommentNotKept, NameMarked, ReconcileBusy, Reconciler
 from . import trash
 from .store import CrateStore
 
@@ -266,6 +266,8 @@ def make_handler(app: CrateApp):
                 return self._json({"error": str(e)}, 409)
             except CommentNotKept as e:             # Navidrome did not keep what we wrote; nothing was cached
                 return self._json({"error": str(e)}, 502)
+            except ReconcileBusy as e:              # the worker is reconciling; nothing was written
+                return self._json({"error": f"busy, try again ({e})"}, 503)
             except SubsonicError as e:
                 return self._json({"error": str(e), "code": e.code}, 502 if e.code == 0 else 400)
             except (ConnectionError, OSError) as e:

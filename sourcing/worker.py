@@ -8,7 +8,8 @@ before touching anything. Then, before the first tick: `recover` marks approvals
 Each tick:
   0. every `reconcile_s` seconds (WORKER_RECONCILE_S, 600 in the CLI; 0 = never) the reconciler runs: the playlist
      comments are re-read and every song re-judged at its derived tier, so a #crate / #tier: Michael edits in
-     Amperfy takes effect without anyone opening the web client. A failed reconcile is logged and the tick goes on;
+     Amperfy takes effect without anyone opening the web client. A failed or busy (ReconcileBusy) reconcile is
+     logged and the tick goes on;
   1. every `verify` row not updated in the last `recheck_s` seconds (WORKER_RECHECK_S, 300 in the CLI) is
      fetched again with approve=True; that path downloads nothing, it only asks Navidrome (after a rescan)
      whether the filed song has appeared. Each re-check rewrites the row, which restarts its clock, so a row
@@ -29,6 +30,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from crates.reconcile import ReconcileBusy
 from .fetch import fetch
 
 
@@ -101,6 +103,8 @@ class Worker:
         self._reconciled_at = now                          # a failure waits for the interval too, like a recheck
         try:
             self.reconciler.run()
+        except ReconcileBusy as e:                         # the crates service is reconciling: skip this one
+            self.log(f"reconcile skipped: {e}")
         except Exception as e:                             # e.g. Navidrome down: the next interval tries again
             self.log(f"reconcile failed: {type(e).__name__}: {e}")
 

@@ -198,6 +198,10 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
             # which Navidrome applies atomically (remove first, then add).
             navidrome.update_playlist(pl.id, add_song_ids=[new.id] + ids[idx + 1:], remove_indexes=list(range(idx, len(ids))))
             reconciler.reconcile_playlist(navidrome.playlist(pl.id))
+        # A row the swap did not reach (its playlist stopped being tiered mid-download, or no longer holds the
+        # song) is done too: without this it would stay `verify` and be re-checked forever. A later run removes it.
+        set_status("ok", f"filed as {filed.relative_to(music_root)}; not swapped in: its playlist is no longer tiered "
+                         "or no longer holds it")
         store.commit()
         return FetchResult("ok", "filed, swapped into every tiered playlist, reconciled", best, filed, new.id, text)
 

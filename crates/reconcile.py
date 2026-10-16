@@ -11,16 +11,26 @@ set_tier) write the comment first, read it back, and only then refresh the cache
 between leaves the owner right and the cache rebuildable by the next run(), never the reverse. Clients that can
 rename a playlist but not edit its comment (most phone apps) can mark it by name ("… [crate]" / "🎛 …"); such a
 crate is turned off only by renaming it.
+
+Two processes reconcile (the crates service on Michael's edits, the worker every WORKER_RECONCILE_S), so run(), the
+setters and reconcile_playlist hold an flock on <crates.db dir>/reconcile.lock; after `lock_timeout_s` a caller
+gets ReconcileBusy (the web client answers 503, the worker skips that run) having written nothing.
 """
 from __future__ import annotations
 
+import fcntl
+import os
+import threading
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from sourcing.policy import DEFAULT_POLICY, DEFAULT_TIER, TIERS, QualityPolicy, check_tier, max_tier
 from sourcing.scorer import Wanted
 from subsonic.client import Playlist, Song, SubsonicClient, SubsonicError
 from . import attrs
-from .store import CrateStore, filed_path
+from .store import CrateStore, in_flight
 
 # Name markers, for clients that can rename a playlist but not edit its comment
 # (most phone apps). "Disco Edits [crate]" or "🎛 Disco Edits" both count.
@@ -34,6 +44,31 @@ class NameMarked(Exception):
 class CommentNotKept(Exception):
     """The comment read back after our write does not say what we wrote (another client edited it in between,
     or Navidrome stored it differently). The cache is left alone."""
+
+
+class ReconcileBusy(Exception):
+    """Another process (or request) holds the reconcile lock past the timeout; nothing was written. Try again."""
+
+
+@contextmanager
+def hold_reconcile_lock(path: str | Path, timeout_s: float):
+    """An exclusive flock on `path` for the block, waited for up to `timeout_s` seconds, else ReconcileBusy. The file
+    is opened read-only (flock needs no write access), so the crates and worker containers can share it whichever
+    user created it."""
+    fd = os.open(path, os.O_RDONLY | os.O_CREAT, 0o644)
+    try:
+        deadline = time.monotonic() + timeout_s
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise ReconcileBusy(f"another reconcile holds {path} (waited {timeout_s:g} s); try again") from None
+                time.sleep(0.05)
+        yield
+    finally:
+        os.close(fd)                                     # closing releases the lock
 
 
 def write_comment(client: SubsonicClient, pl: Playlist, new: str) -> Playlist:
@@ -59,6 +94,13 @@ def has_name_marker(name: str | None) -> bool:
 def is_marked(name: str | None, comment: str | None) -> bool:
     """A playlist is marked as a crate from *outside this app* by comment or by name."""
     return has_crate_tag(comment) or has_name_marker(name)
+
+
+def effective_tier(name: str | None, comment: str | None) -> str | None:
+    """A playlist's sourcing tier from its own name and comment: crate when the comment or a name marker says so,
+    else its #tier:, else none. The one reading of it (reconcile's cache, import-playlist's matching)."""
+    a = attrs.parse(comment)
+    return DEFAULT_TIER if a.crate or has_name_marker(name) else a.tier
 
 
 def with_crate_tag(comment: str | None, on: bool) -> str:
@@ -128,9 +170,35 @@ def _onoff(b: bool) -> str:
     return "on" if b else "off"
 
 
+_BESIDE_DB = object()
+
+
 class Reconciler:
-    def __init__(self, client: SubsonicClient, store: CrateStore, policy: QualityPolicy = DEFAULT_POLICY):
+    def __init__(self, client: SubsonicClient, store: CrateStore, policy: QualityPolicy = DEFAULT_POLICY,
+                 lock_path: str | Path | None | object = _BESIDE_DB, lock_timeout_s: float = 60):
+        """`lock_path` defaults to reconcile.lock beside the store's database; an in-memory store has no lock."""
         self.client, self.store, self.policy = client, store, policy
+        if lock_path is _BESIDE_DB:
+            lock_path = None if store.path == ":memory:" else Path(store.path).parent / "reconcile.lock"
+        self.lock_path, self.lock_timeout_s = lock_path, lock_timeout_s
+        self._tlock, self._depth = threading.RLock(), 0
+
+    @contextmanager
+    def _locked(self):
+        """The cross-process reconcile lock, re-entrant within this reconciler (a setter re-judges through
+        reconcile_playlist; flock would block on its own second fd)."""
+        with self._tlock:
+            outer = self._depth == 0 and self.lock_path is not None
+            held = hold_reconcile_lock(self.lock_path, self.lock_timeout_s) if outer else None
+            if held is not None:
+                held.__enter__()
+            self._depth += 1
+            try:
+                yield
+            finally:
+                self._depth -= 1
+                if held is not None:
+                    held.__exit__(None, None, None)
 
     # --- setters: the comment first, then the cache
     def set_crate(self, playlist_id: str, enabled: bool) -> dict:
@@ -146,6 +214,10 @@ class Reconciler:
         return self._write_attrs(self.client.playlist(playlist_id), tier=tier)
 
     def _write_attrs(self, pl: Playlist, **change) -> dict:
+        with self._locked():                                     # busy: ReconcileBusy before anything is written
+            return self._write_attrs_locked(pl, **change)
+
+    def _write_attrs_locked(self, pl: Playlist, **change) -> dict:
         new = attrs.write(pl.comment, **change)
         if new != (pl.comment or ""):
             pl = write_comment(self.client, pl, new)             # an exception propagates: the cache is untouched
@@ -166,7 +238,7 @@ class Reconciler:
     def refresh_cache(self, pl: Playlist) -> list[str]:
         """cache := what the comment (or a name marker) says. Returns the changes as text, empty when none."""
         a = attrs.parse(pl.comment)
-        crate = a.crate or has_name_marker(pl.name)
+        crate = effective_tier(pl.name, pl.comment) == DEFAULT_TIER
         old = self.store.set_attrs(pl.id, pl.name, crate, a.tier)
         if old is None:
             return []
@@ -180,13 +252,18 @@ class Reconciler:
     @staticmethod
     def _disagrees(pl: Playlist, cached) -> bool:
         a = attrs.parse(pl.comment)
-        return (a.crate or has_name_marker(pl.name), a.tier) != ((cached.enabled, cached.tier) if cached else (False, None))
+        crate = effective_tier(pl.name, pl.comment) == DEFAULT_TIER
+        return (crate, a.tier) != ((cached.enabled, cached.tier) if cached else (False, None))
 
     # --- reconcile
     def run(self) -> ReconcileReport:
         """1. the cache from every comment; 2. read each tiered playlist; 3. derive each song's tier (the max over
         the tiered playlists holding it); 4. judge each song at it, per (playlist, song) row; 5. rows of playlists
         no longer tiered are removed; 6. external rows take their playlist's tier."""
+        with self._locked():
+            return self._run()
+
+    def _run(self) -> ReconcileReport:
         rep = ReconcileReport()
         playlists = self.client.playlists()
         rep.crates_seen = len(playlists)
@@ -248,8 +325,9 @@ class Reconciler:
         return self.policy if tier == DEFAULT_TIER else TIERS[tier]
 
     def _untier(self, playlist_id: str) -> int:
-        """A playlist with no effective tier has no rows: each live one becomes `removed`. Returns how many."""
-        live = self.store.tracks(playlist_id)
+        """A playlist with no effective tier has no rows: each live one becomes `removed`, except in-flight ones,
+        which fetch still has to finish (a later run removes them once finished). Returns how many."""
+        live = [t for t in self.store.tracks(playlist_id) if not in_flight(t["status"], t["reason"])]
         for t in live:
             self.store.set_track_status(playlist_id, t["song_id"], "removed", "playlist no longer tiered")
         return len(live)
@@ -258,6 +336,10 @@ class Reconciler:
         """One playlist, each song judged at its derived tier: the max of this playlist's tier and the tiers of the
         other tiered playlists holding it (store.song_tier). An untiered playlist loses its rows. Returns (ok,
         needs_source, removed) counts."""
+        with self._locked():
+            return self._reconcile_playlist(pl)
+
+    def _reconcile_playlist(self, pl: Playlist) -> tuple[int, int, int]:
         own = self.store.playlist_tier(pl.id)
         if own is None:
             gone = self._untier(pl.id)
@@ -273,12 +355,9 @@ class Reconciler:
             seen.add(s.id)
             status, reason = judge(s, self._policy(derived[s.id]))
             old = prev.get(s.id)
-            # A `review` row waits for Michael's answer, whatever the verdict. Don't clobber an in-flight sourcing
-            # job with a fresh "needs_source" verdict; nor a failed never-indexed row, whose file is already in the
-            # library (it is re-checked, never downloaded twice).
-            if old and (old["status"] == "review" or status == "needs_source" and (
-                    old["status"] in ("sourcing", "verify")
-                    or (old["status"] == "failed" and filed_path(old["reason"])))):
+            # An in-flight row keeps its status and reason whatever the verdict: a download under way or a filed
+            # file Navidrome has not indexed yet (re-checked, never downloaded twice), or a question for Michael.
+            if old and in_flight(old["status"], old["reason"]):
                 status, reason = old["status"], old["reason"]
             self.store.upsert_track(pl.id, s.id, pos, song_facts(s), status, reason)
             if not old or old["status"] != status:

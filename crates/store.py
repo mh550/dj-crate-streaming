@@ -94,6 +94,13 @@ def filed_path(reason: str | None) -> str | None:
     return (m.group(1) or m.group(2)) if m else None
 
 
+def in_flight(status: str, reason: str | None) -> bool:
+    """A row reconcile must not touch, whatever its tier or verdict: a download under way (`sourcing`), a filed file
+    Navidrome has not indexed (`verify`, or `failed` with a filed path), a question for Michael (`review`). Its
+    playlist losing its tier does not remove it either: fetch must still reach it to finish."""
+    return status in ("sourcing", "verify", "review") or (status == "failed" and filed_path(reason) is not None)
+
+
 def never_indexed(rel) -> str:
     """The `failed` reason after the re-check limit; filed_path reads it back."""
     return f"Navidrome never indexed {rel}; file is in the library"
@@ -103,6 +110,8 @@ _loose = loose                    # identity owns "is this the same text" (accen
 
 # A playlist is tiered when its comment makes it a crate or gives it a #tier: (the cache of both, D21).
 TIERED = "(c.enabled=1 OR c.tier IS NOT NULL)"
+# The rows fetch and the worker work on: those of tiered playlists, and in-flight ones whatever their playlist.
+REACHABLE = f"({TIERED} OR in_flight(t.status, t.reason))"
 
 
 def effective_tier(enabled: bool, tier: str | None) -> str | None:
@@ -141,6 +150,7 @@ class CrateStore:
         self.path = str(path)
         self.db = sqlite3.connect(self.path, check_same_thread=False)
         self.db.row_factory = sqlite3.Row
+        self.db.create_function("in_flight", 2, in_flight, deterministic=True)     # one rule for Python and SQL
         self.db.execute("PRAGMA journal_mode=WAL") if self.path != ":memory:" else None
         self.db.executescript(SCHEMA)
         self._migrate()
@@ -273,14 +283,16 @@ class CrateStore:
         return out
 
     def _crate_wanted(self, where: str, params: tuple = ()) -> list[dict]:
-        """Tiered-playlist rows grouped per song (a song in several playlists is one entry): `playlists` names the
-        tiered playlists, `crates` the crates among them, and `tier` is the song's derived tier (song_tier)."""
+        """Tiered-playlist rows (and in-flight ones, see in_flight) grouped per song: `playlists` names their
+        playlists, `crates` the crates among them, and `tier` is the song's derived tier (song_tier); an in-flight
+        row no tiered playlist holds any more says crate (its download was chosen already; the tier only names it)."""
         out: dict[str, dict] = {}
         for r in self.db.execute(
                 "SELECT t.*, c.name AS crate_name, c.enabled AS crate_on FROM crate_tracks t JOIN crates c "
-                f"USING(playlist_id) WHERE {TIERED} AND {where} ORDER BY c.name, t.position", params):
+                f"USING(playlist_id) WHERE {REACHABLE} AND {where} ORDER BY c.name, t.position", params):
             d = dict(r); name, on = d.pop("crate_name"), d.pop("crate_on")
-            w = out.setdefault(d["song_id"], {**d, "crates": [], "playlists": [], "tier": self.song_tier(d["song_id"])})
+            w = out.setdefault(d["song_id"], {**d, "crates": [], "playlists": [],
+                                              "tier": self.song_tier(d["song_id"]) or DEFAULT_TIER})
             w["playlists"].append(name)
             if on:
                 w["crates"].append(name)
@@ -303,13 +315,13 @@ class CrateStore:
         return rows
 
     def verify_ids(self, updated_before: float | None = None) -> list[str]:
-        """Wanted ids (songs in tiered playlists, then `ext-N`) whose file is filed but not yet seen by
+        """Wanted ids (songs with a `verify` row in any playlist, then `ext-N`) whose file is filed but not yet seen by
         Navidrome: the worker re-checks these without downloading again. With `updated_before`, only rows last
         updated before that time (the worker's re-check throttle: each re-check rewrites the reason)."""
         cut = float("inf") if updated_before is None else updated_before
         crate = [r[0] for r in self.db.execute(
             "SELECT DISTINCT t.song_id FROM crate_tracks t JOIN crates c USING(playlist_id) "
-            f"WHERE {TIERED} AND t.status='verify' AND t.updated_at <= ? ORDER BY t.song_id", (cut,))]
+            "WHERE t.status='verify' AND t.updated_at <= ? ORDER BY t.song_id", (cut,))]   # in flight: any playlist
         ext = [f"ext-{r[0]}" for r in self.db.execute(
             "SELECT id FROM external_wanted WHERE status='verify' AND updated_at <= ? ORDER BY id", (cut,))]
         return crate + ext
@@ -321,13 +333,14 @@ class CrateStore:
         return (self._crate_wanted("t.song_id=? AND t.status!='removed'", (song_id,)) or [None])[0]
 
     def set_wanted_status(self, song_id: str, status: str, reason: str | None = None) -> None:
-        """Status for a wanted id: the external row, or every live row of that song in a tiered playlist."""
+        """Status for a wanted id: the external row, or every live row of that song in a tiered playlist, and its
+        in-flight rows in any playlist (a crate turned off mid-download still gets its download's outcome)."""
         if song_id.startswith("ext-"):
             self.set_external_status(song_id, status, reason)
         else:
             for (pl,) in self.db.execute(
                     "SELECT t.playlist_id FROM crate_tracks t JOIN crates c USING(playlist_id) "
-                    f"WHERE {TIERED} AND t.song_id=? AND t.status!='removed' ORDER BY c.name", (song_id,)).fetchall():
+                    f"WHERE {REACHABLE} AND t.song_id=? AND t.status!='removed' ORDER BY c.name", (song_id,)).fetchall():
                 self.set_track_status(pl, song_id, status, reason)
         self.commit()
 

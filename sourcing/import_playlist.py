@@ -25,7 +25,7 @@ import unicodedata
 from dataclasses import dataclass, field
 
 from crates import attrs
-from crates.reconcile import CommentNotKept, Reconciler
+from crates.reconcile import CommentNotKept, Reconciler, effective_tier
 from crates.store import CrateStore
 from subsonic.client import Song, SubsonicClient
 from .identity import Title, loose, parse_title, stands_in
@@ -273,12 +273,13 @@ def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: C
     NameCollision unless `merge=True`, which adopts it (adds the marker, leaves its visibility alone).
 
     The tier lives in the comment (D21): a created playlist gets `#imported #tier:<tier or IMPORT_TIER>`; a re-run
-    rewrites `#tier:` only when `tier` is given. Without `tier`, a re-run matches and queues at the existing
-    playlist's effective tier (its comment's #crate / #tier:), else IMPORT_TIER. A written comment is read back before crates.db caches it; if
+    rewrites `#tier:` only when `tier` is given. Without `tier`, rows are matched and queued at the playlist's
+    effective tier (reconcile.effective_tier: its comment's #crate / #tier:, or a crate name marker), else
+    IMPORT_TIER. A written comment is read back before crates.db caches it; if
     Navidrome did not keep it, the playlist edit and the wanted rows are still recorded, then CommentNotKept is
     raised with `.report` set."""
     existing = next((p for p in client.playlists() if p.name == name), None)
-    at = tier or (existing and attrs.parse(existing.comment).effective) or IMPORT_TIER     # D21: the comment's tier
+    at = tier or effective_tier(name, existing.comment if existing else None) or IMPORT_TIER   # D21: the comment's (or name's)
     accept = frozenset(TIERS[at].accept_versions)
     matches = [match(client, r, accept) for r in rows]
     ours = existing is not None and MARKER in (existing.comment or "")
