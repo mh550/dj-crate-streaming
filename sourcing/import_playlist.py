@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 
 from crates.store import CrateStore
 from subsonic.client import Song, SubsonicClient
-from .identity import Title, loose, parse_title
+from .identity import Title, loose, parse_title, stands_in
 from .playlist_sources import Row, lead_artist, track_lead
 from .policy import IMPORT_TIER, TIERS
 
@@ -155,9 +155,9 @@ def choose(row: Row, hits: list[Song], accept: frozenset[str] = frozenset()) -> 
         fit = [h for h in same if t[h.id].key == want.key]
         if fit:
             return _decide(row, fit, t, "same version")
-    # A stand-in must be the same song by the same artist: the same base title, never one that only fits.
-    # Every kind of its version must be accepted: at "extended" a 12" Dub is a dub, not the vocal row's stand-in.
-    other = [h for h in same if t[h.id].key != want.key and t[h.id].key[0] and set(t[h.id].key[0]) <= accept]
+    # A stand-in must be the same song by the same artist: the same base title, never one that only fits; and
+    # `identity.stands_in` (it keeps what the row asked for, everything it adds is accepted: a 12" Dub is a dub).
+    other = [h for h in same if stands_in(t[h.id], want, accept)]
     if other:
         m = _decide(row, other, t, "other version")
         if m.status == "matched":

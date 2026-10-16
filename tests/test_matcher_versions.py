@@ -148,3 +148,47 @@ def test_other_version_reason_needs_the_same_song():
     # "Love" fits inside "Love and Happiness (Live)", but that is another song: its length says nothing of versions
     m = ip.choose(Row(1, "Love", "Al Green", 300), [song("h", "Love and Happiness (Live)", "Al Green", 300)])
     assert m.status == "ambiguous" and m.why == "length differs"
+
+
+# ---- M7 final fixes I4: a stand-in keeps every kind the row asked for (other than edit) ----
+
+def _crate_accept():
+    from sourcing.policy import TIERS
+    return frozenset(TIERS["crate"].accept_versions)
+
+
+def test_a_vocal_12_inch_never_stands_in_for_an_instrumental_a_cappella_live_or_dub_row():
+    for title in ("Lovely Day - Instrumental", "Lovely Day - A Cappella", "Lovely Day - Live", "Lovely Day (Dub)"):
+        for label in ('12" Version', "Extended Version"):
+            hit = song("x", f"Lovely Day ({label})", "Bill Withers", 380)
+            for length in (250, None):
+                m = ip.choose(Row(1, title, "Bill Withers", length), [hit], accept=_crate_accept())
+                assert m.status == "ambiguous" and m.song_id is None, (title, label, length)
+            m = ip.choose(Row(1, title, "Bill Withers", None), [hit], accept=_crate_accept())
+            assert m.why == "other version", (title, label)
+
+
+def test_a_12_inch_instrumental_stands_in_for_an_instrumental_row_at_crate():
+    hit = song("x", 'Lovely Day (12" Instrumental)', "Bill Withers", 380)
+    for length in (250, None):
+        m = ip.choose(Row(1, "Lovely Day - Instrumental", "Bill Withers", length), [hit], accept=_crate_accept())
+        assert m.status == "matched" and m.song_id == "x" and m.how == 'other version: 12" Instrumental', length
+
+
+def test_a_12_inch_still_stands_in_for_a_radio_edit_row():
+    hit = song("x", 'Lovely Day (12" Version)', "Bill Withers", 380)
+    m = ip.choose(Row(1, "Lovely Day - Radio Edit", "Bill Withers", 250), [hit], accept=_crate_accept())
+    assert m.status == "matched" and m.how == 'other version: 12" Version'
+
+
+def test_a_stand_in_keeps_the_asked_remixer():
+    hit = song("x", "Lovely Day (Extended Remix)", "Bill Withers", 380)
+    m = ip.choose(Row(1, "Lovely Day (Tom Moulton Remix)", "Bill Withers", None), [hit],
+                  accept=frozenset({"extended", "club", "remix"}))
+    assert m.status == "ambiguous"
+
+
+def test_a_plain_copy_never_stands_in_for_a_labelled_row():
+    hit = song("x", "Lovely Day - Instrumental", "Bill Withers", 250)
+    m = ip.choose(Row(1, "Lovely Day - Instrumental Radio Edit", "Bill Withers", None), [hit], accept=_crate_accept())
+    assert m.status == "ambiguous"

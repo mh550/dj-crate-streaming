@@ -247,6 +247,23 @@ def parse_title(title: str | None, artist: str | None = None, version_tag: str |
                  copy_note=", ".join(notes))
 
 
+# Kinds of the asked version a stand-in may drop: a radio/single edit is what a longer version replaces (D16).
+_DROPPABLE = frozenset({"edit"}) | NEUTRAL
+
+
+def stands_in(got: Title, want: Title, accept) -> bool:
+    """May `got`, another version of the asked song, stand in for `want` at a tier that accepts `accept` (kinds)?
+
+    D16's example is a 12" for the radio version. So the stand-in keeps every kind the ask names other than edit
+    (an instrumental, dub, a cappella or live row is a specific DJ tool: a vocal 12" in that slot is the wrong
+    record) and every credit it names (a Tom Moulton remix is not any extended remix); it adds at least one kind,
+    and every kind it adds is accepted (a 12" Dub is a dub too). The import matcher and the scorer both ask this."""
+    added = got.kinds - want.kinds - NEUTRAL
+    credits = {b for b in want.by.split("|") if b}
+    return (got.key != want.key and bool(added) and added <= set(accept)
+            and want.kinds - _DROPPABLE <= got.kinds and credits <= set(got.by.split("|")))
+
+
 def song_key(artist: str | None, title: str | None) -> str:
     """Which versions make one song, when no work id says so: lead artist + base title."""
     return f"{loose(lead_artist(artist))}|{loose(parse_title(title, artist).base)}"

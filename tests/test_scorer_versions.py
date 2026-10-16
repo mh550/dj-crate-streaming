@@ -88,3 +88,23 @@ def test_an_original_mix_is_no_accepted_stand_in_for_another_version():
     orig = response("orig", r"music\Chic\Risque\03 - Good Times (Original Mix).flac", 35_000_000, "flac", length=501)
     [c] = rank([orig], Wanted("Chic", "Good Times (Live)", duration_s=210), TIERS["crate"])
     assert not any("fits another version" in r for r in c.reasons) and any(r.startswith("duration off") for r in c.reasons)
+
+
+# ---- M7 final fixes I4: a stand-in keeps every kind the row asked for (other than edit) ----
+
+def test_a_vocal_12_inch_earns_nothing_for_an_instrumental_a_cappella_live_or_dub_row():
+    for title in ("Lovely Day - Instrumental", "Lovely Day - A Cappella", "Lovely Day - Live", "Lovely Day (Dub)"):
+        for label in ('12" Version', "Extended Version"):
+            twelve = response("t", rf"music\Bill Withers\Menagerie\03 - Bill Withers - Lovely Day ({label}).flac", 40_000_000, "flac", length=380)
+            [c] = rank([twelve], Wanted("Bill Withers", title, duration_s=250), TIERS["crate"])
+            assert not any("fits another version" in r or r.startswith("prefers") for r in c.reasons), (title, c.reasons)
+            assert any(r.startswith("duration off") for r in c.reasons), (title, c.reasons)
+
+
+def test_a_12_inch_instrumental_stands_in_for_an_instrumental_row_at_crate():
+    inst = response("i", r'music\Bill Withers\Menagerie\03 - Bill Withers - Lovely Day (12" Instrumental).flac', 40_000_000, "flac", length=380)
+    vocal = response("v", r'music\Bill Withers\Menagerie\03 - Bill Withers - Lovely Day (12" Version).flac', 40_000_000, "flac", length=380)
+    cands = rank([vocal, inst], Wanted("Bill Withers", "Lovely Day - Instrumental", duration_s=250), TIERS["crate"])
+    assert [c.username for c in cands] == ["i", "v"]
+    i = by_user(cands, "i")
+    assert any("fits another version" in r for r in i.reasons) and "prefers extended +6" in i.reasons

@@ -19,7 +19,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from difflib import SequenceMatcher
 
-from .identity import NEUTRAL, Title, parse_title, words
+from .identity import NEUTRAL, parse_title, stands_in, words
 from .policy import QualityPolicy, DEFAULT_POLICY
 
 
@@ -75,12 +75,6 @@ class Candidate:
 
 
 # ---------- text normalization ----------
-
-def _all_in(got: Title, kinds) -> bool:
-    """Every kind of the file's version is in `kinds` ("original" is neutral): an accepted or preferred
-    version, never one that merely shares a word with it (a 12" Dub, an Extended Remix, a Live 12")."""
-    return got.kinds - NEUTRAL <= set(kinds)
-
 
 def norm(s: str) -> str:
     """The name-match fold: identity's words with the noise words (feat, remaster, explicit...) dropped.
@@ -168,6 +162,7 @@ def score_candidate(c: Candidate, w: Wanted, policy: QualityPolicy = DEFAULT_POL
     want = parse_title(w.title, w.artist)
     got = parse_title(strip_trackno(re.sub(r"\.[^.]+$", "", c.basename)), w.artist)
     other = got.key != want.key
+    stand_in = other and stands_in(got, want, policy.accept_versions)     # e.g. a 12" for the radio edit
     if w.copy and other:
         # An upgrade replaces a copy Michael owns, so it must be that version: a radio edit is never
         # "upgraded" to a 12".
@@ -195,8 +190,7 @@ def score_candidate(c: Candidate, w: Wanted, policy: QualityPolicy = DEFAULT_POL
             s += 2; c.reasons.append("hi-res")
 
     # --- duration vs known length (−15..+15)
-    if (w.duration_s and c.length_s and other and got.key[0] and _all_in(got, policy.accept_versions)
-            and c.length_s >= w.duration_s - policy.duration_tolerance_s):
+    if w.duration_s and c.length_s and stand_in and c.length_s >= w.duration_s - policy.duration_tolerance_s:
         # The tier accepts this version and it is no shorter than the one asked for (an extended or club
         # version never is), so the wanted length cannot rule it out: it earns what a matching length would.
         s += 15; c.reasons.append(f"another version ({got.label}): length fits another version +15")
@@ -212,9 +206,13 @@ def score_candidate(c: Candidate, w: Wanted, policy: QualityPolicy = DEFAULT_POL
         c.reasons.append("no length reported")
 
     # --- version preference (D16, deploy/policy.toml): the best-ranked kind the file has, when the policy
-    # names every kind it has (a 12" Dub is a dub too: no extended bonus); one bonus only
-    for i, kind in enumerate(policy.prefer_versions if _all_in(got, policy.prefer_versions) else ()):
-        if kind in got.kinds:
+    # names every kind it has (a 12" Dub is a dub too: no extended bonus); one bonus only. Another version earns
+    # it only as a stand-in, for what it adds: a 12" Instrumental for an instrumental row is preferred as a 12",
+    # a vocal 12" for that row is not preferred at all.
+    kinds = got.kinds - want.kinds if stand_in else got.kinds
+    prefs = policy.prefer_versions if (stand_in or not other) and kinds - NEUTRAL <= set(policy.prefer_versions) else ()
+    for i, kind in enumerate(prefs):
+        if kind in kinds:
             bonus = max(2, 6 - 2 * i)
             s += bonus; c.reasons.append(f"prefers {kind} +{bonus}")
             break
