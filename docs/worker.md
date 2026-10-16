@@ -13,13 +13,19 @@ A tick runs every `WORKER_POLL_S` seconds (30 by default), in this order:
    starts a Navidrome scan. It searches by the filed file's own artist and title tags (what Navidrome indexes), not
    the wanted row's names. Nothing is downloaded for these. Each miss is counted in the reason (`(check N)`); after 12
    the row fails with "Navidrome never indexed <path>; file is in the library", so you see it. Approving that row
-   again would download a second copy: look in Navidrome first (a rescan, or the file's tags).
+   again downloads nothing: it re-checks the same file (counting from 1 again), and the approval reads
+   `recheck: already filed as <path>`. If Navidrome still misses it, look at the file's tags.
 2. **Approvals.** Each unused approval is claimed, then fetched: search slskd, prefer the exact file you saw in
    Preview while it is still offered (otherwise the top-ranked one), download it, verify it, file it, ask
    Navidrome to rescan, and swap it into the crates. The outcome is written back on the approval.
 
 One bad row never stops the tick, and a tick that fails (slskd or Navidrome down, database locked) never stops the
 worker; the next tick tries again. `python -m sourcing.cli worker --once` runs a single tick and exits.
+
+Only one worker runs at a time: it holds an exclusive lock on `worker.lock` next to `crates.db` (`/data/worker.lock`
+in the container) for its whole life. A second one, e.g. `docker compose exec -T worker python -m sourcing.cli worker
+--once` while the service is running, exits with "worker already running" and touches nothing. Outside the worker
+container (`DJ_WORKER=1` unset) `sourcing.cli worker` refuses to start.
 
 Once beets has filed a download, the row never goes back to `failed` on an error: it becomes `verify` with the filed
 path in its reason, so the re-check picks it up and nothing downloads a second copy. Rows in progress (`sourcing`,

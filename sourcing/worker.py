@@ -1,6 +1,8 @@
 """The worker (D18, D23): downloads only what has been approved, and re-checks what was filed but not yet indexed.
 
-Before the first tick (`run`, and the CLI's `--once`): `recover` marks approvals a killed worker left
+One worker at a time: `run` and `once` hold an exclusive flock on `lock_path` (the CLI uses
+<dirname(CRATES_DB)>/worker.lock) for their whole life, and a second one exits ("worker already running")
+before touching anything. Then, before the first tick: `recover` marks approvals a killed worker left
 `started` as "interrupted: worker restarted" and fails their rows still in `sourcing`, so neither is stranded.
 
 Each tick:
@@ -18,10 +20,29 @@ Log lines name wanted ids and file basenames only: stdout is the container log a
 """
 from __future__ import annotations
 
+import fcntl
+import os
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from .fetch import fetch
+
+
+class WorkerRunning(Exception):
+    """Another worker holds the lock: this one must not recover, claim or fetch anything."""
+
+
+def hold_lock(path: Path) -> int:
+    """An exclusive, non-blocking flock on `path` for the life of the returned fd (closing it, or the process
+    ending, releases it). Raises WorkerRunning when another process holds it."""
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(fd)
+        raise WorkerRunning(f"worker already running (lock {path} is held)") from None
+    return fd
 
 
 @dataclass
@@ -33,9 +54,31 @@ class TickReport:
 
 class Worker:
     def __init__(self, *, store, slskd, navidrome, reconciler, fetch_kwargs: dict, fetcher=fetch, log=print,
-                 recheck_s: float = 0):
+                 recheck_s: float = 0, lock_path: Path | None = None):
         self.store, self.fetcher, self.log, self.recheck_s = store, fetcher, log, recheck_s
+        self.lock_path, self._lock_fd = lock_path, None
         self.common = dict(store=store, slskd=slskd, navidrome=navidrome, reconciler=reconciler, **fetch_kwargs)
+
+    def _lock(self) -> None:
+        """One worker at a time (the CLI passes <dirname(CRATES_DB)>/worker.lock). Taken before `recover`, so a
+        second worker (`--once` beside the running one) can never mistake a live fetch's `started` approval
+        for an interrupted one; raises WorkerRunning, having touched nothing."""
+        if self.lock_path is not None and self._lock_fd is None:
+            self._lock_fd = hold_lock(self.lock_path)
+
+    def _unlock(self) -> None:
+        if self._lock_fd is not None:
+            os.close(self._lock_fd)
+            self._lock_fd = None
+
+    def once(self) -> TickReport:
+        """`worker --once`: lock, recover, one tick, unlock."""
+        self._lock()
+        try:
+            self.recover()
+            return self.tick()
+        finally:
+            self._unlock()
 
     def recover(self) -> list[str]:
         """Once per start, before any tick: see CrateStore.recover_interrupted."""
@@ -63,7 +106,7 @@ class Worker:
             claimed += 1
             try:
                 r = self.fetcher(a["wanted_id"], approve=True, prefer=a["candidate"], **self.common)
-                outcome = f"{r.status}: {r.reason}"
+                outcome = r.approval_result or f"{r.status}: {r.reason}"
             except Exception as e:
                 outcome = f"error: {type(e).__name__}: {e}"
                 self.log(f"fetch {a['wanted_id']} failed: {outcome}")
@@ -75,15 +118,19 @@ class Worker:
         return TickReport(claimed, rechecked, results)
 
     def run(self, poll_s: float, *, ticks: int | None = None) -> None:
+        self._lock()                                       # WorkerRunning propagates: the CLI exits non-zero
         try:
-            self.recover()
-        except Exception as e:                             # e.g. DB locked: the next start recovers
-            self.log(f"recover failed: {type(e).__name__}: {e}")
-        n = 0
-        while ticks is None or n < ticks:
             try:
-                self.tick()
-            except Exception as e:
-                self.log(f"tick failed: {type(e).__name__}: {e}")
-            n += 1
-            time.sleep(poll_s)
+                self.recover()
+            except Exception as e:                         # e.g. DB locked: the next start recovers
+                self.log(f"recover failed: {type(e).__name__}: {e}")
+            n = 0
+            while ticks is None or n < ticks:
+                try:
+                    self.tick()
+                except Exception as e:
+                    self.log(f"tick failed: {type(e).__name__}: {e}")
+                n += 1
+                time.sleep(poll_s)
+        finally:
+            self._unlock()

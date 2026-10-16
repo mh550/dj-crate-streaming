@@ -144,6 +144,7 @@ def test_cli_worker_once(tmp_path, monkeypatch, capsys):
     with FakeSubsonicServer() as nd, FakeSlskdServer(RESPONSES, tmp_path / "dl", files={}) as sl:
         _cli_env(monkeypatch, tmp_path, nd, sl)
         monkeypatch.setenv("BEETS_CONFIG", str(tmp_path / "beets.yaml"))
+        monkeypatch.setenv("DJ_WORKER", "1")                         # as inside the worker container
         assert cli.main(["worker", "--once"]) == 0
     assert "0 approvals" in capsys.readouterr().out
 
@@ -252,6 +253,7 @@ def test_cli_worker_takes_the_recheck_interval_from_the_environment(tmp_path, mo
     shutil.copy(cli.DEFAULT_BEETS_CONFIG, tmp_path / "beets.yaml")
     with FakeSubsonicServer() as nd, FakeSlskdServer(RESPONSES, tmp_path / "dl", files={}) as sl:
         _cli_env(monkeypatch, tmp_path, nd, sl)
+        monkeypatch.setenv("DJ_WORKER", "1")
         monkeypatch.delenv("WORKER_RECHECK_S", raising=False)
         assert cli.main(["worker", "--once"]) == 0
         monkeypatch.setenv("WORKER_RECHECK_S", "60")
@@ -306,6 +308,7 @@ def test_cli_worker_once_recovers_before_its_tick(tmp_path, monkeypatch, capsys)
     shutil.copy(cli.DEFAULT_BEETS_CONFIG, tmp_path / "beets.yaml")
     with FakeSubsonicServer() as nd, FakeSlskdServer(RESPONSES, tmp_path / "dl", files={}) as sl:
         _cli_env(monkeypatch, tmp_path, nd, sl)
+        monkeypatch.setenv("DJ_WORKER", "1")
         st = CrateStore(tmp_path / "c.db")
         ext = st.add_external_wanted("Chic", "Everybody Dance")
         st.claim_approval(st.approve(ext, "michael", None, "crate"))
@@ -345,3 +348,85 @@ def test_cli_fetch_approve_on_the_host_is_refused(tmp_path, monkeypatch, capsys)
         assert cli.main(["fetch", "--wanted", ext, "--approve"]) == 2
         assert sl.enqueued == []
     assert "no beets filer configured (run --approve in the worker)" in capsys.readouterr().out
+
+
+# --- one worker at a time, and only in the worker container ------------------------------------------------
+
+def _queued(tmp_path):
+    """An external row whose approval a (live) worker has started, and a second row with an untaken approval."""
+    st = CrateStore(tmp_path / "c.db")
+    a = st.add_external_wanted("Chic", "Everybody Dance")
+    st.claim_approval(st.approve(a, "michael", None, "crate"))
+    st.set_wanted_status(a, "sourcing", "downloading x.flac")
+    b = st.add_external_wanted("Chic", "Le Freak")
+    st.approve(b, "michael", None, "crate")
+    return a, b
+
+
+def _untouched(tmp_path, a, b):
+    st = CrateStore(tmp_path / "c.db")
+    assert st.approval(a)["result"] == "started" and st.external(a)["status"] == "sourcing"     # not recovered
+    assert [p["wanted_id"] for p in st.pending_approvals()] == [b]                              # not claimed
+
+
+@pytest.mark.parametrize("once", [True, False])
+def test_a_second_worker_exits_while_the_lock_is_held(tmp_path, monkeypatch, capsys, once):
+    import fcntl
+    with FakeSubsonicServer() as nd, FakeSlskdServer(RESPONSES, tmp_path / "dl", files={}) as sl:
+        _cli_env(monkeypatch, tmp_path, nd, sl)
+        monkeypatch.setenv("DJ_WORKER", "1")
+        a, b = _queued(tmp_path)
+        with open(tmp_path / "worker.lock", "w") as held:             # the running worker's lock
+            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            assert cli.main(["worker", "--once"] if once else ["worker"]) != 0
+    assert "worker already running" in capsys.readouterr().err
+    _untouched(tmp_path, a, b)
+
+
+def test_worker_lock_is_released_when_once_ends(tmp_path, monkeypatch):
+    with FakeSubsonicServer() as nd, FakeSlskdServer(RESPONSES, tmp_path / "dl", files={}) as sl:
+        _cli_env(monkeypatch, tmp_path, nd, sl)
+        monkeypatch.setenv("DJ_WORKER", "1")
+        assert cli.main(["worker", "--once"]) == 0
+        assert cli.main(["worker", "--once"]) == 0
+
+
+def test_cli_worker_refuses_to_start_outside_the_worker_container(tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("DJ_WORKER", raising=False)
+    with FakeSubsonicServer() as nd, FakeSlskdServer(RESPONSES, tmp_path / "dl", files={}) as sl:
+        _cli_env(monkeypatch, tmp_path, nd, sl)
+        a, b = _queued(tmp_path)
+        assert cli.main(["worker", "--once"]) != 0
+    assert "the worker runs only in the worker container (DJ_WORKER=1)" in capsys.readouterr().err
+    _untouched(tmp_path, a, b)
+
+
+# --- a filed file is never downloaded again -------------------------------------------------------------------
+
+def test_approving_a_never_indexed_row_rechecks_instead_of_downloading(world, tmp_path):
+    from tests.test_fetch_filing import TARGET
+    store = world["store"]
+    flac = good_flac_bytes(tmp_path)
+    with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: flac}) as srv:
+        assert run(world, srv, approve=True).status == "verify"
+        store.set_wanted_status("s4", "failed", f"Navidrome never indexed {TARGET}; file is in the library")
+        store.approve("s4", "michael", None, "crate")
+        report = worker(world, srv).tick()                               # Navidrome still has not indexed it
+        assert report.approvals == 1
+        assert store.find_wanted("s4")["reason"] == f"filed as {TARGET} but Navidrome has not picked it up yet (check 1)"
+        assert store.approval("s4")["result"] == f"recheck: already filed as {TARGET}"
+        new_song(world["nd"], len(flac))
+        store.set_wanted_status("s4", "failed", f"Navidrome never indexed {TARGET}; file is in the library")
+        store.approve("s4", "michael", None, "crate")
+        worker(world, srv).tick()
+    assert store.find_wanted("s9")["status"] == "ok"
+    assert len(srv.enqueued) == 1                                        # only the first download
+    assert len([c for c in world["filer"].runner.calls if "import" in c]) == 1
+
+
+def test_filed_path_reads_both_shapes():
+    from sourcing.fetch import filed_path
+    rel = "Chic/Risqué (1979)/03 - Good Times.flac"
+    assert filed_path(f"filed as {rel} but Navidrome has not picked it up yet (check 3)") == rel
+    assert filed_path(f"Navidrome never indexed {rel}; file is in the library") == rel
+    assert filed_path("download timed out") is None

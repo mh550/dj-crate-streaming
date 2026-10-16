@@ -181,6 +181,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{added} added, {total - added} already queued ({a.url})")
         return 0
 
+    if a.cmd == "worker" and os.environ.get("DJ_WORKER") != "1":    # before anything is claimed or recovered
+        print("the worker runs only in the worker container (DJ_WORKER=1)", file=sys.stderr); return 1
+
     if a.cmd in ("fetch", "worker"):
         if not (a.slskd and a.api_key):
             print("need --slskd/$SLSKD_URL and --api-key/$SLSKD_API_KEY", file=sys.stderr); return 1
@@ -192,15 +195,18 @@ def main(argv: list[str] | None = None) -> int:
         app = CrateApp(cfg)                          # same store/client/reconciler wiring as the crate service
 
     if a.cmd == "worker":
-        from .worker import Worker
+        from .worker import Worker, WorkerRunning
         wk = Worker(store=app.store, slskd=SlskdClient(a.slskd, a.api_key), navidrome=app.api, reconciler=app.reconciler,
                     fetch_kwargs=_fetch_env(), log=lambda line: print(line, flush=True),
-                    recheck_s=float(os.environ.get("WORKER_RECHECK_S", "300")))
-        if a.once:
-            wk.recover()
-            wk.tick()
-        else:
-            wk.run(float(os.environ.get("WORKER_POLL_S", "30")))
+                    recheck_s=float(os.environ.get("WORKER_RECHECK_S", "300")),
+                    lock_path=Path(cfg.db_path).parent / "worker.lock")
+        try:
+            if a.once:
+                wk.once()
+            else:
+                wk.run(float(os.environ.get("WORKER_POLL_S", "30")))
+        except WorkerRunning as e:
+            print(str(e), file=sys.stderr); return 1
         return 0
 
     if a.cmd == "fetch":
@@ -219,7 +225,7 @@ def main(argv: list[str] | None = None) -> int:
                 app.store.mark_approval_used(aid, f"error: {type(e).__name__}: {e}"); app.store.commit()
             raise
         if aid is not None:
-            app.store.mark_approval_used(aid, f"{r.status}: {r.reason}"); app.store.commit()
+            app.store.mark_approval_used(aid, r.approval_result or f"{r.status}: {r.reason}"); app.store.commit()
         print(r.explain)
         if r.pick:
             print(f"pick: {r.pick.basename}  (score {r.pick.score:.2f})")      # the peer stays in `search`, not in logs
