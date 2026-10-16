@@ -273,7 +273,9 @@ def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: C
     NameCollision unless `merge=True`, which adopts it (adds the marker, leaves its visibility alone).
 
     The tier lives in the comment (D21): a created playlist gets `#imported #tier:<tier or IMPORT_TIER>`; a re-run
-    rewrites `#tier:` only when `tier` is given. A written comment is read back before crates.db caches it."""
+    rewrites `#tier:` only when `tier` is given. A written comment is read back before crates.db caches it; if
+    Navidrome did not keep it, the playlist edit and the wanted rows are still recorded, then CommentNotKept is
+    raised with `.report` set."""
     accept = frozenset(TIERS[tier or IMPORT_TIER].accept_versions)
     matches = [match(client, r, accept) for r in rows]
     existing = next((p for p in client.playlists() if p.name == name), None)
@@ -313,8 +315,12 @@ def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: C
         else:                                       # visibility is set once, at creation: Michael may change it
             comment = _rerun_comment(existing.comment, ours, tier)
             client.update_playlist(existing.id, add_song_ids=new_ids, comment=comment)
+        not_kept = None
         if comment is not None:
-            _comment_kept(client, store, playlist_id, comment)
+            try:
+                _comment_kept(client, store, playlist_id, comment)
+            except CommentNotKept as e:          # the songs are in: still record our own facts, then raise
+                not_kept = e
         store.mark_imported(playlist_id, ordered)
         queued = {r["position"]: r for r in store.external_for_playlist(playlist_id)}
         for m in matches:                           # a wanted row whose track is now in the library is done
@@ -328,4 +334,8 @@ def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: C
             if m.status == "ambiguous" and store.external(ext)["status"] in ("needs_source", "review"):
                 store.set_external_status(ext, "review", f"ambiguous ({m.why}): " + ", ".join(m.candidates))
         store.commit()
-    return Report(name, playlist_id, existing is None, matches, len(new_ids), len(have), notes)
+    rep = Report(name, playlist_id, existing is None, matches, len(new_ids), len(have), notes)
+    if not dry_run and not_kept is not None:
+        not_kept.report = rep                    # what was done, for the CLI to print before the error
+        raise not_kept
+    return rep

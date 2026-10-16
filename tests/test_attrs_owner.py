@@ -200,7 +200,7 @@ def test_import_creates_the_playlist_with_imported_and_tier(env):
     srv, c, store, _ = env
     a = _import(c, store, "Tea tent")
     assert comment(srv, a.playlist_id) == "#imported #tier:medium"
-    assert store.get(a.playlist_id).tier == "medium"
+    assert store.get(a.playlist_id).tier == "medium" and not store.get(a.playlist_id).enabled
     b = _import(c, store, "Garden", tier="high")
     assert comment(srv, b.playlist_id) == "#imported #tier:high"
     _import(c, store, "Garden", tier="crate")
@@ -229,3 +229,92 @@ def test_import_adopting_with_merge_adds_the_marker_and_the_tier(env):
     c.update_playlist(existing.id, comment="mine")
     _import(c, store, "Tea tent", merge=True, tier="high")
     assert comment(srv, existing.id) == "mine #imported #tier:high"
+
+
+# ---- Task 3 review
+
+def _lossy(monkeypatch):
+    """A Navidrome that stores the comment without our tokens: the read-back must catch it."""
+    from crates import attrs
+    real = SubsonicClient.update_playlist
+
+    def lossy(self, pid, **k):
+        if k.get("comment"):
+            k["comment"] = attrs.write(k["comment"], crate=False, tier=None)
+        return real(self, pid, **k)
+    monkeypatch.setattr(SubsonicClient, "update_playlist", lossy)
+
+
+ROWS2 = [Row(1, "Good Times", "Chic", None, "sp1"), Row(2, "Nope", "Nobody", None, "sp2")]
+
+
+def test_import_create_whose_comment_is_not_kept_raises_but_keeps_our_own_facts(env, monkeypatch):
+    srv, c, store, _ = env
+    _lossy(monkeypatch)
+    with pytest.raises(CommentNotKept) as e:
+        ip.import_playlist("Tea tent", ROWS2, c, store, source="s")
+    pid = e.value.report.playlist_id
+    assert comment(srv, pid) == "#imported" and store.get(pid) is None            # nothing cached
+    assert store.imported(pid) == {"s1"}                                           # our own DB facts are recorded
+    assert [(x["title"], x["position"]) for x in store.external_for_playlist(pid)] == [("Nope", 2)]
+
+
+def test_import_rerun_with_tier_whose_comment_is_not_kept_raises_and_keeps_the_cache(env, monkeypatch):
+    srv, c, store, _ = env
+    a = ip.import_playlist("Tea tent", ROWS2, c, store, source="s")
+    assert store.get(a.playlist_id).tier == "medium" and not store.get(a.playlist_id).enabled
+    _lossy(monkeypatch)
+    with pytest.raises(CommentNotKept):
+        ip.import_playlist("Tea tent", ROWS2, c, store, source="s", tier="high")
+    assert store.get(a.playlist_id).tier == "medium"
+
+
+def test_sourcing_cli_import_reports_a_comment_not_kept_and_exits_1(tmp_path, monkeypatch, capsys):
+    from sourcing import cli
+    db = tmp_path / "c.db"
+    report = tmp_path / "r.txt"; report.write_text("[SUCCESS] Good Times - Chic\n[SUCCESS] Nope - Nobody\n")
+    with FakeSubsonicServer() as nd:
+        for k, v in dict(SUBSONIC_URL=nd.url, SUBSONIC_USER="demo", SUBSONIC_PASS="demo", CRATES_DB=str(db)).items():
+            monkeypatch.setenv(k, v)
+        _lossy(monkeypatch)
+        assert cli.main(["import-playlist", str(report), "--name", "T"]) == 1
+    out = capsys.readouterr()
+    assert "1 matched, 1 wanted" in out.out and "Navidrome now has" in out.err
+    assert [w["title"] for w in CrateStore(db).wanted()] == ["Nope"]
+
+
+def test_a_standing_problem_is_logged_once(env):
+    srv, client, store, rec = env
+    client.update_playlist("pl-3", comment="#tier:hgh #tier:low #tier:high")
+    for _ in range(3):
+        assert len(rec.run().problems) == 2
+    assert len([e for e in store.events(500) if e["kind"] == "attrs_problem"]) == 2
+    client.update_playlist("pl-3", comment="")
+    rec.run()
+    client.update_playlist("pl-3", comment="#tier:hgh")
+    rec.run(); rec.run()
+    assert len([e for e in store.events(500) if e["kind"] == "attrs_problem"]) == 3   # it came back: logged again
+
+
+def test_a_stale_snapshot_does_not_undo_a_toggle_made_after_it(env):
+    srv, client, store, rec = env
+    snap = client.playlists()
+    rec.set_crate("pl-3", True)
+
+    class Stale(SubsonicClient):
+        def playlists(self):
+            return snap
+    rep = Reconciler(Stale(srv.url, "demo", "demo"), store).run()
+    assert store.get("pl-3").enabled and rep.attr_changes == []
+    assert "Sunday Listening" not in rep.toggled_from_comment
+    assert not [e for e in store.events(500) if e["kind"] == "attrs"]
+
+
+def test_a_crate_keeps_its_stored_tier_visible(env):
+    srv, client, store, rec = env
+    rec.set_crate("pl-3", True)
+    v = rec.set_tier("pl-3", "high")
+    assert (v["crate"], v["tier"], v["tierTag"]) == (True, "crate", "high")
+    assert store.get("pl-3").tier == "high"
+    v = rec.set_crate("pl-3", False)
+    assert (v["crate"], v["tier"], v["tierTag"]) == (False, "high", "high")

@@ -488,13 +488,22 @@ class CrateStore:
         self.db.execute("INSERT INTO events(ts,playlist_id,song_id,kind,detail) VALUES(?,?,?,?,?)",
                         (time.time(), playlist_id, song_id, kind, detail))
 
-    def log_once(self, playlist_id: str | None, kind: str, detail: str) -> None:
-        """Log unless the latest `kind` event for this playlist says the same: reconcile runs every few minutes,
-        and a standing problem must not bury the rest of the log."""
-        last = self.db.execute("SELECT detail FROM events WHERE playlist_id IS ? AND kind=? ORDER BY id DESC LIMIT 1",
-                               (playlist_id, kind)).fetchone()
-        if not last or last["detail"] != detail:
-            self.log(playlist_id, None, kind, detail)
+    def note_problems(self, playlist_id: str, kind: str, details: list[str]) -> list[str]:
+        """Log each problem that is not already among this playlist's current ones, and remember the current set
+        (a settings row). Reconcile runs every few minutes: a standing problem is logged once, not every run, and
+        logged again only if it went away and came back. Returns the newly logged ones."""
+        key = f"problems:{kind}:{playlist_id}"
+        r = self.db.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+        before = set(json.loads(r["value"])) if r else set()
+        new = [d for d in dict.fromkeys(details) if d not in before]
+        for d in new:
+            self.log(playlist_id, None, kind, d)
+        if details:
+            self.db.execute("INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                            (key, json.dumps(sorted(set(details)))))
+        elif r:
+            self.db.execute("DELETE FROM settings WHERE key=?", (key,))
+        return new
 
     def events(self, limit: int = 50) -> list[dict]:
         return [dict(r) for r in self.db.execute("SELECT * FROM events ORDER BY id DESC LIMIT ?", (limit,))]

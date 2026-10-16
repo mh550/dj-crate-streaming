@@ -212,8 +212,10 @@ Each item says what it changes.
 
 These are the inputs most likely to bite that no ruling covers. Each has a test in the task that owns the code:
 
-1. **A comment edited in another client between our read and our write**, or a Navidrome that stores a comment
-   differently from what we sent. Expected: the readback mismatch raises, the cache is untouched, the UI says so.
+1. **A comment edited in another client around our write**, or a Navidrome that stores a comment differently from
+   what we sent. Subsonic has no compare-and-set, so the read-back only detects a change made *after* our write (or a
+   comment stored differently): the readback mismatch raises, the cache is untouched, the UI says so. An edit made
+   *between our read and our write* is overwritten and lost; the window is milliseconds, and that is accepted.
    → Task 3 `test_readback_mismatch_refuses_and_keeps_the_cache`.
 2. **A playlist holding a missing (hidden) song.** Expected: every index edit on it is refused with a reason naming
    the playlist; no replacement trashes anything while it blocks. → Task 6

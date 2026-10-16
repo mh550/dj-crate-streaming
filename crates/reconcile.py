@@ -153,6 +153,11 @@ class Reconciler:
             out.append(f"{pl.name}: tier {old[1] or 'none'}→{a.tier or 'none'}")
         return out
 
+    @staticmethod
+    def _disagrees(pl: Playlist, cached) -> bool:
+        a = attrs.parse(pl.comment)
+        return (a.crate or has_name_marker(pl.name), a.tier) != ((cached.enabled, cached.tier) if cached else (False, None))
+
     # --- reconcile
     def run(self) -> ReconcileReport:
         rep = ReconcileReport()
@@ -161,9 +166,16 @@ class Reconciler:
         known = {c.playlist_id: c for c in self.store.all()}
         for p in playlists:
             was = known.get(p.id)
-            for prob in attrs.parse(p.comment).problems:
-                rep.problems.append(f"{p.name}: {prob}")
-                self.store.log_once(p.id, "attrs_problem", f"{p.name}: {prob}")
+            if self._disagrees(p, was):
+                # getPlaylists is a snapshot: a setter may have written the comment since. Act on a fresh read only.
+                try:
+                    p = self.client.playlist(p.id)
+                except Exception as e:
+                    rep.errors.append(f"{p.name}: {e}")
+                    continue
+            probs = [f"{p.name}: {x}" for x in attrs.parse(p.comment).problems]
+            rep.problems += probs
+            self.store.note_problems(p.id, "attrs_problem", probs)
             changes = self.refresh_cache(p)
             c = self.store.get(p.id)
             if changes and was is not None:

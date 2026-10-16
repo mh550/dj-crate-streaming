@@ -180,6 +180,7 @@ def main(argv: list[str] | None = None) -> int:
         from crates.service import Config
         from crates.store import CrateStore
         from subsonic.client import SubsonicClient
+        from crates.reconcile import CommentNotKept
         from .import_playlist import NameCollision, import_playlist
         from .playlist_sources import concat, load
         if len(a.sources) > 1 and not a.name:
@@ -202,6 +203,9 @@ def main(argv: list[str] | None = None) -> int:
                                   source=" ".join(a.sources), dry_run=a.dry_run, merge=a.merge, tier=a.tier)
         except NameCollision as e:
             print(f"{e}; re-run with --merge to add to it, or pick another --name", file=sys.stderr); return 1
+        except CommentNotKept as e:                     # the songs and wanted rows were recorded; the comment was not
+            print(e.report.table())
+            print(f"{e}; the tier is not cached: fix the comment in Navidrome, or re-run", file=sys.stderr); return 1
         print(rep.table())
         if a.dry_run:
             print("(dry run: nothing written)")
