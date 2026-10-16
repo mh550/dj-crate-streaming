@@ -207,6 +207,7 @@ def make_handler(state: FakeState):
             self._send(_resp({"scanStatus": {"scanning": state.scanning, "count": len(state.songs)}}))
 
         def m_startScan(self, q, m):
+            state.sync()            # a scan is when navidrome.db learns of songs (a test adds them to state.songs)
             self._send(_resp({"scanStatus": {"scanning": True, "count": len(state.songs)}}))
 
         def m_getPlaylists(self, q, m):

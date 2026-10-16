@@ -26,10 +26,20 @@ once beets has filed the file: from then on the row is `verify` with the filed p
 after filing, and again with the exception text), because the library file is the one copy of that version
 and a retry would download and file a second one.
 
-Playlist rows (song already in Navidrome, just not good enough for its derived tier) also get the playlist
-entry swapped to the new song in every tiered playlist that holds it, in one updatePlaylist call each, then
-reconciled so the new row is `ok` and the old one `removed`. External rows (seeded from Spotify)
-just need the file in the library.
+A copy upgrade (`copy_of`: a playlist row, whose song is already in Navidrome but not good enough for its derived
+tier) replaces the old copy only with proof (sourcing.replace): the verification stored for this download says
+`replaceable` is True and names the old file it compared, that file is unchanged, and identity calls the two one
+version. Then the new song takes the old one's place in *every* playlist that holds it (not only tiered ones), the
+reconciled rows say so (new `ok`, old `removed`), and the old file goes to the trash once no playlist entry refers
+to it; a step that cannot finish now is resumed by the worker. Without proof both copies stay, no playlist is
+touched, and the row becomes `review` ("kept beside <old>: not proven the same recording (<why>)"). A request
+withdrawn mid-download (no tiered playlist holds the old song any more) is filed and set `ok`, nothing replaced.
+A new version is never a replacement (D23). External rows (seeded from Spotify) just need the file in the library.
+
+    filed, Navidrome lists it ─┬─ not a copy upgrade ───────────────────────▶ ok
+                               ├─ withdrawn (no tiered playlist holds it) ──▶ ok, nothing replaced
+                               ├─ proven ─▶ replacement: repoint ─▶ trash ─▶ scan ─▶ done (else the worker resumes)
+                               └─ not proven ─▶ review "kept beside …" (both copies stay)
 """
 from __future__ import annotations
 
@@ -47,6 +57,7 @@ from subsonic.client import SubsonicClient, SubsonicError
 from .filer import BeetsFiler, FilingError
 from .identity import parse_filename, parse_title
 from .policy import TIERS, QualityPolicy, check_tier
+from . import replace as replacement
 from .scorer import Candidate, Wanted, explain, rank
 from .slskd_client import SlskdClient, transfer_files
 from .verify import verify
@@ -89,12 +100,21 @@ def _find_landed(downloads_root: Path, best: Candidate) -> Path | None:
     return None
 
 
-def _owned(wanted: Wanted, navidrome: SubsonicClient, song_id: str, external: bool) -> Wanted:
-    """What `rank` judges candidates against. A crate row is a copy upgrade, and the version it must keep is the
-    owned file's own, label included: Navidrome's title for the song, not the row's name, which a Spotify import
-    may have written without the label (then the version guard would be vacuous). Only the title changes, so the
-    search query still uses the row's name. When Navidrome cannot say, the row's title stands."""
-    if external:
+def copy_of(row: dict) -> str | None:
+    """The song a download would be a better copy of: a playlist row's own song; an external row's library song
+    while the row is not `ok` (play-now's provisional copy, Task 11); else None (a new file, not a copy)."""
+    if not row.get("external"):
+        return row["song_id"]
+    lib = row.get("library_song_id")
+    return lib if lib and row.get("status") != "ok" else None
+
+
+def _owned(wanted: Wanted, navidrome: SubsonicClient, song_id: str | None) -> Wanted:
+    """What `rank` judges candidates against. A copy upgrade must keep the owned file's own version, label
+    included: Navidrome's title for the song, not the row's name, which a Spotify import may have written without
+    the label (then the version guard would be vacuous). Only the title changes, so the search query still uses the
+    row's name. When Navidrome cannot say, the row's title stands. `song_id` None: not a copy, nothing to keep."""
+    if song_id is None:
         return wanted
     try:
         title = navidrome.song(song_id).title
@@ -129,12 +149,13 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
           tier: str | None = None, policy: QualityPolicy | None = None, download_timeout_s: float = 600, poll_s: float = 1.0,
           scan_timeout_s: float = 120, verifier=verify, filer: BeetsFiler | None = None,
           navidrome_db: Path | None = None, lookup=None, prefer: dict | None = None,
-          trash_root: Path | None = None) -> FetchResult:           # trash_root: for the copy replacement (Task 8)
+          trash_root: Path | None = None) -> FetchResult:
     music_root, downloads_root = Path(music_root), Path(downloads_root)
     row = store.find_wanted(wanted_id)
     if row is None:
         return FetchResult("missing", f"{wanted_id} is not in any enabled crate or the external queue")
     external = bool(row.get("external"))
+    copy_id = copy_of(row)                 # the owned song this download would replace, None for a new file
     if tier is not None and check_tier(tier) != row["tier"]:     # fact #7: a playlist row's tier is derived
         if not external:
             return FetchResult("refused", f"{wanted_id}: its tier comes from its playlists ({row['tier']})")
@@ -157,7 +178,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         return FetchResult("failed", why, best, explain=text)
 
     wanted = Wanted(row.get("artist") or "", row["title"], row.get("album"), row.get("duration"), row.get("year"),
-                    copy=not external)
+                    copy=copy_id is not None)
 
     def locate_in_navidrome(filed: Path, query: str | None = None):
         navidrome.start_scan()
@@ -186,25 +207,77 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
             set_status("verify", why)
             return FetchResult("verify", why, best, filed, explain=text)
         store.set_wanted_names(wanted_id, new.artist or "", new.title)      # what the library calls it now
-        if external:
-            set_status("ok", f"filed as {filed.relative_to(music_root)}")
+        rel = filed.relative_to(music_root).as_posix()
+        if copy_id is None:
+            if external:
+                store.set_library_song(wanted_id, new.id)
+            set_status("ok", f"filed as {rel}")
             return FetchResult("ok", "filed and visible in Navidrome", best, filed, new.id, text)
-        for crate in store.tiered():                          # every playlist the row was queued for (fact #7)
-            pl = navidrome.playlist(crate.playlist_id)
-            ids = [e.id for e in pl.entries]
-            if wanted_id not in ids:
-                continue
-            idx = ids.index(wanted_id)
-            # Subsonic removes by index and only appends: drop old+tail and re-add new+tail in ONE call,
-            # which Navidrome applies atomically (remove first, then add).
-            navidrome.update_playlist(pl.id, add_song_ids=[new.id] + ids[idx + 1:], remove_indexes=list(range(idx, len(ids))))
-            reconciler.reconcile_playlist(navidrome.playlist(pl.id))
-        # A row the swap did not reach (its playlist stopped being tiered mid-download, or no longer holds the
-        # song) is done too: without this it would stay `verify` and be re-checked forever. A later run removes it.
-        set_status("ok", f"filed as {filed.relative_to(music_root)}; not swapped in: its playlist is no longer tiered "
-                         "or no longer holds it")
+        if not external and not store.playlists_holding([copy_id]):
+            # Its playlist stopped being tiered (or dropped the song) mid-download: the request is withdrawn, so the
+            # file stays and nothing is replaced. Without `ok` it would stay `verify` and be re-checked forever.
+            set_status("ok", f"filed as {rel}; not swapped in: its playlist is no longer tiered or no longer holds it")
+            return FetchResult("ok", "filed; nothing replaced (no tiered playlist holds the old song now)", best, filed,
+                               new.id, text)
+        return replace_copy(filed, rel, new.id, best, text)
+
+    def keep_both(old_rel: str, rel: str, why: str, filed: Path, new_id: str, best, text: str) -> FetchResult:
+        """No proof the two are one recording: both copies stay, no playlist is touched, Michael is asked."""
+        set_status("review", f"kept beside {old_rel}: not proven the same recording ({why}); the new copy is {rel}")
+        store.log(None, wanted_id, "kept_both", f"{rel} beside {old_rel}: {why}")
         store.commit()
-        return FetchResult("ok", "filed, swapped into every tiered playlist, reconciled", best, filed, new.id, text)
+        return FetchResult("ok", f"filed; kept both ({why})", best, filed, new_id, text)
+
+    def replace_copy(filed: Path, rel: str, new_id: str, best, text: str) -> FetchResult:
+        """The copy upgrade's end: a replacement with proof, else keep both. Both the first call and a re-check read
+        the *stored* verification, so a re-check decides the same way."""
+        ctx = replacement.Ctx(store=store, navidrome=navidrome, navidrome_db=navidrome_db, music_root=music_root,
+                              trash_root=trash_root, forget=filer.forget if filer is not None else None,
+                              reconciler=reconciler, scan_timeout_s=scan_timeout_s, poll_s=poll_s)
+        job = replacement.open_for(store, copy_id)
+        if job is None:
+            v = store.verification(wanted_id)
+            ref = ((v or {}).get("measurements") or {}).get("reference")
+            why = replacement.why_not(v)                 # first: an unlicensed download reads nothing more
+            old_rel = (v or {}).get("reference") or f"song {copy_id}"
+            try:
+                if navidrome_db is None or not Path(navidrome_db).is_file():
+                    why = why or "no navidrome.db to find the old copy in"
+                elif (found := replacement.song_path(navidrome_db, copy_id)) is None:
+                    why = why or "the old copy is not in navidrome.db"
+                else:
+                    old_rel = found
+                if why is None and new_id == copy_id:
+                    why = "Navidrome gave the new copy the old song's id"
+                if why is None and trash_root is None:
+                    why = "no trash configured"
+                if why is None and not (music_root / old_rel).exists():
+                    why = f"the old copy {old_rel} is not on disk"
+                if why is None:
+                    why = replacement.proof(ctx, copy_id, new_id, old_rel, rel, ref)
+            except sqlite3.Error as e:                   # locked, not a database, another schema: no proof
+                why = why or f"navidrome.db unreadable ({type(e).__name__})"
+            if why is not None:
+                return keep_both(old_rel, rel, why, filed, new_id, best, text)
+            job = {"id": replacement.start(store, wanted_id=wanted_id, old_song_id=copy_id, new_song_id=new_id,
+                                           old_path=old_rel, new_path=rel, reference=ref)}
+        try:
+            replacement.advance(job["id"], ctx)
+            err = ""
+        except Exception as e:                            # the job keeps its state: the worker resumes it
+            err = f"{type(e).__name__}: {e}"
+            store.log(None, wanted_id, "replace", f"#{job['id']} interrupted: {err}")
+        j = store.replacement(job["id"])
+        detail = "; ".join(x for x in (j["detail"], err) if x)
+        if j["state"] == "done":
+            where = f"old copy in the trash: {j['trash_path']}" if j["trash_path"] else "old copy already gone"
+            return FetchResult("ok", f"filed; replaced the old copy in every playlist ({where})", best, filed, new_id,
+                               text)
+        what = "blocked" if j["state"] == "blocked" else "continues in the worker"
+        # The old song's rows still live (a playlist still holds it) wait for the job; reconcile leaves `review` alone
+        # and no second download is offered for them.
+        set_status("review", f"replacement #{j['id']} {j['state']}: {detail}")
+        return FetchResult("ok", f"filed; replacement #{j['id']} {what} ({detail})", best, filed, new_id, text)
 
     status = row.get("status")
     if status == "ok":
@@ -233,7 +306,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
     sid = slskd.search(f"{wanted.artist} {wanted.title}".strip())
     try:
         slskd.wait_search(sid, poll_s=poll_s, max_s=30)
-        cands = rank(slskd.search_responses(sid), _owned(wanted, navidrome, wanted_id, external), policy)
+        cands = rank(slskd.search_responses(sid), _owned(wanted, navidrome, copy_id), policy)
     finally:
         slskd.delete_search(sid)
     text = explain(cands, peers=False)
@@ -250,12 +323,12 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         store.log(None, wanted_id, "pick", f"approved candidate still offered: {best.basename}" if same is not None
                   else f"approved candidate no longer offered; using the top-ranked {best.basename}")
 
-    # What this download is for, which tells verify what to compare it with (M7): a crate row is a copy upgrade
-    # (the old file is the reference), an external row that gets another version is a new version (no reference,
-    # and no expected length: a version's length differs from the row's, and the candidate's own listed length
-    # would be it vouching for itself), anything else is checked as before.
+    # What this download is for, which tells verify what to compare it with (M7): a copy upgrade (copy_of) is
+    # compared with the old file (the reference), an external row that gets another version is a new version (no
+    # reference, and no expected length: a version's length differs from the row's, and the candidate's own listed
+    # length would be it vouching for itself), anything else is checked as before.
     intent, expected = None, wanted.duration_s
-    if not external:
+    if copy_id is not None:
         intent = "copy"
     else:
         got = parse_filename(best.basename, wanted.artist)        # read as the scorer read it
@@ -290,17 +363,18 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
             return fail(why, best, text)
 
         ref, rid = None, None
-        if not external:                      # a crate upgrade: the old copy is the recording we must match
-            ref, reason = _library_file(navidrome_db, wanted_id, music_root)
+        if copy_id is not None:               # a copy upgrade: the old copy is the recording we must match
+            ref, reason = _library_file(navidrome_db, copy_id, music_root)
             if ref is None:
                 store.log(None, wanted_id, "reference", reason)
                 store.commit()                # the verifier decodes for minutes: hold no write transaction meanwhile
-            rid = navidrome.song(wanted_id).music_brainz_id or None
+            rid = navidrome.song(copy_id).music_brainz_id or None
         extra = {"recording_id": rid, "lookup": lookup} if lookup is not None else {}    # see header_only in tests
         if intent == "version" and best.length_s:        # the peer's listing of this file, checked against what arrived
             extra["listed_length_s"] = best.length_s
         vd = verifier(landed, expected, tier=row["tier"], reference=ref, intent=intent, **extra)   # still `sourcing`: not ours yet
-        store.set_verification(wanted_id, vd.as_dict(row["tier"]) | {"file": landed.name})
+        store.set_verification(wanted_id, vd.as_dict(row["tier"]) | {"file": landed.name,
+                               "reference": _rel(ref).as_posix() if ref is not None else None})
         if not vd.ok:
             landed.unlink(missing_ok=True)                      # our own download, not library material
             return fail("; ".join(vd.problems), best, text)

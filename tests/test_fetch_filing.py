@@ -52,7 +52,7 @@ def test_filed_event_carries_the_note_when_a_match_is_rejected(world, tmp_path):
     assert r.status == "ok", r.reason
     (detail,) = [e["detail"] for e in kinds(world, "filed")]
     assert "as-is" in detail and "Δ79 s" in detail
-    assert len(filer.runner.calls) == 1
+    assert len([c for c in filer.runner.calls if "remove" not in c]) == 1   # (+ the replaced copy's `beet remove`)
 
 
 @pytest.mark.parametrize("outcome", ["ok", "failed"])
@@ -134,7 +134,7 @@ def test_nothing_imported_fails_and_keeps_the_file_in_staging(world, tmp_path):
     assert world["store"].track_status_map("pl-2")["s4"]["status"] == "failed"
     kept = list((world["dl"] / ".staging").glob("s4-*/03 - Good Times.flac"))
     assert len(kept) == 1 and kept[0].read_bytes() == flac
-    assert not world["music"].exists()
+    assert not (world["music"] / "Chic").exists()        # nothing filed (the old copy s4 lives there)
 
 
 def test_filing_error_marks_failed_and_reraises(world, tmp_path):

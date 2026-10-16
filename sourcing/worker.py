@@ -17,7 +17,12 @@ Each tick:
   2. every unused approval is claimed first (a conditional UPDATE to `started`: a crash, a second worker, or
      an approval Michael superseded after this tick read its list cannot download it twice; a lost claim is
      skipped), then fetched, preferring the candidate Michael saw while that file is still offered,
-     and finally marked with the outcome.
+     and finally marked with the outcome;
+  3. every copy replacement left unfinished before this tick (sourcing.replace: a playlist that could not be
+     repointed yet, a crash between steps) is advanced; an error is logged and the job keeps its state;
+  4. every `export_s` seconds (WORKER_EXPORT_S, 300 in the CLI; 0 = never) the playlists are exported as `.m3u8`
+     into <music>/_playlists (scripts.export_playlists rewrites only changed files), so repoints, proposal swaps and
+     Michael's own edits reach the files.
 
 One bad row never stops the tick, and one bad tick (slskd or Navidrome down, DB locked) never stops `run`.
 Log lines name wanted ids and file basenames only: stdout is the container log and must not carry Soulseek peers.
@@ -31,6 +36,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from crates.reconcile import ReconcileBusy
+from scripts.export_playlists import export
+from . import replace
 from .fetch import fetch
 
 
@@ -59,9 +66,11 @@ class TickReport:
 
 class Worker:
     def __init__(self, *, store, slskd, navidrome, reconciler, fetch_kwargs: dict, fetcher=fetch, log=print,
-                 recheck_s: float = 0, reconcile_s: float = 0, clock=time.monotonic, lock_path: Path | None = None):
+                 recheck_s: float = 0, reconcile_s: float = 0, clock=time.monotonic, lock_path: Path | None = None,
+                 export_s: float = 0, exporter=export):
         self.store, self.fetcher, self.log, self.recheck_s = store, fetcher, log, recheck_s
         self.reconciler, self.reconcile_s, self.clock, self._reconciled_at = reconciler, reconcile_s, clock, None
+        self.export_s, self.exporter, self._exported_at = export_s, exporter, None
         self.lock_path, self._lock_fd = lock_path, None
         self.common = dict(store=store, slskd=slskd, navidrome=navidrome, reconciler=reconciler, **fetch_kwargs)
 
@@ -108,9 +117,45 @@ class Worker:
         except Exception as e:                             # e.g. Navidrome down: the next interval tries again
             self.log(f"reconcile failed: {type(e).__name__}: {e}")
 
+    def _replace_ctx(self) -> replace.Ctx:
+        c = self.common
+        filer = c.get("filer")
+        return replace.Ctx(store=self.store, navidrome=c["navidrome"], navidrome_db=c.get("navidrome_db"),
+                           music_root=Path(c["music_root"]), trash_root=c.get("trash_root"),
+                           forget=filer.forget if filer is not None else None, reconciler=self.reconciler,
+                           scan_timeout_s=c.get("scan_timeout_s", 120), poll_s=c.get("poll_s", 1.0))
+
+    def advance_replacements(self, job_ids: list[int]) -> list[str]:
+        """Step 3: the jobs open when the tick began (one fetch finishing now has just advanced its own)."""
+        out = []
+        for jid in job_ids:
+            try:
+                state = replace.advance(jid, self._replace_ctx())
+                job = self.store.replacement(jid)
+                out.append(f"replacement #{jid}: {state}: {job['detail'] or ''}")
+            except Exception as e:                         # e.g. Navidrome down: the job keeps its state
+                out.append(f"replacement #{jid}: error: {type(e).__name__}: {e}")
+                self.log(f"replacement #{jid} failed: {type(e).__name__}: {e}")
+        return out
+
+    def export_due(self) -> None:
+        """Step 4: the `.m3u8` export when `export_s` has passed since the last one (the first tick always runs)."""
+        if not self.export_s:
+            return
+        now = self.clock()
+        if self._exported_at is not None and now - self._exported_at < self.export_s:
+            return
+        self._exported_at = now
+        db, music = self.common.get("navidrome_db"), Path(self.common["music_root"])
+        try:
+            self.exporter(db, music, music / "_playlists")
+        except Exception as e:                             # the next interval tries again
+            self.log(f"export failed: {type(e).__name__}: {e}")
+
     def tick(self) -> TickReport:
         """No `tier` is passed: the row's current tier rules, and an approval's tier only records what was approved."""
         self.reconcile_due()
+        open_jobs = [j["id"] for j in self.store.open_replacements()]
         results, rechecked = [], 0
         for wanted_id in self.store.verify_ids(updated_before=time.time() - self.recheck_s):
             reason = (self.store.find_wanted(wanted_id) or {}).get("reason")
@@ -141,6 +186,10 @@ class Worker:
             self.store.commit()
             results.append(f"{a['wanted_id']}: {outcome}")
             self.log(f"{a['wanted_id']}: {outcome}")
+        for line in self.advance_replacements(open_jobs):
+            results.append(line)
+            self.log(line)
+        self.export_due()
         self.log(f"tick: {claimed} approvals, {rechecked} rechecked")
         return TickReport(claimed, rechecked, results)
 

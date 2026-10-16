@@ -12,6 +12,8 @@ Tables
   verifications the last download check per wanted id
   approvals     who allowed which download (D23); the worker consumes the unused ones
   previews      the last search-and-rank result per wanted id, so the Wanted tab can show the pick
+  replacements  copy replacements (sourcing.replace): old and new song and path, recorded before the first step,
+                and the step reached, so a crash at any step is resumed by the worker, never forgotten
 """
 from __future__ import annotations
 
@@ -62,6 +64,7 @@ CREATE TABLE IF NOT EXISTS external_wanted (
   playlist_id TEXT, position INTEGER,             -- import-playlist: where a later fetch inserts the track
   tier        TEXT NOT NULL DEFAULT 'crate',      -- quality tier it is sourced at (spec §1): low|medium|high|crate
   asked_artist TEXT, asked_title TEXT,            -- the names first asked for (Spotify), kept once Navidrome's replace them
+  library_song_id TEXT,                           -- the Navidrome song filed for this row
   created_at  REAL NOT NULL, updated_at REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS imported_entries (     -- every song import-playlist ever added to a playlist,
@@ -77,7 +80,16 @@ CREATE TABLE IF NOT EXISTS approvals (            -- one row per "yes, download 
   id INTEGER PRIMARY KEY, wanted_id TEXT NOT NULL, approved_by TEXT NOT NULL,  -- michael | policy:<name> | agent:<id>
   candidate TEXT, tier TEXT NOT NULL, ts REAL NOT NULL, used_at REAL, result TEXT);
 CREATE TABLE IF NOT EXISTS previews (song_id TEXT PRIMARY KEY, result TEXT NOT NULL, ts REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS replacements (         -- one per copy replacement (sourcing.replace)
+  id INTEGER PRIMARY KEY, wanted_id TEXT NOT NULL,
+  old_song_id TEXT NOT NULL, new_song_id TEXT NOT NULL,
+  old_path TEXT NOT NULL, new_path TEXT NOT NULL,  -- library-relative; recorded before the first step
+  reference TEXT,                                  -- JSON {path, size, mtime_ns}: the file verify compared
+  state TEXT NOT NULL,                             -- repoint | trash | scan | done | blocked
+  detail TEXT, trash_path TEXT, created_at REAL NOT NULL, updated_at REAL NOT NULL);
 """
+
+REPLACEMENT_OPEN = ("repoint", "trash", "scan")    # the worker advances these; done and blocked are final
 
 STATUSES = ("ok", "needs_source", "sourcing", "verify", "failed", "removed", "review")   # review: a person must pick a version
 
@@ -159,7 +171,7 @@ class CrateStore:
         """Add columns introduced after a DB was created (CREATE IF NOT EXISTS does not alter)."""
         have = {r[1] for r in self.db.execute("PRAGMA table_info(external_wanted)")}
         for col, typ in (("playlist_id", "TEXT"), ("position", "INTEGER"), ("tier", "TEXT NOT NULL DEFAULT 'crate'"),
-                         ("asked_artist", "TEXT"), ("asked_title", "TEXT")):
+                         ("asked_artist", "TEXT"), ("asked_title", "TEXT"), ("library_song_id", "TEXT")):
             if col not in have:
                 self.db.execute(f"ALTER TABLE external_wanted ADD COLUMN {col} {typ}")
         if "tier" not in {r[1] for r in self.db.execute("PRAGMA table_info(crates)")}:
@@ -531,6 +543,11 @@ class CrateStore:
             self.commit()
         return out
 
+    def set_library_song(self, ext_id: str, song_id: str) -> None:
+        """The Navidrome song an external row's download became (fetch, once Navidrome lists it)."""
+        self.db.execute("UPDATE external_wanted SET library_song_id=?, updated_at=? WHERE id=?",
+                        (song_id, time.time(), _ext_pk(ext_id)))
+
     def set_external_status(self, ext_id: str, status: str, reason: str | None = None) -> None:
         assert status in STATUSES, status
         self.db.execute("UPDATE external_wanted SET status=?, reason=?, updated_at=? WHERE id=?",
@@ -543,6 +560,49 @@ class CrateStore:
         d["song_id"] = f"ext-{d.pop('id')}"
         d["crates"], d["external"] = [], True
         return d
+
+    # --- replacements (sourcing.replace): a copy replacement's steps, durable so a crash is resumed
+    @staticmethod
+    def _replacement_row(r: sqlite3.Row) -> dict:
+        d = dict(r)
+        d["reference"] = json.loads(d["reference"]) if d["reference"] else None
+        return d
+
+    def add_replacement(self, *, wanted_id: str, old_song_id: str, new_song_id: str, old_path: str, new_path: str,
+                        reference: dict | None) -> int:
+        """Record a replacement in state `repoint` before its first step, and commit it."""
+        now = time.time()
+        cur = self.db.execute(
+            "INSERT INTO replacements(wanted_id, old_song_id, new_song_id, old_path, new_path, reference, state, "
+            "created_at, updated_at) VALUES(?,?,?,?,?,?,'repoint',?,?)",
+            (wanted_id, old_song_id, new_song_id, old_path, new_path, json.dumps(reference) if reference else None,
+             now, now))
+        self.log(None, old_song_id, "replace", f"#{cur.lastrowid} repoint: {old_path} → {new_path}")
+        self.db.commit()
+        return cur.lastrowid
+
+    def replacement(self, job_id: int) -> dict | None:
+        r = self.db.execute("SELECT * FROM replacements WHERE id=?", (job_id,)).fetchone()
+        return self._replacement_row(r) if r else None
+
+    def open_replacements(self) -> list[dict]:
+        return [self._replacement_row(r) for r in self.db.execute(
+            f"SELECT * FROM replacements WHERE state IN ({','.join('?' * len(REPLACEMENT_OPEN))}) ORDER BY id",
+            REPLACEMENT_OPEN)]
+
+    def set_replacement(self, job_id: int, state: str, detail: str | None = None, **cols) -> None:
+        """Move a replacement to `state` (also `trash_path`, the one other column a step sets) and commit. A
+        `replace` event is logged when the state or the detail changes, so a waiting step is logged once, not
+        on every worker tick."""
+        assert state in REPLACEMENT_OPEN + ("done", "blocked"), state
+        assert set(cols) <= {"trash_path"}, cols
+        old = self.replacement(job_id)
+        sets = ", ".join(f"{c}=?" for c in ("state", "detail", "updated_at", *cols))
+        self.db.execute(f"UPDATE replacements SET {sets} WHERE id=?",
+                        (state, detail, time.time(), *cols.values(), job_id))
+        if (old["state"], old["detail"]) != (state, detail):
+            self.log(None, old["old_song_id"], "replace", f"#{job_id} {state}" + (f": {detail}" if detail else ""))
+        self.db.commit()
 
     # --- settings
     def stream_tier(self) -> str:

@@ -36,8 +36,11 @@ def new_song(nd, size):
 def world(tmp_path):
     """Fake Navidrome whose crate 'Chicago 86' (pl-2) contains s4, a 128 kbps MP3 → needs_source;
     we make the wanted track *Chic — Good Times* by relabelling s4 so the fixture search matches."""
-    with FakeSubsonicServer() as nd:
+    with FakeSubsonicServer(db_path=tmp_path / "fake-navidrome.db") as nd:
         nd.state.songs["s4"].update(title="Good Times", artist="Chic", album="Risqué", year=1979, track=3, duration=501)
+        old = tmp_path / "music" / nd.state.songs["s4"]["path"]       # the old copy a replacement trashes (a stand-in)
+        old.parent.mkdir(parents=True)
+        old.write_bytes(b"old copy of s4")
         store = CrateStore()
         client = SubsonicClient(nd.url, "demo", "demo")
         rec = Reconciler(client, store)
@@ -49,18 +52,30 @@ def world(tmp_path):
                            runner=fake_beet(tmp_path / "music", lib, "Chic/Risqué (1979)/03 - Good Times.flac",
                                             artist="Chic", title="Good Times"),
                            tagger=lambda path, names: [])
-        yield dict(nd=nd, store=store, client=client, rec=rec, music=tmp_path / "music", dl=tmp_path / "dl", filer=filer)
+        yield dict(nd=nd, store=store, client=client, rec=rec, music=tmp_path / "music", dl=tmp_path / "dl", filer=filer,
+                   trash=tmp_path / "trash")
 
 
 def header_only(path, duration, tier=None, reference=None, **kw):
     """These downloads are synthetic header-only FLACs (no frames), so they can't be decoded: check headers only,
-    as fetch did before M5. Decoded verification by tier has its own tests (test_verify_*)."""
-    return verify(path, duration)
+    as fetch did before M5. Decoded verification by tier has its own tests (test_verify_*).
+
+    A copy upgrade compared with its reference is recorded as `replaceable`, with the reference file as verify
+    records it: this models "the fingerprint matched" (the real flag is tested in test_verify_* and
+    test_fetch_intent.py)."""
+    v = verify(path, duration)
+    if kw.get("intent") == "copy" and reference is not None:
+        st = Path(reference).stat()
+        v.measurements.update(replaceable=True, reference={"path": str(Path(reference).resolve()), "size": st.st_size,
+                                                           "mtime_ns": st.st_mtime_ns})
+    return v
 
 
 def run(world, srv, approve, wanted_id="s4", **kw):
     kw.setdefault("verifier", header_only)
     kw.setdefault("filer", world["filer"])
+    kw.setdefault("navidrome_db", world["nd"].state.db_path)
+    kw.setdefault("trash_root", world["trash"])
     return fetch(wanted_id, store=world["store"], slskd=SlskdClient(srv.url, "k"), navidrome=world["client"],
                  reconciler=world["rec"], music_root=world["music"], downloads_root=world["dl"],
                  approve=approve, poll_s=0.01, download_timeout_s=kw.pop("download_timeout_s", 1),
@@ -95,7 +110,7 @@ def test_bad_download_is_failed_and_not_filed(world, tmp_path):
         r = run(world, srv, approve=True)
     assert r.status == "failed" and "transcode" in r.reason
     assert world["store"].track_status_map("pl-2")["s4"]["status"] == "failed"
-    assert not world["music"].exists()
+    assert not (world["music"] / "Chic").exists()        # nothing filed (the old copy s4 lives there)
     assert not (world["dl"] / LANDED[0] / LANDED[1]).exists()         # our rejected download is removed
 
 
@@ -103,7 +118,7 @@ def test_fetch_download_timeout_fails_cleanly(world, tmp_path):
     with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: b"x"}, complete=False) as srv:
         r = run(world, srv, approve=True, download_timeout_s=0.05)
     assert r.status == "failed" and "timed out" in r.reason
-    assert not world["music"].exists()
+    assert not (world["music"] / "Chic").exists()        # nothing filed (the old copy s4 lives there)
 
 
 def test_fetch_no_acceptable_candidate_leaves_needs_source(world):

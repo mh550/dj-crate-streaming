@@ -21,7 +21,8 @@ def worker(world, srv, lines=None, **kw):
     lines = [] if lines is None else lines
     return Worker(store=world["store"], slskd=SlskdClient(srv.url, "k"), navidrome=world["client"], reconciler=world["rec"],
                   fetch_kwargs=dict(music_root=world["music"], downloads_root=world["dl"], filer=world["filer"],
-                                    verifier=header_only, poll_s=0.01, download_timeout_s=1, scan_timeout_s=1),
+                                    verifier=header_only, poll_s=0.01, download_timeout_s=1, scan_timeout_s=1,
+                                    navidrome_db=world["nd"].state.db_path, trash_root=world["trash"]),
                   log=lines.append, **kw)
 
 

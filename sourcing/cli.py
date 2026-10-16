@@ -4,7 +4,7 @@ r"""CLI: rank candidates for a wanted track, from a fixture file or a live slskd
   python -m sourcing.cli rank --slskd http://server:5030 --api-key $SLSKD_KEY --artist Chic --title "Good Times" [--download]
   python -m sourcing.cli verify /srv/incoming/03\ -\ Good\ Times.flac --duration 501 [--tier crate] [--reference old.flac] [--json]
   python -m sourcing.cli fetch --wanted s4 [--approve [--wait]] [--tier T]   # search+score; --approve only records an approval for the worker; tier: the row's
-  python -m sourcing.cli worker [--once] [--no-reconcile]   # D18: spend approvals (download, verify, file with beets), re-check `verify` rows, reconcile; WORKER_POLL_S (30), WORKER_RECHECK_S (300), WORKER_RECONCILE_S (600)
+  python -m sourcing.cli worker [--once] [--no-reconcile]   # D18: spend approvals (download, verify, file with beets), re-check `verify` rows, reconcile; WORKER_POLL_S (30), WORKER_RECHECK_S (300), WORKER_RECONCILE_S (600), WORKER_EXPORT_S (300)
   python -m sourcing.cli seed-spotify https://open.spotify.com/playlist/...   # queue tracks not in Navidrome
   python -m sourcing.cli import-playlist <spotify-url|report.txt|exportify.csv>... [--name N] [--dry-run]   # D11: Spotify playlists → public Navidrome playlist + wanted rows
   python -m sourcing.cli retier --from crate --to medium [--dry-run]   # move external wanted rows between tiers (D15 backfill; rows of a tiered playlist follow its comment)
@@ -260,6 +260,7 @@ def main(argv: list[str] | None = None) -> int:
                     fetch_kwargs=_fetch_env(), log=lambda line: print(line, flush=True),
                     recheck_s=float(os.environ.get("WORKER_RECHECK_S", "300")),
                     reconcile_s=0 if a.no_reconcile else float(os.environ.get("WORKER_RECONCILE_S", "600")),
+                    export_s=float(os.environ.get("WORKER_EXPORT_S", "300")),
                     lock_path=Path(cfg.db_path).parent / "worker.lock")
         try:
             if a.once:
