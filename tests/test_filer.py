@@ -1,7 +1,8 @@
 """BeetsFiler: one verified download, imported from its own .staging folder, written only after a match.
 
 The real-beet tests run /usr/bin/beet against a temp library with MusicBrainz pointed at a refused port
-(127.0.0.1:9), so every import falls back to as-is offline; BEETSDIR keeps the user's beets config out.
+(127.0.0.1:9), so every import falls back to as-is offline. That setting lives in $BEETSDIR/config.yaml, not
+in the -c file: beets 1.6 configures MusicBrainz before it loads -c. BEETSDIR also keeps the user's config out.
 The fake-runner tests cover what an offline beets cannot: an applied match.
 """
 import hashlib
@@ -33,13 +34,18 @@ def real_config(tmp_path) -> tuple[Path, Path, Path]:
         text, n = re.subn(pattern, value, text, flags=re.M)
         assert n == 1, pattern
     config = tmp_path / "beets.yaml"
-    config.write_text(text + "musicbrainz:\n  host: 127.0.0.1:9\n")     # refused at once: offline, as-is
+    config.write_text(text)
     return config, music, library
 
 
 @pytest.fixture
 def beets_home(tmp_path, monkeypatch):
-    monkeypatch.setenv("BEETSDIR", str(tmp_path / "beetsdir"))
+    """$BEETSDIR/config.yaml points MusicBrainz at a refused port (offline, as-is). It has to be here: beets 1.6
+    calls mb.configure() before it reads the -c file, so a musicbrainz: host: in -c never applies."""
+    home = tmp_path / "beetsdir"
+    home.mkdir()
+    (home / "config.yaml").write_text("musicbrainz:\n  host: 127.0.0.1:9\n")
+    monkeypatch.setenv("BEETSDIR", str(home))
 
 
 def staging_dir(tmp_path, name="ext-1-1") -> Path:
@@ -118,6 +124,23 @@ def test_real_beet_untagged_download_is_named_from_the_wanted_row(tmp_path, beet
     assert item.filled == ["artist", "title"]
     assert item.path == music / "Chic" / "Singles" / "Good Times.flac"
     assert not (music / "_" / "Singles.flac").exists()
+
+
+@real_beet
+def test_real_beet_tests_are_offline(tmp_path, beets_home):
+    """beets 1.6 configures MusicBrainz (ui._setup calls mb.configure()) before it loads the -c file, so a
+    `musicbrainz: host:` there is ignored and the import queries musicbrainz.org. A length-less recording of
+    the song then scores distance 0, a strong match, and the import applies it at random (matched=True)."""
+    config, _, _ = real_config(tmp_path)
+    staging = staging_dir(tmp_path)
+    good_times(staging)
+    done = subprocess.run(["beet", "-vv", "-c", str(config), "import", "-q", "-s", "-m", "-W",
+                           "-l", str(staging.with_suffix(".log")), str(staging)],
+                          stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", timeout=120)
+    out = done.stdout + done.stderr
+    assert done.returncode == 0, out[-2000:]
+    assert "Connection refused" in out and "Found 0 candidates." in out, out[-2000:]
 
 
 def test_tagger_fills_only_empty_fields(tmp_path):
