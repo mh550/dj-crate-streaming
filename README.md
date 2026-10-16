@@ -15,19 +15,22 @@ crates/     the orchestration layer: playlist → crate
   cli.py            status | playlists | toggle | reconcile | wanted | serve | demo
 web/        the client: stream + toggle crates from the same screen (vanilla JS, phone-first)
 sourcing/   Phase 1: Soulseek sourcing — one wanted track from search to a file Navidrome serves
-  policy.py  scorer.py  verify.py  slskd_client.py   rank + check (unchanged)
+  scorer.py  verify.py  slskd_client.py   rank + check
+  identity.py       M7: what counts as the same song, version and copy (title labels, same-version test) — docs/identity.md
+  policy.py         tiers + version preferences, read from deploy/policy.toml
   fetch.py          the slice: search → score → (approved) download → verify → file → rescan → crate ok
   filer.py          beet import of each verified download (the only beets writer)
   worker.py         the worker (D18): claims approvals, fetches, re-checks `verify` rows — see docs/worker.md
   acoustid.py       AcoustID lookup (only with ACOUSTID_KEY): is this file the recording Navidrome knows?
-  musicbrainz.py    recording length from MusicBrainz: confirms a beets match before `beet write` (D22)
+  musicbrainz.py    recording length from MusicBrainz: confirms a beets match before `beet write` (D22); also the rate-limited client the identity backfill uses
   fake_slskd.py     in-process slskd for tests/demos
   spotify_csv.py    public Spotify playlist → rows, no API credentials (embed page)
   cli.py            rank | verify | worker [--once] | fetch --wanted <id> [--approve [--wait]] | seed-spotify <url> | import-playlist <src>... [--name N]
-scripts/    one-off library tooling: library_map.py (folder + audio-hash map), folders_to_playlists.py
-deploy/     compose.yml (+ .env.example), beets.yaml — /srv/docker/compose.yml symlinks here
+scripts/    one-off library tooling: library_map.py (folder + audio-hash map), folders_to_playlists.py,
+            identity_backfill.py (M7: propose / apply / revert MusicBrainz ids, reviewed — docs/worker.md)
+deploy/     compose.yml (+ .env.example), beets.yaml, policy.toml (tiers + version preferences) — /srv/docker/compose.yml symlinks here
 fixtures/   slskd-shaped search responses covering the failure modes
-tests/      75 tests, no network, ~25 s
+tests/      612 tests, no network, ~170 s
 ```
 
 ## Try it now (no server needed)
@@ -72,8 +75,39 @@ fetch before any transfer when neither they nor their parent folders exist.
 **Quality tiers** (spec §1): `low | medium | high | crate`. `rank`, `fetch`, `seed-spotify` and
 `import-playlist` take `--tier`; wanted rows remember theirs (default `crate`; crate tracks are always
 `crate`), and `fetch` scores with the row's tier. Listening tiers trade quality for estimated arrival,
-assuming our own download speed is 1 MB/s (`sourcing/policy.py`). `rank --slskd … --save r.json` keeps
+assuming our own download speed is 1 MB/s (`deploy/policy.toml`). `rank --slskd … --save r.json` keeps
 the raw responses so `rank --fixture r.json --tier <other>` compares tiers on one search.
+
+## M7: identity (songs, versions, copies)
+
+M7 puts one definition of "the same" in `sourcing/identity.py`: **song** (artist + title without version words),
+**version** (a recording: radio edit, 12", dub, live...) and **copy** (a file). Read `docs/identity.md` for the rules
+with real titles from the library. What it changed:
+
+- **One normaliser.** The five that disagreed (scorer, import, store, dedupe, tag rules) now call `identity`.
+  Accents are ignored and `&` means "and" everywhere.
+- **The import matcher** asks: same recording (ISRC)? same version? an *accepted* other version? A stand-in (for
+  example a 12" for a radio-edit row) is logged, never silent, and needs every one of its version words accepted.
+- **The scorer** has a version preference term, and a crate upgrade refuses another version.
+- **verify** knows a copy upgrade from a new version. A copy upgrade reports `replaceable` (full-length fingerprint
+  against the old file, bit-error rate 0.20 or less, durations agree, verdict `ok`). M8 will trash the old copy only
+  when it is true.
+- **`deploy/policy.toml`** holds the tiers (same numbers as before, D17 still open) and the version preferences (D16),
+  editable without code: `docs/worker.md` "Editing the policy".
+- **The id backfill** (`scripts/identity_backfill.py`) proposes MusicBrainz recording, work and AcoustID ids for the
+  files that lack them. It does not use beets (measured: beets matched a 412 s 12" to a 403 s 90's mix). Michael reviews
+  the report, then `apply` writes only those id fields where the file's own field is empty, and `revert` can undo it.
+  It runs in the worker:
+
+```bash
+cd /srv/docker
+docker compose exec -T worker python -m scripts.identity_backfill propose [--limit N]    # read-only; ~1 h for the library
+docker compose exec -T worker python -m scripts.identity_backfill apply /data/identity/identity-proposal.json --dry-run
+docker compose exec -T worker python -m scripts.identity_backfill apply /data/identity/identity-proposal.json --yes [--classes a,b] [--limit N] [--only GLOB]
+docker compose exec -T worker python -m scripts.identity_backfill revert /data/identity/apply-<time>.jsonl
+```
+
+The proposal and report land in `/srv/docker/crates/identity/`. Nothing is written to the library until `apply --yes`.
 
 ## Against the real box (Phase 0 done)
 
@@ -129,6 +163,10 @@ Container build for the Compose stack: `docker build -t crates .` (see the
 
 ## Not done yet
 
+- M8: copy replacement (trash the old copy when verify says `replaceable`), repointing playlists to a new version,
+  play-now. The version *field* (`VERSION`/`TIT3`) is read but never written: labels live in titles, and writing
+  the field is a later, separately reviewed proposal. The backfill's `apply` on the real library waits for Michael's
+  review of the report.
 - The worker (`docs/worker.md`) runs approved downloads automatically; automatic approval (`policy:` / `agent:`
   approvers) and a `sourcing_jobs` table (status, filed path, slskd transfer per wanted id, instead of riding on
   `crate_tracks.status` and the free-text reason) are not built. Also: check Navidrome for a good copy *before* searching.
