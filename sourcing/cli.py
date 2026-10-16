@@ -30,11 +30,16 @@ DEFAULT_BEETS_CONFIG = Path(__file__).resolve().parent.parent / "deploy" / "beet
 
 def _fetch_env() -> dict:
     """Where an approved fetch downloads and files, from the environment: the library, slskd's downloads
-    folder (Task 7 gives slskd its own) and the beets config the filer imports with."""
+    folder (Task 7 gives slskd its own) and the beets config the filer imports with.
+
+    A filer exists only inside the worker container (DJ_WORKER=1, set in deploy/compose.yml): it is the one
+    beets writer, with the one library.db. Anywhere else `fetch --approve` is refused before any download
+    ("no beets filer configured (run --approve in the worker)"); run it with `docker compose exec -T worker`."""
+    filer = (BeetsFiler(Path(os.environ.get("BEETS_CONFIG") or DEFAULT_BEETS_CONFIG), confirm=confirm_recording_length)
+             if os.environ.get("DJ_WORKER") == "1" else None)
     return {"music_root": Path(os.environ.get("MUSIC_ROOT") or "/srv/music"),
             "downloads_root": Path(os.environ.get("DOWNLOADS_ROOT") or "/srv/incoming/soulseek"),
-            "filer": BeetsFiler(Path(os.environ.get("BEETS_CONFIG") or DEFAULT_BEETS_CONFIG),
-                                 confirm=confirm_recording_length),
+            "filer": filer,
             "navidrome_db": Path(os.environ.get("NAVIDROME_DB", "/srv/docker/navidrome/navidrome.db")),
             "lookup": make_lookup(k) if (k := os.environ.get("ACOUSTID_KEY")) else None}
 

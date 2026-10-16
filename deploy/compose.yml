@@ -57,6 +57,7 @@ services:
       context: ${CRATES_SRC:?set CRATES_SRC=<repo checkout> in /srv/docker/.env}
     command: ["python", "-m", "sourcing.cli", "worker"]
     environment:
+      DJ_WORKER: "1"                         # only here does sourcing.cli build a beets filer (the one beets writer)
       SUBSONIC_URL: http://navidrome:4533
       SUBSONIC_USER: ${ND_USER}
       SUBSONIC_PASS: ${ND_PASS}

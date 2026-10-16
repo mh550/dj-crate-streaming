@@ -159,6 +159,7 @@ def test_cli_fetch_approve_records_an_approval(tmp_path, monkeypatch, capsys):
     with FakeSubsonicServer() as nd, FakeSlskdServer(RESPONSES, dl, files={GOOD: flac}) as sl:
         nd.state.songs["s4"].update(title="Good Times", artist="Chic", album="Risqué", year=1979, track=3, duration=501)
         _cli_env(monkeypatch, tmp_path, nd, sl)
+        monkeypatch.setenv("DJ_WORKER", "1")                         # as inside the worker container
         from crates.cli import main as crates_main
         assert crates_main(["toggle", "pl-2", "on"]) == 0
         capsys.readouterr()
@@ -321,3 +322,26 @@ def test_wanted_lists_rows_in_progress(world):
     store.set_wanted_status(ext, "sourcing", "downloading x.flac")
     by_id = {w["song_id"]: w["status"] for w in store.wanted()}
     assert by_id["s4"] == "verify" and by_id[ext] == "sourcing"
+
+
+# --- the worker container is the only beets writer -------------------------------------------------------
+
+def test_fetch_env_builds_a_filer_only_in_the_worker(monkeypatch):
+    from sourcing.musicbrainz import confirm_recording_length
+    monkeypatch.delenv("DJ_WORKER", raising=False)
+    assert cli._fetch_env()["filer"] is None                            # the host never runs beets
+    monkeypatch.setenv("DJ_WORKER", "1")
+    filer = cli._fetch_env()["filer"]
+    assert isinstance(filer, BeetsFiler) and filer.confirm is confirm_recording_length
+
+
+def test_cli_fetch_approve_on_the_host_is_refused(tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("DJ_WORKER", raising=False)
+    (tmp_path / "m").mkdir(); (tmp_path / "dl").mkdir()
+    with FakeSubsonicServer() as nd, FakeSlskdServer(RESPONSES, tmp_path / "dl", files={}) as sl:
+        _cli_env(monkeypatch, tmp_path, nd, sl)
+        st = CrateStore(tmp_path / "c.db")
+        ext = st.add_external_wanted("Chic", "Good Times", duration_s=501); st.commit()
+        assert cli.main(["fetch", "--wanted", ext, "--approve"]) == 2
+        assert sl.enqueued == []
+    assert "no beets filer configured (run --approve in the worker)" in capsys.readouterr().out

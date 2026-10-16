@@ -56,7 +56,9 @@ python3 -m sourcing.cli seed-spotify https://open.spotify.com/playlist/...   # �
 python3 -m sourcing.cli import-playlist <spotify-url|report.txt|exportify.csv>... [--name N] [--dry-run]
     # D11: Spotify playlist → public Navidrome playlist (library matches, in order) + wanted rows with playlist/position
 python3 -m sourcing.cli fetch --wanted s4             # search + score, prints the pick, no download
-python3 -m sourcing.cli fetch --wanted s4 --approve   # download → verify → beets → /srv/music → rescan → crate ok
+cd /srv/docker && docker compose exec -T worker python -m sourcing.cli fetch --wanted s4 --approve
+    # download → verify → beets → /srv/music → rescan → crate ok; only in the worker container (DJ_WORKER=1), the
+    # one beets writer: on the host `--approve` is refused ("no beets filer configured")
 # normally: Preview + Approve in the web client, and the worker container downloads (docs/worker.md)
 ```
 

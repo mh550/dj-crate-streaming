@@ -37,6 +37,13 @@ Every download carries an approval record (D23): who approved, the candidate, th
 its own approval so the worker cannot fetch the same row at the same time). Later values are `policy:<name>` and
 `agent:<id>`: new approvers, not a redesign.
 
+The manual command runs inside the worker container, because only there (`DJ_WORKER=1`) is a beets filer configured;
+on the host it is refused before any download:
+
+```
+cd /srv/docker && docker compose exec -T worker python -m sourcing.cli fetch --wanted <id> --approve
+```
+
 Approvals are claimed atomically. A second approval for the same row supersedes the first; a superseded or already
 taken approval is skipped, with a `skipped <id>: approval #N already used` line in the log.
 
