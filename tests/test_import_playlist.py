@@ -264,7 +264,10 @@ def test_fetch_leaves_review_rows_alone():
                   music_root=Path("/nonexistent"), downloads_root=Path("/nonexistent"), approve=False)
         assert r.status == "review" and "pick" in r.reason
         assert store.external(twain["song_id"])["status"] == "review"
-        assert twain["song_id"] not in [w["song_id"] for w in store.wanted()]
+        # was: assert twain["song_id"] not in [w["song_id"] for w in store.wanted()]
+        # (follow-up ruling: review rows are listed in Wanted with their reason; only retryable ones offer buttons)
+        listed = next(w for w in store.wanted() if w["song_id"] == twain["song_id"])
+        assert listed["status"] == "review" and listed["reason"].startswith("ambiguous")
 
 
 def test_copies_with_junk_tags_collapse_and_the_cleanly_tagged_copy_wins():

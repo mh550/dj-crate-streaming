@@ -137,6 +137,19 @@ def in_flight(status: str, reason: str | None) -> bool:
     return status in ("sourcing", "verify", "review") or (status == "failed" and filed_path(reason) is not None)
 
 
+# A `review` row is a question. Copy replacement (sourcing.replace / fetch) and proposals leave rows in `review` with
+# one of these reasons when a better copy was filed but did not replace the old one; approving such a row is a fresh
+# download attempt. Any other review reason (import-playlist's "ambiguous …": several library versions fit) waits
+# for a pick between versions that already exist, and a download would not answer it.
+RETRYABLE_REVIEW = re.compile(r"kept beside |declined replacement #\d+|replacement #\d+ not made:|filed beside ")
+
+
+def retryable_review(reason: str | None) -> bool:
+    """True when a `review` row's reason is one a replacement left, i.e. approving the row may download again.
+    web/app.js repeats this test (RETRYABLE_REVIEW there) to decide which review rows offer Preview/Approve."""
+    return bool(RETRYABLE_REVIEW.match(reason or ""))
+
+
 def never_indexed(rel) -> str:
     """The `failed` reason after the re-check limit; filed_path reads it back."""
     return f"Navidrome never indexed {rel}; file is in the library"
@@ -316,7 +329,9 @@ class CrateStore:
         return {t["song_id"]: t for t in self.tracks(playlist_id, include_removed=True)}
 
     def summary(self, playlist_id: str) -> dict[str, int]:
-        out = {s: 0 for s in STATUSES if s not in ("removed", "review")}   # review is for imported wanted rows only
+        # `review` rows count too (so the counts add up to the total) but, as before, the key appears only when there
+        # is one: the GROUP BY below adds it.
+        out = {s: 0 for s in STATUSES if s not in ("removed", "review")}
         for r in self.db.execute("SELECT status, COUNT(*) n FROM crate_tracks WHERE playlist_id=? AND status!='removed' GROUP BY status", (playlist_id,)):
             out[r["status"]] = r["n"]
         out["total"] = sum(out.values())
@@ -340,9 +355,10 @@ class CrateStore:
 
     def wanted(self) -> list[dict]:
         """Every track across tiered playlists that still needs a file, plus external rows — the sourcing queue.
-        Rows in progress (`sourcing`, `verify`) are listed too, so none is invisible; the web client shows them
-        with their status and reason and offers no Preview/Approve for them."""
-        live = "('needs_source','failed','sourcing','verify')"
+        Rows in progress (`sourcing`, `verify`) and questions (`review`) are listed too, so none is invisible; the
+        web client shows them with their status and reason, and offers Preview/Approve for a `review` row only when
+        retryable_review says approving it may download again."""
+        live = "('needs_source','failed','sourcing','verify','review')"
         ext = self.db.execute(f"SELECT * FROM external_wanted WHERE status IN {live} ORDER BY id")
         rows = self._crate_wanted(f"t.status IN {live}") + [self._ext_row(r) for r in ext]
         checks = dict(self.db.execute("SELECT song_id, result FROM verifications").fetchall())   # parse only rows shown

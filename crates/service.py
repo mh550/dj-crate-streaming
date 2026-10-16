@@ -120,7 +120,7 @@ class CrateApp:
     def playlist(self, pid: str) -> dict:
         pl = self.api.playlist(pid)
         view = self.reconciler.crate_view(pl)
-        status = self.store.track_status_map(pid) if view["crate"] else {}
+        status = self.store.track_status_map(pid) if view["tier"] else {}     # crate or tier-only
         view["entries"] = []
         for pos, s in enumerate(pl.entries):
             st = status.get(s.id)

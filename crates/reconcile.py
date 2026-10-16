@@ -376,12 +376,13 @@ class Reconciler:
     def crate_view(self, pl: Playlist) -> dict:
         c = self.store.get(pl.id)
         crate = bool(c and c.enabled)
+        tier = DEFAULT_TIER if crate else (c.tier if c else None)         # effective, from the cache
         return {"id": pl.id, "name": pl.name, "songCount": pl.song_count, "duration": pl.duration,
                 "comment": pl.comment or "", "crate": crate,
-                "tier": DEFAULT_TIER if crate else (c.tier if c else None),     # effective, from the cache
+                "tier": tier,
                 "tierTag": attrs.parse(pl.comment).tier, "crateByName": has_name_marker(pl.name),
                 "crateSource": c.source if c else None, "devices": c.devices if c else [],
-                "summary": self.store.summary(pl.id) if c and c.enabled else None,
+                "summary": self.store.summary(pl.id) if tier else None,      # any tiered playlist, not only crates
                 "lastReconciledAt": c.last_reconciled_at if c else None}
 
     def wanted(self) -> list[Wanted]:

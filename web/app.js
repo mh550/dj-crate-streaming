@@ -45,7 +45,7 @@ async function loadPlaylists() {
     const li = el("li", "playlist");
     const grow = el("div", "grow");
     grow.append(el("div", "title", p.name));
-    const sub = `${p.songCount} tracks · ${dur(p.duration)}` + (p.summary ? ` · ${p.summary.ok}/${p.summary.total} crate-ready` : "");
+    const sub = `${p.songCount} tracks · ${dur(p.duration)}` + (p.summary ? ` · ${p.summary.ok}/${p.summary.total} ${p.crate ? "crate-ready" : "ready"}` : "");
     grow.append(el("div", "sub", sub));
     li.append(grow);
     if (p.crate) li.append(el("span", "badge crate", "crate"));
@@ -64,7 +64,7 @@ async function openPlaylist(id) {
   renderTier(p);
   const label = p.crate ? "crate" : p.tier ? `tier ${p.tier}` : null;
   $("#detail-summary").textContent = p.summary
-    ? `${label || "tiered"} · ${p.summary.ok} ready · ${p.summary.needs_source} need sourcing` + (p.summary.sourcing ? ` · ${p.summary.sourcing} downloading` : "") + (p.summary.failed ? ` · ${p.summary.failed} failed` : "")
+    ? `${label || "tiered"} · ${p.summary.ok} ready · ${p.summary.needs_source} need sourcing` + (p.summary.sourcing ? ` · ${p.summary.sourcing} downloading` : "") + (p.summary.failed ? ` · ${p.summary.failed} failed` : "") + (p.summary.review ? ` · ${p.summary.review} to decide` : "")
     : `${p.songCount} tracks · ${dur(p.duration)} · ${label || "not a crate"}`;
   const ol = $("#tracks"); ol.innerHTML = "";
   p.entries.forEach(t => {
@@ -109,6 +109,10 @@ $("#detail-tier").onchange = async e => {
 };
 
 // ---- wanted
+// A `review` row is a question. These reasons are the ones copy replacement leaves (crates.store.RETRYABLE_REVIEW,
+// which this must match: tests/test_web_m8.py compares them): approving such a row downloads again, so they
+// offer Preview/Approve like a needs_source row. Any other review reason (import's "ambiguous …") offers nothing.
+const RETRYABLE_REVIEW = /^(?:kept beside |declined replacement #\d+|replacement #\d+ not made:|filed beside )/;
 // the last download check (spec §3a): verdict, then what was measured, then why
 function verifyLine(v) {
   const m = v.measurements || {}, bits = [];
@@ -128,6 +132,8 @@ async function loadProposals() {
   for (const p of items) {
     const li = el("li", "proposal"), grow = el("div", "grow");
     grow.append(el("div", "title", p.playlist_name), el("div", "sub wrap", KIND[p.kind] || p.kind), el("div", "wrap", p.summary));
+    // the summary names both songs; if it ever does not, say which songs the question is about
+    if (p.old_name && p.new_name && !(p.summary || "").includes(p.old_name)) grow.append(el("div", "sub wrap", `${p.old_name} → ${p.new_name}`));
     const swap = el("button", "primary", "Swap"), keep = el("button", null, "Keep");
     const answer = (action, btn) => async () => {
       swap.disabled = keep.disabled = true; const label = btn.textContent; btn.textContent = "…";
@@ -157,7 +163,8 @@ async function loadWanted() {
   if (!items.length) ul.append(el("li", "muted", "nothing to source — every tiered track meets its tier"));
   for (const t of items) {
     const li = el("li", "wrow"); const grow = el("div", "grow");
-    const review = t.status === "review";     // keep-both / declined / ambiguous: a decision is waiting, not a download
+    const review = t.status === "review";     // keep-both / declined / ambiguous: a decision is waiting
+    const offer = !review || RETRYABLE_REVIEW.test(t.reason || "");   // only retryable reviews can be previewed or approved
     grow.append(el("div", "title", `${t.artist} — ${t.title}`));
     grow.append(el("div", "sub wrap", `${t.album || ""} ${t.year || ""} · ${dur(t.duration)} · ${t.crates.length ? "in " + t.crates.join(", ") : "external"} · tier ${t.tier}`));
     if (t.reason) grow.append(el("div", "reason", t.reason));
@@ -171,7 +178,7 @@ async function loadWanted() {
       const d = el("details"); d.append(el("summary", null, "why"), el("pre", "sub wrap", t.preview.explain || "")); grow.append(d);
     } else if (t.preview && !pending) grow.append(el("div", "sub wrap", "no acceptable candidate"));
     li.append(grow);
-    if (review) { /* nothing to search or approve: the reason above says what is waiting */ }
+    if (!offer) { /* an ambiguous import: nothing to search or approve, the reason above says what is waiting */ }
     else if (!pending && !busy && t.filed) {        // failed after filing ("never indexed"): nothing to preview or pick
       const rc = el("button", null, "Re-check");
       rc.onclick = async () => {
@@ -189,7 +196,7 @@ async function loadWanted() {
       };
       li.append(pv);
     }
-    if (pk && !pending && !busy && !review) {
+    if (pk && !pending && !busy && offer) {
       const ap = el("button", null, "Approve");
       ap.onclick = async () => {
         ap.disabled = true;

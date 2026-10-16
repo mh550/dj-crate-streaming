@@ -56,7 +56,7 @@ from pathlib import Path
 
 from crates import proposals
 from crates.reconcile import Reconciler
-from crates.store import CrateStore, filed_path, never_indexed
+from crates.store import CrateStore, filed_path, never_indexed, retryable_review
 from scripts.export_playlists import open_ro
 from subsonic.client import SubsonicClient, SubsonicError
 from .filer import BeetsFiler, FilingError
@@ -317,8 +317,10 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
     status = row.get("status")
     if status == "ok":
         return FetchResult("ok", "already ok; nothing to do")
-    if status == "review":                                       # import-playlist: several library versions fit
+    if status == "review" and not retryable_review(row.get("reason")):     # import-playlist: several versions fit
         return FetchResult("review", f"needs a pick first ({row.get('reason')}); nothing searched")
+    # A replacement's review (kept beside / declined / not made / filed beside) falls through: approving it is a
+    # fresh download attempt, and the row becomes `sourcing` like any other.
     reason = row.get("reason") or ""
     rel = filed_path(reason)
     if status == "verify" or (status == "failed" and rel is not None):    # filed already: re-check, never download

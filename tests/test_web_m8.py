@@ -124,3 +124,13 @@ def test_declining_twice_is_a_409_so_the_page_reloads(svc):
     assert s == 200 and json.loads(body)["decision"] == "declined"
     s, body = fetch(srv.url + f"/api/proposals/{pid}/decline", {})
     assert s == 409 and "error" in json.loads(body)
+
+
+def test_script_offers_preview_and_approve_on_retryable_review_rows_only(svc):
+    """web/app.js repeats crates.store.RETRYABLE_REVIEW; the two must stay the same pattern."""
+    from crates.store import RETRYABLE_REVIEW
+    js = asset(svc, "app.js")
+    m = re.search(r"const RETRYABLE_REVIEW = /\^\(\?:(.*)\)/;", js)
+    assert m and m.group(1).replace("\\d", r"\d") == RETRYABLE_REVIEW.pattern
+    assert "RETRYABLE_REVIEW.test(t.reason" in js and "offer" in js
+    assert "!review) {" not in js and "&& !review" not in js         # no unconditional review exclusion left
