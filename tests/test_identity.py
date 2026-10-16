@@ -282,7 +282,7 @@ def test_remix_family_words(title, kinds, by):
 
 
 def test_version_groups_never_disagree_with_same_version():
-    copies = [_c("A", 300, recording_id="r1"), _c("A (Live)", 299, recording_id="r1"),      # M7 final I2: was 280 s
+    copies = [_c("A", 300, recording_id="r1"), _c("B", 299, recording_id="r1"),      # M7 final: was "A (Live)" 280 s
               _c("A", 300, work_id="w1"), _c("A", 301, work_id="w2"), _c("A", 302), _c("A", 302.5)]
     groups = version_groups(copies)
     for g in groups:
@@ -361,7 +361,9 @@ def test_equal_recording_ids_with_disagreeing_lengths_are_different_versions():
 
 def test_equal_recording_ids_decide_within_the_tolerance_or_with_a_length_unknown():
     r = "bb31a869-0000-0000-0000-000000000000"
-    assert same_version(Copy("Chic", "Good Times", 300, recording_id=r), Copy("Chic", "Good Times (Live)", 303.5, recording_id=r))
+    assert same_version(Copy("Chic", "Good Times", 300, recording_id=r), Copy("Chic", "Good Times", 303.5, recording_id=r))
+    # fix round 2 ruling 1: was True for "Good Times" vs "Good Times (Live)"; a shared id needs the same label too
+    assert not same_version(Copy("Chic", "Good Times", 300, recording_id=r), Copy("Chic", "Good Times (Live)", 303.5, recording_id=r))
     assert same_version(Copy("Chic", "Good Times", None, recording_id=r), Copy("Chic", "Good Times", 300, recording_id=r))
     assert not same_version(Copy("Chic", "Good Times", 300, recording_id=r), Copy("Chic", "Good Times", 304.5, recording_id=r))
 
@@ -435,3 +437,14 @@ def test_parse_filename_peels_file_junk_before_the_label(name, base, kinds):
 
 def test_parse_filename_keeps_a_years_credit_inside_a_label():
     assert parse_filename("Good Times (Live 1977).flac", "Chic").key != parse_filename("Good Times (Live 1979).flac", "Chic").key
+
+
+# ---- M7 fix round 2, ruling 1: a shared recording id is one version only with the same version key ----
+
+@pytest.mark.parametrize("a, b", [("Song (Explicit)", "Song (Clean)"), ("Song", "Song (Instrumental)"),
+                                  ("Song (Mono)", "Song (Stereo)"), ("Song", "Song (Live)"),
+                                  ("Song (Radio Edit)", "Song (Instrumental Radio Edit)")])
+def test_a_shared_recording_id_with_different_labels_is_two_versions(a, b):
+    r = "bb31a869-0000-0000-0000-000000000000"
+    assert not same_version(Copy("X", a, 210, recording_id=r), Copy("X", b, 211, recording_id=r))
+    assert not same_version(Copy("X", a, None, recording_id=r), Copy("X", b, 211, recording_id=r))

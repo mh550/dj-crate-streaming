@@ -324,7 +324,8 @@ class Copy:
 
 def same_version(a: Copy, b: Copy, tol_s: float = 4.0) -> bool:
     """Two copies of one recording? Never when either side's artist or title is a placeholder. Recording ids decide
-    when both have one, provided the lengths (when both known) agree within tol_s. Otherwise: the same lead artist, the
+    when both have one, provided the version labels agree and the lengths (when both known) are within tol_s.
+    Otherwise: the same lead artist, the
     same base title and label, lengths known and within tol_s; a work id only ever *rejects* (two works are two
     songs), because sharing one says "same song", not "same version". Every doubt is "different": M8 deletes a copy
     on True, while a missed match only leaves a duplicate. A fingerprint check is the caller's."""
@@ -333,7 +334,11 @@ def same_version(a: Copy, b: Copy, tol_s: float = 4.0) -> bool:
     if a.recording_id and b.recording_id:
         # A shared id is proof only if the lengths agree: beets (M2) and MusicBrainz fits can put a wrong id on a
         # file (measured: 1 in 4 conflicts), and a 412 s 12" carrying the 403 s mix's id is still the 12".
+        # The labels must agree too: clean/explicit and mono/stereo fingerprint alike at one length, so a wrong
+        # shared id is caught only by the titles.
         if a.recording_id.casefold() != b.recording_id.casefold():
+            return False
+        if parse_title(a.title, a.artist, a.version_tag).key != parse_title(b.title, b.artist, b.version_tag).key:
             return False
         return a.length_s is None or b.length_s is None or abs(a.length_s - b.length_s) <= tol_s
     if a.work_id and b.work_id and a.work_id.casefold() != b.work_id.casefold():
