@@ -365,3 +365,49 @@ def test_recheck_counts_and_gives_up_after_the_limit(world, tmp_path):
     assert r.status == "failed" and reasons[-1] == f"Navidrome never indexed {TARGET}; file is in the library"
     assert world["store"].find_wanted("s4")["status"] == "failed"
     assert len(srv.enqueued) == 1 and (world["music"] / TARGET).exists()
+
+
+# --- fix round 2: a filed file is never forgotten ------------------------------------------------------------
+
+@pytest.mark.parametrize("status,reason", [
+    ("failed", f"Navidrome never indexed {TARGET}; file is in the library"),
+    ("verify", f"filed as {TARGET} but Navidrome has not picked it up yet (check 2)")])
+def test_preview_of_a_filed_row_touches_nothing(world, tmp_path, status, reason):
+    """Preview runs in the crates container, which does not mount the library: it must not re-check (and so
+    must not decide the file is gone), and must not call Navidrome."""
+    store = world["store"]
+    store.set_wanted_status("s4", status, reason)
+    before = store.find_wanted("s4")
+    world["nd"].state.requests.clear()
+    with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
+        r = run(dict(world, music=tmp_path / "not-mounted"), srv, approve=False)
+    assert (r.status, r.reason) == (status, f"already filed as {TARGET}; the worker re-checks it")
+    after = store.find_wanted("s4")
+    assert (after["status"], after["reason"], after["updated_at"]) == (status, reason, before["updated_at"])
+    assert world["nd"].state.requests == [] and srv.enqueued == []
+
+
+def test_a_stop_during_confirm_leaves_the_row_verify_with_the_path(world, tmp_path):
+    lib = beets_items_db(tmp_path / "other-library.db")
+
+    def stop(item):
+        raise SystemExit(143)                              # SIGTERM while MusicBrainz is being asked
+
+    filer = BeetsFiler(tmp_path / "beets.yaml", library=lib, tagger=lambda p, n: [], confirm=stop,
+                       runner=fake_beet(world["music"], lib, TARGET, artist="Chic", title="Good Times", matched=True))
+    flac = good_flac_bytes(tmp_path)
+    with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: flac}) as srv:
+        with pytest.raises(SystemExit):
+            run(world, srv, approve=True, filer=filer)
+    row = world["store"].find_wanted("s4")
+    assert (row["status"], row["reason"]) == ("verify", f"filed as {TARGET} but Navidrome has not picked it up yet")
+
+
+def test_reseeding_a_never_indexed_row_finds_the_same_row(world):
+    store = world["store"]
+    ext = store.add_external_wanted("Chic", "Good Times", duration_s=501)
+    store.set_wanted_status(ext, "failed", f"Navidrome never indexed {TARGET}; file is in the library")
+    assert store.add_external_wanted("Chic", "Good Times") == ext
+    other = store.add_external_wanted("Chic", "Le Freak")
+    store.set_wanted_status(other, "failed", "download timed out")
+    assert store.add_external_wanted("Chic", "Le Freak") != other          # an ordinary failure still re-queues

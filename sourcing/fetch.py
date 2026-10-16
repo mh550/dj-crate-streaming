@@ -41,7 +41,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from crates.reconcile import Reconciler
-from crates.store import CrateStore
+from crates.store import CrateStore, filed_path, never_indexed
 from scripts.export_playlists import open_ro
 from subsonic.client import SubsonicClient
 from .filer import BeetsFiler, FilingError
@@ -49,21 +49,6 @@ from .policy import DEFAULT_TIER, TIERS, QualityPolicy, check_tier
 from .scorer import Candidate, Wanted, explain, rank
 from .slskd_client import SlskdClient, transfer_files
 from .verify import verify
-
-# The filed path rides in the reason until a jobs table exists (M4), in one of two shapes: a `verify` row's
-# "filed as <rel> but Navidrome has not picked it up yet…" and, after RECHECK_LIMIT misses, a `failed` row's
-# "Navidrome never indexed <rel>; file is in the library". Both mean: the file is in the library, never fetch it again.
-_FILED = re.compile(r"filed as (.+?) but Navidrome|^Navidrome never indexed (.+); file is in the library$")
-
-
-def filed_path(reason: str | None) -> str | None:
-    """The library-relative path a row's reason says was filed, from either shape; None for any other reason."""
-    m = _FILED.search(reason or "")
-    return (m.group(1) or m.group(2)) if m else None
-
-
-def _never_indexed(rel) -> str:
-    return f"Navidrome never indexed {rel}; file is in the library"
 
 _CHECK = re.compile(r"\(check (\d+)\)$")                # how many re-checks have not found it, also in the reason
 RECHECK_LIMIT = 12      # re-checks without Navidrome finding the file before the row fails, so Michael sees it
@@ -179,7 +164,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         if new is None:
             rel = filed.relative_to(music_root)
             if check >= RECHECK_LIMIT:
-                return fail(_never_indexed(rel), best, text)
+                return fail(never_indexed(rel), best, text)
             why = f"filed as {rel} but Navidrome has not picked it up yet" + (f" (check {check})" if check else "")
             set_status("verify", why)
             return FetchResult("verify", why, best, filed, explain=text)
@@ -208,6 +193,8 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
     reason = row.get("reason") or ""
     rel = filed_path(reason)
     if status == "verify" or (status == "failed" and rel is not None):    # filed already: re-check, never download
+        if not approve:       # a preview (the crates container: no library mounted) touches neither row nor Navidrome
+            return FetchResult(status, f"already filed as {rel or '?'}; the worker re-checks it")
         if rel is not None and (music_root / rel).exists():
             filed = music_root / rel
             names = _file_names(filed)            # Navidrome indexed the file's tags, not the row's (Spotify) names
@@ -284,8 +271,16 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         staging.mkdir(parents=True, exist_ok=True)
         shutil.move(landed, staging / landed.name)
         log = staging.with_suffix(".log")
+        def imported(it) -> None:
+            """Called by the filer as soon as beets has filed the file, before MusicBrainz is asked or `beet
+            write` runs: from here a stop (SIGTERM, Ctrl-C) leaves a `verify` row with the path, never a
+            `sourcing` row that recovery would fail and a re-approval would file a second time."""
+            nonlocal item
+            item = it
+            set_status("verify", f"filed as {_rel(it.path)} but Navidrome has not picked it up yet")   # commits
+
         try:
-            item = filer.file(staging, log, names={"artist": wanted.artist, "title": wanted.title})
+            item = filer.file(staging, log, names={"artist": wanted.artist, "title": wanted.title}, on_imported=imported)
         except FilingError as e:
             item = e.item                                        # set when beets had already filed it (a failed write)
             raise
@@ -296,9 +291,8 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         store.log(None, wanted_id, "filed",
                   f"beets {'matched' if item.matched else 'as-is'}: {item.path.relative_to(music_root)}"
                   + (f" ({item.note})" if item.note else ""))
-        # From here the file is in the library: the row says where before anything else can go wrong (a kill
-        # during the scan wait included), so a re-check finds it instead of a retry filing a second copy.
-        set_status("verify", f"filed as {_rel(item.path)} but Navidrome has not picked it up yet")
+        # The row has said `verify` with the path since `imported` (a kill during the scan wait included), so a
+        # re-check finds the file instead of a retry filing a second copy.
         log.unlink(missing_ok=True)
         try:
             staging.rmdir()

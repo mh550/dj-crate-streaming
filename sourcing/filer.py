@@ -117,9 +117,12 @@ class BeetsFiler:
         return self.runner(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8",
                            errors="replace", timeout=self.timeout_s)
 
-    def file(self, folder: Path, log: Path, *, names: dict[str, str] | None = None) -> FiledItem | None:
+    def file(self, folder: Path, log: Path, *, names: dict[str, str] | None = None,
+             on_imported: Callable[[FiledItem], None] | None = None) -> FiledItem | None:
         """Import the download in `folder` (one file, under `.staging`); None when beets imported nothing
-        (the file is still in `folder`). `log` is this call's own beets import log."""
+        (the file is still in `folder`). `log` is this call's own beets import log. `on_imported(item)` runs as
+        soon as the imported item is known, before the confirmer or `beet write`, so the caller can record the
+        library path before anything slow or fallible happens."""
         folder, log = Path(folder), Path(log)
         if folder.resolve().parent.name != ".staging":        # resolved, so ".staging/.." or a symlink out fails
             raise ValueError(f"refusing to import {folder}: not a .staging folder")
@@ -142,6 +145,8 @@ class BeetsFiler:
         lines = log.read_text(encoding="utf-8", errors="replace").splitlines() if log.exists() else None
         matched = lines is not None and not any(line.startswith("asis ") for line in lines)
         item = FiledItem(path, artist or "", title or "", mb_trackid or "", False, filled, float(length or 0.0))
+        if on_imported is not None:
+            on_imported(item)
         if not matched:
             return item
         if self.confirm is None:

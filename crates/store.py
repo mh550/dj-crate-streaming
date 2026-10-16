@@ -77,6 +77,23 @@ CREATE TABLE IF NOT EXISTS previews (song_id TEXT PRIMARY KEY, result TEXT NOT N
 
 STATUSES = ("ok", "needs_source", "sourcing", "verify", "failed", "removed", "review")   # review: a person must pick a version
 
+# A filed download's path rides in its row's reason until a jobs table exists, in one of two shapes: a `verify`
+# row's "filed as <rel> but Navidrome has not picked it up yet…" and, after sourcing.fetch.RECHECK_LIMIT misses,
+# a `failed` row's "Navidrome never indexed <rel>; file is in the library". Both mean: the file is in the library,
+# so the row is re-checked, never downloaded again. Parsed here only (fetch and find_external both need it).
+_FILED = re.compile(r"filed as (.+?) but Navidrome|^Navidrome never indexed (.+); file is in the library$")
+
+
+def filed_path(reason: str | None) -> str | None:
+    """The library-relative path a row's reason says was filed, from either shape; None for any other reason."""
+    m = _FILED.search(reason or "")
+    return (m.group(1) or m.group(2)) if m else None
+
+
+def never_indexed(rel) -> str:
+    """The `failed` reason after the re-check limit; filed_path reads it back."""
+    return f"Navidrome never indexed {rel}; file is in the library"
+
 
 def _loose(s: str | None) -> str:
     return re.sub(r"[^\w]+", "", (s or "").casefold())
@@ -340,9 +357,12 @@ class CrateStore:
     # --- external wanted (not in Navidrome at all; seeded from Spotify etc.)
     def find_external(self, artist: str, title: str) -> dict | None:
         """A live (not failed) external row for the same artist/title, ignoring case and punctuation. A row
-        renamed from Navidrome (set_wanted_names) also matches the names it was first asked for."""
+        renamed from Navidrome (set_wanted_names) also matches the names it was first asked for. A failed row
+        whose file was filed (filed_path) counts as live: re-seeding must not queue a second download of it."""
         key = _loose(artist) + "|" + _loose(title)
-        for r in self.db.execute("SELECT * FROM external_wanted WHERE status!='failed'"):
+        for r in self.db.execute("SELECT * FROM external_wanted"):
+            if r["status"] == "failed" and filed_path(r["reason"]) is None:
+                continue
             asked = _loose(r["asked_artist"]) + "|" + _loose(r["asked_title"]) if r["asked_title"] is not None else None
             if key in (_loose(r["artist"]) + "|" + _loose(r["title"]), asked):
                 return self._ext_row(r)
