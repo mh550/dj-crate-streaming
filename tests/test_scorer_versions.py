@@ -19,7 +19,7 @@ def test_crate_prefers_the_12_inch_over_the_plain_flac():
     assert [c.username for c in cands] == ["twelve", "plain"]
     twelve, plain = cands
     assert "prefers extended +6" in twelve.reasons
-    assert "another version (12\" Version): length not compared" in twelve.reasons
+    assert "another version (12\" Version): length fits another version +15" in twelve.reasons
     assert not any(r.startswith("duration") for r in twelve.reasons)
     assert any(r.startswith("duration off") for r in plain.reasons)
 
@@ -27,8 +27,8 @@ def test_crate_prefers_the_12_inch_over_the_plain_flac():
 def test_medium_has_no_preference_but_accepts_the_12_inch_length():
     cands = rank([PLAIN, TWELVE], Wanted("Chic", "Good Times", duration_s=210), TIERS["medium"])
     assert not any(r.startswith("prefers") for c in cands for r in c.reasons)
-    assert any("length not compared" in r for r in by_user(cands, "twelve").reasons)
-    assert not any("length not compared" in r for r in by_user(cands, "plain").reasons)
+    assert any("length fits another version" in r for r in by_user(cands, "twelve").reasons)
+    assert not any("length fits" in r for r in by_user(cands, "plain").reasons)
 
 
 def test_crate_row_rejects_another_version():
@@ -55,3 +55,18 @@ def test_existing_fixture_ranking_is_unchanged():
     bare = dataclasses.replace(DEFAULT_POLICY, prefer_versions=(), accept_versions=())
     got = [(c.username, c.score, c.rejected) for c in rank(FIX, WANT)]
     assert got == [(c.username, c.score, c.rejected) for c in rank(FIX, WANT, bare)]
+
+
+def test_a_short_file_called_12_inch_is_still_penalised():
+    short = response("short", r'music\Chic\Risque\03 - Good Times (12" Version).mp3', 1_000_000, "mp3", kbps=320, length=30)
+    [c] = rank([short], Wanted("Chic", "Good Times", duration_s=210), TIERS["crate"])
+    assert any(r.startswith("duration off") for r in c.reasons) and not any("fits another" in r for r in c.reasons)
+
+
+def test_an_accepted_12_inch_earns_the_length_points_so_it_outranks_the_edit_in_flac_only():
+    edit = response("edit", r"music\Chic\Risque\03 - Good Times (Radio Edit).flac", 17_000_000, "flac", length=210)
+    lossy = response("lossy", r'music\Chic\Risque\03 - Good Times (12" Version).mp3', 20_000_000, "mp3", kbps=320, length=501)
+    w = Wanted("Chic", "Good Times", duration_s=210)
+    flac_12 = rank([TWELVE, edit], w, TIERS["crate"])
+    assert [c.username for c in flac_12] == ["twelve", "edit"]
+    assert [c.username for c in rank([lossy, edit], w, TIERS["crate"])] == ["edit", "lossy"]

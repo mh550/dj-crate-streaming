@@ -189,9 +189,11 @@ def score_candidate(c: Candidate, w: Wanted, policy: QualityPolicy = DEFAULT_POL
             s += 2; c.reasons.append("hi-res")
 
     # --- duration vs known length (−15..+15)
-    if w.duration_s and c.length_s and other and got.kinds & set(policy.accept_versions):
-        # A 12" is not 3 minutes long; the tier accepts that version, so the wanted length says nothing.
-        c.reasons.append(f"another version ({got.label}): length not compared")
+    if (w.duration_s and c.length_s and other and got.kinds & set(policy.accept_versions)
+            and c.length_s >= w.duration_s - policy.duration_tolerance_s):
+        # The tier accepts this version and it is no shorter than the one asked for (an extended or club
+        # version never is), so the wanted length cannot rule it out: it earns what a matching length would.
+        s += 15; c.reasons.append(f"another version ({got.label}): length fits another version +15")
     elif w.duration_s and c.length_s:
         d = abs(c.length_s - w.duration_s)
         if d <= policy.duration_tolerance_s:
