@@ -282,7 +282,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         try:
             item = filer.file(staging, log, names={"artist": wanted.artist, "title": wanted.title}, on_imported=imported)
         except FilingError as e:
-            item = e.item                                        # set when beets had already filed it (a failed write)
+            item = e.item or item                                # beets filed it (a failed write), or `imported` already saw it
             raise
         if item is not None and item.filled:
             store.log(None, wanted_id, "tagged", f"filled {', '.join(item.filled)} from the wanted row")

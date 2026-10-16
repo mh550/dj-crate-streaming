@@ -473,6 +473,29 @@ def test_cli_fetch_approve_refuses_a_row_in_progress(tmp_path, monkeypatch, caps
     assert CrateStore(tmp_path / "c.db").approval(ext) is None and "in progress" in capsys.readouterr().err
 
 
+def test_cli_fetch_approve_with_a_tier_changes_nothing_when_refused(tmp_path, monkeypatch, capsys):
+    """The in-progress refusal comes before --tier: a refused approve must not retier the row."""
+    with FakeSubsonicServer() as nd, FakeSlskdServer(RESPONSES, tmp_path / "dl", files={}) as sl:
+        _cli_env(monkeypatch, tmp_path, nd, sl)
+        st = CrateStore(tmp_path / "c.db")
+        ext = st.add_external_wanted("Chic", "Good Times", duration_s=501)
+        before = st.external(ext)["tier"]
+        other = next(t for t in ("low", "medium", "crate") if t != before)
+        st.set_wanted_status(ext, "sourcing", "downloading x"); st.commit()
+        assert cli.main(["fetch", "--wanted", ext, "--approve", "--tier", other]) != 0
+    st = CrateStore(tmp_path / "c.db")
+    assert st.external(ext)["tier"] == before and st.approval(ext) is None
+    assert "in progress" in capsys.readouterr().err
+
+
+def test_cli_fetch_approve_needs_crates_db_in_the_environment(tmp_path, monkeypatch, capsys):
+    """CRATES_DB defaults to a path relative to the cwd: on the host that would approve against a stray database."""
+    monkeypatch.delenv("CRATES_DB", raising=False)
+    monkeypatch.chdir(tmp_path)
+    assert cli.main(["fetch", "--wanted", "s4", "--approve"]) != 0
+    assert "CRATES_DB" in capsys.readouterr().err and not (tmp_path / "data").exists()
+
+
 def test_a_recheck_that_raises_still_waits_for_the_interval(world):
     store, calls = world["store"], []
     why = "filed as x but Navidrome has not picked it up yet (check 2)"

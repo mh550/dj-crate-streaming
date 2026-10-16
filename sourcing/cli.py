@@ -54,14 +54,21 @@ def approve_cmd(a) -> int:
     container alike. `--wait` polls the approval until the worker has written its outcome."""
     import time
     from crates.service import ApiError, Config, CrateApp
+    if not os.environ.get("CRATES_DB"):     # the default path is relative to the cwd: a host run would approve in a stray database
+        print("set CRATES_DB to the crate service's database; from the host use the container instead: "
+              "cd /srv/docker && docker compose exec -T worker python -m sourcing.cli fetch --wanted <id> --approve",
+              file=sys.stderr)
+        return 1
     app = CrateApp(Config.from_env())
     row = app.store.find_wanted(a.wanted)
-    if row is not None and a.tier and a.tier != row["tier"]:
-        if not row.get("external"):
-            print(f"{a.wanted} is in a crate, and a crate track is sourced at tier {DEFAULT_TIER}", file=sys.stderr)
-            return 1
-        app.store.set_external_tier(a.wanted, a.tier); app.store.commit()
     try:
+        if row is not None:
+            app._not_in_progress(a.wanted)             # first: a refused approve must change nothing (not even the tier)
+        if row is not None and a.tier and a.tier != row["tier"]:
+            if not row.get("external"):
+                print(f"{a.wanted} is in a crate, and a crate track is sourced at tier {DEFAULT_TIER}", file=sys.stderr)
+                return 1
+            app.store.set_external_tier(a.wanted, a.tier); app.store.commit()
         approval = app.approve(a.wanted, None)         # same rules as the web Approve: 404, 409 in progress, cached pick
     except ApiError as e:
         print(f"{a.wanted}: {e}", file=sys.stderr); return 1

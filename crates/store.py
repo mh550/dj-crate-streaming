@@ -225,6 +225,7 @@ class CrateStore:
             row["verify"] = json.loads(checks[row["song_id"]]) if row["song_id"] in checks else None
             row["preview"] = json.loads(previews[row["song_id"]]) if row["song_id"] in previews else None
             row["approval"] = self.approval(row["song_id"])
+            row["filed"] = filed_path(row.get("reason")) is not None   # in the library already: re-check, never download
         return rows
 
     def verify_ids(self, updated_before: float | None = None) -> list[str]:

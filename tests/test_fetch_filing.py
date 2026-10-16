@@ -301,6 +301,27 @@ def test_beet_write_failure_after_import_keeps_the_filed_path(world, tmp_path):
     assert "FilingError" in st["reason"]
 
 
+def test_filing_error_without_an_item_keeps_the_item_the_import_callback_set(world, tmp_path):
+    """A FilingError raised after beets filed the file but carrying no item must not erase the path on_imported
+    recorded: the row stays `verify` with it, so a re-check (not a second download and import) follows."""
+    from sourcing.filer import FiledItem
+
+    class FilesThenFails:
+        def file(self, staging, log, names=None, on_imported=None):
+            target = world["music"] / TARGET
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(b"x")
+            on_imported(FiledItem(target, "Chic", "Good Times", "", False))
+            raise FilingError("boom after import")           # no item attached
+
+    flac = good_flac_bytes(tmp_path)
+    with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: flac}) as srv:
+        with pytest.raises(FilingError, match="boom after import"):
+            run(world, srv, approve=True, filer=FilesThenFails())
+    st = world["store"].track_status_map("pl-2")["s4"]
+    assert st["status"] == "verify" and st["reason"].startswith(f"filed as {TARGET} but Navidrome")
+
+
 def test_reference_event_is_committed_before_the_verifier_runs(world, tmp_path):
     """The verifier decodes for minutes: crates.db must not hold a write transaction open meanwhile, or the web
     service's writes (an approval, a crate toggle) fail with `database is locked`."""
