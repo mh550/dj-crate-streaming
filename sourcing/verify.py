@@ -227,10 +227,15 @@ HARD_WHEN_STRICT = {"transcode", "fake_24bit", "fake_hires", "implied_kbps", "sa
 
 def verify(path: Path, expected_duration_s: float | None = None, tier: str | None = None, reference: Path | None = None,
            tolerance_s: float | None = None, min_lossless_kbps: int | None = None, recording_id: str | None = None,
-           lookup: Callable[[Path], list[dict]] | None = None) -> Verdict:
+           lookup: Callable[[Path], list[dict]] | None = None, intent: str | None = None) -> Verdict:
     """Header checks always; with a `tier`, the decoded checks too (module docstring). The tier's policy sets the
     thresholds and how strict it is. Without a tier: header checks only, judged like crate (pre-M5 behaviour).
-    With a tier and a `lookup` (AcoustID), the file's recording is looked up and compared with `recording_id`."""
+    With a tier and a `lookup` (AcoustID), the file's recording is looked up and compared with `recording_id`.
+    `intent` (M7) says what the download is for: "copy" is a better copy of the owned recording, so it should be
+    compared with that copy (`reference`); "version" is another version of the song, which has no reference to
+    match (its fingerprint is not expected to), so the recording check is the AcoustID lookup alone."""
+    if intent == "version" and reference is not None:
+        raise ValueError("a new version has no reference copy")
     policy = TIERS[check_tier(tier or DEFAULT_TIER)]
     tolerance_s = policy.duration_tolerance_s if tolerance_s is None else tolerance_s
     min_lossless_kbps = policy.min_lossless_kbps if min_lossless_kbps is None else min_lossless_kbps
@@ -256,6 +261,8 @@ def verify(path: Path, expected_duration_s: float | None = None, tier: str | Non
         findings.append(("unreadable", "could not read audio header (no ffprobe and not FLAC?)"))
         return verdict(None)
     m.update(codec=info.codec, sample_rate=info.sample_rate, bit_depth=info.bit_depth, duration_s=info.duration_s)
+    if intent is not None:
+        m["intent"] = intent
     def check_length(length: float | None) -> None:
         if expected_duration_s and length and abs(length - expected_duration_s) > tolerance_s:
             findings.insert(0, ("duration", f"duration {length:.0f}s vs expected {expected_duration_s:.0f}s "
@@ -285,6 +292,8 @@ def verify(path: Path, expected_duration_s: float | None = None, tier: str | Non
         check_length(m.get("decoded_s") or info.duration_s)
     if reference is not None:
         _recording_check(path, reference, findings, m)
+    elif intent == "copy":
+        findings.append(("reference", "copy upgrade without a reference: the recording was not compared"))
     if lookup is not None:
         _acoustid_check(path, lookup, recording_id, findings, m)
     return verdict(info)

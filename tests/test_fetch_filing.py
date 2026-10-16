@@ -171,7 +171,7 @@ def test_fetch_passes_the_wanted_names_to_the_filer(world, tmp_path):
 
 
 def spy_verifier(seen):
-    def spy(path, duration, tier=None, reference=None, **kw):
+    def spy(path, duration, tier=None, reference=None, intent=None, **kw):
         seen.update(path=path, duration=duration, tier=tier, reference=reference, kw=kw)
         return verify(path, duration)
     return spy

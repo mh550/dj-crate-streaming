@@ -52,7 +52,7 @@ def world(tmp_path):
         yield dict(nd=nd, store=store, client=client, rec=rec, music=tmp_path / "music", dl=tmp_path / "dl", filer=filer)
 
 
-def header_only(path, duration, tier=None, reference=None):
+def header_only(path, duration, tier=None, reference=None, **kw):
     """These downloads are synthetic header-only FLACs (no frames), so they can't be decoded: check headers only,
     as fetch did before M5. Decoded verification by tier has its own tests (test_verify_*)."""
     return verify(path, duration)

@@ -37,14 +37,15 @@ import re
 import shutil
 import sqlite3
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from crates.reconcile import Reconciler
 from crates.store import CrateStore, filed_path, never_indexed
 from scripts.export_playlists import open_ro
-from subsonic.client import SubsonicClient
+from subsonic.client import SubsonicClient, SubsonicError
 from .filer import BeetsFiler, FilingError
+from .identity import parse_title
 from .policy import DEFAULT_TIER, TIERS, QualityPolicy, check_tier
 from .scorer import Candidate, Wanted, explain, rank
 from .slskd_client import SlskdClient, transfer_files
@@ -86,6 +87,20 @@ def _find_landed(downloads_root: Path, best: Candidate) -> Path | None:
         if p.is_file() and (not best.size or p.stat().st_size == best.size):
             return p
     return None
+
+
+def _owned(wanted: Wanted, navidrome: SubsonicClient, song_id: str, external: bool) -> Wanted:
+    """What `rank` judges candidates against. A crate row is a copy upgrade, and the version it must keep is the
+    owned file's own, label included: Navidrome's title for the song, not the row's name, which a Spotify import
+    may have written without the label (then the version guard would be vacuous). Only the title changes, so the
+    search query still uses the row's name. When Navidrome cannot say, the row's title stands."""
+    if external:
+        return wanted
+    try:
+        title = navidrome.song(song_id).title
+    except SubsonicError:
+        return wanted
+    return replace(wanted, title=title) if title else wanted
 
 
 def _library_file(navidrome_db: Path | None, song_id: str, music_root: Path) -> tuple[Path | None, str]:
@@ -140,7 +155,8 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         set_status("failed", why)
         return FetchResult("failed", why, best, explain=text)
 
-    wanted = Wanted(row.get("artist") or "", row["title"], row.get("album"), row.get("duration"), row.get("year"))
+    wanted = Wanted(row.get("artist") or "", row["title"], row.get("album"), row.get("duration"), row.get("year"),
+                    copy=not external)
 
     def locate_in_navidrome(filed: Path, query: str | None = None):
         navidrome.start_scan()
@@ -211,7 +227,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
 
     sid = slskd.search(f"{wanted.artist} {wanted.title}".strip())
     slskd.wait_search(sid, poll_s=poll_s, max_s=30)
-    cands = rank(slskd.search_responses(sid), wanted, policy)
+    cands = rank(slskd.search_responses(sid), _owned(wanted, navidrome, wanted_id, external), policy)
     slskd.delete_search(sid)
     text = explain(cands, peers=False)
     best = next((c for c in cands if not c.rejected), None)
@@ -226,6 +242,19 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
             best = same
         store.log(None, wanted_id, "pick", f"approved candidate still offered: {best.basename}" if same is not None
                   else f"approved candidate no longer offered; using the top-ranked {best.basename}")
+
+    # What this download is for, which tells verify what to compare it with (M7): a crate row is a copy upgrade
+    # (the old file is the reference), an external row that gets another version is a new version (no reference,
+    # and no expected length: a version's length differs from the row's, and the candidate's own listed length
+    # would be it vouching for itself), anything else is checked as before.
+    intent, expected = None, wanted.duration_s
+    if not external:
+        intent = "copy"
+    else:
+        got = parse_title(Path(best.basename).stem, wanted.artist)
+        if got.key != parse_title(wanted.title, wanted.artist).key:
+            intent, expected = "version", None
+            store.log(None, wanted_id, "pick", f"another version ({got.label}) of {wanted.title}: {best.basename}")
 
     set_status("sourcing", f"downloading {best.basename}")
     item = None                                                  # the library file, once beets has filed it
@@ -261,7 +290,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
                 store.commit()                # the verifier decodes for minutes: hold no write transaction meanwhile
             rid = navidrome.song(wanted_id).music_brainz_id or None
         extra = {"recording_id": rid, "lookup": lookup} if lookup is not None else {}    # see header_only in tests
-        vd = verifier(landed, wanted.duration_s, tier=row["tier"], reference=ref, **extra)   # still `sourcing`: not ours yet
+        vd = verifier(landed, expected, tier=row["tier"], reference=ref, intent=intent, **extra)   # still `sourcing`: not ours yet
         store.set_verification(wanted_id, vd.as_dict(row["tier"]) | {"file": landed.name})
         if not vd.ok:
             landed.unlink(missing_ok=True)                      # our own download, not library material

@@ -18,7 +18,7 @@ class Spy:
     def __init__(self, verdict):
         self.verdict, self.calls = verdict, []
 
-    def __call__(self, path, duration, tier=None, reference=None):
+    def __call__(self, path, duration, tier=None, reference=None, **kw):
         self.calls.append((path.name, duration, tier))
         return self.verdict
 
