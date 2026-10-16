@@ -21,12 +21,11 @@ import sys
 from pathlib import Path
 
 try:
-    from sourcing.identity import loose                                  # python3 -m scripts.tag_rules
+    from sourcing.identity import PLACEHOLDERS, loose                    # python3 -m scripts.tag_rules
 except ImportError:                                                      # python3 scripts/tag_rules.py
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from sourcing.identity import loose
+    from sourcing.identity import PLACEHOLDERS, loose
 
-PLACEHOLDERS = {"", "[unknown artist]", "unknown artist", "[unknown album]", "unknown album"}
 _JUNK = re.compile(r"^\d+\s*-\s*(?P<artist>.+?)\s+-\s+(?P<title>.+?)(\.(mp3|flac|m4a|wav))+$", re.I)
 _SOCK = re.compile(r"^(?P<artist>.+?) - '(?P<title>.+)' \((?P<album>.+)\)$")
 _REMASTER = re.compile(r"^(?P<title>.*?)\s+-\s+(?P<version>(\d{4}\s+)?(digital(ly)?\s+)?remaster(ed)?(\s+(version|\d{4}))?)\s*$", re.I)

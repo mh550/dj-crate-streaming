@@ -47,7 +47,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from sourcing import acoustid
-from sourcing.identity import Copy, lead_artist, loose, parse_title, version_groups
+from sourcing.identity import Copy, is_placeholder, lead_artist, loose, parse_title, version_groups
 from sourcing.musicbrainz import MusicBrainz, Recording
 
 AUDIO = (".flac", ".mp3", ".m4a", ".wav")
@@ -592,15 +592,15 @@ def write_report(proposals: list[Proposal], facts: list[FileFacts], path: Path) 
             out += _row(p, by_path.get(p.path))
 
     # Copies of one version: identity's same-version test over the current tags (M8's input; read-only).
-    usable = [f for f in facts if f.length_s > 0 and loose(lead_artist(f.artist))
-              and loose(parse_title(f.title, f.artist).base)]
+    usable = [f for f in facts if f.length_s > 0 and not is_placeholder(f.artist, f.title)]
     copies = [Copy(f.artist, f.title, f.length_s, f.mb_trackid, f.mb_workid, f.version_tag) for f in usable]
     groups = version_groups(copies)
     out += ["", "## Copies of one version", "",
             f"{len(groups)} groups, {sum(map(len, groups))} files: by `identity.same_version` over the files' "
-            "current tags (same recording id, or same lead artist, title, version label and length ±4 s), these "
+            "current tags (same recording id and length ±4 s, or same lead artist, title, version label and length "
+            "±4 s), these "
             "are copies of one version. They are for M8 (keep the better copy) and need no action now. Files "
-            "without an artist, title or length are left out."]
+            "without an artist, title or length (or with a placeholder such as \"Track 01\") are left out."]
     if groups:
         out.append("")
     for g in groups:

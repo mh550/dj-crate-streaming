@@ -249,6 +249,22 @@ def song_key(artist: str | None, title: str | None) -> str:
     return f"{loose(lead_artist(artist))}|{loose(parse_title(title, artist).base)}"
 
 
+# What taggers and Navidrome put in an empty field (scripts.tag_rules.blank uses this set too).
+PLACEHOLDERS = frozenset({"", "[unknown artist]", "unknown artist", "[unknown album]", "unknown album"})
+_NO_ARTIST = frozenset(loose(p) for p in PLACEHOLDERS) | {"variousartists"}
+# A title that is only a slot: "Track 01", "07", "AUDIO_0003.wav" (the extension is already peeled as junk).
+# Four-digit numbers stay titles ("1999"); a real two-digit title ("22") is missed, which only leaves a duplicate.
+_NO_TITLE = re.compile(r"(?:track|audio|piste|titel|untitled|unknown(?:title|track)?)\d*|\d{0,3}")
+
+
+def is_placeholder(artist: str | None, title: str | None) -> bool:
+    """True when the lead artist or the base title names nothing (empty, "[Unknown Artist]", "Various Artists",
+    "Track 01"): such a copy says nothing about which song it is, so it is never the same version as another."""
+    if loose(lead_artist(artist)) in _NO_ARTIST:
+        return True
+    return bool(_NO_TITLE.fullmatch(loose(parse_title(title, artist).base)))
+
+
 # ── same version ────────────────────────────────────────────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
@@ -262,12 +278,19 @@ class Copy:
 
 
 def same_version(a: Copy, b: Copy, tol_s: float = 4.0) -> bool:
-    """Two copies of one recording? Recording ids decide when both have one. Otherwise: the same lead artist, the
+    """Two copies of one recording? Never when either side's artist or title is a placeholder. Recording ids decide
+    when both have one, provided the lengths (when both known) agree within tol_s. Otherwise: the same lead artist, the
     same base title and label, lengths known and within tol_s; a work id only ever *rejects* (two works are two
     songs), because sharing one says "same song", not "same version". Every doubt is "different": M8 deletes a copy
     on True, while a missed match only leaves a duplicate. A fingerprint check is the caller's."""
+    if is_placeholder(a.artist, a.title) or is_placeholder(b.artist, b.title):
+        return False                     # two untagged songs of a similar length are not one version
     if a.recording_id and b.recording_id:
-        return a.recording_id.casefold() == b.recording_id.casefold()
+        # A shared id is proof only if the lengths agree: beets (M2) and MusicBrainz fits can put a wrong id on a
+        # file (measured: 1 in 4 conflicts), and a 412 s 12" carrying the 403 s mix's id is still the 12".
+        if a.recording_id.casefold() != b.recording_id.casefold():
+            return False
+        return a.length_s is None or b.length_s is None or abs(a.length_s - b.length_s) <= tol_s
     if a.work_id and b.work_id and a.work_id.casefold() != b.work_id.casefold():
         return False
     if loose(lead_artist(a.artist)) != loose(lead_artist(b.artist)):

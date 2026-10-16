@@ -1,7 +1,7 @@
 """sourcing.identity: song / version / copy, from real library titles (M7 plan, measured fact 3)."""
 import pytest
 
-from sourcing.identity import Copy, lead_artist, loose, parse_title, same_version, song_key, version_groups, words
+from sourcing.identity import Copy, is_placeholder, lead_artist, loose, parse_title, same_version, song_key, version_groups, words
 
 
 def test_words_and_loose():
@@ -144,7 +144,7 @@ def _c(title, length, artist="Chic", **kw):
 def test_same_version():
     assert same_version(_c("You're Lying (12' Mix)", 397.0), _c('You\'re Lying (12" Mix)', 398.0))
     assert not same_version(_c("Where You Are (Live)", 306), _c("Where You Are (Live)", 464))
-    assert same_version(_c("A", 300, recording_id="r1"), _c("B", 100, recording_id="R1"))
+    assert same_version(_c("A", 300, recording_id="r1"), _c("B", 302, recording_id="R1"))   # M7 final I2: was 100 s
     assert not same_version(_c("A", 300, recording_id="r1"), _c("A", 300, recording_id="r2"))
     assert not same_version(_c("A", None), _c("A", 300))
     assert not same_version(_c("A", 300, work_id="w1"), _c("A", 300, work_id="w2"))
@@ -282,7 +282,7 @@ def test_remix_family_words(title, kinds, by):
 
 
 def test_version_groups_never_disagree_with_same_version():
-    copies = [_c("A", 300, recording_id="r1"), _c("A (Live)", 280, recording_id="r1"),
+    copies = [_c("A", 300, recording_id="r1"), _c("A (Live)", 299, recording_id="r1"),      # M7 final I2: was 280 s
               _c("A", 300, work_id="w1"), _c("A", 301, work_id="w2"), _c("A", 302), _c("A", 302.5)]
     groups = version_groups(copies)
     for g in groups:
@@ -346,3 +346,49 @@ def test_rulings_ampersand_accents_and_original_mix():
     assert tag_rules._same("Catendé", "Catende")
     # "original mix" is a version label (D16): the scorer keeps it in names
     assert scorer.norm("Glide (Original Mix)") == "glide original mix"
+
+
+# ---- M7 final fixes I2: a shared recording id is not proof when the lengths disagree ----
+
+def test_equal_recording_ids_with_disagreeing_lengths_are_different_versions():
+    r = "bb31a869-0000-0000-0000-000000000000"
+    a = Copy("Kool & the Gang", "Get Down Saturday Night (Original 12'' Version)", 412, recording_id=r)
+    b = Copy("Kool & the Gang", "Get Down Saturday Night (Get Down in the 90's-mix)", 403, recording_id=r)
+    c = Copy("Chic", "Good Times", 220, recording_id=r)
+    assert not same_version(a, b) and not same_version(a, c) and not same_version(b, c)
+    assert version_groups([a, b, c]) == []
+
+
+def test_equal_recording_ids_decide_within_the_tolerance_or_with_a_length_unknown():
+    r = "bb31a869-0000-0000-0000-000000000000"
+    assert same_version(Copy("Chic", "Good Times", 300, recording_id=r), Copy("Chic", "Good Times (Live)", 303.5, recording_id=r))
+    assert same_version(Copy("Chic", "Good Times", None, recording_id=r), Copy("Chic", "Good Times", 300, recording_id=r))
+    assert not same_version(Copy("Chic", "Good Times", 300, recording_id=r), Copy("Chic", "Good Times", 304.5, recording_id=r))
+
+
+# ---- M7 final fixes I3: untagged copies are never one version ----
+
+@pytest.mark.parametrize("a, b", [
+    (Copy("", "", 200), Copy("", "", 202)),
+    (Copy("", "Track 01", 200), Copy("", "Track 01", 203)),
+    (Copy("[Unknown Artist]", "Intro", 60), Copy("[Unknown Artist]", "Intro", 61)),
+    (Copy("Unknown Artist", "Intro", 60), Copy("Unknown Artist", "Intro", 61)),
+    (Copy("Various Artists", "Intro", 60), Copy("Various Artists", "Intro", 61)),
+    (Copy("Chic", "Track 01", 200), Copy("Chic", "Track 01", 201)),
+    (Copy("Chic", "07", 200), Copy("Chic", "07", 201)),
+    (Copy("Chic", "Track01.mp3", 200), Copy("Chic", "Track01.mp3", 201)),
+    (Copy("Chic", "", 200), Copy("Chic", "", 201)),
+])
+def test_placeholder_artist_or_title_is_never_the_same_version(a, b):
+    assert not same_version(a, b)
+    assert version_groups([a, b]) == []
+
+
+def test_is_placeholder():
+    for artist, title in [("", "Good Times"), ("[Unknown Artist]", "Good Times"), ("various artists", "X"),
+                          ("Chic", ""), ("Chic", "Track 12"), ("Chic", "track_03"), ("Chic", "12"),
+                          ("Chic", "AUDIO_0003.wav"), ("Chic", "01 - Track 01.mp3"), (None, None)]:
+        assert is_placeholder(artist, title), (artist, title)
+    for artist, title in [("Chic", "Good Times"), ("Chic feat. X", "Good Times (Live)"), ("Prince", "1999"),
+                          ("Chic", "Intro"), ("Smokey Robinson", "100 - Smokey Robinson - Why You Wanna See My Bad Side.mp3")]:
+        assert not is_placeholder(artist, title), (artist, title)
