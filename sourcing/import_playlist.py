@@ -21,11 +21,12 @@ have no artist tag (library titles sometimes carry it: "A Change Is Gonna Come -
 """
 from __future__ import annotations
 
+import re
 import unicodedata
 from dataclasses import dataclass, field
 
 from crates import attrs
-from crates.reconcile import CommentNotKept, Reconciler, effective_tier
+from crates.reconcile import CommentNotKept, Reconciler, effective_tier, write_comment
 from crates.store import CrateStore
 from subsonic.client import Song, SubsonicClient
 from .identity import Title, loose, parse_title, stands_in
@@ -34,6 +35,12 @@ from .policy import IMPORT_TIER, TIERS
 
 TOLERANCE_S = 4
 MARKER = "#imported"          # in the playlist comment: "this playlist is managed by import-playlist"
+_MARKER_TOKEN = re.compile(r"(?<!\S)" + re.escape(MARKER) + r"(?!\S)", re.IGNORECASE)   # same boundary rule as crates.attrs
+
+
+def is_imported(comment: str | None) -> bool:
+    """True when the comment carries MARKER as a whole token: "x#imported" and "#imported-old" are not ours."""
+    return bool(_MARKER_TOKEN.search(comment or ""))
 PAGE = 20                     # Navidrome search3 page size we ask for; a full page means "ask for more"
 MAX_PAGES = 5
 
@@ -255,12 +262,10 @@ def _rerun_comment(existing_comment: str | None, ours: bool, tier: str | None) -
     return None if new == old else new
 
 
-def _comment_kept(client: SubsonicClient, store: CrateStore, playlist_id: str, wrote: str) -> None:
-    """D21: the comment owns #crate/#tier; read it back and only then cache what it says."""
-    back = client.playlist(playlist_id)
-    if (back.comment or "") != wrote:
-        raise CommentNotKept(f"{back.name}: wrote comment {wrote!r} but Navidrome now has {back.comment or ''!r}")
-    Reconciler(client, store).refresh_cache(back)
+def _write_comment_and_cache(client: SubsonicClient, store: CrateStore, pl, comment: str) -> None:
+    """D21: the comment owns #crate/#tier; write it with the one comment writer (which reads it back and raises
+    CommentNotKept on a mismatch) and only then cache what it says."""
+    Reconciler(client, store).refresh_cache(write_comment(client, pl, comment))
 
 
 def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: CrateStore,
@@ -282,7 +287,7 @@ def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: C
     at = tier or effective_tier(name, existing.comment if existing else None) or IMPORT_TIER   # D21: the comment's (or name's)
     accept = frozenset(TIERS[at].accept_versions)
     matches = [match(client, r, accept) for r in rows]
-    ours = existing is not None and MARKER in (existing.comment or "")
+    ours = existing is not None and is_imported(existing.comment)
     if existing is not None and not ours and not merge:
         raise NameCollision(name, existing.id)
     have = {e.id for e in client.playlist(existing.id).entries} if existing else set()
@@ -312,16 +317,18 @@ def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: C
               f"{m.title}" for m in matches if m.note]
     if not dry_run:
         if existing is None:
-            playlist_id = client.create_playlist(name, new_ids).id
+            target = client.create_playlist(name, new_ids)
+            playlist_id = target.id
             comment = attrs.write(MARKER, tier=tier or IMPORT_TIER)                # D15: the import tier, owned by the comment
-            client.update_playlist(playlist_id, public=True, comment=comment)     # spec §2a: visible to every user
+            client.update_playlist(playlist_id, public=True)                      # spec §2a: visible to every user
         else:                                       # visibility is set once, at creation: Michael may change it
+            target = existing
             comment = _rerun_comment(existing.comment, ours, tier)
-            client.update_playlist(existing.id, add_song_ids=new_ids, comment=comment)
+            client.update_playlist(existing.id, add_song_ids=new_ids)
         not_kept = None
         if comment is not None:
             try:
-                _comment_kept(client, store, playlist_id, comment)
+                _write_comment_and_cache(client, store, target, comment)
             except CommentNotKept as e:          # the songs are in: still record our own facts, then raise
                 not_kept = e
         store.mark_imported(playlist_id, ordered)

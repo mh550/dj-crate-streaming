@@ -243,3 +243,85 @@ def test_cli_apply_exits_1_when_a_playlist_is_refused(env, cli, capsys, monkeypa
     assert cli(["attrs", "migrate", "--apply"]) == 1
     assert "Disco Edits" in capsys.readouterr().err
     assert comment(srv, "pl-1") == "edited meanwhile"
+
+
+# ---- Task 4 review lows
+
+def test_plan_does_not_read_a_lookalike_marker_as_imported(env):
+    srv, client, store = env
+    set_comment(srv, "pl-3", "x#imported")
+    set_comment(srv, "pl-1", "#imported-old")
+    assert mig.plan(client, store) == []
+
+
+def test_plan_reports_an_enabled_crate_whose_playlist_is_gone(env):
+    srv, client, store = env
+    store.set_enabled("pl-1", "Disco Edits", True)
+    store.set_enabled("pl-gone", "Vanished Mix", True)
+    store.set_enabled("pl-gone2", "Disabled Ghost", False)               # disabled: not worth a line
+    assert [c.playlist_id for c in mig.plan(client, store)] == ["pl-1"]  # nothing is changed for the missing one
+    text = mig.report(mig.plan(client, store), client, store)
+    assert "crates.db says crate, but the playlist no longer exists: Vanished Mix" in text
+    assert "Disabled Ghost" not in text
+    assert [m for m, _ in srv.state.requests if m == "updatePlaylist"] == []
+    store.set_enabled("pl-gone", "", True)
+    assert "no longer exists: pl-gone" in mig.report([], client, store)  # no name: the id
+
+
+def test_apply_catches_any_error_per_playlist_and_continues(env):
+    srv, _, store = env
+    from urllib.error import URLError
+
+    class Flaky(SubsonicClient):
+        def playlist(self, pid):
+            if pid == "pl-1":
+                raise URLError("connection reset")
+            return super().playlist(pid)
+
+    client = Flaky(srv.url, "demo", "demo")
+    store.set_enabled("pl-1", "Disco Edits", True)
+    set_comment(srv, "pl-3", "#imported")
+    written, refused = mig.apply(client, mig.plan(client, store))
+    assert written == ["Sunday Listening"]
+    assert len(refused) == 1 and "Disco Edits" in refused[0] and "connection reset" in refused[0]
+
+
+def test_to_decide_excludes_lookalikes_already_planned(env):
+    srv, client, store = env
+    set_comment(srv, "pl-1", "peak #crates")
+    store.set_enabled("pl-1", "Disco Edits", True)                       # lookalike AND crates.db says crate: planned
+    set_comment(srv, "pl-2", "x#crate")                                  # a lookalike nobody planned
+    changes = mig.plan(client, store)
+    assert [c.playlist_id for c in changes] == ["pl-1"]
+    text = mig.report(changes, client, store)
+    assert "Total: 1 to change, 1 to decide." in text
+    assert "#crate will be added" in text and "x#crate" in text
+
+
+def test_cli_apply_lists_refused_playlists_by_name_on_stdout(env, cli, capsys, monkeypatch):
+    real = mig.plan
+
+    def stale(client, store):
+        ch = real(client, store)
+        client.update_playlist("pl-1", comment="edited meanwhile")
+        return ch
+
+    monkeypatch.setattr(mig, "plan", stale)
+    assert cli(["attrs", "migrate", "--apply"]) == 1
+    cap = capsys.readouterr()
+    assert "Refused (1)" in cap.out and "Disco Edits" in cap.out.split("Refused (1)")[1]
+    assert "Written (1)" in cap.out
+
+
+def test_cli_apply_survives_an_unexpected_error_and_still_prints_the_summary(env, cli, capsys, monkeypatch):
+    real = SubsonicClient.update_playlist
+
+    def boom(self, pid, **k):
+        if pid == "pl-1":
+            raise ValueError("odd response")
+        return real(self, pid, **k)
+
+    monkeypatch.setattr(SubsonicClient, "update_playlist", boom)
+    assert cli(["attrs", "migrate", "--apply"]) == 1
+    out = capsys.readouterr().out
+    assert "Written (1): Sunday Listening" in out and "Disco Edits" in out and "odd response" in out

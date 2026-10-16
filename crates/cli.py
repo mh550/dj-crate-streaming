@@ -104,8 +104,11 @@ def main(argv: list[str] | None = None) -> int:
             written, refused = migrate_attrs.apply(app.api, changes)
             print(f"\nWritten ({len(written)}): {', '.join(written) or 'none'}")
             print("Run `crates.cli reconcile` to refresh the crates.db cache from the new comments.")
-            for r in refused:
-                print(f"refused: {r}", file=sys.stderr)
+            if refused:
+                print(f"Refused ({len(refused)}):")
+                for r in refused:
+                    print(f"- {r}")
+                    print(f"refused: {r}", file=sys.stderr)
             return 1 if refused else 0
     elif a.cmd == "reconcile":
         try:

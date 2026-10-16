@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from sourcing.import_playlist import MARKER
+from sourcing.import_playlist import is_imported
 from sourcing.policy import IMPORT_TIER, TIERS, max_tier
 from subsonic.client import Playlist, SubsonicClient, SubsonicError
 from . import attrs
@@ -44,10 +44,17 @@ def plan(client: SubsonicClient, store: CrateStore) -> list[Change]:
             continue                                        # already a crate, by comment or by name
         if p.id in crates:
             out.append(Change(p.id, p.name, old, attrs.write(old, crate=True), "crates.db said crate"))
-        elif MARKER in old and a.tier is None and not a.problems:     # an unreadable #tier: tag is never written over
+        elif is_imported(old) and a.tier is None and not a.problems:     # an unreadable #tier: tag is never written over
             tier = max_tier(*(r["tier"] for r in store.external_for_playlist(p.id))) or IMPORT_TIER
             out.append(Change(p.id, p.name, old, attrs.write(old, tier=tier), f"imported at {tier} (D15)"))
     return out
+
+
+def orphans(playlists: list[Playlist], store: CrateStore) -> list[str]:
+    """Enabled crates.db rows whose playlist no longer exists, as the name crates.db has (else the id). The
+    migration changes nothing for them; the first reconcile will drop them."""
+    live = {p.id for p in playlists}
+    return [c.name or c.playlist_id for c in store.all(enabled_only=True) if c.playlist_id not in live]
 
 
 def lookalikes(playlists: list[Playlist]) -> list[Playlist]:
@@ -87,15 +94,21 @@ def report(changes: list[Change], client: SubsonicClient, store: CrateStore) -> 
                       "At the new tier, these tracks would be queued for an upgrade:", ""] + queued
     else:
         lines += ["Nothing to change: no comment needs a token added."]
-    odd = lookalikes(client.playlists())
+    playlists = client.playlists()
+    gone = orphans(playlists, store)
+    if gone:
+        lines += ["", f"## Missing playlists ({len(gone)})", ""]
+        lines += [f"- crates.db says crate, but the playlist no longer exists: {n}" for n in gone]
+    odd = lookalikes(playlists)
+    planned = {c.playlist_id for c in changes}
+    undecided = [p for p in odd if p.id not in planned]       # a planned one gets #crate in this run: nothing to decide
     if odd:
-        planned = {c.playlist_id for c in changes}
-        lines += ["", f"## Contains #crate but is not read as a crate ({len(odd)})", "",
+        lines += ["", f"## Contains #crate but is not read as a crate ({len(undecided)} to decide)", "",
                   "The old check was a substring test; these were crates then and are not now. "
                   "The migration leaves them alone. Fix the comment, or tell me to flag them.", ""]
         lines += [f"- **{p.name}**: comment {_q(p.comment or '')}"
                   + (" (crates.db says crate: #crate will be added)" if p.id in planned else "") for p in odd]
-    lines += ["", f"Total: {len(changes)} to change, {len(odd)} to decide."]
+    lines += ["", f"Total: {len(changes)} to change, {len(undecided)} to decide."]
     return "\n".join(lines)
 
 
@@ -114,6 +127,9 @@ def apply(client: SubsonicClient, changes: list[Change]) -> tuple[list[str], lis
             write_comment(client, pl, c.new)
         except (CommentNotKept, SubsonicError) as e:
             refused.append(f"{c.name}: {e}")
+            continue
+        except Exception as e:                  # URLError, ValueError, ...: one bad playlist never ends the run
+            refused.append(f"{c.name}: {type(e).__name__}: {e}")
             continue
         written.append(c.name)
     return written, refused

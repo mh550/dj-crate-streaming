@@ -290,3 +290,24 @@ def test_rerun_never_appends_a_second_copy_of_a_track_already_in_the_playlist():
                        path="Wendell Harrison/Organic Dream (1981)/04.flac")      # a better-filed copy appears
         again = ip.import_playlist("PoM", rows, c, store, source="s")
         assert again.added == 0 and [e.id for e in c.playlist(first.playlist_id).entries] == ["c3"]
+
+
+def test_marker_is_a_token_not_a_substring():
+    # M8 Task 4 review: "x#imported" and "#imported-old" are not ours.
+    for yes in ("#imported", "mine #IMPORTED #tier:high", "a\n#imported\tb"):
+        assert ip.is_imported(yes), yes
+    for no in ("", None, "x#imported", "#imported-old", "#imported,", "#importedx"):
+        assert not ip.is_imported(no), no
+
+
+def test_a_lookalike_marker_is_a_foreign_playlist_for_import():
+    import pytest
+    with FakeSubsonicServer() as srv:
+        _lib(srv)
+        c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
+        existing = c.create_playlist("Tea tent", ["k1"])
+        c.update_playlist(existing.id, comment="old #imported-old")
+        with pytest.raises(ip.NameCollision):
+            ip.import_playlist("Tea tent", ROWS, c, store, source="s")
+        ip.import_playlist("Tea tent", ROWS, c, store, source="s", merge=True)
+        assert c.playlist(existing.id).comment == "old #imported-old #imported"      # adopted: a real marker is appended
