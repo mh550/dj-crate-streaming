@@ -30,7 +30,7 @@ from sourcing.policy import DEFAULT_POLICY, STREAM, QualityPolicy, check_stream
 from sourcing.slskd_client import SlskdClient
 from subsonic.client import SubsonicClient, SubsonicError
 from .reconcile import CommentNotKept, NameMarked, ReconcileBusy, Reconciler
-from . import trash
+from . import proposals, trash
 from .store import CrateStore
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
@@ -200,6 +200,36 @@ class CrateApp:
             self.store.approve(wanted_id, "michael", candidate, row["tier"])
             return self.store.approval(wanted_id)
 
+    # --- proposals (D23): questions about one playlist slot; Michael's answer edits that slot, downloads nothing
+    def proposals(self, include_decided: bool = False) -> list[dict]:
+        """Open proposals (every one with include_decided), each with its playlist's name from the cache."""
+        return [self._proposal_view(p) for p in self.store.proposals(open_only=not include_decided)]
+
+    def _proposal_view(self, p: dict) -> dict:
+        c = self.store.get(p["playlist_id"])
+        return p | {"playlist_name": c.name if c else p["playlist_id"]}
+
+    def _answer(self, proposal_id: int, answer) -> dict:
+        try:
+            answer()
+        except KeyError:
+            raise ApiError(404, f"no proposal #{proposal_id}") from None
+        except proposals.Decided as e:
+            raise ApiError(409, str(e)) from None
+        return self._proposal_view(self.store.proposal(proposal_id))
+
+    def accept_proposal(self, proposal_id: int, decided_by: str = "michael") -> dict:
+        """Edit that one slot (guarded; any doubt answers `stale`, writing nothing). Needs navidrome.db (the guard)."""
+        if not self.cfg.navidrome_db:
+            raise ApiError(503, "navidrome.db is not configured (NAVIDROME_DB): a slot edit needs it to check the playlist")
+        with self._lock:
+            return self._answer(proposal_id, lambda: proposals.apply(
+                self.store, self.api, Path(self.cfg.navidrome_db), proposal_id, decided_by, self.reconciler))
+
+    def decline_proposal(self, proposal_id: int, decided_by: str = "michael") -> dict:
+        with self._lock:
+            return self._answer(proposal_id, lambda: proposals.decline(self.store, proposal_id, decided_by))
+
     # --- media URLs (signed per call)
     def stream_url(self, song_id: str, max_bit_rate: int | None, fmt: str | None) -> str:
         return self.media.stream_url(song_id, max_bit_rate, fmt)
@@ -290,6 +320,8 @@ def make_handler(app: CrateApp):
                     return self._json([app.reconciler.crate_view(app.api.playlist(c.playlist_id)) for c in app.store.all(enabled_only=True)])
                 if head == "wanted":
                     return self._json(app.store.wanted())
+                if head == "proposals" and len(p) == 1:
+                    return self._json(app.proposals(include_decided=q.get("all") in ("1", "true")))
                 if head == "events":
                     return self._json(app.store.events(int(q.get("limit", 50))))
                 if head == "search":
@@ -325,6 +357,12 @@ def make_handler(app: CrateApp):
                     if p[2] == "preview":
                         return self._json(app.preview(p[1]))
                     return self._json(app.approve(p[1], body.get("candidate")))
+                if head == "proposals" and len(p) == 3 and p[2] in ("accept", "decline"):
+                    if not p[1].isdigit():
+                        raise ApiError(400, f"proposal id must be a number, not {p[1]!r}")
+                    if p[2] == "accept":
+                        return self._json(app.accept_proposal(int(p[1])))
+                    return self._json(app.decline_proposal(int(p[1])))
                 if head == "reconcile":
                     return self._json(app.reconcile())
                 if head == "stream-tier":

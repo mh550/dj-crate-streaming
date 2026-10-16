@@ -16,10 +16,10 @@ from __future__ import annotations
 
 import math
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from difflib import SequenceMatcher
 
-from .identity import NEUTRAL, parse_filename, parse_title, stands_in, strip_trackno, words
+from .identity import NEUTRAL, Title, parse_filename, parse_title, stands_in, strip_trackno, words
 from .policy import QualityPolicy, DEFAULT_POLICY
 
 
@@ -208,13 +208,11 @@ def score_candidate(c: Candidate, w: Wanted, policy: QualityPolicy = DEFAULT_POL
     # names every kind it has (a 12" Dub is a dub too: no extended bonus); one bonus only. Another version earns
     # it only as a stand-in, for what it adds: a 12" Instrumental for an instrumental row is preferred as a 12",
     # a vocal 12" for that row is not preferred at all.
-    kinds = got.kinds - want.kinds if stand_in else got.kinds
-    prefs = policy.prefer_versions if (stand_in or not other) and kinds - NEUTRAL <= set(policy.prefer_versions) else ()
-    for i, kind in enumerate(prefs):
-        if kind in kinds:
-            bonus = max(2, 6 - 2 * i)
-            s += bonus; c.reasons.append(f"prefers {kind} +{bonus}")
-            break
+    i = version_rank(replace(got, kinds=got.kinds - want.kinds) if stand_in else got, policy) \
+        if stand_in or not other else None
+    if i is not None:
+        bonus = max(2, 6 - 2 * i)
+        s += bonus; c.reasons.append(f"prefers {policy.prefer_versions[i]} +{bonus}")
 
     # --- album / year hints (0..6)
     if w.album and norm(w.album) in norm(c.folder):
@@ -248,6 +246,16 @@ def score_candidate(c: Candidate, w: Wanted, policy: QualityPolicy = DEFAULT_POL
 
     c.score = round(s, 1)
     return c
+
+
+def version_rank(t: Title, policy: QualityPolicy) -> int | None:
+    """D16: the index in `policy.prefer_versions` of the best preferred kind `t` has, when the policy names every kind
+    it has (a 12" Dub is a dub too, so it is not preferred as a 12"); None when the tier prefers nothing about it.
+    Lower is better. The scorer's version bonus and crates.proposals (which version swaps to ask about) both read
+    this, so a tier prefers the same versions when it downloads and when it asks."""
+    if not t.kinds - NEUTRAL <= set(policy.prefer_versions):
+        return None
+    return next((i for i, kind in enumerate(policy.prefer_versions) if kind in t.kinds), None)
 
 
 def parse_responses(responses: list[dict]) -> list[Candidate]:

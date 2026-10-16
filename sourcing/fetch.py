@@ -35,7 +35,10 @@ to it; a step that cannot finish now is resumed by the worker. Without proof bot
 touched, and the row becomes `review` ("kept beside <old>: not proven the same recording (<why>)"). A request
 withdrawn mid-download (no tiered playlist holds the old song any more) is filed, nothing is replaced, and the row
 becomes `review` ("filed beside <old>; request withdrawn, both copies kept").
-A new version is never a replacement (D23). External rows (seeded from Spotify) just need the file in the library.
+A new version is never a replacement (D23). External rows (seeded from Spotify) just need the file in the library;
+when the filed song is another version of a song a tiered playlist holds, and that tier prefers it, Michael is asked
+(crates.proposals.version_swaps), as he is about each slot of a copy kept beside the old one (unproven_copy). Asking
+never fails the fetch.
 
     filed, Navidrome lists it ─┬─ not a copy upgrade ───────────────────────▶ ok
                                ├─ withdrawn (no tiered playlist holds it) ──▶ review, both copies kept
@@ -51,6 +54,7 @@ import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from crates import proposals
 from crates.reconcile import Reconciler
 from crates.store import CrateStore, filed_path, never_indexed
 from scripts.export_playlists import open_ro
@@ -213,6 +217,8 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
             if external:
                 store.set_library_song(wanted_id, new.id)
             set_status("ok", f"filed as {rel}")
+            if external:                 # another version of a song a tiered playlist holds: ask, never swap (D23)
+                ask(lambda: proposals.version_swaps(store, navidrome_db, new.id))
             return FetchResult("ok", "filed and visible in Navidrome", best, filed, new.id, text)
         if not external and not store.playlists_holding([copy_id]):
             # Its playlist stopped being tiered (or dropped the song) mid-download: the request is withdrawn, so
@@ -236,11 +242,25 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
             pass
         return (store.verification(wanted_id) or {}).get("reference") or f"song {song_id}"
 
+    def ask(make) -> None:
+        """Create proposals (crates.proposals). Asking is a side effect of the filing: a failure is an event, never
+        the fetch's outcome (the file is filed either way)."""
+        if navidrome_db is None or not Path(navidrome_db).is_file():
+            store.log(None, wanted_id, "proposal", f"not asked: no navidrome.db at {navidrome_db}")
+        else:
+            try:
+                make()
+            except Exception as e:
+                store.log(None, wanted_id, "proposal", f"not asked: {type(e).__name__}: {e}")
+        store.commit()
+
     def keep_both(old_rel: str, rel: str, why: str, filed: Path, new_id: str, best, text: str) -> FetchResult:
-        """No proof the two are one recording: both copies stay, no playlist is touched, Michael is asked."""
+        """No proof the two are one recording: both copies stay, no playlist is touched, Michael is asked about
+        each slot of the old song in a tiered playlist (proposals.unproven_copy)."""
         set_status("review", f"kept beside {old_rel}: not proven the same recording ({why}); the new copy is {rel}")
         store.log(None, wanted_id, "kept_both", f"{rel} beside {old_rel}: {why}")
         store.commit()
+        ask(lambda: proposals.unproven_copy(store, navidrome_db, copy_id, new_id, why, wanted_id))
         return FetchResult("ok", f"filed; kept both ({why})", best, filed, new_id, text)
 
     def replace_copy(filed: Path, rel: str, new_id: str, best, text: str) -> FetchResult:

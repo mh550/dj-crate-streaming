@@ -14,6 +14,9 @@ Tables
   previews      the last search-and-rank result per wanted id, so the Wanted tab can show the pick
   replacements  copy replacements (sourcing.replace): old and new song and path, recorded before the first step,
                 and the step reached, so a crash at any step is resumed by the worker, never forgotten
+  proposals     questions about one playlist slot (crates.proposals, D23): "replace X with Y in P at n?". Not
+                approvals: an approval licenses a download the worker consumes; a proposal's yes edits one slot
+                and downloads nothing, so no reader of approvals can mistake one for the other
 """
 from __future__ import annotations
 
@@ -87,9 +90,23 @@ CREATE TABLE IF NOT EXISTS replacements (         -- one per copy replacement (s
   reference TEXT,                                  -- JSON {path, size, mtime_ns}: the file verify compared
   state TEXT NOT NULL,                             -- repoint | trash | scan | done | blocked
   detail TEXT, trash_path TEXT, created_at REAL NOT NULL, updated_at REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS proposals (            -- one question per playlist slot (crates.proposals)
+  id INTEGER PRIMARY KEY, kind TEXT NOT NULL,      -- version_swap | unproven_copy
+  playlist_id TEXT NOT NULL, position INTEGER NOT NULL,   -- 0-based index in getPlaylist when proposed
+  old_song_id TEXT NOT NULL, new_song_id TEXT NOT NULL,
+  summary TEXT NOT NULL,                           -- what Michael reads: playlist, slot, both titles and lengths
+  wanted_id TEXT,                                  -- unproven_copy: the row that is `review` until answered
+  new_path TEXT,                                   -- the new song's library path when proposed (a decline names it)
+  created_at REAL NOT NULL,
+  decided_by TEXT, decided_at REAL,                -- michael | policy:<name> | agent:<id> (as approvals)
+  decision TEXT, result TEXT);                     -- accepted | declined | stale; result: what happened
 """
 
 REPLACEMENT_OPEN = ("repoint", "trash", "scan")    # the worker advances these; done and blocked are final
+
+PROPOSAL_KINDS = ("version_swap", "unproven_copy")
+DECISIONS = ("accepted", "declined", "stale")
+DECIDERS = re.compile(r"michael|(?:policy|agent):\S+")     # the approver vocabulary (approvals.approved_by)
 
 STATUSES = ("ok", "needs_source", "sourcing", "verify", "failed", "removed", "review")   # review: a person must pick a version
 
@@ -602,6 +619,49 @@ class CrateStore:
                         (state, detail, time.time(), *cols.values(), job_id))
         if (old["state"], old["detail"]) != (state, detail):
             self.log(None, old["old_song_id"], "replace", f"#{job_id} {state}" + (f": {detail}" if detail else ""))
+        self.db.commit()
+
+    # --- proposals (crates.proposals): questions about one playlist slot, answered by Michael
+    def add_proposal(self, *, kind: str, playlist_id: str, position: int, old_song_id: str, new_song_id: str,
+                     summary: str, wanted_id: str | None = None, new_path: str | None = None) -> int | None:
+        """Record an open proposal and return its id; None, recording nothing, when the same question was asked
+        before: the same kind, playlist, slot, old and new song in any state, or the same swap in that playlist
+        declined at any slot (Michael said no to it; the slot moving does not make it a new question)."""
+        assert kind in PROPOSAL_KINDS, kind
+        asked = self.db.execute(
+            "SELECT 1 FROM proposals WHERE kind=? AND playlist_id=? AND old_song_id=? AND new_song_id=? "
+            "AND (position=? OR decision='declined') LIMIT 1",
+            (kind, playlist_id, old_song_id, new_song_id, position)).fetchone()
+        if asked:
+            return None
+        cur = self.db.execute(
+            "INSERT INTO proposals(kind, playlist_id, position, old_song_id, new_song_id, summary, wanted_id, new_path, "
+            "created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+            (kind, playlist_id, position, old_song_id, new_song_id, summary, wanted_id, new_path, time.time()))
+        self.log(playlist_id, old_song_id, "proposal", f"#{cur.lastrowid} {kind}: {summary}")
+        self.db.commit()
+        return cur.lastrowid
+
+    def proposals(self, open_only: bool = True) -> list[dict]:
+        q = "SELECT * FROM proposals" + (" WHERE decision IS NULL" if open_only else "") + " ORDER BY id"
+        return [dict(r) for r in self.db.execute(q)]
+
+    def proposal(self, proposal_id: int) -> dict | None:
+        r = self.db.execute("SELECT * FROM proposals WHERE id=?", (proposal_id,)).fetchone()
+        return dict(r) if r else None
+
+    def decide(self, proposal_id: int, decision: str, decided_by: str, result: str) -> None:
+        """Answer an open proposal and log a `proposal` event. ValueError for a decider outside the approver
+        vocabulary or a proposal that is unknown or answered already (the conditional UPDATE is the check)."""
+        assert decision in DECISIONS, decision
+        if not DECIDERS.fullmatch(decided_by or ""):
+            raise ValueError(f"decided_by {decided_by!r}: michael, policy:<name> or agent:<id>")
+        cur = self.db.execute("UPDATE proposals SET decision=?, decided_by=?, decided_at=?, result=? "
+                              "WHERE id=? AND decision IS NULL", (decision, decided_by, time.time(), result, proposal_id))
+        if cur.rowcount != 1:                      # nothing was changed
+            raise ValueError(f"proposal #{proposal_id} is unknown or answered already")
+        p = self.proposal(proposal_id)
+        self.log(p["playlist_id"], p["old_song_id"], "proposal", f"#{proposal_id} {decision} by {decided_by}: {result}")
         self.db.commit()
 
     # --- settings

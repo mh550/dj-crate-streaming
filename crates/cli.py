@@ -7,13 +7,16 @@
   python -m crates.cli attrs migrate [--apply] [--out PATH]   # one-time: crates.db flags/import tiers into comments (dry run by default)
   python -m crates.cli reconcile                 # sync crate state from Navidrome, re-judge every track
   python -m crates.cli wanted                    # the sourcing queue (feeds `sourcing.cli rank`)
+  python -m crates.cli proposals [--all]         # open questions about one playlist slot (D23); --all: answered too
+  python -m crates.cli proposals accept|decline <id>   # accept edits that one slot (needs NAVIDROME_DB); never trashes
   python -m crates.cli rename <playlist-id> <new-name>
   python -m crates.cli merge <into-id> <from-id> [--delete-source]   # append from's songs not already in into
   python -m crates.cli delete <playlist-id>      # the .m3u8 export in /srv/music/_playlists stays as the backup
   python -m crates.cli serve [--bind 127.0.0.1 --port 4580]
   python -m crates.cli demo                      # fake Navidrome + service on one port, for poking at the UI
 
-Connection comes from env: SUBSONIC_URL, SUBSONIC_USER, SUBSONIC_PASS (+ optional SUBSONIC_PUBLIC_URL, CRATES_DB).
+Connection comes from env: SUBSONIC_URL, SUBSONIC_USER, SUBSONIC_PASS (+ optional SUBSONIC_PUBLIC_URL, CRATES_DB,
+NAVIDROME_DB).
 """
 from __future__ import annotations
 
@@ -25,7 +28,7 @@ from pathlib import Path
 
 from sourcing.policy import TIERS
 from .reconcile import CommentNotKept, NameMarked, ReconcileBusy
-from .service import Config, CrateApp, CrateServer
+from .service import ApiError, Config, CrateApp, CrateServer
 
 
 def fmt_dur(s: int | None) -> str:
@@ -45,6 +48,11 @@ def main(argv: list[str] | None = None) -> int:
     mg = at.add_parser("migrate", help="add #crate / #tier: to comments for what only crates.db knows (dry run unless --apply)")
     mg.add_argument("--apply", action="store_true"); mg.add_argument("--out", help="also write the report to this file")
     w = sub.add_parser("wanted"); w.add_argument("--json", action="store_true")
+    pr = sub.add_parser("proposals", help="questions about one playlist slot (version swaps, unproven copies)")
+    pr.add_argument("--all", action="store_true", help="answered ones too")
+    pa = pr.add_subparsers(dest="answer")
+    for verb in ("accept", "decline"):
+        pa.add_parser(verb).add_argument("id", type=int)
     p = sub.add_parser("publish", help="make playlists visible to every Navidrome user (public)"); p.add_argument("names", nargs="*", help="playlist names (default: all)")
     r = sub.add_parser("rename"); r.add_argument("playlist_id"); r.add_argument("name")
     m = sub.add_parser("merge", help="append the songs of one playlist that another lacks, in order")
@@ -125,6 +133,21 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{t['artist']} — {t['title']}  [{t['album'] or '?'} {t['year'] or ''}]  {fmt_dur(t['duration'])}  ←{t['reason']}  in {', '.join(t['crates'])}")
             if not items:
                 print("nothing to source")
+    elif a.cmd == "proposals":
+        if a.answer:
+            try:
+                p = (app.accept_proposal if a.answer == "accept" else app.decline_proposal)(a.id)
+            except (ApiError, ReconcileBusy) as e:
+                print(f"proposals {a.answer}: {e}", file=sys.stderr)
+                return 1
+            print(f"#{p['id']} {p['decision']}: {p['result']}")
+            return 0 if p["decision"] in ("accepted", "declined") else 1
+        items = app.proposals(include_decided=a.all)
+        for p in items:
+            said = f"  [{p['decision']} by {p['decided_by']}: {p['result']}]" if p["decision"] else ""
+            print(f"#{p['id']:<4} {p['kind']:<13} {p['summary']}{said}")
+        if not items:
+            print("nothing to decide")
     elif a.cmd == "publish":
         for pl in app.api.playlists():
             if a.names and pl.name not in a.names:
