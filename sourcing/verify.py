@@ -266,7 +266,7 @@ def verify(path: Path, expected_duration_s: float | None = None, tier: str | Non
             m["replaceable"] = bool(
                 not problems and m.get("reference_compared") and m.get("fingerprint_ber", 1.0) <= MAX_SAME_BER
                 and ref_s and decoded_s and abs(decoded_s - ref_s) <= tolerance_s
-                and reference is not None and not _same_file(path, reference))
+                and reference is not None and m.get("reference") and not _same_file(path, reference))
             if not problems and m.get("reference_compared") and not decoded_s:
                 warnings.append("not replaceable: the decoded length was not measured (decoded checks skipped), "
                                 "so the download may be a truncated prefix of the reference")
@@ -354,6 +354,13 @@ def _recording_check(path: Path, reference: Path, findings: list, m: dict, whole
         return
     length = FINGERPRINT_S
     if whole:
+        # Which file was compared, as it was then: M8 trashes exactly this file, and only if it is unchanged, not
+        # whatever Navidrome resolves for the song later.
+        try:
+            st = reference.stat()
+            m["reference"] = {"path": str(reference), "size": st.st_size, "mtime_ns": st.st_mtime_ns}
+        except OSError:
+            m["reference"] = None
         mine, theirs = probe(path), probe(reference)
         m["reference_duration_s"] = theirs.duration_s if theirs else None
         secs = [i.duration_s for i in (mine, theirs) if i and i.duration_s]

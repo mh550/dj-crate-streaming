@@ -273,3 +273,15 @@ def test_replaceable_compares_the_decoded_length_not_the_header(audio, monkeypat
     monkeypatch.setattr(V, "analyse", half)
     v = verify(audio["mp3"], tier="low", reference=audio["true"], intent="copy")
     assert v.measurements["decoded_s"] < 15 and v.measurements["replaceable"] is False
+
+
+# ---- M7 final fixes m7: the record names the exact reference file that was compared (M8 trashes only that) ----
+
+@needs_tools
+def test_copy_verification_records_the_compared_reference(audio):
+    import json
+    st = audio["true"].stat()
+    v = verify(audio["mp3"], 20, tier="low", reference=audio["true"], intent="copy")
+    assert v.measurements["replaceable"] is True
+    assert v.measurements["reference"] == {"path": str(audio["true"]), "size": st.st_size, "mtime_ns": st.st_mtime_ns}
+    assert json.loads(json.dumps(v.as_dict("low")))["measurements"]["reference"]["mtime_ns"] == st.st_mtime_ns
