@@ -94,9 +94,10 @@ def test_parse_recording_fixture():
     rec = mb.recording("2f9f850a-f0d7-4cf2-93fe-e4929abf16a9")
     assert rec.length_s == 402.0 and rec.work_ids == ("6815e26f-f6b2-30f0-962b-419d35fc2091",)
     assert "QM4221500415" in rec.isrcs
+    assert rec.artist == "Herb Alpert"                       # captured with inc=artist-credits (the backfill's check)
     q = urllib.parse.urlparse(opener.requests[0].full_url)
     assert q.path == "/ws/2/recording/2f9f850a-f0d7-4cf2-93fe-e4929abf16a9"
-    assert urllib.parse.parse_qs(q.query) == {"fmt": ["json"], "inc": ["work-rels isrcs"]}
+    assert urllib.parse.parse_qs(q.query) == {"fmt": ["json"], "inc": ["artist-credits work-rels isrcs"]}
 
 
 def test_parse_search_fixture():
@@ -112,6 +113,13 @@ def test_parse_search_fixture():
 def test_parse_recording_without_length_or_credit():
     rec = parse_recording({"id": "x", "title": "T"})
     assert rec == Recording("x", "T", None, "")
+
+
+def test_parse_recording_keeps_disambiguation_and_video():
+    rec = parse_recording({"id": "x", "title": "T", "disambiguation": "clean", "video": True})
+    assert rec.disambiguation == "clean" and rec.video is True
+    rec = parse_recording({"id": "x", "title": "T", "video": None})
+    assert rec.disambiguation == "" and rec.video is False
 
 
 def test_parse_recording_joins_credit_names_with_joinphrases_and_keeps_only_performance_works():

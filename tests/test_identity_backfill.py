@@ -42,8 +42,8 @@ def tagged(music: Path, rel: str, template: Path, **tags) -> Path:
 class FakeMB:
     """`recording`/`isrc`/`search` from dicts; `fail` titles raise MusicBrainzError; every call is recorded."""
 
-    def __init__(self, recordings=(), isrcs=None, searches=None, fail=()):
-        self.recs = {r.id: r for r in recordings}
+    def __init__(self, recordings=(), isrcs=None, searches=None, fail=(), merged=None):
+        self.recs = {r.id: r for r in recordings} | (merged or {})     # merged: old id -> the surviving recording
         self.isrcs = isrcs or {}
         self.searches = searches or {}
         self.fail = set(fail)
@@ -64,9 +64,9 @@ class FakeMB:
         return list(self.searches.get(title, []))
 
 
-def rec(id, title, length, artist="Kool & the Gang", works=(), isrcs=(), releases=()):
+def rec(id, title, length, artist="Kool & the Gang", works=(), isrcs=(), releases=(), disambiguation="", video=False):
     return Recording(id=id, title=title, length_s=length, artist=artist, work_ids=tuple(works), isrcs=tuple(isrcs),
-                     releases=tuple(releases))
+                     releases=tuple(releases), disambiguation=disambiguation, video=video)
 
 
 def facts(music, path):
@@ -373,3 +373,174 @@ def test_cli_uses_acoustid_only_with_a_key_and_never_prints_it(tmp_path, templat
     assert "s3cret-key" not in text
     row = json.loads((out / "identity-proposal.json").read_text())["proposals"][0]
     assert row["cls"] == "search" and "AcoustID" in row["why"]
+
+
+# ── review round (Task 8 review): AcoustID confidence, raw ids, disambiguation, lead artist, guards ────────────
+
+def test_acoustid_counts_only_the_confident_top_result(tmp_path, template):
+    music = tmp_path / "music"
+    p = tagged(music, "s.flac", template, artist="Kool & the Gang", title="Good Times")
+    mb = FakeMB([rec(RA, "Good Times", 8.0)], searches={"Good Times": [rec(RA, "Good Times", 8.0)]})
+    # probe C: the pick is only in a weak result; the confident top result is another recording
+    pr = ib.classify(facts(music, p), mb, lambda path: [
+        {"id": RB, "title": "Good Times (Live)", "score": 0.97, "acoustid": "top"},
+        {"id": RA, "title": "Good Times", "score": 0.21, "acoustid": "weak"}])
+    assert pr.cls == "conflict" and pr.write == {} and pr.accept is False
+    # the pick is in a confident result that is not the top one: still not "acoustid"
+    pr = ib.classify(facts(music, p), mb, lambda path: [
+        {"id": RB, "title": "x", "score": 0.97, "acoustid": "top"},
+        {"id": RA, "title": "Good Times", "score": 0.9, "acoustid": "second"}])
+    assert pr.cls == "conflict"
+    # only weak results: no evidence either way
+    pr = ib.classify(facts(music, p), mb, lambda path: [{"id": RB, "title": "x", "score": 0.5, "acoustid": "w"}])
+    assert pr.cls == "search" and "AcoustID" in pr.why
+    # the pick is in the confident top result
+    pr = ib.classify(facts(music, p), mb, lambda path: [
+        {"id": RB, "title": "x", "score": 0.95, "acoustid": "top"},
+        {"id": RA, "title": "Good Times", "score": 0.95, "acoustid": "top"}])
+    assert pr.cls == "acoustid" and pr.write == {"mb_trackid": RA, "acoustid_id": "top"}
+
+
+def test_a_weak_acoustid_match_does_not_resolve_an_ambiguous_row(tmp_path, template):
+    music = tmp_path / "music"
+    p = tagged(music, "a.flac", template, artist="Kool & the Gang", title="I Want Your Love")
+    two = [rec(RA, "I Want Your Love", 8.0), rec(RB, "I Want Your Love", 8.5)]
+    pr = ib.classify(facts(music, p), FakeMB(two, searches={"I Want Your Love": two}),
+                     lambda path: [{"id": RB, "title": "x", "score": 0.2, "acoustid": "w"}])   # probe D
+    assert pr.cls == "ambiguous" and pr.write == {} and pr.accept is False
+
+
+def _id3_txxx(p, desc, value):
+    import mutagen.id3
+    m = mutagen.id3.ID3(p)
+    m.add(mutagen.id3.TXXX(encoding=3, desc=desc, text=[value]))
+    m.save()
+
+
+@pytest.fixture(scope="module")
+def mp3_template(tmp_path_factory):
+    return make_audio(tmp_path_factory.mktemp("tpl3") / "t.mp3")
+
+
+def test_an_mp3_recording_id_in_txxx_is_the_files_id(tmp_path, mp3_template):
+    music = tmp_path / "music"
+    p = tagged(music, "A/txxx.mp3", mp3_template, artist="Kool & the Gang", title="Le Freak", isrc="USAT29900609")
+    _id3_txxx(p, "MusicBrainz Track Id", R1)                 # probe A: Navidrome reads it, mediafile does not
+    assert ib.read_ids(p)["mb_trackid"] == [R1]
+    f = facts(music, p)
+    assert f.mb_trackid == R1
+    mb = FakeMB([rec(R1, "Le Freak", 8.0, works=["w1"])], isrcs={"USAT29900609": [rec(RA, "Le Freak", 8.0)]})
+    pr = ib.classify(f, mb)
+    assert pr.cls == "confirmed" and pr.recording == R1 and "mb_trackid" not in pr.write
+    assert not [c for c in mb.calls if c[0] == "isrc"]
+
+
+def test_ufid_and_txxx_that_disagree_are_a_conflict(tmp_path, mp3_template):
+    music = tmp_path / "music"
+    p = tagged(music, "A/both.mp3", mp3_template, artist="Kool & the Gang", title="Le Freak", mb_trackid=R1)
+    _id3_txxx(p, "MusicBrainz Track Id", RA)
+    assert sorted(ib.read_ids(p)["mb_trackid"]) == sorted([R1, RA])
+    pr = ib.classify(facts(music, p), FakeMB([rec(R1, "Le Freak", 8.0), rec(RA, "Le Freak", 8.0)]))
+    assert pr.cls == "conflict" and pr.write == {} and R1 in pr.why and RA in pr.why
+
+
+def test_read_ids_sees_work_and_acoustid_ids_however_they_are_spelled(tmp_path, mp3_template, template):
+    music = tmp_path / "music"
+    p = tagged(music, "w.mp3", mp3_template, artist="A", title="T")
+    _id3_txxx(p, "MUSICBRAINZ WORK ID", "w-1")
+    _id3_txxx(p, "ACOUSTID ID", "a-1")
+    assert ib.read_ids(p) == {"mb_trackid": [], "mb_workid": ["w-1"], "acoustid_id": ["a-1"]}
+    q = tagged(music, "w.flac", template, artist="A", title="T", mb_workid="w-2")
+    assert ib.read_ids(q) == {"mb_trackid": [], "mb_workid": ["w-2"], "acoustid_id": []}
+
+
+def test_disambiguation_and_video_rule_recordings_out(tmp_path, template):
+    music = tmp_path / "music"
+    plain = tagged(music, "plain.flac", template, artist="Kool & the Gang", title="Song")
+    explicit = tagged(music, "explicit.flac", template, artist="Kool & the Gang", title="Song (Explicit)")
+    clean_and_explicit = [rec(RA, "Song", 8.0, disambiguation="clean"), rec(RB, "Song", 8.0, disambiguation="explicit")]
+    # a plain file fits neither: MusicBrainz names the version only in the disambiguation
+    pr = ib.classify(facts(music, plain), FakeMB(searches={"Song": clean_and_explicit}))
+    assert pr.cls == "none" and pr.write == {}
+    # "Song (Explicit)" never takes the clean recording
+    recs = [rec(RA, "Song (Explicit)", 8.0, disambiguation="clean"), rec(RB, "Song (Explicit)", 8.0, disambiguation="explicit")]
+    pr = ib.classify(facts(music, explicit), FakeMB(recs, searches={"Song": recs}))
+    assert pr.cls == "search" and pr.recording == RB
+    # a disambiguation that is not a label is no obstacle; a video never fits
+    pr = ib.classify(facts(music, plain), FakeMB(searches={"Song": [rec(RA, "Song", 8.0, disambiguation="US disco band"),
+                                                                    rec(RB, "Song", 8.0, video=True)]}))
+    assert pr.cls == "search" and pr.recording == RA
+
+
+def test_confirm_checks_the_lead_artist(tmp_path, template):
+    music = tmp_path / "music"
+    p = tagged(music, "k.flac", template, artist="Chic", title="Le Freak", mb_trackid=RA)
+    pr = ib.classify(facts(music, p), FakeMB([rec(RA, "Le Freak", 8.0, artist="Someone Else", works=["w9"])]))
+    assert pr.cls == "conflict" and pr.write == {} and "Someone Else" in pr.why          # probe K
+    pr = ib.classify(facts(music, p), FakeMB([rec(RA, "Le Freak", 8.0, artist="Chic feat. Nile Rodgers", works=["w9"])]))
+    assert pr.cls == "confirmed" and pr.write == {"mb_workid": "w9"}
+
+
+def test_the_lead_artist_must_be_equal_and_a_near_miss_is_listed_for_review(tmp_path, template):
+    music = tmp_path / "music"
+    g = tagged(music, "g.flac", template, artist="The Gang", title="Celebration", isrc="USPR37900001")
+    pr = ib.classify(facts(music, g), FakeMB(isrcs={"USPR37900001": [rec(RA, "Celebration", 8.0)]}))   # probe E
+    assert pr.cls == "none" and pr.write == {} and pr.accept is False
+    assert pr.candidates == [RA] and "lead artist" in pr.why and "Kool & the Gang" in pr.why
+    n = tagged(music, "n.flac", template, artist="Nile Rodgers", title="Le Freak", isrc="USAT29900610")
+    pr = ib.classify(facts(music, n), FakeMB(isrcs={"USAT29900610": [rec(RA, "Le Freak", 8.0, artist="Chic feat. Nile Rodgers")]}))
+    assert pr.cls == "none" and pr.write == {}
+
+
+def test_a_merged_recording_id_is_followed(tmp_path, template):
+    music = tmp_path / "music"
+    p = tagged(music, "m.flac", template, artist="Kool & the Gang", title="Song")
+    mb = FakeMB(searches={"Song": [rec(RA, "Song", 8.0)]}, merged={RA: rec(RB, "Song", 8.0, works=["w1"])})
+    pr = ib.classify(facts(music, p), mb)
+    assert pr.cls == "search" and pr.recording == RB and pr.write == {"mb_trackid": RB, "mb_workid": "w1"}
+    assert "merged" in pr.why and RA in pr.why
+
+
+def test_out_inside_the_library_is_refused(tmp_path, template, capsys):
+    music = tmp_path / "music"
+    tagged(music, "a.flac", template, artist="Kool & the Gang", title="Song")
+    with pytest.raises(ValueError):
+        ib.propose(music, music / "identity", FakeMB(), log=lambda s: None)
+    assert ib.main(["propose", "--music", str(music), "--out", str(music / "identity")],
+                   opener=lambda *a, **k: pytest.fail("no request"), sleep=lambda s: None) == 2
+    assert not (music / "identity").exists()
+
+
+def test_rows_carry_the_files_tags_and_a_vanished_file_is_an_error(tmp_path, template, monkeypatch):
+    music, out = tmp_path / "music", tmp_path / "out"
+    p = tagged(music, "a.flac", template, artist="Kool & the Gang", title="Song (Club Mix)", album="LP",
+               isrc="USABC1234567")
+    real = ib.audio_files
+    monkeypatch.setattr(ib, "audio_files", lambda root: real(root) + [root / "gone.flac"])
+    props = {x.path: x for x in ib.propose(music, out, FakeMB(), log=lambda s: None)}
+    assert props["gone.flac"].cls == "error" and "FileNotFoundError" in props["gone.flac"].why
+    row = next(r for r in json.loads((out / "identity-proposal.json").read_text())["proposals"] if r["path"] == "a.flac")
+    assert row["file"]["artist"] == "Kool & the Gang" and row["file"]["title"] == "Song (Club Mix)"
+    assert row["file"]["isrc"] == "USABC1234567" and row["file"]["version_tag"] == ""
+    assert abs(row["file"]["length_s"] - 8.0) < 0.2 and row["file"]["mb_trackid"] == ""
+
+
+def test_the_report_reads_on_a_phone(tmp_path, template):
+    music, out = tmp_path / "music", tmp_path / "out"
+    tagged(music, "D/free.flac", template, artist="Double Exposure", title="My Love Is Free")
+    tagged(music, "K/song.flac", template, artist="Kool & the Gang", title="Song")
+    two = [rec(RA, "My Love Is Free", 8.0, artist="Double Exposure", releases=["Ten Percent", "Later"]),
+           rec(RB, "My Love Is Free", 9.0, artist="Double Exposure", releases=["Salsoul Jam 2000"],
+               disambiguation="US disco band session")]
+    ib.propose(music, out, FakeMB(two, searches={"My Love Is Free": two, "Song": [rec(R1, "Song", 8.0)]}),
+               log=lambda s: None)
+    report = (out / "identity-backfill-report.md").read_text()
+    tables = [ln for ln in report.splitlines() if ln.startswith("|---")]
+    assert len(tables) == 1                                   # only the counts table; rows are bullet blocks
+    assert '"choose": "<mbid>"' in report
+    amb = report.split("## ambiguous")[1].split("\n## ")[0]
+    assert "Double Exposure – My Love Is Free" in amb and "D/free.flac" in amb
+    assert "0:08" in amb and "0:09" in amb and "Ten Percent" in amb and "Salsoul Jam 2000" in amb
+    assert "US disco band session" in amb
+    row = json.loads((out / "identity-proposal.json").read_text())["proposals"][0]
+    assert row["cls"] == "ambiguous" and sorted(row["candidates"]) == [RA, RB]

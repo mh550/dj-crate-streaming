@@ -114,6 +114,8 @@ class Recording:
     work_ids: tuple[str, ...] = ()
     isrcs: tuple[str, ...] = ()
     releases: tuple[str, ...] = ()                           # release titles
+    disambiguation: str = ""                                 # often the only place MusicBrainz names the version
+    video: bool = False
 
 
 def parse_recording(d: dict) -> Recording:
@@ -124,7 +126,8 @@ def parse_recording(d: dict) -> Recording:
     artist = "".join((c.get("name") or "") + (c.get("joinphrase") or "") for c in d.get("artist-credit") or [])
     return Recording(id=d["id"], title=d.get("title") or "", length_s=None if length is None else length / 1000,
                      artist=artist, work_ids=works, isrcs=tuple(d.get("isrcs") or ()),
-                     releases=tuple(r["title"] for r in d.get("releases") or [] if r.get("title")))
+                     releases=tuple(r["title"] for r in d.get("releases") or [] if r.get("title")),
+                     disambiguation=(d.get("disambiguation") or "").strip(), video=bool(d.get("video")))
 
 
 def _escape(s: str) -> str:
@@ -200,7 +203,7 @@ class MusicBrainz:
         raise MusicBrainzError(f"MusicBrainz 503 after {self.retries} tries: {path}")   # retries == 0
 
     def recording(self, mbid: str) -> Recording | None:
-        d = self.get(f"recording/{mbid}", inc="work-rels isrcs")
+        d = self.get(f"recording/{mbid}", inc="artist-credits work-rels isrcs")
         return None if d is None else parse_recording(d)
 
     def isrc(self, isrc: str) -> list[Recording]:
