@@ -7,6 +7,9 @@ Tables
   events        append-only log so the UI can show "what did the reconciler do"
   external_wanted  tracks wanted that aren't in Navidrome at all (seeded from Spotify etc.)
   settings      small key/value settings (the web client's stream tier)
+  verifications the last download check per wanted id
+  approvals     who allowed which download (D23); the worker consumes the unused ones
+  previews      the last search-and-rank result per wanted id, so the Wanted tab can show the pick
 """
 from __future__ import annotations
 
@@ -65,6 +68,10 @@ CREATE TABLE IF NOT EXISTS verifications (        -- the last download check per
   song_id TEXT PRIMARY KEY, result TEXT NOT NULL, -- ok, tier, problems, warnings, measurements, file
   ts REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS approvals (            -- one row per "yes, download this" (D23); at most one unused per wanted id
+  id INTEGER PRIMARY KEY, wanted_id TEXT NOT NULL, approved_by TEXT NOT NULL,  -- michael | policy:<name> | agent:<id>
+  candidate TEXT, tier TEXT NOT NULL, ts REAL NOT NULL, used_at REAL, result TEXT);
+CREATE TABLE IF NOT EXISTS previews (song_id TEXT PRIMARY KEY, result TEXT NOT NULL, ts REAL NOT NULL);
 """
 
 STATUSES = ("ok", "needs_source", "sourcing", "verify", "failed", "removed", "review")   # review: a person must pick a version
@@ -191,8 +198,11 @@ class CrateStore:
         ext = self.db.execute("SELECT * FROM external_wanted WHERE status IN ('needs_source','failed') ORDER BY id")
         rows = self._crate_wanted("t.status IN ('needs_source','failed')") + [self._ext_row(r) for r in ext]
         checks = dict(self.db.execute("SELECT song_id, result FROM verifications").fetchall())   # parse only rows shown
+        previews = dict(self.db.execute("SELECT song_id, result FROM previews").fetchall())
         for row in rows:
             row["verify"] = json.loads(checks[row["song_id"]]) if row["song_id"] in checks else None
+            row["preview"] = json.loads(previews[row["song_id"]]) if row["song_id"] in previews else None
+            row["approval"] = self.approval(row["song_id"])
         return rows
 
     def find_wanted(self, song_id: str) -> dict | None:
@@ -221,6 +231,49 @@ class CrateStore:
     def verification(self, song_id: str) -> dict | None:
         r = self.db.execute("SELECT result FROM verifications WHERE song_id=?", (song_id,)).fetchone()
         return json.loads(r[0]) if r else None
+
+    def set_preview(self, wanted_id: str, result: dict) -> None:
+        """Keep the last search-and-rank result for a wanted id, replacing the previous one."""
+        self.db.execute("INSERT INTO previews(song_id, result, ts) VALUES(?,?,?) ON CONFLICT(song_id) DO UPDATE "
+                        "SET result=excluded.result, ts=excluded.ts", (wanted_id, json.dumps(result), time.time()))
+        self.commit()
+
+    def preview(self, wanted_id: str) -> dict | None:
+        r = self.db.execute("SELECT result FROM previews WHERE song_id=?", (wanted_id,)).fetchone()
+        return json.loads(r[0]) if r else None
+
+    # --- approvals (D23): the only thing that lets the worker download
+    @staticmethod
+    def _approval_row(r: sqlite3.Row) -> dict:
+        d = dict(r)
+        d["candidate"] = json.loads(d["candidate"]) if d["candidate"] else None
+        return d
+
+    def approve(self, wanted_id: str, approved_by: str, candidate: dict | None, tier: str) -> int:
+        """Record an approval and return its id. An earlier unused one for the same row is superseded, so at
+        most one is pending per row. The event names the file, never the peer."""
+        now = time.time()
+        cur = self.db.execute("INSERT INTO approvals(wanted_id, approved_by, candidate, tier, ts) VALUES(?,?,?,?,?)",
+                              (wanted_id, approved_by, json.dumps(candidate) if candidate else None, tier, now))
+        new = cur.lastrowid
+        self.db.execute("UPDATE approvals SET used_at=?, result=? WHERE wanted_id=? AND used_at IS NULL AND id!=?",
+                        (now, f"superseded by #{new}", wanted_id, new))
+        detail = f"{approved_by} at {tier}" + (f": {candidate.get('basename') or ''}" if candidate else "")
+        self.log(None, wanted_id, "approved", detail)
+        self.db.commit()
+        return new
+
+    def pending_approvals(self) -> list[dict]:
+        return [self._approval_row(r) for r in self.db.execute("SELECT * FROM approvals WHERE used_at IS NULL ORDER BY id")]
+
+    def mark_approval_used(self, approval_id: int, result: str) -> None:
+        self.db.execute("UPDATE approvals SET used_at=?, result=? WHERE id=?", (time.time(), result, approval_id))
+        self.db.commit()
+
+    def approval(self, wanted_id: str) -> dict | None:
+        """The latest approval for a wanted id, used or not."""
+        r = self.db.execute("SELECT * FROM approvals WHERE wanted_id=? ORDER BY id DESC LIMIT 1", (wanted_id,)).fetchone()
+        return self._approval_row(r) if r else None
 
     # --- external wanted (not in Navidrome at all; seeded from Spotify etc.)
     def find_external(self, artist: str, title: str) -> dict | None:

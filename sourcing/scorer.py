@@ -17,7 +17,7 @@ from __future__ import annotations
 import math
 import re
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from difflib import SequenceMatcher
 
 from .policy import QualityPolicy, DEFAULT_POLICY
@@ -65,6 +65,10 @@ class Candidate:
     @property
     def folder(self) -> str:
         return split_remote(self.filename)[0]
+
+    def as_dict(self) -> dict:
+        """JSON-ready for the API and the approvals table; the basename is what the UI shows in place of the remote path."""
+        return asdict(self) | {"basename": self.basename}
 
 
 # ---------- text normalization ----------

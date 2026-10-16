@@ -97,7 +97,33 @@ async function loadWanted() {
     grow.append(el("div", "title", `${t.artist} — ${t.title}`));
     grow.append(el("div", "sub", `${t.album || ""} ${t.year || ""} · ${dur(t.duration)} · ${t.crates.length ? "in " + t.crates.join(", ") : "external"} · tier ${t.tier}`));
     if (t.verify) grow.append(el("div", "sub", verifyLine(t.verify)));
-    li.append(grow, el("span", "badge " + t.status, t.reason)); ul.append(li);
+    const pending = t.approval && !t.approval.used_at, pk = t.preview && t.preview.pick;
+    if (pending) grow.append(el("div", "sub", "approved · waiting for worker"));
+    else if (t.approval) grow.append(el("div", "sub", `worker: ${t.approval.result}`));
+    if (pk && !pending) {                      // basename only: the peer's name stays out of the UI
+      grow.append(el("div", "sub", `pick: ${pk.basename} · ${pk.extension} · ${pk.bit_rate ?? "?"}k · score ${pk.score.toFixed(2)}`));
+      const d = el("details"); d.append(el("summary", null, "why"), el("pre", "sub", t.preview.explain || "")); grow.append(d);
+    } else if (t.preview && !pending) grow.append(el("div", "sub", "no acceptable candidate"));
+    li.append(grow);
+    if (!pending) {
+      const pv = el("button", null, "Preview");
+      pv.onclick = async () => {
+        pv.disabled = true; pv.textContent = "searching…";
+        try { await api(`/api/wanted/${t.song_id}/preview`, {}); await loadWanted(); }
+        catch (e) { alert(e.message); pv.disabled = false; pv.textContent = "Preview"; }
+      };
+      li.append(pv);
+    }
+    if (pk && !pending) {
+      const ap = el("button", null, "Approve");
+      ap.onclick = async () => {
+        ap.disabled = true;
+        try { await api(`/api/wanted/${t.song_id}/approve`, { candidate: pk }); await loadWanted(); }
+        catch (e) { alert(e.message); ap.disabled = false; }
+      };
+      li.append(ap);
+    }
+    li.append(el("span", "badge " + t.status, t.reason)); ul.append(li);
   }
 }
 

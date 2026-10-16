@@ -19,12 +19,15 @@ import json
 import mimetypes
 import os
 import threading
+import time
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from sourcing.fetch import fetch
 from sourcing.policy import DEFAULT_POLICY, STREAM, QualityPolicy, check_tier
+from sourcing.slskd_client import SlskdClient
 from subsonic.client import SubsonicClient, SubsonicError
 from .reconcile import Reconciler
 from . import trash
@@ -34,6 +37,14 @@ WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 mimetypes.add_type("application/manifest+json", ".webmanifest")
 mimetypes.add_type("image/svg+xml", ".svg")
 STREAM_CLIENT_NAME = "dj-crates-web"   # its own Navidrome Player → its own transcoding profile
+
+
+class ApiError(Exception):
+    """An expected failure with the HTTP status it should answer with."""
+
+    def __init__(self, status: int, message: str):
+        super().__init__(message)
+        self.status = status
 
 
 @dataclass
@@ -46,6 +57,8 @@ class Config:
     bind: str = "127.0.0.1"
     port: int = 4580
     trash_dir: str | None = None          # read-only view of /srv/docker/_trash (status reports it)
+    slskd_url: str | None = None          # slskd, for previews (and the worker)
+    slskd_key: str | None = None
 
     @classmethod
     def from_env(cls, **overrides) -> "Config":
@@ -59,6 +72,8 @@ class Config:
             bind=env.get("CRATES_BIND", "127.0.0.1"),
             port=int(env.get("CRATES_PORT", "4580")),
             trash_dir=env.get("CRATES_TRASH") or None,
+            slskd_url=env.get("SLSKD_URL") or None,
+            slskd_key=env.get("SLSKD_API_KEY") or None,
         )
         for k, v in overrides.items():
             if v is not None:
@@ -69,7 +84,8 @@ class Config:
 class CrateApp:
     """Everything the HTTP layer needs, so it can also be driven directly from tests/CLI."""
 
-    def __init__(self, cfg: Config, policy: QualityPolicy = DEFAULT_POLICY, store: CrateStore | None = None):
+    def __init__(self, cfg: Config, policy: QualityPolicy = DEFAULT_POLICY, store: CrateStore | None = None,
+                 slskd: SlskdClient | None = None):
         self.cfg = cfg
         self.api = SubsonicClient(cfg.subsonic_url, cfg.username, cfg.password)
         self.media = SubsonicClient(cfg.public_url or cfg.subsonic_url, cfg.username, cfg.password, client_name=STREAM_CLIENT_NAME)
@@ -79,6 +95,9 @@ class CrateApp:
         self.store = store
         self.reconciler = Reconciler(self.api, store, policy)
         self.policy = policy
+        if slskd is None and cfg.slskd_url and cfg.slskd_key:
+            slskd = SlskdClient(cfg.slskd_url, cfg.slskd_key)
+        self.slskd = slskd
         self._lock = threading.Lock()
 
     # --- read
@@ -135,6 +154,36 @@ class CrateApp:
         if crate:
             return self.set_crate(pl.id, True)
         return self.reconciler.crate_view(pl)
+
+    # --- approvals (D23): a preview searches and ranks but never downloads; an approval is what lets the worker
+    def preview(self, wanted_id: str) -> dict:
+        if self.slskd is None:
+            raise ApiError(503, "slskd is not configured")
+        with self._lock:
+            r = fetch(wanted_id, store=self.store, slskd=self.slskd, navidrome=self.api, reconciler=self.reconciler,
+                      music_root=Path(os.environ.get("MUSIC_ROOT", "/srv/music")),
+                      downloads_root=Path(os.environ.get("DOWNLOADS_ROOT", "/srv/incoming/soulseek")), approve=False)
+            if r.status == "missing":
+                raise ApiError(404, r.reason)
+            out = {"status": r.status, "reason": r.reason, "pick": r.pick.as_dict() if r.pick else None,
+                   "explain": r.explain, "ts": time.time()}
+            self.store.set_preview(wanted_id, out)
+            return out
+
+    def approve(self, wanted_id: str, candidate: dict | None) -> dict:
+        """Michael's yes for one row: the candidate he saw, else the cached preview's pick (which may be None,
+        leaving the worker to search and pick itself)."""
+        with self._lock:
+            row = self.store.find_wanted(wanted_id)
+            if row is None:
+                raise ApiError(404, f"{wanted_id} is not in any enabled crate or the external queue")
+            if candidate is None:
+                candidate = (self.store.preview(wanted_id) or {}).get("pick")
+            elif not (isinstance(candidate, dict) and isinstance(candidate.get("username"), str)
+                      and isinstance(candidate.get("filename"), str)):
+                raise ApiError(400, "candidate needs a string username and filename")
+            self.store.approve(wanted_id, "michael", candidate, row["tier"])
+            return self.store.approval(wanted_id)
 
     # --- media URLs (signed per call)
     def stream_url(self, song_id: str, max_bit_rate: int | None, fmt: str | None) -> str:
@@ -198,6 +247,8 @@ def make_handler(app: CrateApp):
                         return self._json({"error": "method not allowed"}, 405)
                     return self._static("/".join(parts))
                 return self._api(method, parts[1:], q)
+            except ApiError as e:
+                return self._json({"error": str(e)}, e.status)
             except SubsonicError as e:
                 return self._json({"error": str(e), "code": e.code}, 502 if e.code == 0 else 400)
             except (ConnectionError, OSError) as e:
@@ -244,6 +295,10 @@ def make_handler(app: CrateApp):
                     return self._json(app.add_to_playlist(p[1], list(body.get("songIds", []))))
                 if head == "playlists" and len(p) == 1:
                     return self._json(app.create_playlist(body["name"], list(body.get("songIds", [])), bool(body.get("crate", False))), 201)
+                if head == "wanted" and len(p) == 3 and p[2] in ("preview", "approve"):
+                    if p[2] == "preview":
+                        return self._json(app.preview(p[1]))
+                    return self._json(app.approve(p[1], body.get("candidate")))
                 if head == "reconcile":
                     return self._json(app.reconcile())
                 if head == "stream-tier":
