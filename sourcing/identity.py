@@ -131,7 +131,8 @@ def _label(dec: str) -> tuple[frozenset[str], str]:
 def _classify(dec: str) -> tuple[str, frozenset[str], str] | None:
     """(_COPY_NOTE, …) for a copy marker, ("label", kinds, by) for a label, None to stop peeling."""
     w = words(dec)
-    if _FEAT.match(w) or (_COPY.match(w) and not _TOKEN.search(w)):   # "(feat. The Live Band)" credits people
+    # "(feat. The Live Band)" credits people; a copy phrase may not hide a label ("Remastered 2009 Mono Edition")
+    if _FEAT.match(w) or (_COPY.match(w) and not _TOKEN.search(w) and not _KEPT.search(w)):
         return _COPY_NOTE, frozenset(), ""
     kinds, by = _label(dec)                              # "(Live - 2011 Remaster)" is live
     return ("label", kinds, by) if kinds else None
@@ -207,7 +208,10 @@ def parse_title(title: str | None, artist: str | None = None, version_tag: str |
         if c is None:
             break
         head, _, tail = dec.partition(" - ")
-        tc = _classify(tail) if tail and _FEAT.match(words(head)) else None
+        feat_tail = bool(tail) and bool(_FEAT.match(words(head)))
+        tc = _classify(tail) if feat_tail else None
+        if feat_tail and tc is None:                     # "(feat. X - Acoustic)": an unknown tail stays in the base
+            break
         if tc is not None:                               # "(feat. X - Dub Mix)": the credit, then the label
             dec, c = head.strip(), (_COPY_NOTE, frozenset(), "")
             if tc[0] == _COPY_NOTE:

@@ -292,3 +292,15 @@ def test_clean_and_explicit_are_versions_not_copies(a, b):
 def test_clean_is_an_alt_kept_in_the_credit():
     t = parse_title("Song (Clean Edit)")
     assert t.base == "Song" and t.kinds == {"alt", "edit"} and t.by == "clean" and t.copy_note == ""
+
+
+@pytest.mark.parametrize("a, b", [
+    ("Song (Remastered 2009 Mono Edition)", "Song (Remastered 2009 Stereo Edition)"),
+    ("Song (feat. X - Acoustic)", "Song (feat. X)"),
+])
+def test_rereview_pairs_are_different_versions(a, b):
+    assert not same_version(_c(a, 300), _c(b, 300))
+
+
+def test_a_feat_decoration_with_an_unknown_tail_stays_in_the_base():
+    assert parse_title("Song (feat. X - Acoustic)").base == "Song (feat. X - Acoustic)"
