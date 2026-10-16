@@ -34,8 +34,9 @@ _NOISE = re.compile(r"\b(?:\d{4} remaster(?:ed)?|remaster(?:ed)?|album version|f
 def words(s: str | None, *, noise: bool = False) -> str:
     """Accent-, case- and punctuation-free words; "&" is "and" on both sides alike.
 
-    noise=True also drops copy and credit words (feat, remaster, album version, explicit…): they never change
-    which recording a name means. "original mix" is a version label (D16), so it stays."""
+    noise=True also drops words that only blur a name match (feat, remaster, album version, explicit, clean, hq,
+    hd): it is the scorer's name test, not a version test. Versions come from `parse_title`, where clean/explicit
+    are labels. "original mix" is a version label (D16), so it stays."""
     s = unicodedata.normalize("NFKD", s or "")
     s = "".join(c for c in s if not unicodedata.combining(c)).casefold().replace("&", " and ")
     s = "".join(c if c.isalnum() else " " for c in s)          # letters of any script stay; "_" goes
@@ -78,18 +79,20 @@ _TOKENS = (
     ("alt", r"alternate|alt take|take|medley"),       # the take number stays in the credit: take 21 ≠ take 22
 )
 _TOKEN = re.compile(r"\b(?:" + "|".join(f"(?P<{k}>{p})" for k, p in _TOKENS) + r")\b")
-# Words that say which mix without naming it; they stay in the credit and add "alt" (mono ≠ stereo).
-_KEPT = re.compile(r"\b(?:mono|stereo)\b")
+# Words that say which mix without naming it; they stay in the credit and add "alt" (mono ≠ stereo). A clean
+# edit mutes lyrics at the same length, so clean/explicit/dirty are versions, never copies (an explicit file must
+# not be "upgraded" to a clean one).
+_KEPT = re.compile(r"\b(?:mono|stereo|clean|explicit|dirty)\b")
 # Not part of a credit: filler, and a whole remaster phrase beside a label ("Live - 2011 Remaster"). A bare year,
 # "album" or "single" is kept: "Live 1977" ≠ "Live 1979", "Single Mix" ≠ "Album Mix".
 _REMASTER = r"(?:\d{4} )?(?:digital(?:ly)? )?remaster(?:ed)?(?: \d{4})?"
-_FILLER = re.compile(r"\b(?:" + _REMASTER + r"|mix|version|by|explicit|clean)\b")
+_FILLER = re.compile(r"\b(?:" + _REMASTER + r"|mix|version|by)\b")
 
 _FEAT = re.compile(r"^(?:feat|ft|featuring)\b")      # not "with": "(With Strings)" is an arrangement
 # A whole decoration that only says which copy: "2011 Remaster", "Remastered Version",
-# "Remastered 2001/Rudy Van Gelder Edition", "Album Version", "Explicit", "Bonus Track".
+# "Remastered 2001/Rudy Van Gelder Edition", "Album Version", "Bonus Track".
 _COPY = re.compile(r"^(?:(?:\d{4} )?(?:digital(?:ly)? )?remaster(?:ed)?(?: version| \d{4}(?: [a-z0-9 ]+ edition)?)?"
-                   r"|album version|explicit(?: version)?|clean(?: version)?|bonus track)$")
+                   r"|album version|bonus track)$")
 
 _COPY_NOTE = "copy"
 

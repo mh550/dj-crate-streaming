@@ -274,3 +274,21 @@ def test_version_groups_never_disagree_with_same_version():
     for g in groups:
         assert all(same_version(copies[i], copies[j]) for i in g for j in g if i != j)
     assert [0, 1] in groups                              # one recording id is one version, whatever the titles
+
+
+@pytest.mark.parametrize("a, b", [
+    ("Song (Clean Mix)", "Song (Explicit Mix)"),
+    ("Song (Clean Edit)", "Song (Edit)"),
+    ("Song (Clean)", "Song"),
+    ("Song (Explicit)", "Song"),
+    ("Song - Dirty", "Song"),
+    ("Song (Clean Version)", "Song (Explicit Version)"),
+])
+def test_clean_and_explicit_are_versions_not_copies(a, b):
+    # a clean edit mutes lyrics at the same length: M8 must never replace an explicit file with it
+    assert not same_version(_c(a, 300), _c(b, 300))
+
+
+def test_clean_is_an_alt_kept_in_the_credit():
+    t = parse_title("Song (Clean Edit)")
+    assert t.base == "Song" and t.kinds == {"alt", "edit"} and t.by == "clean" and t.copy_note == ""
