@@ -17,6 +17,7 @@ confirm step above, and an interrupted ~35 minute run must never ask the same qu
 from __future__ import annotations
 
 import contextlib
+import http.client
 import json
 import threading
 import time
@@ -96,6 +97,7 @@ def confirm_recording_length(item, *, tol_s: float = 4.0,
 # ---- the rate-limited client (M7 identity backfill) -------------------------------------------------------------
 
 BASE = "https://musicbrainz.org/ws/2/"
+RETRY_STATUS = (502, 503, 504)                               # MusicBrainz's proxy answers all three when busy
 MAX_RETRY_AFTER_S = 60                                       # a hostile or confused header must not stall a run for an hour
 
 
@@ -144,12 +146,17 @@ class MusicBrainz:
         self._cache_path = Path(cache) if cache else None
         self._cache: dict[str, tuple[int, dict | None]] = {}
         if self._cache_path and self._cache_path.exists():
-            for line in self._cache_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            data = self._cache_path.read_bytes()
+            if data and not data.endswith(b"\n"):            # a killed run's torn last line: cut it, or the next
+                data = data[:data.rfind(b"\n") + 1]          # append would merge into it and lose both entries
+                with self._cache_path.open("r+b") as f:
+                    f.truncate(len(data))
+            for line in data.decode("utf-8", errors="replace").splitlines():
                 try:
                     row = json.loads(line)
                     self._cache[row["url"]] = (row["status"], row.get("body"))
                 except (ValueError, KeyError, TypeError):
-                    continue                                 # a torn last line from a killed run: ask again
+                    continue
 
     def _remember(self, url: str, status: int, body: dict | None) -> None:
         self._cache[url] = (status, body)
@@ -175,17 +182,18 @@ class MusicBrainz:
                 if e.code == 404:
                     self._remember(url, 404, None)
                     return None
-                if e.code != 503:
+                if e.code not in RETRY_STATUS:
                     raise MusicBrainzError(f"MusicBrainz HTTP {e.code}: {path}") from None
                 if attempt == self.retries:
-                    raise MusicBrainzError(f"MusicBrainz 503 after {self.retries} tries: {path}") from None
+                    raise MusicBrainzError(f"MusicBrainz {e.code} after {self.retries} tries: {path}") from None
                 try:
-                    delay = min(int(e.headers.get("Retry-After")), MAX_RETRY_AFTER_S)
+                    delay = int(e.headers.get("Retry-After"))
                 except (TypeError, ValueError, AttributeError):
-                    delay = 2 * attempt
+                    delay = -1
+                delay = min(delay, MAX_RETRY_AFTER_S) if delay >= 0 else 2 * attempt
                 self._sleep(delay)
                 continue
-            except (urllib.error.URLError, OSError, ValueError) as e:
+            except (urllib.error.URLError, OSError, ValueError, http.client.HTTPException) as e:
                 raise MusicBrainzError(f"MusicBrainz request failed ({type(e).__name__}): {path}") from None
             self._remember(url, 200, body)
             return body

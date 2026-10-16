@@ -199,8 +199,11 @@ def test_cache_survives_a_torn_last_line_and_503s_are_not_cached(tmp_path):
     mb.recording("a")
     with cache.open("a") as f:
         f.write('{"url": "torn')                            # a killed run
-    again, _ = client(Script(http_error(400)), cache=cache)
+    again, _ = client(Script({"id": "b", "title": "B"}), cache=cache)
     assert again.recording("a").id == "a"
+    again.recording("b")                                    # appended after the torn line: must not merge into it
+    third, _ = client(Script(http_error(400)), cache=cache)
+    assert third.recording("a").id == "a" and third.recording("b").id == "b"
 
 
 def test_search_escapes_quotes():
@@ -231,3 +234,28 @@ def test_recording_length_waits_on_the_shared_limiter():
     assert t.sleeps == [pytest.approx(1.05)]
     mb.isrc("B")                                             # and the client waits behind the confirm request
     assert t.sleeps == [pytest.approx(1.05), pytest.approx(1.05)]
+
+
+@pytest.mark.parametrize("code", [502, 503, 504])
+def test_gateway_errors_are_retried_like_503(code):
+    body = fixture("musicbrainz_isrc.sample.json")
+    mb, t = client(Script(http_error(code), body))
+    assert len(mb.isrc("GBARL0601475")) == 1 and 2 in t.sleeps
+    mb, _ = client(Script(http_error(code)))
+    with pytest.raises(MusicBrainzError, match=f"{code} after 4 tries"):
+        mb.isrc("X")
+
+
+@pytest.mark.parametrize("value", ["-5", "soon", ""])
+def test_an_invalid_retry_after_falls_back_to_the_backoff(value):
+    mb, t = client(Script(http_error(503, **{"Retry-After": value}), {"recordings": []}))
+    mb.isrc("X")
+    assert all(s > 0 for s in t.sleeps) and 2 in t.sleeps
+
+
+def test_http_client_errors_are_wrapped():
+    import http.client
+    for exc in (http.client.IncompleteRead(b"x"), http.client.BadStatusLine("")):
+        mb, _ = client(Script(exc))
+        with pytest.raises(MusicBrainzError):
+            mb.isrc("X")
