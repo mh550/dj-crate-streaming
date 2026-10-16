@@ -32,7 +32,7 @@ from sourcing.slskd_client import SlskdClient
 from subsonic.client import SubsonicClient, SubsonicError
 from .reconcile import CommentNotKept, NameMarked, ReconcileBusy, Reconciler
 from . import proposals, trash
-from .store import CrateStore
+from .store import CrateStore, PlayNowRefused, filed_path
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 mimetypes.add_type("application/manifest+json", ".webmanifest")
@@ -201,6 +201,47 @@ class CrateApp:
             self.store.approve(wanted_id, "michael", candidate, row["tier"])
             return self.store.approval(wanted_id)
 
+    def play_now(self, wanted_id: str) -> dict:
+        """Michael pressed play on a queued track the library does not have (D20): that tap is his approval for ONE
+        fast copy at tier `low`, filed as a provisional copy; the worker takes it first, and the row's tier (its
+        upgrade's) is untouched. Refused (409, nothing recorded) for anything that has or is getting a file: a
+        playlist row (its song is in Navidrome), a row with a library song (play that), an `ok` row, one in progress
+        (sourcing, verify, filed but not indexed, or an approval waiting or being fetched: a double tap or a second
+        device), or a `review` row (a version must be picked first). 404 for an unknown id."""
+        with self._lock:
+            row = self.store.find_wanted(wanted_id)
+            if row is None:
+                raise ApiError(404, f"{wanted_id} is not in any enabled crate or the external queue")
+            if not row.get("external"):
+                raise ApiError(409, f"{wanted_id} is in the library already: play the library file")
+            if row.get("library_song_id"):
+                raise ApiError(409, f"{wanted_id} is already in the library: play {row['library_song_id']}")
+            status = row["status"]
+            if status == "ok":
+                raise ApiError(409, f"{wanted_id} is already in the library ({row.get('reason') or 'ok'})")
+            if status in ("sourcing", "verify") or (status == "failed" and filed_path(row.get("reason"))):
+                raise ApiError(409, f"{wanted_id} is in progress ({status}): the worker finishes it")
+            if status == "review":
+                raise ApiError(409, f"{wanted_id} needs a pick first ({row.get('reason')}): pick a version first")
+            try:                                    # the INSERT itself refuses a second one (any process)
+                self.store.approve(wanted_id, "michael", None, "low", purpose="play-now")
+            except PlayNowRefused:                  # a double tap, a second device, or the worker fetching it
+                raise ApiError(409, self._busy(wanted_id, self.store.approval_in_progress(wanted_id))) from None
+            return self.store.approval(wanted_id)
+
+    @staticmethod
+    def _busy(wanted_id: str, a: dict | None) -> str:
+        if a is not None and a["used_at"] is not None:
+            return f"{wanted_id} is in progress: the worker is fetching it (approval #{a['id']})"
+        what = "a play-now approval" if a is not None and a["purpose"] == "play-now" else "an approval"
+        return f"{wanted_id} already has {what} waiting for the worker" + (f" (#{a['id']})" if a else "")
+
+    def wanted_row(self, wanted_id: str) -> dict:
+        row = self.store.wanted_row(wanted_id)
+        if row is None:
+            raise ApiError(404, f"{wanted_id} is not in any enabled crate or the external queue")
+        return row
+
     # --- proposals (D23): questions about one playlist slot; Michael's answer edits that slot, downloads nothing
     def proposals(self, include_decided: bool = False) -> list[dict]:
         """Open proposals (every one with include_decided), each with its playlist's name from the cache. Questions
@@ -329,8 +370,10 @@ def make_handler(app: CrateApp):
                     return self._json(app.playlist(p[1]))
                 if head == "crates":
                     return self._json([app.reconciler.crate_view(app.api.playlist(c.playlist_id)) for c in app.store.all(enabled_only=True)])
-                if head == "wanted":
+                if head == "wanted" and len(p) == 1:
                     return self._json(app.store.wanted())
+                if head == "wanted" and len(p) == 2:
+                    return self._json(app.wanted_row(p[1]))
                 if head == "proposals" and len(p) == 1:
                     return self._json(app.proposals(include_decided=q.get("all") in ("1", "true")))
                 if head == "events":
@@ -364,9 +407,11 @@ def make_handler(app: CrateApp):
                     return self._json(app.add_to_playlist(p[1], list(body.get("songIds", []))))
                 if head == "playlists" and len(p) == 1:
                     return self._json(app.create_playlist(body["name"], list(body.get("songIds", [])), bool(body.get("crate", False))), 201)
-                if head == "wanted" and len(p) == 3 and p[2] in ("preview", "approve"):
+                if head == "wanted" and len(p) == 3 and p[2] in ("preview", "approve", "play-now"):
                     if p[2] == "preview":
                         return self._json(app.preview(p[1]))
+                    if p[2] == "play-now":
+                        return self._json(app.play_now(p[1]))
                     return self._json(app.approve(p[1], body.get("candidate")))
                 if head == "proposals" and len(p) == 3 and p[2] in ("accept", "decline"):
                     if not p[1].isdigit():

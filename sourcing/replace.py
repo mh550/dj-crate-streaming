@@ -315,9 +315,9 @@ _STEPS = {"repoint": _repoint, "trash": _trash, "scan": _scan}
 
 
 def _settle(ctx: Ctx, job: dict) -> None:
-    """Every playlist now holds the new song: an external row (play-now's provisional copy, Task 11) is done and
-    names it; a playlist row's old rows were removed by the reconcile."""
+    """Every playlist now holds the new song: an external row (the upgrade of play-now's provisional copy, D20) is
+    done and names it, no longer provisional; a playlist row's old rows were removed by the reconcile."""
     wid = job["wanted_id"]
     if wid.startswith("ext-") and ctx.store.external(wid) is not None:
-        ctx.store.set_library_song(wid, job["new_song_id"])
+        ctx.store.set_external_song(wid, job["new_song_id"], False)
         ctx.store.set_wanted_status(wid, "ok", f"filed as {job['new_path']}; replaced {job['old_path']}")

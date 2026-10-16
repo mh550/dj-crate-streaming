@@ -68,6 +68,8 @@ CREATE TABLE IF NOT EXISTS external_wanted (
   tier        TEXT NOT NULL DEFAULT 'crate',      -- quality tier it is sourced at (spec §1): low|medium|high|crate
   asked_artist TEXT, asked_title TEXT,            -- the names first asked for (Spotify), kept once Navidrome's replace them
   library_song_id TEXT,                           -- the Navidrome song filed for this row
+  provisional INTEGER NOT NULL DEFAULT 0,         -- 1: this row's file is (or is being fetched as) play-now's fast
+                                                  -- low copy, never its final file; the upgrade waits for approval
   created_at  REAL NOT NULL, updated_at REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS imported_entries (     -- every song import-playlist ever added to a playlist,
@@ -81,7 +83,8 @@ CREATE TABLE IF NOT EXISTS verifications (        -- the last download check per
 );
 CREATE TABLE IF NOT EXISTS approvals (            -- one row per "yes, download this" (D23); at most one unused per wanted id
   id INTEGER PRIMARY KEY, wanted_id TEXT NOT NULL, approved_by TEXT NOT NULL,  -- michael | policy:<name> | agent:<id>
-  candidate TEXT, tier TEXT NOT NULL, ts REAL NOT NULL, used_at REAL, result TEXT);
+  candidate TEXT, tier TEXT NOT NULL, ts REAL NOT NULL, used_at REAL, result TEXT,
+  purpose TEXT NOT NULL DEFAULT 'download');      -- download | play-now (D20: one fast provisional copy at `tier`)
 CREATE TABLE IF NOT EXISTS previews (song_id TEXT PRIMARY KEY, result TEXT NOT NULL, ts REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS replacements (         -- one per copy replacement (sourcing.replace)
   id INTEGER PRIMARY KEY, wanted_id TEXT NOT NULL,
@@ -103,7 +106,8 @@ CREATE TABLE IF NOT EXISTS proposals (            -- one question per playlist s
   decision TEXT, result TEXT);                     -- accepted | declined | stale; result: what happened
 """
 
-REPLACEMENT_OPEN = ("repoint", "trash", "scan")    # the worker advances these; done and blocked are final
+REPLACEMENT_OPEN = ("repoint", "trash", "scan")
+APPROVAL_PURPOSES = ("download", "play-now")       # play-now (D20): one fast provisional copy, scored at its tier    # the worker advances these; done and blocked are final
 
 PROPOSAL_KINDS = ("version_swap", "unproven_copy")
 DECISIONS = ("accepted", "declined", "stale")
@@ -113,6 +117,11 @@ DECIDERS = re.compile(r"michael|(?:policy|agent):\S+")     # the approver vocabu
 
 class ProposalDecided(ValueError):
     """The proposal is answered already (maybe by another process meanwhile); nothing was recorded."""
+
+
+class PlayNowRefused(ValueError):
+    """A play-now approval was not recorded: the row already has an approval waiting or being fetched (a double
+    tap, a second device, another process). Nothing was written."""
 
 
 STATUSES = ("ok", "needs_source", "sourcing", "verify", "failed", "removed", "review")   # review: a person must pick a version
@@ -208,9 +217,12 @@ class CrateStore:
         """Add columns introduced after a DB was created (CREATE IF NOT EXISTS does not alter)."""
         have = {r[1] for r in self.db.execute("PRAGMA table_info(external_wanted)")}
         for col, typ in (("playlist_id", "TEXT"), ("position", "INTEGER"), ("tier", "TEXT NOT NULL DEFAULT 'crate'"),
-                         ("asked_artist", "TEXT"), ("asked_title", "TEXT"), ("library_song_id", "TEXT")):
+                         ("asked_artist", "TEXT"), ("asked_title", "TEXT"), ("library_song_id", "TEXT"),
+                         ("provisional", "INTEGER NOT NULL DEFAULT 0")):
             if col not in have:
                 self.db.execute(f"ALTER TABLE external_wanted ADD COLUMN {col} {typ}")
+        if "purpose" not in {r[1] for r in self.db.execute("PRAGMA table_info(approvals)")}:
+            self.db.execute("ALTER TABLE approvals ADD COLUMN purpose TEXT NOT NULL DEFAULT 'download'")
         if "tier" not in {r[1] for r in self.db.execute("PRAGMA table_info(crates)")}:
             self.db.execute("ALTER TABLE crates ADD COLUMN tier TEXT")
         have = {r[1] for r in self.db.execute("PRAGMA table_info(proposals)")}
@@ -364,22 +376,39 @@ class CrateStore:
         checks = dict(self.db.execute("SELECT song_id, result FROM verifications").fetchall())   # parse only rows shown
         previews = dict(self.db.execute("SELECT song_id, result FROM previews").fetchall())
         for row in rows:
-            row["verify"] = json.loads(checks[row["song_id"]]) if row["song_id"] in checks else None
-            row["preview"] = json.loads(previews[row["song_id"]]) if row["song_id"] in previews else None
-            row["approval"] = self.approval(row["song_id"])
-            row["filed"] = filed_path(row.get("reason")) is not None   # in the library already: re-check, never download
+            self._decorate(row, checks.get(row["song_id"]), previews.get(row["song_id"]))
         return rows
+
+    def _decorate(self, row: dict, check: str | None, preview: str | None) -> dict:
+        row["verify"] = json.loads(check) if check else None
+        row["preview"] = json.loads(preview) if preview else None
+        row["approval"] = self.approval(row["song_id"])
+        row["filed"] = filed_path(row.get("reason")) is not None   # in the library already: re-check, never download
+        return row
+
+    def wanted_row(self, wanted_id: str) -> dict | None:
+        """One row shaped like a wanted() entry (its last verification, preview and approval), whatever its status;
+        None when unknown. The web client polls it after play-now until `library_song_id` names a song to play."""
+        row = self.find_wanted(wanted_id)
+        if row is None:
+            return None
+        one = "SELECT result FROM {} WHERE song_id=?"
+        check = self.db.execute(one.format("verifications"), (wanted_id,)).fetchone()
+        preview = self.db.execute(one.format("previews"), (wanted_id,)).fetchone()
+        return self._decorate(row, check[0] if check else None, preview[0] if preview else None)
 
     def verify_ids(self, updated_before: float | None = None) -> list[str]:
         """Wanted ids (songs with a `verify` row in any playlist, then `ext-N`) whose file is filed but not yet seen by
         Navidrome: the worker re-checks these without downloading again. With `updated_before`, only rows last
-        updated before that time (the worker's re-check throttle: each re-check rewrites the reason)."""
+        updated before that time (the worker's re-check throttle: each re-check rewrites the reason), except a play-now
+        copy waiting to be listed: Michael pressed play, so it is re-checked on every tick."""
         cut = float("inf") if updated_before is None else updated_before
         crate = [r[0] for r in self.db.execute(
             "SELECT DISTINCT t.song_id FROM crate_tracks t JOIN crates c USING(playlist_id) "
             "WHERE t.status='verify' AND t.updated_at <= ? ORDER BY t.song_id", (cut,))]   # in flight: any playlist
-        ext = [f"ext-{r[0]}" for r in self.db.execute(
-            "SELECT id FROM external_wanted WHERE status='verify' AND updated_at <= ? ORDER BY id", (cut,))]
+        ext = [f"ext-{r[0]}" for r in self.db.execute(           # a play-now copy (provisional, no song yet) every tick
+            "SELECT id FROM external_wanted WHERE status='verify' AND (updated_at <= ? "
+            "OR (provisional=1 AND library_song_id IS NULL)) ORDER BY id", (cut,))]
         return crate + ext
 
     def find_wanted(self, song_id: str) -> dict | None:
@@ -447,22 +476,52 @@ class CrateStore:
         d["candidate"] = json.loads(d["candidate"]) if d["candidate"] else None
         return d
 
-    def approve(self, wanted_id: str, approved_by: str, candidate: dict | None, tier: str) -> int:
+    def approve(self, wanted_id: str, approved_by: str, candidate: dict | None, tier: str,
+                purpose: str = "download") -> int:
         """Record an approval and return its id. An earlier unused one for the same row is superseded, so at
-        most one is pending per row. The event names the file, never the peer."""
+        most one is pending per row. The event names the file, never the peer.
+
+        A `play-now` approval (D20) never supersedes: it is recorded only while the row has no approval waiting or
+        being fetched (`started`), and the check is part of the INSERT, so a double tap, a second device or another
+        process on the same crates.db records one approval, never two (PlayNowRefused, nothing written)."""
+        assert purpose in APPROVAL_PURPOSES, purpose
         now = time.time()
-        cur = self.db.execute("INSERT INTO approvals(wanted_id, approved_by, candidate, tier, ts) VALUES(?,?,?,?,?)",
-                              (wanted_id, approved_by, json.dumps(candidate) if candidate else None, tier, now))
+        args = (wanted_id, approved_by, json.dumps(candidate) if candidate else None, tier, now, purpose)
+        if purpose == "play-now":
+            cur = self.db.execute(
+                "INSERT INTO approvals(wanted_id, approved_by, candidate, tier, ts, purpose) SELECT ?,?,?,?,?,? "
+                "WHERE NOT EXISTS (SELECT 1 FROM approvals WHERE wanted_id=? AND (used_at IS NULL OR result='started'))",
+                args + (wanted_id,))
+            if cur.rowcount != 1:      # nothing inserted. End the write transaction the INSERT opened, or this
+                self.db.commit()       # connection keeps crates.db's write lock; commit as approve always does
+                raise PlayNowRefused(f"{wanted_id} has an approval waiting or being fetched already")
+        else:
+            cur = self.db.execute("INSERT INTO approvals(wanted_id, approved_by, candidate, tier, ts, purpose) "
+                                  "VALUES(?,?,?,?,?,?)", args)
         new = cur.lastrowid
         self.db.execute("UPDATE approvals SET used_at=?, result=? WHERE wanted_id=? AND used_at IS NULL AND id!=?",
                         (now, f"superseded by #{new}", wanted_id, new))
-        detail = f"{approved_by} at {tier}" + (f": {candidate.get('basename') or ''}" if candidate else "")
+        detail = f"{approved_by} at {tier}" + (" (play now)" if purpose == "play-now" else "") \
+            + (f": {candidate.get('basename') or ''}" if candidate else "")
         self.log(None, wanted_id, "approved", detail)
         self.db.commit()
         return new
 
     def pending_approvals(self) -> list[dict]:
-        return [self._approval_row(r) for r in self.db.execute("SELECT * FROM approvals WHERE used_at IS NULL ORDER BY id")]
+        """Unused approvals, play-now first (Michael is waiting to hear it), then in the order they were given."""
+        return [self._approval_row(r) for r in self.db.execute(
+            "SELECT * FROM approvals WHERE used_at IS NULL ORDER BY purpose='play-now' DESC, id")]
+
+    def has_play_now(self) -> bool:
+        """An unused play-now approval exists: the sleeping worker wakes for it."""
+        return self.db.execute("SELECT 1 FROM approvals WHERE used_at IS NULL AND purpose='play-now' LIMIT 1"
+                               ).fetchone() is not None
+
+    def approval_in_progress(self, wanted_id: str) -> dict | None:
+        """The approval of this row the worker has to act on: unused, or claimed and still being fetched."""
+        r = self.db.execute("SELECT * FROM approvals WHERE wanted_id=? AND (used_at IS NULL OR result='started') "
+                            "ORDER BY id DESC LIMIT 1", (wanted_id,)).fetchone()
+        return self._approval_row(r) if r else None
 
     def claim_approval(self, approval_id: int) -> bool:
         """Take an approval for download: True only for the caller that finds it still unused (the conditional
@@ -591,6 +650,17 @@ class CrateStore:
         """The Navidrome song an external row's download became (fetch, once Navidrome lists it)."""
         self.db.execute("UPDATE external_wanted SET library_song_id=?, updated_at=? WHERE id=?",
                         (song_id, time.time(), _ext_pk(ext_id)))
+
+    def set_external_song(self, ext_id: str, song_id: str | None, provisional: bool) -> None:
+        """The library song an external row has and whether it is play-now's provisional copy (D20). Provisional:
+        it plays, but it is not the row's file at its tier, so the row stays queued for its upgrade."""
+        self.db.execute("UPDATE external_wanted SET library_song_id=?, provisional=?, updated_at=? WHERE id=?",
+                        (song_id, int(provisional), time.time(), _ext_pk(ext_id)))
+
+    def set_provisional(self, ext_id: str, provisional: bool) -> None:
+        """What the download starting now is for (fetch sets it as the row enters `sourcing`): a filed file that
+        Navidrome lists later is then known to be provisional even across a worker restart."""
+        self.db.execute("UPDATE external_wanted SET provisional=? WHERE id=?", (int(provisional), _ext_pk(ext_id)))
 
     def set_external_status(self, ext_id: str, status: str, reason: str | None = None) -> None:
         assert status in STATUSES, status

@@ -14,6 +14,9 @@ Each tick:
      fetched again with approve=True; that path downloads nothing, it only asks Navidrome (after a rescan)
      whether the filed song has appeared. Each re-check rewrites the row, which restarts its clock, so a row
      costs one rescan per interval rather than one per tick;
+  (first) every unused play-now approval (D20), before the reconcile and the re-checks: it is fetched at `low` and
+     filed as a provisional copy (sourcing.fetch). Between ticks the worker sleeps in ≤ 1 s steps and wakes as soon
+     as a play-now approval is waiting, and a play-now copy Navidrome has not listed yet is re-checked every tick;
   2. every unused approval is claimed first (a conditional UPDATE to `started`: a crash, a second worker, or
      an approval Michael superseded after this tick read its list cannot download it twice; a lost claim is
      skipped), then fetched, preferring the candidate Michael saw while that file is still offered,
@@ -152,11 +155,36 @@ class Worker:
         except Exception as e:                             # the next interval tries again
             self.log(f"export failed: {type(e).__name__}: {e}")
 
+    def _spend(self, approvals: list[dict], results: list[str]) -> int:
+        """Claim and fetch each approval; returns how many were claimed. A play-now approval (D20) is fetched at
+        `low` (score_tier: the row keeps its tier) and filed as provisional."""
+        claimed = 0
+        for a in approvals:
+            if not self.store.claim_approval(a["id"]):         # superseded or taken since this list was read
+                self.log(f"skipped {a['wanted_id']}: approval #{a['id']} already used")
+                continue
+            claimed += 1
+            extra = {"score_tier": "low", "provisional": True} if a.get("purpose") == "play-now" else {}
+            try:
+                r = self.fetcher(a["wanted_id"], approve=True, prefer=a["candidate"], **extra, **self.common)
+                outcome = r.approval_result or f"{r.status}: {r.reason}"
+            except Exception as e:
+                outcome = f"error: {type(e).__name__}: {e}"
+                self.log(f"fetch {a['wanted_id']} failed: {outcome}")
+            self.store.mark_approval_used(a["id"], outcome)
+            self.store.commit()
+            results.append(f"{a['wanted_id']}: {outcome}")
+            self.log(f"{a['wanted_id']}: {outcome}")
+        return claimed
+
     def tick(self) -> TickReport:
-        """No `tier` is passed: the row's current tier rules, and an approval's tier only records what was approved."""
+        """No `tier` is passed: the row's current tier rules, and an approval's tier only records what was approved.
+        Play-now approvals go first, before the reconcile and the re-checks (each may take a while): Michael is
+        waiting to hear the track."""
+        results, rechecked = [], 0
+        claimed = self._spend([a for a in self.store.pending_approvals() if a.get("purpose") == "play-now"], results)
         self.reconcile_due()
         open_jobs = [j["id"] for j in self.store.open_replacements()]
-        results, rechecked = [], 0
         for wanted_id in self.store.verify_ids(updated_before=time.time() - self.recheck_s):
             reason = (self.store.find_wanted(wanted_id) or {}).get("reason")
             try:
@@ -170,22 +198,7 @@ class Worker:
                 except Exception as e2:
                     self.log(f"recheck {wanted_id}: could not restart its clock: {type(e2).__name__}: {e2}")
             rechecked += 1
-        claimed = 0
-        for a in self.store.pending_approvals():
-            if not self.store.claim_approval(a["id"]):         # superseded or taken since this list was read
-                self.log(f"skipped {a['wanted_id']}: approval #{a['id']} already used")
-                continue
-            claimed += 1
-            try:
-                r = self.fetcher(a["wanted_id"], approve=True, prefer=a["candidate"], **self.common)
-                outcome = r.approval_result or f"{r.status}: {r.reason}"
-            except Exception as e:
-                outcome = f"error: {type(e).__name__}: {e}"
-                self.log(f"fetch {a['wanted_id']} failed: {outcome}")
-            self.store.mark_approval_used(a["id"], outcome)
-            self.store.commit()
-            results.append(f"{a['wanted_id']}: {outcome}")
-            self.log(f"{a['wanted_id']}: {outcome}")
+        claimed += self._spend(self.store.pending_approvals(), results)     # play-now ones that arrived meanwhile first
         for line in self.advance_replacements(open_jobs):
             results.append(line)
             self.log(line)
@@ -193,7 +206,10 @@ class Worker:
         self.log(f"tick: {claimed} approvals, {rechecked} rechecked")
         return TickReport(claimed, rechecked, results)
 
-    def run(self, poll_s: float, *, ticks: int | None = None) -> None:
+    def run(self, poll_s: float, *, ticks: int | None = None, sleep=time.sleep, now=time.time) -> None:
+        """Tick every `poll_s` seconds. The wait between ticks is slept in steps of at most a second, and ends early
+        when a play-now approval is waiting (D20: pressing play must not wait up to `poll_s` for the download to
+        start). `ticks` ends the loop after that many (tests); `sleep` and `now` are injectable for the same reason."""
         self._lock()                                       # WorkerRunning propagates: the CLI exits non-zero
         try:
             try:
@@ -207,6 +223,22 @@ class Worker:
                 except Exception as e:
                     self.log(f"tick failed: {type(e).__name__}: {e}")
                 n += 1
-                time.sleep(poll_s)
+                if ticks is None or n < ticks:
+                    self._wait(poll_s, sleep, now)
         finally:
             self._unlock()
+
+    def _wait(self, poll_s: float, sleep, now) -> None:
+        """Sleep `poll_s`, in steps of at most 1 s, waking after the step in which a play-now approval appears. At
+        least one step is always slept, so an approval no tick can spend never turns this into a busy loop."""
+        end = now() + poll_s
+        while True:
+            left = end - now()
+            if left <= 0:
+                return
+            sleep(min(1.0, left))
+            try:
+                if self.store.has_play_now():
+                    return
+            except Exception as e:                         # e.g. DB locked: keep waiting, the tick will tell
+                self.log(f"play-now check failed: {type(e).__name__}: {e}")

@@ -38,7 +38,8 @@ def test_approve_records_and_supersedes():
     store.mark_approval_used(second, "ok: x")
     assert store.pending_approvals() == []
     assert store.approval("s4")["result"] == "ok: x" and store.approval("s4")["used_at"] is not None
-    assert set(store.approval("s4")) == {"id", "wanted_id", "approved_by", "candidate", "tier", "ts", "used_at", "result"}
+    assert set(store.approval("s4")) == {"id", "wanted_id", "approved_by", "candidate", "tier", "ts", "used_at", "result",
+                                         "purpose"}
     assert store.approval("nope") is None
 
 

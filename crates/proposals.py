@@ -22,7 +22,9 @@ the questions (prune) marks stale those whose slot is gone, whose playlist is go
 
 Michael reads every summary and result: songs are named "Artist – Title" and slots counted from 1, never raw ids.
 An unproven copy whose questions end without every slot accepted leaves its row in `review` saying why, never
-`failed` (reconcile would re-queue a failed row for a download nobody asked for).
+`failed` (reconcile would re-queue a failed row for a download nobody asked for). One whose every slot was accepted
+ends an external row (the upgrade of play-now's provisional copy) `ok`, naming the new song; a playlist row's rows
+follow their slots through reconcile.
 """
 from __future__ import annotations
 
@@ -242,10 +244,20 @@ def _settle(store, p: dict) -> None:
         return
     mine = [q for q in store.proposals(open_only=False) if q["kind"] == "unproven_copy" and q["wanted_id"] == w
             and q["new_song_id"] == p["new_song_id"]]
-    if any(q["decision"] is None for q in mine) or all(q["decision"] == "accepted" for q in mine):
+    if any(q["decision"] is None for q in mine):
         return
     row = store.find_wanted(w)
     if row is None or row["status"] != "review":
+        return
+    if all(q["decision"] == "accepted" for q in mine):
+        if row.get("external"):
+            # An external row's old song is play-now's provisional copy (fetch.copy_of): every slot that held it
+            # now holds the new copy, so the row is done and names it. The provisional file is not proven
+            # redundant, so it stays in the library, never trashed; the reason says where.
+            old = (store.verification(w) or {}).get("reference") or f"song {p['old_song_id']}"   # what verify compared
+            store.set_external_song(w, p["new_song_id"], False)
+            store.set_wanted_status(w, "ok", f"filed as {p['new_path']}; every slot now holds it (the earlier copy "
+                                             f"{old} stays in the library: not proven the same recording)")
         return
     declined = [q for q in mine if q["decision"] == "declined"]
     why = (f"declined replacement #{declined[-1]['id']}" if declined else

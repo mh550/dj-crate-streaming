@@ -336,9 +336,10 @@ def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: C
                 not_kept.__cause__ = e
         store.mark_imported(playlist_id, ordered)
         queued = {r["position"]: r for r in store.external_for_playlist(playlist_id)}
-        for m in matches:                           # a wanted row whose track is now in the library is done
-            r = queued.get(m.row.position)
-            if m.status == "matched" and r and norm(r["title"]) == norm(m.row.title) and r["status"] in ("needs_source", "review", "failed"):
+        for m in matches:                           # a wanted row whose track is now in the library is done,
+            r = queued.get(m.row.position)          # unless it has a library song already: then it is an upgrade
+            if (m.status == "matched" and r and norm(r["title"]) == norm(m.row.title) and not r.get("library_song_id")
+                    and r["status"] in ("needs_source", "review", "failed")):   # (play-now's provisional copy matched)
                 store.set_external_status(r["song_id"], "ok", f"in library: {m.song_id}")
         for m, lead in pending:
             ext = store.add_external_wanted(lead, m.row.title, album=m.row.album, duration_s=m.row.duration_s,

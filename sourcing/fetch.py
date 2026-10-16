@@ -40,7 +40,15 @@ when the filed song is another version of a song a tiered playlist holds, and th
 (crates.proposals.version_swaps), as he is about each slot of a copy kept beside the old one (unproven_copy). Asking
 never fails the fetch.
 
-    filed, Navidrome lists it ─┬─ not a copy upgrade ───────────────────────▶ ok
+Play-now (D20): Michael's tap is an approval for one fast copy; the worker fetches it with `score_tier="low"` (ranked
+and verified at low; the row keeps its tier) and `provisional=True`, which the external row records as it enters
+`sourcing`. Once Navidrome lists the file the row names that song (`library_song_id`, `provisional` 1) and goes back
+to `needs_source` as the upgrade ("provisional low copy filed as <rel>; upgrade at <tier> waits for approval", an
+`upgrade_queued` event). The upgrade is then an ordinary copy upgrade of the provisional song, approved by Michael:
+with proof it replaces the provisional file (trash), else both are kept and the row asks.
+
+    filed, Navidrome lists it ─┬─ provisional (play-now) ────────────────────▶ needs_source: the upgrade, queued
+                               ├─ not a copy upgrade ───────────────────────▶ ok
                                ├─ withdrawn (no tiered playlist holds it) ──▶ review, both copies kept
                                ├─ proven ─▶ replacement: repoint ─▶ trash ─▶ scan ─▶ done (else the worker resumes)
                                └─ not proven ─▶ review "kept beside …" (both copies stay)
@@ -154,13 +162,18 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
           tier: str | None = None, policy: QualityPolicy | None = None, download_timeout_s: float = 600, poll_s: float = 1.0,
           scan_timeout_s: float = 120, verifier=verify, filer: BeetsFiler | None = None,
           navidrome_db: Path | None = None, lookup=None, prefer: dict | None = None,
-          trash_root: Path | None = None) -> FetchResult:
+          trash_root: Path | None = None, score_tier: str | None = None, provisional: bool = False) -> FetchResult:
+    """`score_tier` ranks and verifies at that tier's policy and leaves the row's tier alone (unlike `tier`, which
+    re-tiers an external row). `provisional` (play-now, D20; external rows without a library song) files the copy
+    as provisional: see the module docstring."""
     music_root, downloads_root = Path(music_root), Path(downloads_root)
     row = store.find_wanted(wanted_id)
     if row is None:
         return FetchResult("missing", f"{wanted_id} is not in any enabled crate or the external queue")
     external = bool(row.get("external"))
     copy_id = copy_of(row)                 # the owned song this download would replace, None for a new file
+    if score_tier is not None:
+        check_tier(score_tier)
     if tier is not None and check_tier(tier) != row["tier"]:     # fact #7: a playlist row's tier is derived
         if not external:
             return FetchResult("refused", f"{wanted_id}: its tier comes from its playlists ({row['tier']})")
@@ -173,7 +186,8 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
                                "library and slskd's downloads are mounted)")
         if filer is None:
             return FetchResult("refused", "no beets filer configured (run --approve in the worker)")
-    policy = policy or TIERS[row["tier"]]
+    at = score_tier or row["tier"]         # what this download is ranked and verified at
+    policy = policy or TIERS[at]
 
     def set_status(status: str, reason: str | None = None) -> None:
         store.set_wanted_status(wanted_id, status, reason)
@@ -213,6 +227,17 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
             return FetchResult("verify", why, best, filed, explain=text)
         store.set_wanted_names(wanted_id, new.artist or "", new.title)      # what the library calls it now
         rel = filed.relative_to(music_root).as_posix()
+        if copy_id is None and external and (store.external(wanted_id) or {}).get("provisional"):
+            # Play-now's fast copy (the row says so from the moment its download started, so a re-check after a
+            # worker restart reads it too): it plays now, but it is not the row's file at its tier. The row stays
+            # queued as the upgrade, a copy of this song (copy_of), which waits for Michael's approval. It is never
+            # put in a playlist or proposed for a slot: only the upgrade may take a slot, through a replacement.
+            store.set_external_song(wanted_id, new.id, True)
+            set_status("needs_source", f"provisional low copy filed as {rel}; upgrade at {row['tier']} waits for approval")
+            store.log(None, wanted_id, "upgrade_queued",
+                      f"{rel} is a provisional low copy; upgrade at {row['tier']} waits for approval")
+            store.commit()
+            return FetchResult("ok", "filed (provisional); upgrade queued", best, filed, new.id, text)
         if copy_id is None:
             if external:
                 store.set_library_song(wanted_id, new.id)
@@ -310,8 +335,10 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
                                text)
         what = "blocked" if j["state"] == "blocked" else "continues in the worker"
         # The old song's rows still live (a playlist still holds it) wait for the job; reconcile leaves `review` alone
-        # and no second download is offered for them.
-        set_status("review", f"replacement #{j['id']} {j['state']}: {detail}")
+        # and no second download is offered for them. An external row the repoint settled (`ok`, naming the new
+        # song, replace._settle) is done whatever the later steps wait for.
+        if not (external and (store.external(wanted_id) or {}).get("status") == "ok"):
+            set_status("review", f"replacement #{j['id']} {j['state']}: {detail}")
         return FetchResult("ok", f"filed; replacement #{j['id']} {what} ({detail})", best, filed, new_id, text)
 
     status = row.get("status")
@@ -373,6 +400,8 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
             intent, expected = "version", None
             store.log(None, wanted_id, "pick", f"another version ({got.label or "no label"}) of {wanted.title}: {best.basename}")
 
+    if external and copy_id is None:          # what this download is for, recorded before it starts (D20)
+        store.set_provisional(wanted_id, provisional)
     set_status("sourcing", f"downloading {best.basename}")
     item = None                                                  # the library file, once beets has filed it
     try:
@@ -409,8 +438,8 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         extra = {"recording_id": rid, "lookup": lookup} if lookup is not None else {}    # see header_only in tests
         if intent == "version" and best.length_s:        # the peer's listing of this file, checked against what arrived
             extra["listed_length_s"] = best.length_s
-        vd = verifier(landed, expected, tier=row["tier"], reference=ref, intent=intent, **extra)   # still `sourcing`: not ours yet
-        store.set_verification(wanted_id, vd.as_dict(row["tier"]) | {"file": landed.name,
+        vd = verifier(landed, expected, tier=at, reference=ref, intent=intent, **extra)   # still `sourcing`: not ours yet
+        store.set_verification(wanted_id, vd.as_dict(at) | {"file": landed.name,
                                "reference": _rel(ref).as_posix() if ref is not None else None})
         if not vd.ok:
             landed.unlink(missing_ok=True)                      # our own download, not library material
