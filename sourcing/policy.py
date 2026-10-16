@@ -6,7 +6,11 @@ the policy for files that go on real systems (lossless preferred, 320 kbps floor
 """
 from __future__ import annotations
 
+import tomllib
 from dataclasses import dataclass, field
+from pathlib import Path
+
+from sourcing import identity
 
 
 @dataclass
@@ -34,6 +38,10 @@ class QualityPolicy:
     # Downloaded-file check (spec §3a): a file that isn't the quality it claims (transcode, padded bits,
     # upsampled) is rejected (True, crate) or accepted with a warning (False, the listening tiers).
     strict_verify: bool = True
+    # D16 version preferences (deploy/policy.toml): kinds favoured when picking a download, best first, and
+    # other versions an import may accept in place of the one a playlist row asked for.
+    prefer_versions: tuple[str, ...] = ()
+    accept_versions: tuple[str, ...] = ()
 
     LOSSLESS = {"flac", "wav", "aiff", "aif", "alac", "ape", "wv"}
 
@@ -50,21 +58,76 @@ class QualityPolicy:
         return ext.lower().lstrip(".") in self.LOSSLESS
 
 
-# Our own download speed through the VPN, bytes/s. Peers *report* upload speeds up to 61 MB/s (live, M4),
-# which made a 28 MB FLAC look as quick as a 5 MB file. 1 MB/s is an assumption until a real download measures it.
-OUR_DOWNLOAD_CAP_BPS = 1_000_000
+# The tiers (spec §1, D9) and the version preferences (D16) are Michael's settings, so they live in
+# deploy/policy.toml. Low/medium/high are for listening; crate is for files that go on real systems.
+POLICY_FILE = Path(__file__).resolve().parent.parent / "deploy" / "policy.toml"
 
-def _listening(**kw) -> QualityPolicy:
-    return QualityPolicy(allow=["flac", "wav", "aiff", "alac", "m4a", "mp3", "ogg", "opus"], deny=["wma", "ra", "mid"],
-                         download_cap_Bps=OUR_DOWNLOAD_CAP_BPS, strict_verify=False, **kw)   # fresh lists per tier
+_TIER_KEYS = {"allow": list, "deny": list, "min_lossy_bitrate": int, "speed_weight": (int, float),
+              "arrival_budget_s": (int, float), "download_cap_Bps": int, "strict_verify": bool}
+_VERSION_KEYS = {"prefer": "prefer_versions", "accept": "accept_versions"}
 
-# One setting, four values (spec §1, D9). Low/medium/high are for listening; crate is today's policy.
-TIERS: dict[str, QualityPolicy] = {
-    "low": _listening(name="low", min_lossy_bitrate=32, speed_weight=0.8, arrival_budget_s=60),
-    "medium": _listening(name="medium", min_lossy_bitrate=64, speed_weight=0.6, arrival_budget_s=60),
-    "high": _listening(name="high", min_lossy_bitrate=128, speed_weight=0.35, arrival_budget_s=300),
-    "crate": QualityPolicy(),
-}
+
+def _bad(path: Path, where: str, why: str) -> ValueError:
+    return ValueError(f"{path}: {where}: {why}")
+
+
+def _typed(path: Path, where: str, key: str, value, want) -> None:
+    ok = isinstance(value, want) and not (isinstance(value, bool) and want is not bool)
+    if not ok:
+        names = want.__name__ if isinstance(want, type) else "number"
+        raise _bad(path, f"{where}.{key}", f"expected {names}, got {value!r}")
+
+
+def load_policy(path: Path) -> dict[str, QualityPolicy]:
+    """Read [tiers.<name>] (in file order) and merge [versions.<name>] into the same tier.
+
+    Raises ValueError naming the file and the key for anything unexpected: a typo in Michael's file must stop
+    the start, not quietly fall back to a default.
+    """
+    path = Path(path)
+    try:
+        with path.open("rb") as f:
+            doc = tomllib.load(f)
+    except (OSError, tomllib.TOMLDecodeError) as e:
+        raise ValueError(f"{path}: cannot read: {e}") from e
+    for top in doc:
+        if top not in ("tiers", "versions"):
+            raise _bad(path, top, "unknown section (expected tiers, versions)")
+    tiers, versions = doc.get("tiers", {}), doc.get("versions", {})
+    out: dict[str, QualityPolicy] = {}
+    for name, table in tiers.items():
+        where = f"[tiers.{name}]"
+        if not isinstance(table, dict):
+            raise _bad(path, where, "expected a table")
+        for key in table:
+            if key not in _TIER_KEYS:
+                raise _bad(path, f"{where}.{key}", f"unknown key (expected {', '.join(_TIER_KEYS)})")
+        for key, want in _TIER_KEYS.items():
+            if key not in table:
+                raise _bad(path, f"{where}.{key}", "missing")
+            _typed(path, where, key, table[key], want)
+        for key in ("allow", "deny"):
+            if not all(isinstance(x, str) for x in table[key]):
+                raise _bad(path, f"{where}.{key}", f"expected a list of strings, got {table[key]!r}")
+        out[name] = QualityPolicy(name=name, **table)
+    for name, table in versions.items():
+        where = f"[versions.{name}]"
+        if name not in out:
+            raise _bad(path, where, f"no [tiers.{name}] to attach it to")
+        for key in table:
+            if key not in _VERSION_KEYS:
+                raise _bad(path, f"{where}.{key}", f"unknown key (expected {', '.join(_VERSION_KEYS)})")
+            words = table[key]
+            if not isinstance(words, list) or not all(isinstance(w, str) for w in words):
+                raise _bad(path, f"{where}.{key}", f"expected a list of words, got {words!r}")
+            for w in words:
+                if w not in identity.KINDS:
+                    raise _bad(path, f"{where}.{key}", f"unknown version word {w!r} (one of {', '.join(identity.KINDS)})")
+            setattr(out[name], _VERSION_KEYS[key], tuple(words))
+    return out
+
+
+TIERS: dict[str, QualityPolicy] = load_policy(POLICY_FILE)
 DEFAULT_TIER = "crate"
 IMPORT_TIER = "medium"      # D15 (Michael, 2026-10-15): new rows from import-playlist / seed-spotify, unless --tier
 DEFAULT_POLICY = TIERS[DEFAULT_TIER]
