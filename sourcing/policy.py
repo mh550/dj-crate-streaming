@@ -166,3 +166,18 @@ def check_stream(name: str) -> str:
     if name not in STREAM:
         raise ValueError(f"unknown stream {name!r} (one of {', '.join(STREAM)})")
     return name
+
+
+def tier_rank(name: str) -> int:
+    """Position in deploy/policy.toml's tier order (low < medium < high < crate); ValueError for an unknown tier."""
+    try:
+        return list(TIERS).index(name)
+    except ValueError:
+        raise ValueError(f"unknown tier {name!r} (one of {', '.join(TIERS)})") from None
+
+
+def max_tier(*names: str | None) -> str | None:
+    """The highest of the given tiers, ignoring None; None when there are none. A track's target is the max
+    over the playlists that hold it."""
+    named = [n for n in names if n is not None]
+    return max(named, key=tier_rank) if named else None

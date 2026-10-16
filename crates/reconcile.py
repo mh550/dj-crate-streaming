@@ -14,16 +14,16 @@ from dataclasses import dataclass, field
 from sourcing.policy import QualityPolicy, DEFAULT_POLICY
 from sourcing.scorer import Wanted
 from subsonic.client import Playlist, Song, SubsonicClient
+from . import attrs
 from .store import CrateStore
 
-CRATE_TAG = "#crate"
 # Name markers, for clients that can rename a playlist but not edit its comment
 # (most phone apps). "Disco Edits [crate]" or "🎛 Disco Edits" both count.
 NAME_MARKERS = ("[crate]", "🎛")
 
 
 def has_crate_tag(comment: str | None) -> bool:
-    return CRATE_TAG in (comment or "").lower()
+    return attrs.parse(comment).crate
 
 
 def has_name_marker(name: str | None) -> bool:
@@ -37,12 +37,7 @@ def is_marked(name: str | None, comment: str | None) -> bool:
 
 
 def with_crate_tag(comment: str | None, on: bool) -> str:
-    c = (comment or "").strip()
-    if on and not has_crate_tag(c):
-        return (c + " " + CRATE_TAG).strip()
-    if not on and has_crate_tag(c):
-        return " ".join(w for w in c.split() if w.lower() != CRATE_TAG)
-    return c
+    return attrs.write(comment, crate=on)
 
 
 def judge(song: Song, policy: QualityPolicy = DEFAULT_POLICY) -> tuple[str, str]:
