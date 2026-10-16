@@ -1,13 +1,15 @@
 """Guarded playlist index edits (M8 Task 6): Navidrome hides missing songs from getPlaylist but keeps their rows, and
 songIndexToRemove counts those hidden rows, so an edit by the visible index can remove the wrong song (measured fact 5).
 Every edit here runs against the fake Navidrome with its navidrome.db mirror, which reproduces that trap."""
+import http.client
 import sqlite3
+import urllib.error
 from contextlib import closing
 
 import pytest
 
 from crates import playlist_edit as pe
-from subsonic.client import SubsonicClient
+from subsonic.client import SubsonicClient, SubsonicError
 from subsonic.fake_server import FakeSubsonicServer
 
 
@@ -221,3 +223,102 @@ def test_config_reads_navidrome_db(monkeypatch):
     assert Config.from_env().navidrome_db is None
     monkeypatch.setenv("NAVIDROME_DB", "/srv/docker/navidrome/navidrome.db")
     assert Config.from_env().navidrome_db == "/srv/docker/navidrome/navidrome.db"
+
+
+# --- review fixes: each guard has a test that fails without it
+
+def _db_exec(db, sql, *args):
+    with closing(sqlite3.connect(db)) as con, con:
+        con.execute(sql, args)
+
+
+def test_a_gap_in_the_db_positions_is_refused(srv, db):
+    """Same ids in the same order, but positions 1,2,4: songIndexToRemove arithmetic would no longer match."""
+    _db_exec(db, "UPDATE playlist_tracks SET id = 4 WHERE playlist_id = 'pl-2' AND id = 3")
+    with pytest.raises(pe.PlaylistSkew, match="Chicago 86"):
+        pe.checked_entries(_client(srv), db, "pl-2")
+
+
+def test_a_db_row_the_api_still_shows_is_refused(srv, db):
+    """No missing song anywhere; the two views simply differ (the db read raced an edit)."""
+    _db_exec(db, "DELETE FROM playlist_tracks WHERE playlist_id = 'pl-2' AND id = 3")
+    with pytest.raises(pe.PlaylistSkew, match="Chicago 86"):
+        pe.checked_entries(_client(srv), db, "pl-2")
+
+
+def test_a_playlist_absent_from_the_db_is_refused(srv, db):
+    _db_exec(db, "DELETE FROM playlist WHERE id = 'pl-2'")
+    with pytest.raises(pe.PlaylistSkew, match="pl-2"):
+        pe.checked_entries(_client(srv), db, "pl-2")
+
+
+@pytest.mark.parametrize("exc", [http.client.IncompleteRead(b""), ValueError("bad JSON"), KeyError("playlist"),
+                                 sqlite3.OperationalError("database is locked"), urllib.error.URLError("timed out")])
+def test_repoint_keeps_going_after_any_error_in_one_playlist(srv, db, exc):
+    class Flaky(SubsonicClient):
+        def update_playlist(self, playlist_id, **kw):
+            if playlist_id == "pl-1":
+                raise exc
+            return super().update_playlist(playlist_id, **kw)
+
+    out = pe.repoint_everywhere(Flaky(srv.url, "demo", "demo"), db, "s3", "s9")
+    assert out["Disco Edits"].startswith("failed: ")
+    assert out["Chicago 86"] == "repointed"
+    assert _songs(srv, "pl-2") == ["s9", "s4", "s5"]
+
+
+def test_repoint_survives_a_db_error_looking_up_a_name(srv, db, monkeypatch):
+    real, calls = pe.open_ro, {"n": 0}
+
+    def flaky(path):
+        calls["n"] += 1
+        if calls["n"] == 2:                                                   # 1: references; 2: pl-1's name
+            raise sqlite3.OperationalError("database is locked")
+        return real(path)
+
+    monkeypatch.setattr(pe, "open_ro", flaky)
+    out = pe.repoint_everywhere(_client(srv), db, "s3", "s9")
+    assert out["pl-1"].startswith("failed: ")
+    assert out["Chicago 86"] == "repointed"
+    assert _songs(srv, "pl-1") == ["s1", "s2", "s3"]
+
+
+def test_repoint_reports_a_db_playlist_the_api_does_not_have(srv, db):
+    # pl-0 sorts first: the fake rewrites its mirror (dropping Ghost) on the first edit
+    _db_exec(db, "INSERT INTO playlist (id, name) VALUES ('pl-0', 'Ghost')")
+    _db_exec(db, "INSERT INTO playlist_tracks VALUES (1, 'pl-0', 's3')")
+    out = pe.repoint_everywhere(_client(srv), db, "s3", "s9")
+    assert out["Ghost"].startswith("failed: ")
+    assert out["Disco Edits"] == out["Chicago 86"] == "repointed"
+
+
+def test_a_transport_error_on_the_readback_is_edit_not_kept(srv, db):
+    class LostReadback(SubsonicClient):
+        reads = 0
+
+        def playlist(self, playlist_id):
+            LostReadback.reads += 1
+            if LostReadback.reads == 2:                                       # 1: the check; 2: the readback
+                raise SubsonicError(0, "HTTP 502 from getPlaylist")
+            return super().playlist(playlist_id)
+
+    with pytest.raises(pe.EditNotKept, match="502"):
+        pe.rewrite(LostReadback(srv.url, "demo", "demo"), db, "pl-2", ["s3", "s4", "s5"], ["s9", "s4", "s5"])
+    assert _songs(srv, "pl-2") == ["s9", "s4", "s5"]                          # the write did happen
+
+
+def test_another_users_playlist_is_never_edited(srv, db):
+    """Runbook: never touch the amperfy account's playlists, even though Navidrome lets an admin edit them."""
+    c = _client(srv)
+    srv.state.playlists["pl-1"]["owner"] = "amperfy"
+    srv.state.sync()
+    assert c.playlist("pl-1").owner == "amperfy"
+    out = pe.repoint_everywhere(c, db, "s3", "s9")
+    assert out == {"Disco Edits": "refused: owned by amperfy", "Chicago 86": "repointed"}
+    with pytest.raises(pe.NotOwned):
+        pe.replace_slot(c, db, "pl-1", 2, "s3", "s9")
+    with pytest.raises(pe.NotOwned):
+        pe.rewrite(c, db, "pl-1", ["s1", "s2", "s3"], ["s1", "s2", "s9"])
+    assert _updates(srv, "pl-1") == []
+    assert pe.references(db, "s3") == [("pl-1", 3)]                          # stays referenced: never trashed
+    assert issubclass(pe.NotOwned, pe.EditRefused)

@@ -16,7 +16,6 @@ from contextlib import closing
 from pathlib import Path
 
 from scripts.export_playlists import open_ro
-from subsonic.client import SubsonicError
 
 
 class EditRefused(Exception):
@@ -35,6 +34,10 @@ class NotEditable(EditRefused):
     """A smart playlist: Navidrome fills it from its rules, its tracks are not ours to edit."""
 
 
+class NotOwned(EditRefused):
+    """Another user's playlist (runbook: never touch the amperfy account's). Navidrome lets an admin edit it; we don't."""
+
+
 class StaleSlot(EditRefused):
     """The slot the caller named no longer holds the song the caller expected."""
 
@@ -50,7 +53,10 @@ def _smart(rules) -> bool:
 
 def _checked(client, db: Path, playlist_id: str) -> tuple[str, list[str]]:
     """(name, visible ids) once both views agree; see checked_entries."""
-    seen = [e.id for e in client.playlist(playlist_id).entries]
+    pl = client.playlist(playlist_id)
+    if pl.owner != client.user:
+        raise NotOwned(f"owned by {pl.owner or '?'}")
+    seen = [e.id for e in pl.entries]
     with closing(open_ro(db)) as con:
         row = con.execute("SELECT name, rules FROM playlist WHERE id = ?", (playlist_id,)).fetchone()
         rows = con.execute(
@@ -79,7 +85,7 @@ def _checked(client, db: Path, playlist_id: str) -> tuple[str, list[str]]:
 def checked_entries(client, db: Path, playlist_id: str) -> list[str]:
     """The visible song ids of a playlist, safe to edit by index: raises PlaylistSkew unless navidrome.db's
     playlist_tracks for it, in position order, holds the same ids and every one is a present media_file row;
-    NotEditable for a smart playlist. The two reads are not atomic: an edit in between shows as a skew (a refusal)."""
+    NotEditable for a smart playlist; NotOwned unless getPlaylist's owner is the client's own user. The two reads are not atomic: an edit in between shows as a skew (a refusal)."""
     return _checked(client, db, playlist_id)[1]
 
 
@@ -106,7 +112,8 @@ def rewrite(client, db: Path, playlist_id: str, before: list[str], after: list[s
     """Turn the playlist from `before` into `after`. The current entries must equal `before` (else PlaylistChanged).
     Subsonic removes by index and only appends, so ONE updatePlaylist removes from the first differing index to the end
     and re-adds the tail of `after` (Navidrome applies it in one transaction, removals first). The readback must equal
-    `after`, else EditNotKept."""
+    `after`, else EditNotKept. Once the write is sent, any failure (of the write or of the readback) is EditNotKept:
+    whether it landed is unknown, so the caller has to look before acting on it."""
     before, after = list(before), list(after)
     name, cur = _checked(client, db, playlist_id)
     if cur != before:
@@ -117,11 +124,14 @@ def rewrite(client, db: Path, playlist_id: str, before: list[str], after: list[s
     k = next((i for i, (a, b) in enumerate(zip(before, after)) if a != b), min(len(before), len(after)))
     if after[k:]:
         _present(db, after[k:], name)
-    client.update_playlist(playlist_id, remove_indexes=list(range(k, len(before))), add_song_ids=after[k:])
+    try:
+        client.update_playlist(playlist_id, remove_indexes=list(range(k, len(before))), add_song_ids=after[k:])
+    except Exception as e:
+        raise EditNotKept(f"{name!r}: the edit failed and may or may not have landed: {e!r}") from e
     try:
         got = _checked(client, db, playlist_id)[1]
-    except EditRefused as e:
-        raise EditNotKept(f"{name!r}: edited, but the readback is not checkable: {e}") from e
+    except Exception as e:
+        raise EditNotKept(f"{name!r}: edited, but the readback failed: {e!r}") from e
     if got != after:
         raise EditNotKept(f"{name!r}: edited, but the readback differs ({len(after)} entries written, {len(got)} read)")
 
@@ -140,18 +150,20 @@ def _remap(entries: list[str], old: str, new: str) -> list[str]:
 def repoint_everywhere(client, db: Path, old: str, new: str) -> dict[str, str]:
     """Every playlist that holds `old` (navidrome.db, so not only crates and not only tiered playlists): old→new in
     place. Returns {playlist name: "repointed" | "skipped: smart playlist" | "refused: <why>" | "failed: <why>"};
-    "failed" means a write may have happened (EditNotKept, a transport error). A second playlist with the same name is
-    keyed "<name> (<id>)". One playlist's refusal does not stop the others; the caller trashes nothing unless
-    references(db, old) is empty afterwards."""
+    "refused" wrote nothing (another user's playlist reads "refused: owned by <owner>"); "failed" is any other error,
+    and a write may have happened. A second playlist with the same name is keyed "<name> (<id>)", one whose name
+    cannot be read is keyed by its id. One playlist's error does not stop the others; the caller trashes nothing
+    unless references(db, old) is empty afterwards."""
     if old == new:
         raise ValueError(f"repoint {old} to itself")
     out: dict[str, str] = {}
     for pid in dict.fromkeys(p for p, _ in references(db, old)):
-        with closing(open_ro(db)) as con:
-            row = con.execute("SELECT name FROM playlist WHERE id = ?", (pid,)).fetchone()
-        name = (row[0] if row else None) or pid
-        key = name if name not in out else f"{name} ({pid})"
+        key = pid
         try:
+            with closing(open_ro(db)) as con:
+                row = con.execute("SELECT name FROM playlist WHERE id = ?", (pid,)).fetchone()
+            name = (row[0] if row else None) or pid
+            key = name if name not in out else f"{name} ({pid})"
             before = checked_entries(client, db, pid)
             rewrite(client, db, pid, before, _remap(before, old, new))
             out[key] = "repointed"
@@ -159,8 +171,8 @@ def repoint_everywhere(client, db: Path, old: str, new: str) -> dict[str, str]:
             out[key] = "skipped: smart playlist"
         except EditRefused as e:
             out[key] = f"refused: {e}"
-        except (EditNotKept, SubsonicError, OSError) as e:
-            out[key] = f"failed: {e}"
+        except Exception as e:                    # any error: recorded, the remaining playlists are still tried
+            out[key] = f"failed: {e!r}" if not isinstance(e, EditNotKept) else f"failed: {e}"
     return out
 
 
