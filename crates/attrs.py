@@ -74,7 +74,7 @@ def _remove(comment: str, drop) -> str:
 
 
 def _append(comment: str, token: str) -> str:
-    return comment + ("" if not comment or comment[-1].isspace() else " ") + token
+    return comment + ("" if not comment or comment.endswith("\n") else " ") + token
 
 
 def write(comment: str | None, *, crate: bool | None = None, tier: str | None | object = UNSET) -> str:

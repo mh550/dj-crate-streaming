@@ -4,7 +4,7 @@ import pytest
 from crates.attrs import Attrs, parse, write
 from sourcing.policy import max_tier, tier_rank
 
-CASES = ["Late sets 🎛 — 120–124 BPM", "line one\nline two\n", "  leading spaces", "tab\tseparated",
+CASES = ["trailing space ", "trailing tab\t", "Late sets 🎛 — 120–124 BPM", "line one\nline two\n", "  leading spaces", "tab\tseparated",
          "naïve café ガ", "x" * 1000 + " end", ""]
 
 
