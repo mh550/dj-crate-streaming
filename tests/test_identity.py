@@ -448,3 +448,20 @@ def test_a_shared_recording_id_with_different_labels_is_two_versions(a, b):
     r = "bb31a869-0000-0000-0000-000000000000"
     assert not same_version(Copy("X", a, 210, recording_id=r), Copy("X", b, 211, recording_id=r))
     assert not same_version(Copy("X", a, None, recording_id=r), Copy("X", b, 211, recording_id=r))
+
+
+# ---- M7 fix round 2, ruling 2: more placeholder spellings ----
+
+@pytest.mark.parametrize("artist, title", [("VA", "Intro"), ("Various", "Intro"), ("Unknown", "Intro"),
+                                           ("<unknown>", "Intro"), ("va", "Intro"), ("<Unknown>", "Intro"),
+                                           ("X", "Audio Track"), ("X", "Untitled Track"), ("X", "No Title"),
+                                           ("X", "Audio Track 03"), ("X", "Untitled Track 12"), ("X", "No Title 2")])
+def test_more_placeholders(artist, title):
+    assert is_placeholder(artist, title)
+    assert not same_version(Copy(artist, title, 60), Copy(artist, title, 61))
+
+
+def test_real_names_are_not_placeholders():
+    for artist, title in [("Prince", "1999"), ("X", "Intro"), ("Vanessa", "Intro"), ("Various Cruelties", "Intro"),
+                          ("X", "No Title Needed"), ("X", "Audio Tracks of My Life")]:
+        assert not is_placeholder(artist, title), (artist, title)

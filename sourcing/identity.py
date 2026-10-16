@@ -296,10 +296,12 @@ def song_key(artist: str | None, title: str | None) -> str:
 
 # What taggers and Navidrome put in an empty field (scripts.tag_rules.blank uses this set too).
 PLACEHOLDERS = frozenset({"", "[unknown artist]", "unknown artist", "[unknown album]", "unknown album"})
-_NO_ARTIST = frozenset(loose(p) for p in PLACEHOLDERS) | {"variousartists"}
-# A title that is only a slot: "Track 01", "07", "AUDIO_0003.wav" (the extension is already peeled as junk).
+_NO_ARTIST = frozenset(loose(p) for p in PLACEHOLDERS) | {"variousartists", "various", "va", "unknown"}   # "<unknown>" too
+# A title that is only a slot: "Track 01", "07", "AUDIO_0003.wav" (the extension is already peeled as junk),
+# "Audio Track 03", "Untitled Track", "No Title".
 # Four-digit numbers stay titles ("1999"); a real two-digit title ("22") is missed, which only leaves a duplicate.
-_NO_TITLE = re.compile(r"(?:track|audio|piste|titel|untitled|unknown(?:title|track)?)\d*|\d{0,3}")
+_NO_TITLE = re.compile(r"(?:(?:audio|untitled)?track|audio|piste|titel|untitled|notitle|unknown(?:title|track)?)\d*"
+                       r"|\d{0,3}")
 
 
 def is_placeholder(artist: str | None, title: str | None) -> bool:
