@@ -1,0 +1,4323 @@
+# Identity backfill: proposed MusicBrainz ids
+
+## What this is
+
+For every audio file in the library, a proposed MusicBrainz recording id (`mb_trackid`), work id (`mb_workid`) and AcoustID id (`acoustid_id`), each only where the file has none. Nothing has been written: this report and `identity-proposal.json` are the proposal. A recording is proposed only when it agrees with the file on lead artist, title, version label and length (±4 s).
+
+Then `apply` writes the accepted rows: only the id fields, only empty ones, never over a value. `revert` undoes it. By default `apply` takes the classes accepted below (confirmed, isrc, acoustid).
+
+- To choose classes: `apply --classes confirmed,isrc,acoustid,search identity-proposal.json`.
+- To keep one row out: set `"skip": true` on it in the JSON.
+- To pick a candidate on an ambiguous row: set `"choose": "<mbid>"` on it in the JSON. Only one of that row's listed candidates counts.
+
+## Counts
+
+| Class | Files |
+|---|---:|
+| confirmed | 77 |
+| isrc | 172 |
+| acoustid | 0 |
+| search | 239 |
+| ambiguous | 116 |
+| conflict | 24 |
+| none | 203 |
+| error | 0 |
+| **all** | 831 |
+
+## confirmed (77)
+
+The file already has a recording id. MusicBrainz agrees on the artist, title, version label and length (±4 s). Only a missing work id is proposed. Accepted by default.
+
+- **AYYBO – NEW DANCE** (3:23)
+  - file: `AYYBO/NEW DANCE (2022)/01 - NEW DANCE.flac`
+  - recording: NEW DANCE [f36bf8f4](https://musicbrainz.org/recording/f36bf8f4-f681-4702-b9c2-8a26a0a3e5d2) · 3:23
+  - why: MusicBrainz 3:23 vs file 3:23
+- **Amral's Trinidad Cavaliers Steel Orchestra – 90% of Me Is You** (3:32)
+  - file: `Amral's Trinidad Cavaliers Steel Orchestra/Calypsoul 70 (2008)/11 - 90% of Me Is You.mp3`
+  - writes: 90% of Me Is You [f878a9b7](https://musicbrainz.org/recording/f878a9b7-bd14-41c4-a7b0-9dcf6c74c8bb) · 3:32 · work [da9dc747](https://musicbrainz.org/work/da9dc747-e1aa-46ac-8250-f14aa294d3c0)
+  - why: MusicBrainz 3:32 vs file 3:32
+- **Aretha Franklin – Day Dreaming** (4:00)
+  - file: `Aretha Franklin/Young, Gifted and Black (1993)/02 - Day Dreaming.mp3`
+  - writes: Day Dreaming [27b46f34](https://musicbrainz.org/recording/27b46f34-959a-416a-a8bb-ca55ac961ee9) · 4:00 · work [7c7dd19e](https://musicbrainz.org/work/7c7dd19e-5495-4c51-8ee1-b2b6a1a42aac)
+  - why: MusicBrainz 4:00 vs file 4:00; MusicBrainz merged it into 1a663707-4e6a-49e9-a50e-d9c98755c1dd
+- **Average White Band – When Will You Be Mine** (4:20)
+  - file: `Average White Band/The Very Best of the Average White Band (1996)/05 - When Will You Be Mine.mp3`
+  - recording: When Will You Be Mine [0f6ab74e](https://musicbrainz.org/recording/0f6ab74e-a35d-469b-91de-2af118603fa7) · 4:21
+  - why: MusicBrainz 4:21 vs file 4:20
+- **Bahamadia – Rugged Ruff** (3:11)
+  - file: `Bahamadia/Kollage/00 - Rugged Ruff.m4a`
+  - recording: Rugged Ruff [dc0dca94](https://musicbrainz.org/recording/dc0dca94-abe5-48a4-ac75-5f3810b617ae) · 3:08
+  - why: MusicBrainz 3:08 vs file 3:11
+- **Beastie Boys – Girls** (2:14)
+  - file: `Beastie Boys/Licensed to Ill (1986)/06 - Girls.flac`
+  - writes: Girls [f129d284](https://musicbrainz.org/recording/f129d284-367d-47f0-bf75-b1a752a100ce) · 2:14 · work [08a62558](https://musicbrainz.org/work/08a62558-7757-3834-bcab-d4cfa3e99005)
+  - why: MusicBrainz 2:14 vs file 2:14
+- **Buckshot LeFonque – I Know Why The Caged Bird Sings** (8:06)
+  - file: `Buckshot LeFonque/Buckshot LeFonque (1994)/03 - I Know Why The Caged Bird Sings.mp3`
+  - writes: I Know Why the Caged Bird Sings [19748e7a](https://musicbrainz.org/recording/19748e7a-f45e-4de6-856e-bca600935e0a) · 8:05 · work [9c70d4ba](https://musicbrainz.org/work/9c70d4ba-f10b-381d-8e49-69c0d199382a)
+  - why: MusicBrainz 8:05 vs file 8:06
+- **Buckshot LeFonque – I Know Why the Caged Bird Sings** (8:04)
+  - file: `Buckshot LeFonque/Buckshot Lefonque (1994)/03 - I Know Why the Caged Bird Sings.flac`
+  - writes: I Know Why the Caged Bird Sings [19748e7a](https://musicbrainz.org/recording/19748e7a-f45e-4de6-856e-bca600935e0a) · 8:05 · work [9c70d4ba](https://musicbrainz.org/work/9c70d4ba-f10b-381d-8e49-69c0d199382a)
+  - why: MusicBrainz 8:05 vs file 8:04
+- **Chick Corea and Return to Forever – Spain** (9:51)
+  - file: `Chick Corea, Return to Forever/Light as a Feather (1973)/06 - Spain.mp3`
+  - writes: Spain [fe291c04](https://musicbrainz.org/recording/fe291c04-a155-4e6d-bc79-d677626766af) · 9:53 · work [a17b1710](https://musicbrainz.org/work/a17b1710-7400-38e9-a4aa-32e09f28a103)
+  - why: MusicBrainz 9:53 vs file 9:51
+- **Chloé Caillet – Doudou (Edit)** (5:33)
+  - file: `Chloé Caillet/Doudou (Edit) (2022)/01 - Doudou (Edit).flac`
+  - recording: Doudou (Edit) [6ab3f61c](https://musicbrainz.org/recording/6ab3f61c-468b-47eb-b905-6fd070dfd2c8) · 5:32
+  - why: MusicBrainz 5:32 vs file 5:33
+- **Chuck Mangione – Hide & Seek (Ready or Not Here I Come)** (6:26)
+  - file: `Chuck Mangione/Feels So Good (1977)/04 - Hide & Seek (Ready or Not Here I Come).flac`
+  - recording: Hide & Seek (Ready or Not Here I Come) [ca2154ea](https://musicbrainz.org/recording/ca2154ea-ac11-4bb4-8ae1-32cc7226d6af) · 6:25
+  - why: MusicBrainz 6:25 vs file 6:26
+- **Chuck Mangione – The XIth Commandment** (6:37)
+  - file: `Chuck Mangione/Feels So Good (1977)/06 - The XIth Commandment.mp3`
+  - recording: The XIth Commandment [34e38fda](https://musicbrainz.org/recording/34e38fda-bc29-48d1-b384-d68264f008c5) · 6:37
+  - why: MusicBrainz 6:37 vs file 6:37
+- **Common Saints – Summer Sun** (4:49)
+  - file: `Common Saints/Idol Eyes EP (2020)/03 - Summer Sun.mp3`
+  - recording: Summer Sun [6de8c355](https://musicbrainz.org/recording/6de8c355-b6ee-4e2b-9632-d659a48bdf86) · 4:49
+  - why: MusicBrainz 4:49 vs file 4:49
+- **Raphael Saadiq – Still Ray** (3:03)
+  - file: `Compilations/Intuition (1981)/04 - Still Ray.flac`
+  - recording: Still Ray [9f3a237c](https://musicbrainz.org/recording/9f3a237c-db4f-4287-92c3-c5b39cf29270) · 3:03
+  - why: MusicBrainz 3:03 vs file 3:03
+- **Weldon Irvine – Don't You Worry 'Bout a Thing** (5:54)
+  - file: `Compilations/Le Top De La Disco (1989)/02 - Don't You Worry 'Bout a Thing.mp3`
+  - writes: Don't You Worry 'Bout a Thing [2b0ea28a](https://musicbrainz.org/recording/2b0ea28a-e1e2-4784-bcbb-91e25ec35617) · 5:55 · work [753895b4](https://musicbrainz.org/work/753895b4-2657-3cb6-85f7-07a2aa21b034)
+  - why: MusicBrainz 5:55 vs file 5:54
+- **Daft Punk – Voyager** (3:48)
+  - file: `Daft Punk/Discovery (2001)/10 - Voyager.1.flac`
+  - writes: Voyager [e1fe1d12](https://musicbrainz.org/recording/e1fe1d12-dac2-4325-ae1b-25e0ef06b998) · 3:48 · work [126676fd](https://musicbrainz.org/work/126676fd-9f48-3d21-9ce4-701a132ad82d)
+  - why: MusicBrainz 3:48 vs file 3:48
+- **Daft Punk – Give Life Back to Music** (4:35)
+  - file: `Daft Punk/Random Access Memories (2013)/01 - Give Life Back to Music.mp3`
+  - writes: Give Life Back to Music [0c871a4a](https://musicbrainz.org/recording/0c871a4a-efdf-47f8-98c2-cc277f806d2f) · 4:34 · work [d0f702f5](https://musicbrainz.org/work/d0f702f5-2aaa-4a89-ad31-e28114c251ac)
+  - why: MusicBrainz 4:34 vs file 4:35
+- **Daft Punk – Touch** (8:19)
+  - file: `Daft Punk/Random Access Memories (2013)/07 - Touch.mp3`
+  - recording: Touch [2c718ee9](https://musicbrainz.org/recording/2c718ee9-ad54-4016-ae43-e8df5ea1b4e1) · 8:18 · has work [91d28a44](https://musicbrainz.org/work/91d28a44-98b0-49cc-baa5-1895c6bffe63)
+  - why: MusicBrainz 8:18 vs file 8:19
+- **Dan Hartman – Countdown / This Is It** (14:11)
+  - file: `Dan Hartman/Instant Replay (1978)/02 - Countdown _ This Is It.mp3`
+  - recording: Countdown / This Is It [d2cc3304](https://musicbrainz.org/recording/d2cc3304-75e1-49f5-a967-a8d8919057b0) · 14:09
+  - why: MusicBrainz 14:09 vs file 14:11; 2 works, none proposed
+- **Dan Hartman – Love Is a Natural** (6:18)
+  - file: `Dan Hartman/Instant Replay (1978)/05 - Love Is a Natural.mp3`
+  - recording: Love Is a Natural [115a08a8](https://musicbrainz.org/recording/115a08a8-703d-45b9-bc5d-aac5b912af00) · 6:18 · has work [4ff70d01](https://musicbrainz.org/work/4ff70d01-2061-4d67-a44a-62c90c8c2ad9)
+  - why: MusicBrainz 6:18 vs file 6:18
+- **Davishmar – a rose blooms in chaos** (1:57)
+  - file: `Davishmar/A Rose Blooms in Chaos (2022)/01 - a rose blooms in chaos.flac`
+  - recording: a rose blooms in chaos [10a658cf](https://musicbrainz.org/recording/10a658cf-ce06-4bcd-8e46-96ee608aa1f2) · 1:57
+  - why: MusicBrainz 1:57 vs file 1:57
+- **Dawn Penn – Chilling** (4:34)
+  - file: `Dawn Penn/Come Again (1996)/11 - Chilling.mp3`
+  - recording: Chilling [9a9cc9c3](https://musicbrainz.org/recording/9a9cc9c3-487d-4407-80d0-1f7d089b665a) · 4:33
+  - why: MusicBrainz 4:33 vs file 4:34
+- **Digable Planets – Jettin’** (4:39)
+  - file: `Digable Planets/Blowout Comb (1994)/04 - Jettin’.flac`
+  - writes: Jettin’ [b8c58cfc](https://musicbrainz.org/recording/b8c58cfc-5b6a-4d25-9d64-b9ef9e0555d3) · 4:39 · work [a1d51cf5](https://musicbrainz.org/work/a1d51cf5-33e1-487b-9ab4-ac15ecd04082)
+  - why: MusicBrainz 4:39 vs file 4:39
+- **Donald Byrd – The Dude** (7:50)
+  - file: `Donald Byrd/Early Byrd_ the Best of the Jazz Soul Years (1993)/08 - The Dude.mp3`
+  - writes: The Dude [61715b64](https://musicbrainz.org/recording/61715b64-4233-4fde-8713-767147565090) · 7:49 · work [a7f96902](https://musicbrainz.org/work/a7f96902-e030-4d3a-9439-4fc180d5fc1f)
+  - why: MusicBrainz 7:49 vs file 7:50
+- **Donald Byrd – Woman of the World** (6:51)
+  - file: `Donald Byrd/Street Lady (1973)/06 - Woman of the World.mp3`
+  - recording: Woman of the World [ea2a0ac4](https://musicbrainz.org/recording/ea2a0ac4-8cb0-4427-9211-8e8f69a4e6a0) · 6:51
+  - why: MusicBrainz 6:51 vs file 6:51
+- **D’Angelo – I Found My Smile Again (radio edit)** (4:00)
+  - file: `D’Angelo/I Found My Smile Again (2008)/01 - I Found My Smile Again (radio edit).flac`
+  - recording: I Found My Smile Again (radio edit) [87eba5d2](https://musicbrainz.org/recording/87eba5d2-34e4-451a-b766-4203202a5816) · 4:00
+  - why: MusicBrainz 4:00 vs file 4:00
+- **D’Angelo – Greatdayndamornin’ / Booty** (7:36)
+  - file: `D’Angelo/Voodoo (2015)/04 - Greatdayndamornin’ _ Booty.mp3`
+  - recording: Greatdayndamornin’ / Booty [ac766099](https://musicbrainz.org/recording/ac766099-9991-4b7f-a2ee-e6f9fe2257e6) · 7:35 · has work [096e6ec4](https://musicbrainz.org/work/096e6ec4-a008-3ef6-8986-a5ce76a6adfb)
+  - why: MusicBrainz 7:35 vs file 7:36
+- **Eagles – I Can't Tell You Why** (4:55)
+  - file: `Eagles/The Long Run (2013 Remaster) (1979)/02 - I Can't Tell You Why.mp3`
+  - writes: I Can’t Tell You Why [53fad7e6](https://musicbrainz.org/recording/53fad7e6-0b45-4fdf-ae65-53da69546783) · 4:55 · work [88a1a4e3](https://musicbrainz.org/work/88a1a4e3-f859-3e3a-8de2-c026090a0297)
+  - why: MusicBrainz 4:55 vs file 4:55
+- **Earth, Wind & Fire – Devotion** (4:49)
+  - file: `Earth, Wind & Fire/The Essential Earth, Wind & Fire (2002)/03 - Devotion.mp3`
+  - writes: Devotion [4405aaab](https://musicbrainz.org/recording/4405aaab-d457-4508-937d-77e19ecbc223) · 4:50 · work [498499f8](https://musicbrainz.org/work/498499f8-5a38-4bf4-9f8d-b25bdcf10879)
+  - why: MusicBrainz 4:50 vs file 4:49
+- **George Benson – The World Is a Ghetto** (9:43)
+  - file: `George Benson/In Flight (1977)/03 - The World Is a Ghetto.flac`
+  - writes: The World Is a Ghetto [fc3132d3](https://musicbrainz.org/recording/fc3132d3-0cbc-48ef-9cda-089e62ee2674) · 9:43 · work [bc7129d1](https://musicbrainz.org/work/bc7129d1-68ee-4f74-906e-77557fd773fe)
+  - why: MusicBrainz 9:43 vs file 9:43
+- **George Benson – Shape of Things to Come** (5:17)
+  - file: `George Benson/Shape of Things to Come (1969)/03 - Shape of Things to Come.mp3`
+  - recording: Shape of Things to Come [1c30b44b](https://musicbrainz.org/recording/1c30b44b-8c0a-41a0-9334-3592fd6e0096) · 5:16 · has work [314840ee](https://musicbrainz.org/work/314840ee-7bba-4d1d-9e3b-42d5937af260)
+  - why: MusicBrainz 5:16 vs file 5:17
+- **George Benson – Shape of Things That Are and Were** (5:49)
+  - file: `George Benson/Shape of Things to Come (1969)/06 - Shape of Things That Are and Were.mp3`
+  - writes: Shape of Things That Are and Were [3303fbd8](https://musicbrainz.org/recording/3303fbd8-6ed5-47a7-8021-6503e48a39af) · 5:48 · work [5a99c8d8](https://musicbrainz.org/work/5a99c8d8-c17b-4424-bb5a-f3dd63e2f396)
+  - why: MusicBrainz 5:48 vs file 5:49
+- **George Benson – Footin’ It** (4:22)
+  - file: `George Benson/The Shape Of Things To Come (1968)/01 - Footin’ It.flac`
+  - writes: Footin’ It [0e3bb72e](https://musicbrainz.org/recording/0e3bb72e-9828-4eb1-a4e3-1ee70f3fff02) · 4:25 · work [cf2d3865](https://musicbrainz.org/work/cf2d3865-2d1a-42f9-9307-e4581e305f49)
+  - why: MusicBrainz 4:25 vs file 4:22
+- **Herb Alpert – Aranjuez (mon amour)** (6:43)
+  - file: `Herb Alpert/Rise (1979)/08 - Aranjuez (mon amour).mp3`
+  - writes: Aranjuez (Mon amour) [2f9f850a](https://musicbrainz.org/recording/2f9f850a-f0d7-4cf2-93fe-e4929abf16a9) · 6:42 · work [6815e26f](https://musicbrainz.org/work/6815e26f-f6b2-30f0-962b-419d35fc2091)
+  - why: MusicBrainz 6:42 vs file 6:43
+- **HolyBrune – Fair Game** (3:26)
+  - file: `HolyBrune/High Hopes (2026)/04 - Fair Game.mp3`
+  - recording: Fair Game [3b709a79](https://musicbrainz.org/recording/3b709a79-4533-4d05-8770-b5afa6edd3ba) · 3:25
+  - why: MusicBrainz 3:25 vs file 3:26
+- **J.J. Cale – Magnolia** (3:25)
+  - file: `J.J. Cale/The Very Best of J.J. Cale (1997)/03 - Magnolia.mp3`
+  - writes: Magnolia [68240fc0](https://musicbrainz.org/recording/68240fc0-c37a-46d6-8311-81cf0588bbe9) · 3:25 · work [4249fd80](https://musicbrainz.org/work/4249fd80-4fa0-44c4-af80-3e2b3b650e3f)
+  - why: MusicBrainz 3:25 vs file 3:25
+- **Jaco Pastorius – Portrait of Tracy** (2:23)
+  - file: `Jaco Pastorius/Jaco Pastorius/00 - Portrait of Tracy.m4a`
+  - writes: Portrait of Tracy [b5b454f7](https://musicbrainz.org/recording/b5b454f7-a6a2-48ba-bb3d-3b4e8d30d672) · 2:22 · work [752d581e](https://musicbrainz.org/work/752d581e-a84a-3027-a6c3-2a67668b152a)
+  - why: MusicBrainz 2:22 vs file 2:23
+- **Jamiroquai – Alright** (4:24)
+  - file: `Jamiroquai/Travelling Without Moving (2013)/05 - Alright.mp3`
+  - writes: Alright [2f50a27e](https://musicbrainz.org/recording/2f50a27e-1352-4e93-ac08-98859c1714d6) · 4:25 · work [fcb7952a](https://musicbrainz.org/work/fcb7952a-7918-3854-a575-0e1baa16d7de)
+  - why: MusicBrainz 4:25 vs file 4:24
+- **Chico DeBarge – Soopaman Lover (Street version)** (3:38)
+  - file: `Jamiroquai/Virtual Insanity (Bklava Remix) (2022)/01 - Soopaman Lover (Street version).mp3`
+  - recording: Soopaman Lover (Street version) [c2d12186](https://musicbrainz.org/recording/c2d12186-d0d5-4c74-85a7-afe77ba40a5d) · 3:41
+  - why: MusicBrainz 3:41 vs file 3:38
+- **Jill Scott – Golden** (3:52)
+  - file: `Jill Scott/Beautifully Human_ Words and Sounds, Volume 2 (2004)/03 - Golden.mp3`
+  - writes: Golden [1c3fc56e](https://musicbrainz.org/recording/1c3fc56e-3dbc-47df-a3e0-941c9e76a1cb) · 3:51 · work [10dc9ddf](https://musicbrainz.org/work/10dc9ddf-b95f-4b38-9a12-dda406643304)
+  - why: MusicBrainz 3:51 vs file 3:52
+- **Joe Henderson – Blue Bossa** (8:02)
+  - file: `Joe Henderson/Page One (1963)/01 - Blue Bossa.mp3`
+  - writes: Blue Bossa [2aab10ef](https://musicbrainz.org/recording/2aab10ef-8dee-4be1-af7a-6e1c48f7cb1d) · 8:01 · work [58039a99](https://musicbrainz.org/work/58039a99-14fa-3705-bbef-d098e14b219b)
+  - why: MusicBrainz 8:01 vs file 8:02
+- **Julian Lage – Word for Word** (3:16)
+  - file: `Julian Lage/View With A Room (2022)/02 - Word for Word.flac`
+  - writes: Word for Word [7453eb40](https://musicbrainz.org/recording/7453eb40-5316-44ab-b0d5-f67a5aa397a0) · 3:16 · work [b00483e3](https://musicbrainz.org/work/b00483e3-199a-4d09-ad21-ca3e08b9f4ae)
+  - why: MusicBrainz 3:16 vs file 3:16
+- **Jurassic 5 – Future Sound** (3:13)
+  - file: `Jurassic 5/Feedback (2006)/10 - Future Sound.flac`
+  - recording: Future Sound [d1c8bea5](https://musicbrainz.org/recording/d1c8bea5-385e-442a-8ab8-17a3aa368919) · 3:12
+  - why: MusicBrainz 3:12 vs file 3:13
+- **Jurassic 5 – If You Only Knew** (3:51)
+  - file: `Jurassic 5/Power In Numbers (2002)/03 - If You Only Knew.mp3`
+  - writes: If You Only Knew [6f849f89](https://musicbrainz.org/recording/6f849f89-b20c-4d10-8d62-06d9738fa74e) · 3:52 · work [3531cc35](https://musicbrainz.org/work/3531cc35-fec2-4f83-932a-062132a408af)
+  - why: MusicBrainz 3:52 vs file 3:51
+- **Lianne La Havas – Say a Little Prayer (live)** (3:24)
+  - file: `Lianne La Havas/Say a Little Prayer (2016)/01 - Say a Little Prayer (live).mp3`
+  - writes: Say a Little Prayer (live) [1de945e1](https://musicbrainz.org/recording/1de945e1-5928-4de8-a603-95b4b25bcd0a) · 3:24 · work [f3919681](https://musicbrainz.org/work/f3919681-e0c6-39a6-9f0b-079874b37aa4)
+  - why: MusicBrainz 3:24 vs file 3:24
+- **MC Solaar – Nouveau Western** (4:34)
+  - file: `MC Solaar/Prose combat/00 - Nouveau Western.m4a`
+  - writes: Nouveau Western [6a8b7392](https://musicbrainz.org/recording/6a8b7392-eac8-444e-a8e7-a0cb07417743) · 4:37 · work [0d630ae8](https://musicbrainz.org/work/0d630ae8-4a9a-3042-8145-6c1d6e5213d9)
+  - why: MusicBrainz 4:37 vs file 4:34
+- **Marvin Gaye – What’s Going On** (3:53)
+  - file: `Marvin Gaye/Gold (2005)/01 - What’s Going On.flac`
+  - writes: What’s Going On [fd174dee](https://musicbrainz.org/recording/fd174dee-c17c-4ed2-9bdb-854955fc98e4) · 3:52 · work [8c9e1987](https://musicbrainz.org/work/8c9e1987-99a5-3985-b182-d9eaf181749a)
+  - why: MusicBrainz 3:52 vs file 3:53
+- **Marvin Gaye – I Want You (John Morales M+M main mix)** (9:36)
+  - file: `Marvin Gaye/I Want You (The John Morales M+M Mixes) (2022)/01 - I Want You (John Morales M+M main mix).mp3`
+  - writes: I Want You (John Morales M+M main mix) [2cf3b8b5](https://musicbrainz.org/recording/2cf3b8b5-d32f-453c-9e81-9ced31bf3d3e) · 9:36 · work [a61c30db](https://musicbrainz.org/work/a61c30db-d254-37b3-b498-f4281d145e6d)
+  - why: MusicBrainz 9:36 vs file 9:36
+- **Marvin Gaye – I Want You (John Morales M+M Breakdown mix)** (8:26)
+  - file: `Marvin Gaye/I Want You (The John Morales M+M Mixes) (2022)/03 - I Want You (John Morales M+M Breakdown mix).mp3`
+  - writes: I Want You (John Morales M+M Breakdown mix) [82f126ed](https://musicbrainz.org/recording/82f126ed-453a-4366-9cba-cb68bf88e2ef) · 8:26 · work [a61c30db](https://musicbrainz.org/work/a61c30db-d254-37b3-b498-f4281d145e6d)
+  - why: MusicBrainz 8:26 vs file 8:26
+- **Marvin Gaye – I Want You (John Morales M+M Pianopella mix)** (8:22)
+  - file: `Marvin Gaye/I Want You (The John Morales M+M Mixes) (2022)/04 - I Want You (John Morales M+M Pianopella mix).mp3`
+  - writes: I Want You (John Morales M+M Pianopella mix) [ed12abfc](https://musicbrainz.org/recording/ed12abfc-7798-4294-8486-d3e839face85) · 8:22 · work [a61c30db](https://musicbrainz.org/work/a61c30db-d254-37b3-b498-f4281d145e6d)
+  - why: MusicBrainz 8:22 vs file 8:22
+- **Marvin Gaye – Sexual Healing** (4:00)
+  - file: `Marvin Gaye/Midnight Love (2002)/02 - Sexual Healing.mp3`
+  - writes: Sexual Healing [056ab53c](https://musicbrainz.org/recording/056ab53c-0f38-4c49-8c31-f9bacecf76d7) · 4:00 · work [3a9032e3](https://musicbrainz.org/work/3a9032e3-3967-38d4-ac1f-a1fccf03a768)
+  - why: MusicBrainz 4:00 vs file 4:00
+- **Michael Jackson – Rock With You [The Reflex Revision]** (7:11)
+  - file: `Michael Jackson/the reflex [73 tracks bumper pack] (2019)/23 - Rock With You [The Reflex Revision].flac`
+  - writes: Rock With You (The Reflex Revision) [61997cbe](https://musicbrainz.org/recording/61997cbe-e67d-45cc-8df4-ffe6dd1714a1) · 7:10 · work [1dda55be](https://musicbrainz.org/work/1dda55be-3469-3282-a6ce-a1373ce1ba5f)
+  - why: MusicBrainz 7:10 vs file 7:11; MusicBrainz merged it into 419cc70a-7914-4060-a0e9-a0ee252bce93
+- **Nookie – Natural Experience** (7:58)
+  - file: `Nookie/In @ The Deep End (2001)/02 - Natural Experience.mp3`
+  - recording: Natural Experience [66eee6e0](https://musicbrainz.org/recording/66eee6e0-7097-4a82-b105-13fbaa00662e) · 7:58
+  - why: MusicBrainz 7:58 vs file 7:58
+- **Pharoah Sanders – High Life** (4:21)
+  - file: `Pharoah Sanders/Wisdom Through Music (1973)/01 - High Life.flac`
+  - writes: High Life [e5220511](https://musicbrainz.org/recording/e5220511-f115-4ce5-a3b8-7cf9e2433f6e) · 4:20 · work [f6a0dbc1](https://musicbrainz.org/work/f6a0dbc1-e545-4daf-bdf7-419fea7f5ec1)
+  - why: MusicBrainz 4:20 vs file 4:21
+- **Riovolt – It Ain't Over Till It's Over** (3:49)
+  - file: `Piero Umiliani/Trudi's Songbook Vol. 2 (2017)/15 - It Ain't Over Till It's Over.mp3`
+  - recording: It Ain’t Over Till It’s Over [bb33d9bb](https://musicbrainz.org/recording/bb33d9bb-6d89-4677-8678-1fdf7e28fcf6) · 3:49
+  - why: MusicBrainz 3:49 vs file 3:49
+- **Raphael Saadiq – Doing What I Can** (4:19)
+  - file: `Raphael Saadiq/Instant Vintage (2002)/01 - Doing What I Can.flac`
+  - recording: Doing What I Can [8eeb50c9](https://musicbrainz.org/recording/8eeb50c9-8f1c-43df-8574-3c5c3bece424) · 4:19
+  - why: MusicBrainz 4:19 vs file 4:19
+- **Rick James – Mary Jane** (4:58)
+  - file: `Rick James/Come Get It! (1978)/06 - Mary Jane.mp3`
+  - writes: Mary Jane [ef8b530a](https://musicbrainz.org/recording/ef8b530a-b811-4384-8b00-cd552ad2892d) · 4:57 · work [ef3f302d](https://musicbrainz.org/work/ef3f302d-24ab-498b-8d48-5dd8b2727c59)
+  - why: MusicBrainz 4:57 vs file 4:58
+- **Slum Village – Hustle** (3:29)
+  - file: `Slum Village/Fantastic, Volume 2.10 (2010)/18 - Hustle.mp3`
+  - recording: Hustle [bf028851](https://musicbrainz.org/recording/bf028851-3535-4d0e-9eaf-c61a6fbe9c7f) · 3:29
+  - why: MusicBrainz 3:29 vs file 3:29
+- **Stevie Wonder – You and I** (4:40)
+  - file: `Stevie Wonder/At the Close of a Century (1999)/03 - You and I.mp3`
+  - writes: You and I [b7d15137](https://musicbrainz.org/recording/b7d15137-6f36-4b78-9700-79cfafdf0820) · 4:38 · work [fb9b0a9e](https://musicbrainz.org/work/fb9b0a9e-64f6-38d8-a89b-cc463d58f373)
+  - why: MusicBrainz 4:38 vs file 4:40
+- **Stevie Wonder – Isn't She Lovely** (6:37)
+  - file: `Stevie Wonder/At the Close of a Century (1999)/05 - Isn't She Lovely.mp3`
+  - writes: Isn’t She Lovely [23d37f4e](https://musicbrainz.org/recording/23d37f4e-1d49-49dd-9f5f-528f32786022) · 6:34 · work [1232d084](https://musicbrainz.org/work/1232d084-6a01-33cf-b14f-65c49f97e2e6)
+  - why: MusicBrainz 6:34 vs file 6:37; MusicBrainz merged it into 8186c4c4-3575-41b6-b9e6-2941d46acf26
+- **The Supreme Jubilees – It’ll All Be Over** (3:04)
+  - file: `Supreme Jubilees/It'll All Be Over (2015)/01 - It’ll All Be Over.flac`
+  - recording: It’ll All Be Over [242d9fec](https://musicbrainz.org/recording/242d9fec-82c9-4868-89cb-841a4351f556) · 3:05
+  - why: MusicBrainz 3:05 vs file 3:04
+- **Teena Marie – Portuguese Love** (7:49)
+  - file: `Teena Marie/It Must Be Magic/00 - Portuguese Love.m4a`
+  - writes: Portuguese Love [d306a73b](https://musicbrainz.org/recording/d306a73b-0fe6-46a2-91e2-dc7472d51c5e) · 7:51 · work [e2552575](https://musicbrainz.org/work/e2552575-7afe-4d0b-b127-fc73a339b6d5)
+  - why: MusicBrainz 7:51 vs file 7:49
+- **Teena Marie – Portuguese Love** (7:52)
+  - file: `Teena Marie/It Must Be Magic (1981)/08 - Portuguese Love.flac`
+  - recording: Portuguese Love [d306a73b](https://musicbrainz.org/recording/d306a73b-0fe6-46a2-91e2-dc7472d51c5e) · 7:51 · has work [e2552575](https://musicbrainz.org/work/e2552575-7afe-4d0b-b127-fc73a339b6d5)
+  - why: MusicBrainz 7:51 vs file 7:52
+- **The Marshall Tucker Band – Everyday (I Have the Blues) (live)** (12:33)
+  - file: `The Marshall Tucker Band/The Marshall Tucker Band (Remastered) (2003)/09 - Everyday (I Have the Blues) (live).mp3`
+  - recording: Everyday (I Have the Blues) (live) [ac5993d7](https://musicbrainz.org/recording/ac5993d7-18c7-4cc4-b9de-56f9636751c5) · 12:33
+  - why: MusicBrainz 12:33 vs file 12:33
+- **Twain – A Kiss** (4:41)
+  - file: `Twain/Noon (2022)/05 - A Kiss.mp3`
+  - recording: A Kiss [069cd091](https://musicbrainz.org/recording/069cd091-1828-4505-94e5-5905d100231c) · 4:41
+  - why: MusicBrainz 4:41 vs file 4:41
+- **Twain – The Magician** (5:53)
+  - file: `Twain/Noon (2022)/06 - The Magician.mp3`
+  - recording: The Magician [195d026f](https://musicbrainz.org/recording/195d026f-913c-4b32-9c2d-34a204ab88ae) · 5:53
+  - why: MusicBrainz 5:53 vs file 5:53
+- **Twain – Friend That Helps** (2:36)
+  - file: `Twain/Noon (2022)/10 - Friend That Helps.flac`
+  - recording: Friend That Helps [df3390e3](https://musicbrainz.org/recording/df3390e3-c740-4d63-a03f-9674b357701a) · 2:36
+  - why: MusicBrainz 2:36 vs file 2:36
+- **Twain – Yea O Dog Mind** (5:06)
+  - file: `Twain/Noon (2022)/13 - Yea O Dog Mind.flac`
+  - recording: Yea O Dog Mind [10c96353](https://musicbrainz.org/recording/10c96353-7763-4df7-8d6f-04882f07da26) · 5:06
+  - why: MusicBrainz 5:06 vs file 5:06
+- **Twain – Solar Pilgrim** (5:21)
+  - file: `Twain/Rare Feeling (2017)/01 - Solar Pilgrim.mp3`
+  - recording: Solar Pilgrim [c6e71849](https://musicbrainz.org/recording/c6e71849-28b0-408b-8290-202d8ec28e2d) · 5:21
+  - why: MusicBrainz 5:21 vs file 5:21
+- **Twain – Hank & Georgia** (4:23)
+  - file: `Twain/Rare Feeling (2017)/04 - Hank & Georgia.mp3`
+  - recording: Hank & Georgia [01b20ac9](https://musicbrainz.org/recording/01b20ac9-405a-46a1-92ad-9880cb0cf4b1) · 4:23
+  - why: MusicBrainz 4:23 vs file 4:23
+- **Twain – Rare Feeling v. 2** (5:57)
+  - file: `Twain/Rare Feeling (2017)/06 - Rare Feeling v. 2.mp3`
+  - recording: Rare Feeling v. 2 [f10f21ca](https://musicbrainz.org/recording/f10f21ca-f70b-43ba-a4d3-3053f14bffba) · 5:57
+  - why: MusicBrainz 5:57 vs file 5:57
+- **Twain – Black Chair** (4:14)
+  - file: `Twain/Rare Feeling (2017)/07 - Black Chair.mp3`
+  - recording: Black Chair [fcd4841f](https://musicbrainz.org/recording/fcd4841f-f1a0-4b31-9a92-498feb88c521) · 4:14
+  - why: MusicBrainz 4:14 vs file 4:14
+- **Twain – Good Old Friend (For Charlie)** (4:18)
+  - file: `Twain/Rare Feeling (2017)/09 - Good Old Friend (For Charlie).mp3`
+  - recording: Good Old Friend (For Charlie) [3c7992ff](https://musicbrainz.org/recording/3c7992ff-3868-4009-8cdc-77583eb598ef) · 4:18
+  - why: MusicBrainz 4:18 vs file 4:18
+- **Weldon Irvine – Don't You Worry 'Bout a Thing** (5:55)
+  - file: `Weldon Irvine/Sinbad (1976)/02 - Don't You Worry 'Bout a Thing.mp3`
+  - writes: Don't You Worry 'Bout a Thing [2b0ea28a](https://musicbrainz.org/recording/2b0ea28a-e1e2-4784-bcbb-91e25ec35617) · 5:55 · work [753895b4](https://musicbrainz.org/work/753895b4-2657-3cb6-85f7-07a2aa21b034)
+  - why: MusicBrainz 5:55 vs file 5:55
+- **Will Smith – Gettin' Jiggy Wit It** (3:50)
+  - file: `Will Smith/Gettin' Jiggy Wit It (1998)/01 - Gettin' Jiggy Wit It.mp3`
+  - recording: Gettin’ Jiggy Wit It [979013be](https://musicbrainz.org/recording/979013be-6050-48d3-81cf-8fbe4130b9af) · 3:48 · has work [a57dc9e2](https://musicbrainz.org/work/a57dc9e2-3ad1-366a-ab40-1c499f4d274f)
+  - why: MusicBrainz 3:48 vs file 3:50
+- **高中正義 – Brasilian Skies** (5:56)
+  - file: `高中正義/BRASILIAN SKIES (1978)/02 - Brasilian Skies.flac`
+  - recording: Brasilian Skies [bee8acae](https://musicbrainz.org/recording/bee8acae-f763-44d8-83be-ca54bc7c6609) · 5:54
+  - why: MusicBrainz 5:54 vs file 5:56
+- **高中正義 – OH! TENGO SUERTE** (4:13)
+  - file: `高中正義/SEYCHELLES (1976)/01 - OH! TENGO SUERTE.mp3`
+  - recording: Oh！ Tengo Suerte [1518bb44](https://musicbrainz.org/recording/1518bb44-0bc1-44a6-914e-c00439b4d6b2) · 4:13
+  - why: MusicBrainz 4:13 vs file 4:13
+
+## isrc (172)
+
+The file's own ISRC leads to exactly one recording with the same lead artist, title, version label and length (±4 s). Accepted by default.
+
+- **A Tribe Called Quest – Find a Way** (3:23)
+  - file: `A Tribe Called Quest/The Love Movement (1998)/02 - Find a Way.flac`
+  - writes: Find a Way [b658ba14](https://musicbrainz.org/recording/b658ba14-d5f4-4492-a856-360b4d5c16bf) · 3:23 · work [74c2d96d](https://musicbrainz.org/work/74c2d96d-2630-39b4-af65-c3cfc9f36636)
+  - why: ISRC USJI19810227: 1 of 1 recordings fit
+- **A Tribe Called Quest – Excursions** (3:55)
+  - file: `A Tribe Called Quest/The Low End Theory (1991)/01 - Excursions.flac`
+  - writes: Excursions [57c74bef](https://musicbrainz.org/recording/57c74bef-8c6b-4316-aaa4-8e8e46d759f1) · 3:55 · work [54df55f8](https://musicbrainz.org/work/54df55f8-043b-3004-8b5c-3cd55858dd6a)
+  - why: ISRC USJI10300150: 1 of 1 recordings fit
+- **Action Bronson – C12H16N2** (2:39)
+  - file: `Action Bronson/Only For Dolphins (2020)/02 - C12H16N2.flac`
+  - writes: C12H16N2 [c545aed0](https://musicbrainz.org/recording/c545aed0-5940-4da1-aac3-88605ea6e513) · 2:39
+  - why: ISRC USC4R2003737: 1 of 1 recordings fit
+- **Air – Mr. Man** (3:14)
+  - file: `Air/Air (1971)/02 - Mr. Man.flac`
+  - writes: Mr. Man [ad49eda6](https://musicbrainz.org/recording/ad49eda6-aa89-419e-a01c-71b8dc34ebe7) · 3:12 · work [83bc637d](https://musicbrainz.org/work/83bc637d-b4f1-4b60-a320-67e90c914dbf)
+  - why: ISRC USAT20617411: 1 of 1 recordings fit
+- **Air – Le voyage de Pénélope** (3:11)
+  - file: `Air/Moon Safari (1998)/10 - Le voyage de Pénélope.flac`
+  - writes: Le Voyage de Pénélope [e731a2a1](https://musicbrainz.org/recording/e731a2a1-8e3a-42f6-8dbe-af356714f836) · 3:11 · work [37fc229b](https://musicbrainz.org/work/37fc229b-7dd2-4f0a-a00e-05846f81ac88)
+  - why: ISRC FRS639700640: 1 of 1 recordings fit
+- **Alabama Shakes – You Ain't Alone** (4:45)
+  - file: `Alabama Shakes/Boys & Girls (Deluxe Edition) (2022)/05 - You Ain't Alone.flac`
+  - writes: You Ain’t Alone [59e20ade](https://musicbrainz.org/recording/59e20ade-7515-4be2-96e2-ee4d4be072b2) · 4:44 · work [aeed7f88](https://musicbrainz.org/work/aeed7f88-d598-4a22-9d9a-85a8d4ce8dfd)
+  - why: ISRC USATO1200021: 1 of 1 recordings fit
+- **Alabama Shakes – Boys & Girls** (3:26)
+  - file: `Alabama Shakes/Boys & Girls (Deluxe Edition) (2022)/08 - Boys & Girls.flac`
+  - writes: Boys & Girls [11489633](https://musicbrainz.org/recording/11489633-0810-4fd0-9ea4-035b4bbc95cc) · 3:26 · work [d739783d](https://musicbrainz.org/work/d739783d-a2f3-439d-b9ab-e61d5806c712)
+  - why: ISRC USATO1200024: 1 of 1 recordings fit
+- **Alberto Baldan Bembo – Carmen Blues** (2:12)
+  - file: `Alberto Baldan Bembo/L'amica di mia madre (Colonna sonora originale del film) (1975)/09 - Carmen Blues.flac`
+  - writes: Carmen Blues [44d94863](https://musicbrainz.org/recording/44d94863-e3d6-423f-8a83-a069eb802f59) · 2:12
+  - why: ISRC FR96X1859218: 1 of 1 recordings fit
+- **Alicia Keys – Feeling U, Feeling Me (Interlude)** (2:08)
+  - file: `Alicia Keys/The Diary Of Alicia Keys (2003)/12 - Feeling U, Feeling Me (Interlude).flac`
+  - writes: Feeling U, Feeling Me (interlude) [0dc67cc7](https://musicbrainz.org/recording/0dc67cc7-cb50-4f57-bd8a-e4a17686aa89) · 2:08 · work [2260e875](https://musicbrainz.org/work/2260e875-64a0-4812-b365-bcbdd56b615b)
+  - why: ISRC USJAY0300457: 1 of 1 recordings fit
+- **Angie Stone – Wish I Didn't Miss You** (4:31)
+  - file: `Angie Stone/Mahogany Soul (2001)/06 - Wish I Didn't Miss You.flac`
+  - writes: Wish I Didn’t Miss You [abb74399](https://musicbrainz.org/recording/abb74399-9a94-4c28-a645-7d319d7fab49) · 4:30 · work [ee8fefa7](https://musicbrainz.org/work/ee8fefa7-ebf0-4b2a-815d-1fcda0d43aec)
+  - why: ISRC USJAY0100309: 1 of 1 recordings fit
+- **Astrud Gilberto – It's A Lovely Day Today** (2:39)
+  - file: `Astrud Gilberto/A Certain Smile, A Certain Sadness (Expanded Edition) (1967)/11 - It's A Lovely Day Today.flac`
+  - writes: It’s a Lovely Day Today [52b98c3f](https://musicbrainz.org/recording/52b98c3f-39b2-42bb-83b1-ef77d96c9197) · 2:39 · work [dfbc807b](https://musicbrainz.org/work/dfbc807b-88e6-4d30-97fa-c96d65747167)
+  - why: ISRC USF096600140: 1 of 1 recordings fit
+- **Astrud Gilberto – Crickets Sing For Anamaria (Os Grillos)** (1:36)
+  - file: `Astrud Gilberto/Windy (1968)/10 - Crickets Sing For Anamaria (Os Grillos).flac`
+  - writes: Crickets Sing For Anamaria (Os Grillos) [8aa275b9](https://musicbrainz.org/recording/8aa275b9-7d87-42f2-b2fb-075f55c35ce3) · 1:33
+  - why: ISRC USGR10400775: 1 of 1 recordings fit
+- **Azymuth – Linha do Horizonte** (4:28)
+  - file: `Azymuth/Azimüth (1975)/01 - Linha do Horizonte.flac`
+  - writes: Linha do horizonte [f91b274f](https://musicbrainz.org/recording/f91b274f-fd06-40d0-8558-bfb3508f9004) · 4:30
+  - why: ISRC BRSGL7500022: 1 of 1 recordings fit
+- **Bahamadia – Rugged Ruff** (3:09)
+  - file: `Bahamadia/Kollage (1996)/04 - Rugged Ruff.flac`
+  - writes: Rugged Ruff [dc0dca94](https://musicbrainz.org/recording/dc0dca94-abe5-48a4-ac75-5f3810b617ae) · 3:08
+  - why: ISRC USCA20701950: 1 of 1 recordings fit
+- **Beastie Boys – Egg Man** (2:58)
+  - file: `Beastie Boys/Paul's Boutique (20th Anniversary Edition _ Remastered) (1989)/04 - Egg Man.flac`
+  - writes: Egg Man [10c16cdc](https://musicbrainz.org/recording/10c16cdc-3a08-4d80-9b7c-6826d4c4aaea) · 2:58 · work [736c7861](https://musicbrainz.org/work/736c7861-43d4-352f-ae4a-009a45e644db)
+  - why: ISRC USCA20807304: 1 of 1 recordings fit
+- **Bruno Pernadas – Valley in the Ocean** (6:45)
+  - file: `Bruno Pernadas/Those Who Throw Objects at the Crocodiles Will Be Asked to Retrieve Them (2016)/04 - Valley in the Ocean.flac`
+  - writes: Valley in the Ocean [a82b585d](https://musicbrainz.org/recording/a82b585d-6ab7-442c-8d66-dd2e22f3149b) · 6:45 · work [251e9ece](https://musicbrainz.org/work/251e9ece-22aa-4c70-906a-d2b55f79a96b)
+  - why: ISRC PTPK11600004: 1 of 1 recordings fit
+- **Buckshot LeFonque – Another Day** (3:34)
+  - file: `Buckshot LeFonque/Music Evolution (1997)/05 - Another Day.flac`
+  - writes: Another Day [0e50b640](https://musicbrainz.org/recording/0e50b640-9c04-4578-a8d2-6d11fb6ed007) · 3:34 · work [66ddd5fb](https://musicbrainz.org/work/66ddd5fb-8291-4df5-a9fb-21e83ce06ce1)
+  - why: ISRC USSM19603641: 1 of 1 recordings fit
+- **Butcher Brown – I Can Say To You [Feat. Vanisha Gould]** (4:13)
+  - file: `Butcher Brown/Solar Music (2023)/03 - I Can Say To You [Feat. Vanisha Gould].flac`
+  - writes: I Can Say to You [c4d5c142](https://musicbrainz.org/recording/c4d5c142-e274-435c-a3ce-b2e7012685b7) · 4:13
+  - why: ISRC USC4R2333233: 1 of 1 recordings fit
+- **Cali Life Style – Get Higher** (3:11)
+  - file: `Cali Life Style/Tell It Like It Is (2004)/01 - Get Higher.flac`
+  - writes: Get Higher [1a4a3111](https://musicbrainz.org/recording/1a4a3111-b8d8-4bdd-b7ca-454608e08e91) · 3:11
+  - why: ISRC US4EM0610025: 1 of 1 recordings fit
+- **Cameo – Use It Or Lose It** (4:09)
+  - file: `Cameo/Knights Of The Sound Table (1981)/04 - Use It Or Lose It.flac`
+  - writes: Use It or Lose It [2db6a55f](https://musicbrainz.org/recording/2db6a55f-0e7a-46c5-87ac-55c8770f879c) · 4:09
+  - why: ISRC USWWW0134827: 1 of 1 recordings fit
+- **Carole King – Come Down Easy** (3:06)
+  - file: `Carole King/Rhymes & Reasons (1972)/01 - Come Down Easy.flac`
+  - writes: Come Down Easy [cb05de50](https://musicbrainz.org/recording/cb05de50-dae3-488f-b13a-46efee805e67) · 3:05 · work [868a7838](https://musicbrainz.org/work/868a7838-d5e0-42a4-9383-aadc396b9d58)
+  - why: ISRC USSM10025001: 1 of 1 recordings fit
+- **Cerrone – Je Suis Music - Armand Van Helden Remix Edit** (3:37)
+  - file: `Cerrone/Discoset 1 (2024)/05 - Je Suis Music - Armand Van Helden Remix Edit.flac`
+  - writes: Je Suis Music (Armand Van Helden Remix Edit) [02dc7a1d](https://musicbrainz.org/recording/02dc7a1d-d3bb-4c9f-9c47-7660234734aa) · 3:36
+  - why: ISRC FR0D02400011: 1 of 1 recordings fit
+- **Chaka Khan – Through the Fire** (4:49)
+  - file: `Chaka Khan/I Feel for You (1984)/08 - Through the Fire.flac`
+  - writes: Through the Fire [208723f1](https://musicbrainz.org/recording/208723f1-bf92-4bf7-b274-34c1f0489525) · 4:47 · work [320b6d4f](https://musicbrainz.org/work/320b6d4f-04f0-4a2e-a661-3b89ab9f6913)
+  - why: ISRC USWB18400010: 1 of 1 recordings fit
+- **Cheryl Lynn – Come in from the Rain** (3:32)
+  - file: `Cheryl Lynn/Cheryl Lynn (Expanded Edition) (1978)/04 - Come in from the Rain.flac`
+  - writes: Come in From the Rain [543630dd](https://musicbrainz.org/recording/543630dd-649b-4f5e-8de9-a0e7cf957804) · 3:32 · work [0be5ad69](https://musicbrainz.org/work/0be5ad69-aa55-3fef-aa77-cf6d61265f70)
+  - why: ISRC USSM19914471: 1 of 1 recordings fit
+- **Cheryl Lynn – Star Love - Disco Version** (7:23)
+  - file: `Cheryl Lynn/The Best Of Cheryl Lynn_ Got To Be Real (1996)/04 - Star Love - Disco Version.flac`
+  - writes: Star Love (disco version) [eff5bf78](https://musicbrainz.org/recording/eff5bf78-896e-4e90-b307-e4d6adb7e4c9) · 7:25
+  - why: ISRC USSM17800074: 1 of 2 recordings fit
+- **Chet Baker – I'm a Fool to Want You** (11:24)
+  - file: `Chet Baker/Chet Baker in Tokyo (the complete concert) (2024)/04 - I'm a Fool to Want You.flac`
+  - writes: I’m a Fool to Want You [f149496e](https://musicbrainz.org/recording/f149496e-26dd-4469-a376-ce698b45c4e6) · 11:24 · work [713f05ec](https://musicbrainz.org/work/713f05ec-9b49-3813-84c9-f96e551e2c8b)
+  - why: ISRC TCACE1507941: 1 of 1 recordings fit
+- **Clairo – Terrapin** (3:00)
+  - file: `Clairo/Charm (2024)/06 - Terrapin.flac`
+  - writes: Terrapin [4be2aed9](https://musicbrainz.org/recording/4be2aed9-3719-4655-951c-51f7e488a569) · 3:00 · work [0d8161e4](https://musicbrainz.org/work/0d8161e4-763a-472f-8bdc-69fee725f119)
+  - why: ISRC USA2P2416228: 1 of 1 recordings fit
+- **Claude Fontaine – Strings Of Your Guitar** (2:40)
+  - file: `Claude Fontaine/Claude Fontaine (2019)/08 - Strings Of Your Guitar.mp3`
+  - writes: Strings of Your Guitar [af023fef](https://musicbrainz.org/recording/af023fef-ba00-475b-9ca4-e10ca9827cf4) · 2:39
+  - why: ISRC USD8D1959008: 1 of 1 recordings fit
+- **Cleo Sol – When I'm in Your Arms** (5:35)
+  - file: `Cleo Sol/Rose in the Dark (2020)/06 - When I'm in Your Arms.flac`
+  - writes: When I’m in Your Arms [c319287d](https://musicbrainz.org/recording/c319287d-b283-482c-8938-32411383662d) · 5:35
+  - why: ISRC UKMEH2000058: 1 of 1 recordings fit
+- **Cleveland Francis – Early Morning Rain** (3:47)
+  - file: `Cleveland Francis/Beyond The Willow Tree (2022)/03 - Early Morning Rain.mp3`
+  - writes: Early Morning Rain [721f3681](https://musicbrainz.org/recording/721f3681-70a4-4e0d-a630-817313800d67) · 3:47
+  - why: ISRC USDY42273682: 1 of 1 recordings fit
+- **Cleveland Francis – The Willow Tree** (4:19)
+  - file: `Cleveland Francis/Beyond the Willow Tree (2022)/01 - The Willow Tree.flac`
+  - writes: The Willow Tree [41941b8d](https://musicbrainz.org/recording/41941b8d-bbd9-44ab-994b-fb1dadc883df) · 4:19
+  - why: ISRC USDY42273680: 1 of 1 recordings fit
+- **Cleveland Francis – Early Morning Rain** (3:47)
+  - file: `Cleveland Francis/Beyond the Willow Tree (2022)/03 - Early Morning Rain.flac`
+  - writes: Early Morning Rain [721f3681](https://musicbrainz.org/recording/721f3681-70a4-4e0d-a630-817313800d67) · 3:47
+  - why: ISRC USDY42273682: 1 of 1 recordings fit
+- **Cocteau Twins – Cherry-coloured Funk** (3:12)
+  - file: `Cocteau Twins/Heaven or Las Vegas (1990)/01 - Cherry-coloured Funk.flac`
+  - writes: Cherry‐Coloured Funk [6493b1ac](https://musicbrainz.org/recording/6493b1ac-87ca-4da5-8eaa-db254186e702) · 3:13 · work [cd0c070c](https://musicbrainz.org/work/cd0c070c-a7d8-3d80-9646-edff99987377)
+  - why: ISRC GBAFL9000062: 1 of 1 recordings fit
+- **Cameo – Use It Or Lose It** (4:09)
+  - file: `Compilations/Intuition (1981)/04 - Use It Or Lose It.flac`
+  - writes: Use It or Lose It [2db6a55f](https://musicbrainz.org/recording/2db6a55f-0e7a-46c5-87ac-55c8770f879c) · 4:09
+  - why: ISRC USWWW0134827: 1 of 1 recordings fit
+- **D'Angelo – Greatdayndamornin'/Booty** (7:35)
+  - file: `D'Angelo/Voodoo (2000)/11 - Greatdayndamornin'_Booty.flac`
+  - writes: Greatdayndamornin’ / Booty [ac766099](https://musicbrainz.org/recording/ac766099-9991-4b7f-a2ee-e6f9fe2257e6) · 7:35
+  - why: ISRC USVI29900249: 1 of 1 recordings fit; 2 works, none proposed
+- **Dan Hartman – Countdown / This Is It** (14:10)
+  - file: `Dan Hartman/Instant Replay (Expanded Edition) (1978)/02 - Countdown _ This Is It.flac`
+  - writes: Countdown / This Is It [d2cc3304](https://musicbrainz.org/recording/d2cc3304-75e1-49f5-a967-a8d8919057b0) · 14:09
+  - why: ISRC USSM17801029: 1 of 1 recordings fit; 2 works, none proposed
+- **Darkhouse Family – The Offering** (2:53)
+  - file: `Darkhouse Family/The Offering (2017)/01 - The Offering.flac`
+  - writes: The Offering [37fc1d00](https://musicbrainz.org/recording/37fc1d00-8ff6-4c86-8937-30dc47503b59) · 2:53
+  - why: ISRC GBMCZ0601122: 1 of 1 recordings fit
+- **Darondo – Didn't I** (3:28)
+  - file: `Darondo/Let My People Go (2005)/03 - Didn't I.flac`
+  - writes: Didn’t I [84228bc6](https://musicbrainz.org/recording/84228bc6-5b00-48e4-a209-3dd196e4b47b) · 3:28
+  - why: ISRC USLNH0604803: 1 of 1 recordings fit
+- **Deniece Williams – Free** (5:57)
+  - file: `Deniece Williams/This Is Niecy (Expanded Edition) (1976)/05 - Free.flac`
+  - writes: Free [5c60f86a](https://musicbrainz.org/recording/5c60f86a-daa8-4c07-8f94-2a4a101bed8c) · 5:58 · work [f271b7b1](https://musicbrainz.org/work/f271b7b1-69ac-4ddf-941c-054852ab4126)
+  - why: ISRC USSM19912799: 1 of 1 recordings fit
+- **Digable Planets – Black Ego** (7:02)
+  - file: `Digable Planets/Blowout Comb (1994)/02 - Black Ego.flac`
+  - writes: Black Ego [53107158](https://musicbrainz.org/recording/53107158-c02e-40c6-861d-f6f8072bee13) · 7:02 · work [4ba8af07](https://musicbrainz.org/work/4ba8af07-3e5a-45c9-ade8-8d4d339d607c)
+  - why: ISRC USCA29401316: 1 of 1 recordings fit
+- **Digable Planets – The Art Of Easing** (5:06)
+  - file: `Digable Planets/Blowout Comb (1994)/08 - The Art Of Easing.flac`
+  - writes: The Art of Easing [688348a2](https://musicbrainz.org/recording/688348a2-f0bb-47af-a972-16262447621e) · 5:06
+  - why: ISRC USCA29401322: 1 of 1 recordings fit
+- **Don Carlos – Free** (4:52)
+  - file: `Don Carlos/Mediterraneo (Club Favourites Collection '90_98) (2013)/02 - Free.flac`
+  - writes: Free [ee12bb54](https://musicbrainz.org/recording/ee12bb54-a8b1-4402-a24a-834f95a3cb86) · 4:50 · work [a1feaf6e](https://musicbrainz.org/work/a1feaf6e-3e4d-4d62-a820-853f114224fc)
+  - why: ISRC ITI029100107: 1 of 1 recordings fit
+- **Don Carlos – Free** (4:52)
+  - file: `Don Carlos/Mediterraneo (Club Favourites Collection '90_98) (2013)/02 - Free.mp3`
+  - writes: Free [ee12bb54](https://musicbrainz.org/recording/ee12bb54-a8b1-4402-a24a-834f95a3cb86) · 4:50 · work [a1feaf6e](https://musicbrainz.org/work/a1feaf6e-3e4d-4d62-a820-853f114224fc)
+  - why: ISRC ITI029100107: 1 of 1 recordings fit
+- **Donald Byrd – Places And Spaces** (6:19)
+  - file: `Donald Byrd/Places And Spaces (1975)/04 - Places And Spaces.flac`
+  - writes: Places and Spaces [27269173](https://musicbrainz.org/recording/27269173-ddc5-4fc7-9e0f-7483c16f035e) · 6:18 · work [258750f3](https://musicbrainz.org/work/258750f3-0c6d-405d-ac1e-fe930b45b22b)
+  - why: ISRC USBN27500066: 1 of 1 recordings fit
+- **Dr. Buzzard's Original Savannah Band – Sunshower** (4:06)
+  - file: `Dr. Buzzard's Original Savannah Band/Dr. Buzzard's Original Savannah Band (1976)/04 - Sunshower.flac`
+  - writes: Sunshower [79e6504f](https://musicbrainz.org/recording/79e6504f-7b41-4a65-ab32-3626c4ccc6d8) · 4:02
+  - why: ISRC USRC17603403: 1 of 1 recordings fit
+- **Eagles – I Can't Tell You Why** (4:55)
+  - file: `Eagles/The Long Run (2013 Remaster) (1979)/02 - I Can't Tell You Why.flac`
+  - writes: I Can’t Tell You Why [53fad7e6](https://musicbrainz.org/recording/53fad7e6-0b45-4fdf-ae65-53da69546783) · 4:55 · work [88a1a4e3](https://musicbrainz.org/work/88a1a4e3-f859-3e3a-8de2-c026090a0297)
+  - why: ISRC USEE11300335: 1 of 1 recordings fit
+- **Earth, Wind & Fire – After the Love Has Gone** (4:38)
+  - file: `Earth, Wind & Fire/I Am (1979)/03 - After the Love Has Gone.flac`
+  - writes: After the Love Has Gone [fddc30a5](https://musicbrainz.org/recording/fddc30a5-ddd8-4dea-8345-a40c5b25894c) · 4:39 · work [70c35f17](https://musicbrainz.org/work/70c35f17-152c-35b4-a5c7-78719926b7d8)
+  - why: ISRC USSM19801712: 1 of 2 recordings fit
+- **Earth, Wind & Fire – Devotion** (4:50)
+  - file: `Earth, Wind & Fire/Open Our Eyes (1974)/02 - Devotion.flac`
+  - writes: Devotion [4405aaab](https://musicbrainz.org/recording/4405aaab-d457-4508-937d-77e19ecbc223) · 4:50 · work [498499f8](https://musicbrainz.org/work/498499f8-5a38-4bf4-9f8d-b25bdcf10879)
+  - why: ISRC USSM10013031: 1 of 1 recordings fit
+- **Eddie Kendricks – Date With The Rain** (2:41)
+  - file: `Eddie Kendricks/People... Hold On (1972)/07 - Date With The Rain.flac`
+  - writes: Date With the Rain [f2b7180c](https://musicbrainz.org/recording/f2b7180c-25bb-4b10-9189-aa415d105bd5) · 2:43 · work [4482e111](https://musicbrainz.org/work/4482e111-45c0-49eb-b969-2cd0ef93119f)
+  - why: ISRC USMO17782766: 1 of 1 recordings fit
+- **Emile Mosseri – Infinite Love** (2:26)
+  - file: `Emile Mosseri/Kajillionaire (Original Motion Picture Soundtrack) (2020)/04 - Infinite Love.flac`
+  - writes: Infinite Love [7dceeabf](https://musicbrainz.org/recording/7dceeabf-e932-41a2-b6c0-f7cc5aeb830d) · 2:26
+  - why: ISRC USQ4E2005980: 1 of 1 recordings fit
+- **Eric B. & Rakim – Keep The Beat** (4:15)
+  - file: `Eric B. & Rakim/Don't Sweat The Technique (1992)/08 - Keep The Beat.flac`
+  - writes: Keep the Beat [20b5ee57](https://musicbrainz.org/recording/20b5ee57-d899-42a3-8264-c621d5a8e153) · 4:15
+  - why: ISRC USMC19238044: 1 of 1 recordings fit
+- **Erykah Badu – Caint Use My Phone (Suite)** (3:34)
+  - file: `Erykah Badu/But You Caint Use My Phone (Mixtape) (2015)/01 - Caint Use My Phone (Suite).flac`
+  - writes: Caint Use My Phone (Suite) [71cf2560](https://musicbrainz.org/recording/71cf2560-bcbb-47e0-832c-6a996da7b739) · 3:34 · work [020180ce](https://musicbrainz.org/work/020180ce-02bd-419b-9bb1-c2c8304e5730)
+  - why: ISRC USUM71518276: 1 of 1 recordings fit
+- **Erykah Badu – Cel U Lar Device** (6:28)
+  - file: `Erykah Badu/But You Caint Use My Phone (Mixtape) (2015)/03 - Cel U Lar Device.flac`
+  - writes: Cel U Lar Device [5eea86fa](https://musicbrainz.org/recording/5eea86fa-7b4c-4f19-baa3-4cae7c17f986) · 6:28
+  - why: ISRC USUM71518278: 1 of 1 recordings fit
+- **Erykah Badu – Phone Down** (3:29)
+  - file: `Erykah Badu/But You Caint Use My Phone (Mixtape) (2015)/04 - Phone Down.flac`
+  - writes: Phone Down [cc69be16](https://musicbrainz.org/recording/cc69be16-fbd4-4fbb-8c49-6483058bb016) · 3:28
+  - why: ISRC USUM71518285: 1 of 2 recordings fit
+- **Erykah Badu – U Use To Call Me** (1:13)
+  - file: `Erykah Badu/But You Caint Use My Phone (Mixtape) (2015)/05 - U Use To Call Me.flac`
+  - writes: U Use to Call Me [0aaebaed](https://musicbrainz.org/recording/0aaebaed-ffe4-4555-a5b8-3073bdf76058) · 1:13
+  - why: ISRC USUM71518286: 1 of 1 recordings fit
+- **Erykah Badu – I'll Call U Back** (1:58)
+  - file: `Erykah Badu/But You Caint Use My Phone (Mixtape) (2015)/10 - I'll Call U Back.flac`
+  - writes: I’ll Call U Back [b7fdff1a](https://musicbrainz.org/recording/b7fdff1a-60fd-4543-a3b3-ddd130ad6e84) · 1:57
+  - why: ISRC USUM71518282: 1 of 1 recordings fit
+- **Erykah Badu – Hello** (5:20)
+  - file: `Erykah Badu/But You Caint Use My Phone (Mixtape) (2015)/11 - Hello.flac`
+  - writes: Hello [224f47c1](https://musicbrainz.org/recording/224f47c1-85e2-4585-b387-f5b26489a177) · 5:19
+  - why: ISRC USUM71518280: 1 of 1 recordings fit
+- **Erykah Badu – Bag Lady** (5:47)
+  - file: `Erykah Badu/Mama's Gun (2000)/12 - Bag Lady.flac`
+  - writes: Bag Lady [27f31cf5](https://musicbrainz.org/recording/27f31cf5-6398-4c3b-94d3-678d30be1b4e) · 5:49 · work [a20ba060](https://musicbrainz.org/work/a20ba060-555d-43b0-87a8-b92e0269d429)
+  - why: ISRC USMO10000765: 1 of 1 recordings fit
+- **Erykah Badu – Woo** (3:14)
+  - file: `Erykah Badu/Worldwide Underground (2003)/05 - Woo.flac`
+  - writes: Woo [c5ad2725](https://musicbrainz.org/recording/c5ad2725-0c79-4e5e-ac57-35634b777fca) · 3:14 · work [b71615f5](https://musicbrainz.org/work/b71615f5-1cb7-4b8b-b93d-7bf87476f2e4)
+  - why: ISRC USMO10300680: 1 of 1 recordings fit
+- **Esperanza Spalding – Samba Em Preludio** (5:11)
+  - file: `Esperanza Spalding/Esperanza (2008)/12 - Samba Em Preludio.flac`
+  - writes: Samba em Prelúdio [80c188e7](https://musicbrainz.org/recording/80c188e7-e8a0-42a4-9c29-d3f7cc0220c6) · 5:11 · work [99a0d965](https://musicbrainz.org/work/99a0d965-2e14-4c17-be14-6b83c226a1b3)
+  - why: ISRC USHU20814012: 1 of 1 recordings fit
+- **Evelyn "Champagne" King – I'm In Love** (5:01)
+  - file: `Evelyn _Champagne_ King/Love Come Down_ The Best of Evelyn _Champagne_ King (1993)/04 - I'm In Love.flac`
+  - writes: I'm In Love [b1c06ca1](https://musicbrainz.org/recording/b1c06ca1-6be6-4069-9f5c-9e7cb2b0c88d) · 5:02 · work [5fd31346](https://musicbrainz.org/work/5fd31346-aa8b-4721-8bab-0feb9b6430e2)
+  - why: ISRC USRC19305634: 1 of 1 recordings fit
+- **Everything But The Girl – Tender Blue** (3:05)
+  - file: `Everything But The Girl/Eden (Deluxe Edition) (1984)/03 - Tender Blue.flac`
+  - writes: Tender Blue [faa3e679](https://musicbrainz.org/recording/faa3e679-298e-4d25-80ad-f0294a38ef5d) · 3:05 · work [c04b2a16](https://musicbrainz.org/work/c04b2a16-3ddd-4949-adfe-f7e5a3ef50b1)
+  - why: ISRC GBAHT1200198: 1 of 1 recordings fit
+- **Everything But The Girl – Gun Cupboard Love** (3:02)
+  - file: `Everything But The Girl/Eden (Deluxe Edition) (1984)/04 - Gun Cupboard Love.flac`
+  - writes: Gun Cupboard Love [b24023b2](https://musicbrainz.org/recording/b24023b2-90b2-4488-bd2e-a2905d078cc4) · 3:01
+  - why: ISRC GBAHT1200163: 1 of 1 recordings fit
+- **Everything But The Girl – Don't You Go** (3:28)
+  - file: `Everything But The Girl/Eden (Deluxe Edition) (1984)/08 - Don't You Go.flac`
+  - writes: Don’t You Go [08aee63d](https://musicbrainz.org/recording/08aee63d-da04-4dba-bb27-8d3a03f4a452) · 3:28
+  - why: ISRC GBAHT1200167: 1 of 1 recordings fit
+- **Everything But The Girl – Fascination** (3:20)
+  - file: `Everything But The Girl/Eden (Deluxe Edition) (1984)/10 - Fascination.flac`
+  - writes: Fascination [360d4a87](https://musicbrainz.org/recording/360d4a87-cd38-40ae-bb32-b4862848b355) · 3:20 · work [d7179979](https://musicbrainz.org/work/d7179979-596b-4db2-ba7e-96ad217d864e)
+  - why: ISRC GBAHT1200205: 1 of 1 recordings fit
+- **Everything But The Girl – I Must Confess** (3:12)
+  - file: `Everything But The Girl/Eden (Deluxe Edition) (1984)/11 - I Must Confess.flac`
+  - writes: I Must Confess [4dcb2029](https://musicbrainz.org/recording/4dcb2029-9d32-4828-a3a9-cefbd36bbe4e) · 3:11 · work [3893e0f8](https://musicbrainz.org/work/3893e0f8-5ba9-4bfa-99cc-0d2efd0b07c5)
+  - why: ISRC GBAHT1200206: 1 of 1 recordings fit
+- **Fiona Apple – The First Taste** (4:47)
+  - file: `Fiona Apple/Tidal (1996)/06 - The First Taste.flac`
+  - writes: The First Taste [8dc890c2](https://musicbrainz.org/recording/8dc890c2-994b-4dc8-8228-bff4ea622609) · 4:47 · work [bec80569](https://musicbrainz.org/work/bec80569-c875-4805-8f8b-01b33f3635b0)
+  - why: ISRC USSM19600949: 1 of 1 recordings fit
+- **Fruit Bats – Baby Bluebird - Waltz Demo** (2:30)
+  - file: `Fruit Bats/Sometimes a Cloud Is Just a Cloud_ Slow Growers, Sleeper Hits and Lost Songs (2001–2021) (2022)/03 - Baby Bluebird - Waltz Demo.flac`
+  - writes: Baby Bluebird (Waltz Demo) [3f436171](https://musicbrainz.org/recording/3f436171-bf85-485c-88e3-77b7ebb2dcac) · 2:29
+  - why: ISRC USMRG2277303: 1 of 1 recordings fit
+- **George Benson – Give Me the Night** (5:01)
+  - file: `George Benson/Give Me the Night (1980)/04 - Give Me the Night.flac`
+  - writes: Give Me the Night [f5847731](https://musicbrainz.org/recording/f5847731-ba24-43ba-98e7-8c11e34b881e) · 5:00 · work [5d219b3b](https://musicbrainz.org/work/5d219b3b-fb2d-4cf9-803e-6e6ee4411608)
+  - why: ISRC USWB10000902: 1 of 1 recordings fit
+- **George Benson – Everything Must Change** (8:07)
+  - file: `George Benson/In Flight (1977)/06 - Everything Must Change.flac`
+  - writes: Everything Must Change [5ea2424d](https://musicbrainz.org/recording/5ea2424d-4b38-4e79-be09-389cfe966510) · 8:07 · work [12c58092](https://musicbrainz.org/work/12c58092-f922-433b-a570-a497c513c1d0)
+  - why: ISRC USWB10102354: 1 of 1 recordings fit
+- **George Benson – Shape Of Things That Are And Were** (5:47)
+  - file: `George Benson/The Shape Of Things To Come (1968)/06 - Shape Of Things That Are And Were.flac`
+  - writes: Shape of Things That Are and Were [3303fbd8](https://musicbrainz.org/recording/3303fbd8-6ed5-47a7-8021-6503e48a39af) · 5:48 · work [5a99c8d8](https://musicbrainz.org/work/5a99c8d8-c17b-4424-bb5a-f3dd63e2f396)
+  - why: ISRC USAM16874795: 1 of 1 recordings fit
+- **Gino Soccio – Dancer** (8:28)
+  - file: `Gino Soccio/Outline/01 - Dancer.flac`
+  - writes: Dancer [a134b83e](https://musicbrainz.org/recording/a134b83e-1110-4b69-8533-faa71cd862df) · 8:26
+  - why: ISRC USWB17900069: 1 of 1 recordings fit
+- **Gino Soccio – So Lonely** (2:04)
+  - file: `Gino Soccio/Outline/02 - So Lonely.flac`
+  - writes: So Lonely [9b56a4ff](https://musicbrainz.org/recording/9b56a4ff-b0d2-4a92-a7f7-e280d1e9736f) · 2:02
+  - why: ISRC USWB10802649: 1 of 1 recordings fit
+- **Gino Soccio – So Lonely** (2:04)
+  - file: `Gino Soccio/Outline (1979)/02 - So Lonely.flac`
+  - writes: So Lonely [9b56a4ff](https://musicbrainz.org/recording/9b56a4ff-b0d2-4a92-a7f7-e280d1e9736f) · 2:02
+  - why: ISRC USWB10802649: 1 of 1 recordings fit
+- **Gwen McCrae – Ease the Pain** (3:32)
+  - file: `Gwen McCrae/Melody of Life (1979)/06 - Ease the Pain.flac`
+  - writes: Ease the Pain [82166d9e](https://musicbrainz.org/recording/82166d9e-7468-4ad7-b485-6d3e9de56003) · 3:34
+  - why: ISRC USBEN1256706: 1 of 1 recordings fit
+- **Gábor Szabó – Both Sides Now** (2:56)
+  - file: `Gábor Szabó/1969 (1969)/03 - Both Sides Now.mp3`
+  - writes: Both Sides Now [9abc2947](https://musicbrainz.org/recording/9abc2947-bc92-4826-8171-fa391798a7bc) · 2:57
+  - why: ISRC QMFMF2028172: 1 of 1 recordings fit
+- **Heartless Bastards – The Mountain** (5:19)
+  - file: `Heartless Bastards/The Mountain (2009)/01 - The Mountain.flac`
+  - writes: The Mountain [bb230083](https://musicbrainz.org/recording/bb230083-8e2e-4685-9235-7908f74f5b3d) · 5:19 · work [2df7531b](https://musicbrainz.org/work/2df7531b-2704-4362-a8a9-4436394aa00c)
+  - why: ISRC USFP70912501: 1 of 1 recordings fit
+- **Heatwave – Mind Blowing Decisions** (4:19)
+  - file: `Heatwave/Central Heating (Expanded Edition) (1978)/06 - Mind Blowing Decisions.flac`
+  - writes: Mind Blowing Decisions [985bba0b](https://musicbrainz.org/recording/985bba0b-830d-4242-b882-f79c59cc47ad) · 4:18 · work [089fcfb8](https://musicbrainz.org/work/089fcfb8-d305-4bf5-957d-ee8b6819d281)
+  - why: ISRC USLIC0601021: 1 of 1 recordings fit
+- **Heatwave – The Star of a Story** (5:48)
+  - file: `Heatwave/Central Heating (Expanded Edition) (1978)/07 - The Star of a Story.flac`
+  - writes: The Star of a Story [e6733b71](https://musicbrainz.org/recording/e6733b71-b849-4f1a-be94-7f160ca44972) · 5:48 · work [ec638aa2](https://musicbrainz.org/work/ec638aa2-61b0-3af1-ba4f-1a71645b19b1)
+  - why: ISRC USLIC0700328: 1 of 1 recordings fit
+- **Heatwave – Leavin' for a Dream** (3:27)
+  - file: `Heatwave/Central Heating (Expanded Edition) (1978)/09 - Leavin' for a Dream.flac`
+  - writes: Leavin’ for a Dream [c962cca8](https://musicbrainz.org/recording/c962cca8-1ee7-40bc-8443-156eb1f6dc0f) · 3:26 · work [7ae0fc2f](https://musicbrainz.org/work/7ae0fc2f-5524-491a-9f00-64dbeb9213ab)
+  - why: ISRC USLIC0700330: 1 of 1 recordings fit
+- **Heatwave – Whack That Axe** (3:46)
+  - file: `Heatwave/Central Heating (Expanded Edition) (1978)/10 - Whack That Axe.flac`
+  - writes: Whack That Axe [6704d9f5](https://musicbrainz.org/recording/6704d9f5-867d-4589-afcf-c1f54a0d9938) · 3:45
+  - why: ISRC GBBBM8100047: 1 of 1 recordings fit
+- **Heatwave – Always and Forever** (6:15)
+  - file: `Heatwave/Too Hot to Handle (Expanded Edition) (1977)/04 - Always and Forever.flac`
+  - writes: Always and Forever [31caeed4](https://musicbrainz.org/recording/31caeed4-c11d-41b4-af52-ba5569921308) · 6:15 · work [c3675e01](https://musicbrainz.org/work/c3675e01-51c0-3eb9-9b0f-d1e12e017579)
+  - why: ISRC USSM17200024: 1 of 1 recordings fit
+- **Heatwave – All You Do Is Dial** (4:12)
+  - file: `Heatwave/Too Hot to Handle (Expanded Edition) (1977)/06 - All You Do Is Dial.flac`
+  - writes: All You Do Is Dial [86096dc5](https://musicbrainz.org/recording/86096dc5-3f52-431c-b186-493ecce6e2d9) · 4:11 · work [5e3541d2](https://musicbrainz.org/work/5e3541d2-e8b4-46e4-b96d-708b20a797eb)
+  - why: ISRC GBBBM9999968: 1 of 1 recordings fit
+- **Herb Alpert – Behind The Rain** (5:35)
+  - file: `Herb Alpert/Rise (1979)/03 - Behind The Rain.flac`
+  - writes: Behind the Rain [19184ce8](https://musicbrainz.org/recording/19184ce8-c674-4029-8973-993545531e82) · 5:35 · work [cfec053f](https://musicbrainz.org/work/cfec053f-c0c1-4174-9d00-ef05749fca42)
+  - why: ISRC QM4221500410: 1 of 1 recordings fit
+- **Herb Alpert – Aranjuez (Mon Amour)** (6:43)
+  - file: `Herb Alpert/Rise (1979)/08 - Aranjuez (Mon Amour).flac`
+  - writes: Aranjuez (Mon amour) [2f9f850a](https://musicbrainz.org/recording/2f9f850a-f0d7-4cf2-93fe-e4929abf16a9) · 6:42 · work [6815e26f](https://musicbrainz.org/work/6815e26f-f6b2-30f0-962b-419d35fc2091)
+  - why: ISRC QM4221500415: 1 of 1 recordings fit
+- **Isaac Hayes – Hyperbolicsyllabicsesquedalymistic** (9:37)
+  - file: `Isaac Hayes/Hot Buttered Soul (1969)/02 - Hyperbolicsyllabicsesquedalymistic.flac`
+  - writes: Hyperbolicsyllabicsesquedalymistic [f30cada8](https://musicbrainz.org/recording/f30cada8-1bef-44d6-a221-a537f766a6b3) · 9:39 · work [1cdcfeb0](https://musicbrainz.org/work/1cdcfeb0-a941-4c30-97e6-94d628b293f6)
+  - why: ISRC USC4R1605493: 1 of 1 recordings fit
+- **JPEGMAFIA – Don't Put Anything On the Bible (feat. Buzzy Lee)** (4:05)
+  - file: `JPEGMAFIA/I LAY DOWN MY LIFE FOR YOU (2024)/13 - Don't Put Anything On the Bible (feat. Buzzy Lee).flac`
+  - writes: Don’t Put Anything On the Bible [cb07cbde](https://musicbrainz.org/recording/cb07cbde-50c2-4f6b-b3b0-defd56fdae5f) · 4:04 · work [e7085b82](https://musicbrainz.org/work/e7085b82-203c-419c-8753-cc9a4feb9d9b)
+  - why: ISRC QM7282468599: 1 of 1 recordings fit
+- **JPEGMAFIA – i recovered from this** (2:55)
+  - file: `JPEGMAFIA/I LAY DOWN MY LIFE FOR YOU (2024)/14 - i recovered from this.flac`
+  - writes: i recovered from this [c0db4e6e](https://musicbrainz.org/recording/c0db4e6e-ce56-4c5d-bcde-d13943fdf202) · 2:55 · work [385b0faf](https://musicbrainz.org/work/385b0faf-0038-4667-b340-0418a262d2cf)
+  - why: ISRC QM7282468602: 1 of 1 recordings fit
+- **Jamiroquai – Virtual Insanity (Bklava Remix)** (5:32)
+  - file: `Jamiroquai/Virtual Insanity (Bklava Remix) (2022)/01 - Virtual Insanity (Bklava Remix).flac`
+  - writes: Virtual Insanity (Bklava Remix) [46c40ad8](https://musicbrainz.org/recording/46c40ad8-921b-44b4-b6c1-011df2850ffc) · 5:31
+  - why: ISRC GBARL2101862: 1 of 1 recordings fit
+- **Jamiroquai – Virtual Insanity (Remastered 2013)** (5:41)
+  - file: `Jamiroquai/Virtual Insanity (Bklava Remix) (2022)/01 - Virtual Insanity (Remastered 2013).flac`
+  - writes: Virtual Insanity [38e9b1d7](https://musicbrainz.org/recording/38e9b1d7-f024-4010-bb61-ec1601350249) · 5:41 · work [769c5c09](https://musicbrainz.org/work/769c5c09-7179-310f-b092-77af2ed3462b)
+  - why: ISRC GBARL1201220: 1 of 1 recordings fit
+- **HiTech – SPANK!** (2:43)
+  - file: `Jamiroquai/Virtual Insanity (Bklava Remix) (2022)/06 - SPANK!.flac`
+  - writes: SPANK! [90d2cd63](https://musicbrainz.org/recording/90d2cd63-8929-45f6-93d5-3aae5c4c49e5) · 2:43
+  - why: ISRC USC4R2447272: 1 of 1 recordings fit
+- **Jamiroquai – Virtual Insanity (Remastered 2006)** (3:49)
+  - file: `Jamiroquai/Virtual Insanity (Bklava Remix) (2022)/06 - Virtual Insanity (Remastered 2006).flac`
+  - writes: Virtual Insanity [470a364c](https://musicbrainz.org/recording/470a364c-a59d-4313-a976-8647cc5087db) · 3:48 · work [769c5c09](https://musicbrainz.org/work/769c5c09-7179-310f-b092-77af2ed3462b)
+  - why: ISRC GBARL0601475: 1 of 1 recordings fit
+- **Mr. De' – Sex on the Beach 2000** (4:29)
+  - file: `Jamiroquai/Virtual Insanity (Bklava Remix) (2022)/08 - Sex on the Beach 2000.flac`
+  - writes: Sex on the Beach 2000 [8b6879ce](https://musicbrainz.org/recording/8b6879ce-278b-4798-8b25-e5260b3a88d0) · 4:29
+  - why: ISRC USGUM0710063: 1 of 1 recordings fit
+- **Jim Croce – Walkin’ Back to Georgia** (2:52)
+  - file: `Jim Croce/You Don't Mess Around With Jim (1972)/06 - Walkin’ Back to Georgia.flac`
+  - writes: Walkin’ Back to Georgia [2fc58f68](https://musicbrainz.org/recording/2fc58f68-8a8e-4a4d-b5c0-cda456fbf801) · 2:51 · work [a127a859](https://musicbrainz.org/work/a127a859-ec58-41ee-91d8-5e0c9a750aef)
+  - why: ISRC GBAJE0604318: 1 of 1 recordings fit
+- **Joe Henderson – Blue Bossa** (8:02)
+  - file: `Joe Henderson/Page One (1963)/01 - Blue Bossa.flac`
+  - writes: Blue Bossa [2aab10ef](https://musicbrainz.org/recording/2aab10ef-8dee-4be1-af7a-6e1c48f7cb1d) · 8:01 · work [58039a99](https://musicbrainz.org/work/58039a99-14fa-3705-bbef-d098e14b219b)
+  - why: ISRC USBN29801025: 1 of 1 recordings fit
+- **Julian Lage – Word For Word** (3:16)
+  - file: `Julian Lage/View With A Room (2022)/02 - Word For Word.flac`
+  - writes: Word for Word [7453eb40](https://musicbrainz.org/recording/7453eb40-5316-44ab-b0d5-f67a5aa397a0) · 3:16 · work [b00483e3](https://musicbrainz.org/work/b00483e3-199a-4d09-ad21-ca3e08b9f4ae)
+  - why: ISRC USUM72204803: 1 of 1 recordings fit
+- **Julius Rodriguez – In Heaven** (5:03)
+  - file: `Julius Rodriguez/Let Sound Tell All (2022)/08 - In Heaven.flac`
+  - writes: In Heaven [520acbad](https://musicbrainz.org/recording/520acbad-4d24-428a-9c52-6c30dd9aeda7) · 5:03
+  - why: ISRC USUM72122714: 1 of 1 recordings fit
+- **Jurassic 5 – Back 4 U** (3:17)
+  - file: `Jurassic 5/Feedback (2006)/01 - Back 4 U.flac`
+  - writes: Back 4 U [444318b7](https://musicbrainz.org/recording/444318b7-ae48-4dde-a45c-ab3460faeb35) · 3:16
+  - why: ISRC USUM70604087: 1 of 1 recordings fit
+- **Jurassic 5 – Quality Control** (4:49)
+  - file: `Jurassic 5/Quality Control (2000)/05 - Quality Control.flac`
+  - writes: Quality Control [5277d4a9](https://musicbrainz.org/recording/5277d4a9-e049-4f10-8246-feccfb490a31) · 4:49 · work [f658f84a](https://musicbrainz.org/work/f658f84a-1f0f-41e2-b271-23b68960a123)
+  - why: ISRC USIR10000157: 1 of 1 recordings fit
+- **Khruangbin – A Hymn** (3:11)
+  - file: `Khruangbin/Con Todo El Mundo (2018)/08 - A Hymn.flac`
+  - writes: A Hymn [11acaf63](https://musicbrainz.org/recording/11acaf63-cc6d-4dd7-a763-e0e47b4eab5f) · 3:11 · work [33327dc3](https://musicbrainz.org/work/33327dc3-0c84-4bcd-9622-f58edaf687be)
+  - why: ISRC GB5EM1701752: 1 of 1 recordings fit
+- **Kleeer – Tonight's the Night (Good Time) [12" Version] - Remix** (7:07)
+  - file: `Kleeer/Disco Classics - The Full 12__LP Versions (2021)/04 - Tonight's the Night (Good Time) [12_ Version] - Remix.flac`
+  - writes: Tonight’s the Night (Good Time) (12″ version, remix) [f14b6d05](https://musicbrainz.org/recording/f14b6d05-c3af-40b8-b683-98402ddc0662) · 7:07
+  - why: ISRC USAT21303582: 1 of 1 recordings fit
+- **Kleeer – Open Your Mind** (6:38)
+  - file: `Kleeer/Winners (1979)/08 - Open Your Mind.flac`
+  - writes: Open Your Mind [49482a06](https://musicbrainz.org/recording/49482a06-fdb1-48fb-85b5-38a0cde80cf2) · 6:41
+  - why: ISRC USAT20109434: 1 of 1 recordings fit
+- **Kool & The Gang – Little Children** (5:28)
+  - file: `Kool & The Gang/Open Sesame (Expanded Edition) (1976)/03 - Little Children.flac`
+  - writes: Little Children [217e9226](https://musicbrainz.org/recording/217e9226-3a07-4267-b9a9-8d8b59e6cd21) · 5:26
+  - why: ISRC USUM71026733: 1 of 1 recordings fit
+- **La Femme – Saisis la corde** (5:29)
+  - file: `La Femme/Psycho Tropical Berlin (2013)/10 - Saisis la corde.flac`
+  - writes: Saisis la corde [70383b82](https://musicbrainz.org/recording/70383b82-df50-42cc-b75e-134e4192a2ce) · 5:29 · work [ad7b7795](https://musicbrainz.org/work/ad7b7795-44b2-427e-b13f-4b3b449cc6d3)
+  - why: ISRC FR9W11302357: 1 of 1 recordings fit
+- **La Femme – Le blues de Françoise** (4:38)
+  - file: `La Femme/Psycho Tropical Berlin (2013)/11 - Le blues de Françoise.flac`
+  - writes: Le Blues de Françoise [5811355c](https://musicbrainz.org/recording/5811355c-ca46-46a5-9aac-8379786bd7e0) · 4:37 · work [9935e996](https://musicbrainz.org/work/9935e996-292f-4591-b0bb-bb714c321afd)
+  - why: ISRC FR9W11302358: 1 of 1 recordings fit
+- **Labi Siffre – The Vulture** (3:46)
+  - file: `Labi Siffre/Remember My Song (1975)/05 - The Vulture.flac`
+  - writes: The Vulture [5e9298d5](https://musicbrainz.org/recording/5e9298d5-c4d8-4a84-b99b-97e016c79096) · 3:44 · work [00ac63ed](https://musicbrainz.org/work/00ac63ed-be36-4b27-8c9d-946c8ee2be9c)
+  - why: ISRC GBAYE0600068: 1 of 1 recordings fit
+- **Lamont Dozier – Cool Me Out** (5:09)
+  - file: `Lamont Dozier/Working On You (1981)/01 - Cool Me Out.flac`
+  - writes: Cool Me Out [e2b71952](https://musicbrainz.org/recording/e2b71952-be7f-42dd-bfca-a5ccd18f269d) · 5:09 · work [5928be1b](https://musicbrainz.org/work/5928be1b-1c20-414c-87d3-8acca91fe33b)
+  - why: ISRC USSM10110085: 1 of 1 recordings fit
+- **Lamont Dozier – Interlude** (0:55)
+  - file: `Lamont Dozier/Working On You (1981)/06 - Interlude.flac`
+  - writes: Interlude [4766c0f8](https://musicbrainz.org/recording/4766c0f8-732c-40e4-90ee-629a86389baa) · 0:55 · work [4261672d](https://musicbrainz.org/work/4261672d-3738-4f56-9eed-7771da20fd8e)
+  - why: ISRC USSM10110090: 1 of 1 recordings fit
+- **Lenny Kravitz – Little Girl's Eyes** (7:45)
+  - file: `Lenny Kravitz/5 (1998)/11 - Little Girl's Eyes.flac`
+  - writes: Little Girl’s Eyes [7339661c](https://musicbrainz.org/recording/7339661c-bd54-4a60-bdfe-1fe9a79fc0fb) · 7:45 · work [cb34d1c7](https://musicbrainz.org/work/cb34d1c7-90b6-34f0-abb2-72acbba20422)
+  - why: ISRC USVI29800222: 1 of 1 recordings fit
+- **M. Ward – Post-War** (4:55)
+  - file: `M. Ward/Post-War (2006)/04 - Post-War.flac`
+  - writes: Post‐War [1872fa11](https://musicbrainz.org/recording/1872fa11-5b25-44af-8177-eccb341a4708) · 4:55 · work [7fb510f3](https://musicbrainz.org/work/7fb510f3-8c60-434a-a734-fdf64bbd2203)
+  - why: ISRC USMRG0628004: 1 of 1 recordings fit
+- **M. Ward – Afterword / Rag** (3:32)
+  - file: `M. Ward/Post-War (2006)/12 - Afterword _ Rag.flac`
+  - writes: Afterword / Rag [1608866f](https://musicbrainz.org/recording/1608866f-710c-4f97-a8d9-ff14e493ec9b) · 3:32
+  - why: ISRC USMRG0628012: 1 of 1 recordings fit
+- **MC Solaar – Nouveau western** (4:34)
+  - file: `MC Solaar/Prose combat (1994)/03 - Nouveau western.flac`
+  - writes: Nouveau western [cdc63eef](https://musicbrainz.org/recording/cdc63eef-a12f-44ea-b62a-77ba10efa2d0) · 4:34 · work [0d630ae8](https://musicbrainz.org/work/0d630ae8-4a9a-3042-8145-6c1d6e5213d9)
+  - why: ISRC FRZ029302610: 1 of 1 recordings fit
+- **MC Solaar – Bouge de là - Part. 1** (3:11)
+  - file: `MC Solaar/Qui sème le vent récolte le tempo (1991)/12 - Bouge de là - Part. 1.flac`
+  - writes: Bouge de là, Part 1 [fab192ec](https://musicbrainz.org/recording/fab192ec-3e19-4862-8062-d819b2eeae23) · 3:11
+  - why: ISRC FRZ029101130: 1 of 1 recordings fit
+- **Madvillain – Figaro** (2:26)
+  - file: `Madvillain/Madvillainy (2004)/14 - Figaro.flac`
+  - writes: Figaro [886d471c](https://musicbrainz.org/recording/886d471c-c5a9-4a03-a018-b69e7c919c07) · 2:25 · work [52fa6d9b](https://musicbrainz.org/work/52fa6d9b-b9b6-3d29-9592-1f82b3eeea01)
+  - why: ISRC US2S70465014: 1 of 1 recordings fit
+- **Magoo – Sick Dawg** (4:03)
+  - file: `Magoo/Magoo The EP, Vol. 2 (2024)/04 - Sick Dawg.flac`
+  - writes: Sick Dawg [f9c8c9a4](https://musicbrainz.org/recording/f9c8c9a4-7c5a-41c0-bedd-1617cd667c3e) · 4:03 · work [ce95ff6c](https://musicbrainz.org/work/ce95ff6c-9566-4aa9-90f6-52a6f79eea2e)
+  - why: ISRC QZES52455416: 1 of 1 recordings fit
+- **Manduka – Fabula - Somos Quem Somos** (6:50)
+  - file: `Manduka/Caravana (1978)/05 - Fabula - Somos Quem Somos.flac`
+  - writes: Fábula - Somos Quem Somos [2bb3e597](https://musicbrainz.org/recording/2bb3e597-2fcf-4181-b006-e54947cf7943) · 6:50 · work [cf0b4639](https://musicbrainz.org/work/cf0b4639-361f-4690-ac2c-ba5fff94bb59)
+  - why: ISRC ARIXB2301008: 1 of 1 recordings fit
+- **Marlena Shaw – Where Can I Go?** (2:21)
+  - file: `Marlena Shaw/The Spice Of Life (1969)/03 - Where Can I Go_.flac`
+  - writes: Where Can I Go? [4a1ca284](https://musicbrainz.org/recording/4a1ca284-c151-4ff7-8a40-9bdb55f09e81) · 2:23 · work [297ba971](https://musicbrainz.org/work/297ba971-e6cc-4f6d-af15-490c00ee3fa4)
+  - why: ISRC USMC10400605: 1 of 1 recordings fit
+- **Marvin Gaye – Falling In Love Again** (4:39)
+  - file: `Marvin Gaye/Here, My Dear (1978)/13 - Falling In Love Again.flac`
+  - writes: Falling in Love Again [ea3bb011](https://musicbrainz.org/recording/ea3bb011-77e9-4524-b6e3-db680b0a9ca8) · 4:39 · work [e4ea1450](https://musicbrainz.org/work/e4ea1450-b135-46c5-921b-6377af53f763)
+  - why: ISRC USMO17800013: 1 of 1 recordings fit
+- **Marvin Gaye – All The Way Around** (3:50)
+  - file: `Marvin Gaye/I Want You (Deluxe Edition) (1976)/07 - All The Way Around.flac`
+  - writes: All the Way Around [00eea104](https://musicbrainz.org/recording/00eea104-822a-46a2-99a8-c8e2ec6ec7e6) · 3:50 · work [576a8dbe](https://musicbrainz.org/work/576a8dbe-6c82-4c68-a4d9-ec8ef8c6e8d4)
+  - why: ISRC USMO10000527: 1 of 1 recordings fit
+- **Marvin Gaye – Sexual Healing** (3:59)
+  - file: `Marvin Gaye/Midnight Love (1982)/02 - Sexual Healing.flac`
+  - writes: Sexual Healing [056ab53c](https://musicbrainz.org/recording/056ab53c-0f38-4c49-8c31-f9bacecf76d7) · 4:00 · work [3a9032e3](https://musicbrainz.org/work/3a9032e3-3967-38d4-ac1f-a1fccf03a768)
+  - why: ISRC USSM19803028: 1 of 2 recordings fit
+- **Marvin Gaye – Mercy Mercy Me (The Ecology)** (3:16)
+  - file: `Marvin Gaye/What's Going On (1971)/06 - Mercy Mercy Me (The Ecology).flac`
+  - writes: Mercy Mercy Me (The Ecology) [a673c6ab](https://musicbrainz.org/recording/a673c6ab-7188-4912-936e-5612e923ca93) · 3:14 · work [7f7aa10e](https://musicbrainz.org/work/7f7aa10e-8451-3378-b16e-6036ec7ed486)
+  - why: ISRC USMO17100046: 1 of 3 recordings fit
+- **Michael Franks – Nightmoves** (4:04)
+  - file: `Michael Franks/The Art Of Tea (1976)/01 - Nightmoves.flac`
+  - writes: Nightmoves [9f46ac44](https://musicbrainz.org/recording/9f46ac44-2b5c-49ef-b063-d9f7bcb00c07) · 4:04 · work [e473cafc](https://musicbrainz.org/work/e473cafc-bd9d-3009-bbf2-300007da7b7e)
+  - why: ISRC USWB19903108: 1 of 1 recordings fit
+- **Michael Giacchino – Life's Incredible Again** (1:24)
+  - file: `Michael Giacchino/The Incredibles (Original Motion Picture Soundtrack) (2004)/06 - Life's Incredible Again.flac`
+  - writes: Life’s Incredible Again [694a0164](https://musicbrainz.org/recording/694a0164-5e5b-4a20-94be-5dbd75d16675) · 1:24 · work [b90245a0](https://musicbrainz.org/work/b90245a0-995f-35ce-b1cd-e2528dc9bd43)
+  - why: ISRC USWD10423829: 1 of 1 recordings fit
+- **Nikki Giovanni – The Life I Led** (3:03)
+  - file: `Nikki Giovanni/The Way I Feel (2021)/08 - The Life I Led.flac`
+  - writes: The Life I Led [55d0d7de](https://musicbrainz.org/recording/55d0d7de-628e-4ccb-a688-cba84e37bf58) · 3:01
+  - why: ISRC USCWY2100207: 1 of 1 recordings fit
+- **O'Donel Levy – Granny** (4:25)
+  - file: `O'Donel Levy/Black Velvet (2024 Remastered Version) (1971)/02 - Granny.flac`
+  - writes: Granny [4e50d686](https://musicbrainz.org/recording/4e50d686-dfb6-47d6-977c-749013027f31) · 4:24
+  - why: ISRC CAU111401963: 1 of 1 recordings fit
+- **O'Donel Levy – Love Story** (2:10)
+  - file: `O'Donel Levy/Black Velvet (2024 Remastered Version) (1971)/05 - Love Story.flac`
+  - writes: Love Story [c33b5619](https://musicbrainz.org/recording/c33b5619-79d8-4e2b-ac63-f9534370d29e) · 2:08
+  - why: ISRC CAU111401966: 1 of 1 recordings fit
+- **Oliver Nelson – Yearnin'** (6:22)
+  - file: `Oliver Nelson/The Blues and the Abstract Truth (1961)/04 - Yearnin'.flac`
+  - writes: Yearnin’ [db1f958c](https://musicbrainz.org/recording/db1f958c-342c-4083-abde-e12536c70a2a) · 6:24 · work [85524663](https://musicbrainz.org/work/85524663-3ea3-413c-9960-c267d83d036f)
+  - why: ISRC USWWW0202391: 1 of 1 recordings fit
+- **Patrice Rushen – Remind Me** (5:17)
+  - file: `Patrice Rushen/Straight from the Heart (Remastered) (1982)/08 - Remind Me.flac`
+  - writes: Remind Me [f174ba25](https://musicbrainz.org/recording/f174ba25-b611-4573-9a70-e5bfd905dc25) · 5:18 · work [b4c76eef](https://musicbrainz.org/work/b4c76eef-3c9b-4a7a-b666-2a06f3fc0f02)
+  - why: ISRC USEE10183271: 1 of 2 recordings fit
+- **Perry Como – Papa Loves Mambo** (2:42)
+  - file: `Perry Como/Pure Gold (1975)/09 - Papa Loves Mambo.flac`
+  - writes: Papa Loves Mambo [32bdad4f](https://musicbrainz.org/recording/32bdad4f-d1e0-4cef-9ab9-b8acef808ecc) · 2:42 · work [e57dcd04](https://musicbrainz.org/work/e57dcd04-4664-4609-ab9a-06e607bd43a0)
+  - why: ISRC USRC15404658: 1 of 1 recordings fit
+- **Piero Umiliani – Mahè** (2:42)
+  - file: `Piero Umiliani/La ragazza dalla pelle di luna (1970)/02 - Mahè.flac`
+  - writes: Mahe' [faaa3779](https://musicbrainz.org/recording/faaa3779-fda0-408b-94dc-271bf5be74d5) · 2:39
+  - why: ISRC ITH750900065: 1 of 1 recordings fit
+- **Piero Umiliani – Pelle di luna - Hammond & Percussion Version** (3:17)
+  - file: `Piero Umiliani/La ragazza dalla pelle di luna (1970)/07 - Pelle di luna - Hammond & Percussion Version.flac`
+  - writes: Pelle di luna (Hammond & Percussion version) [d06e5079](https://musicbrainz.org/recording/d06e5079-1414-4c39-9994-647f64dea71d) · 3:17
+  - why: ISRC ITH750900073: 1 of 1 recordings fit
+- **Punkin Machine – I Need You Tonight** (5:39)
+  - file: `Punkin Machine/I Need You Tonite _ Tonight (1981)/01 - I Need You Tonight.flac`
+  - writes: I Need You Tonight [49b997ac](https://musicbrainz.org/recording/49b997ac-359f-4894-aadf-52ec8f08eb72) · 5:38 · work [e9a404d8](https://musicbrainz.org/work/e9a404d8-d286-43e2-885f-d1376e67da1a)
+  - why: ISRC CAU118107327: 1 of 1 recordings fit
+- **Quincy Jones – Superwoman (Where Were You When I Needed You)** (5:26)
+  - file: `Quincy Jones/Sounds... And Stuff Like That! (1978)/06 - Superwoman (Where Were You When I Needed You).flac`
+  - writes: Superwoman (Where Were You When I Needed You) [fbecfa0a](https://musicbrainz.org/recording/fbecfa0a-ab62-4fae-a83b-b97f253264e5) · 5:28 · work [910890f3](https://musicbrainz.org/work/910890f3-3863-35f4-afbd-6ee66e8984fb)
+  - why: ISRC USWWW0129216: 1 of 1 recordings fit
+- **Raphael Saadiq – Still Ray** (3:03)
+  - file: `Raphael Saadiq/Instant Vintage (2002)/04 - Still Ray.flac`
+  - writes: Still Ray [9f3a237c](https://musicbrainz.org/recording/9f3a237c-db4f-4287-92c3-c5b39cf29270) · 3:03
+  - why: ISRC USUR10200139: 1 of 1 recordings fit
+- **Raphael Saadiq – Tick Tock** (4:28)
+  - file: `Raphael Saadiq/Instant Vintage (2002)/10 - Tick Tock.flac`
+  - writes: Tick Tock [8030cb07](https://musicbrainz.org/recording/8030cb07-4c86-48e3-a664-b80579a15b27) · 4:28
+  - why: ISRC USUR10200145: 1 of 1 recordings fit
+- **Raphael Saadiq – What's Life Like** (2:50)
+  - file: `Raphael Saadiq/Instant Vintage (2002)/18 - What's Life Like.flac`
+  - writes: What’s Life Like [9c531ccf](https://musicbrainz.org/recording/9c531ccf-371d-48b7-babf-394995edc30e) · 2:50
+  - why: ISRC USUR10200154: 1 of 1 recordings fit
+- **Raphael Saadiq – I'm Feeling Love** (3:05)
+  - file: `Raphael Saadiq/Jimmy Lee (2019)/06 - I'm Feeling Love.flac`
+  - writes: I’m Feeling Love [7b27ee50](https://musicbrainz.org/recording/7b27ee50-7cda-4c30-b9ac-3d11411b082c) · 3:05
+  - why: ISRC USSM11903727: 1 of 1 recordings fit
+- **Sade – Fear** (4:10)
+  - file: `Sade/Promise (1985)/09 - Fear.flac`
+  - writes: Fear [e8d44b0b](https://musicbrainz.org/recording/e8d44b0b-7c0f-4d3a-be09-0a448ee0adc7) · 4:11 · work [8cb92837](https://musicbrainz.org/work/8cb92837-5508-36b4-b617-fbb93c613a9b)
+  - why: ISRC GBBBM0002023: 1 of 1 recordings fit
+- **Sade – Pearls** (4:33)
+  - file: `Sade/The Best of Sade (1994)/16 - Pearls.flac`
+  - writes: Pearls [7203b900](https://musicbrainz.org/recording/7203b900-9d2a-48c3-9d4e-2ae9cb679ad4) · 4:34 · work [9fa5aa8f](https://musicbrainz.org/work/9fa5aa8f-b6fd-3dc2-9a57-a11d565c52f6)
+  - why: ISRC GBBBM9200024: 1 of 1 recordings fit
+- **Sarah Vaughan – My Favourite Things** (2:48)
+  - file: `Sarah Vaughan/Sarah Vaughan - The Very Best Of (2006)/02 - My Favourite Things.flac`
+  - writes: My Favourite Things [ab8f7cac](https://musicbrainz.org/recording/ab8f7cac-d880-4dcc-bf4c-8fb71b9bba03) · 2:47 · work [edf0bfbc](https://musicbrainz.org/work/edf0bfbc-c9e4-3b7d-9765-e8b86d9febbc)
+  - why: ISRC GBAYE6100240: 1 of 1 recordings fit
+- **Shirley Ann Lee – Someday** (1:40)
+  - file: `Shirley Ann Lee/Songs of Light (2012)/14 - Someday.flac`
+  - writes: Someday [bb75b87e](https://musicbrainz.org/recording/bb75b87e-311f-4ab0-83d4-84cadef7a9f9) · 1:40
+  - why: ISRC USCW61040214: 1 of 1 recordings fit
+- **Shuggie Otis – Sweet Thang** (4:12)
+  - file: `Shuggie Otis/Freedom Flight (1971)/03 - Sweet Thang.flac`
+  - writes: Sweet Thang [17ebf761](https://musicbrainz.org/recording/17ebf761-c25a-45d8-95cd-d9c243e78e23) · 4:11 · work [8e177c84](https://musicbrainz.org/work/8e177c84-8d7d-35f9-9cfb-0aba90a84639)
+  - why: ISRC USSM10104364: 1 of 1 recordings fit
+- **Slum Village – Hustle** (3:29)
+  - file: `Slum Village/Fantastic, Vol. 2.10 (2010)/18 - Hustle.flac`
+  - writes: Hustle [bf028851](https://musicbrainz.org/recording/bf028851-3535-4d0e-9eaf-c61a6fbe9c7f) · 3:29
+  - why: ISRC USBCE1010018: 1 of 1 recordings fit
+- **Sonny Clark Trio – Softly As In A Morning Sunrise - Remastered 2001/Rudy Van Gelder Edition** (6:34)
+  - file: `Sonny Clark Trio/Sonny Clark Trio (Remastered 2001_Rudy Van Gelder Edition) (1958)/05 - Softly As In A Morning Sunrise - Remastered 2001_Rudy Van Gelder Edition.flac`
+  - writes: Softly as in a Morning Sunrise [03867bcf](https://musicbrainz.org/recording/03867bcf-11a5-469a-bfb7-29f76fb88d23) · 6:34 · work [234ab69e](https://musicbrainz.org/work/234ab69e-e3d7-3165-92f3-f6791caca12f)
+  - why: ISRC USBN20100483: 1 of 1 recordings fit
+- **Stevie Wonder – Outside My Window** (5:30)
+  - file: `Stevie Wonder/Journey Through The Secret Life Of Plants (1979)/02 - Outside My Window.flac`
+  - writes: Outside My Window [f22c0e0a](https://musicbrainz.org/recording/f22c0e0a-a623-438f-9086-5db1c20ec63f) · 5:29 · work [1b08abd5](https://musicbrainz.org/work/1b08abd5-0701-48d4-a697-33e79a5b3c5f)
+  - why: ISRC USMO10111138: 1 of 1 recordings fit
+- **Stevie Wonder – Power Flower** (5:31)
+  - file: `Stevie Wonder/Journey Through The Secret Life Of Plants (1979)/08 - Power Flower.flac`
+  - writes: Power Flower [b54b709b](https://musicbrainz.org/recording/b54b709b-90df-411c-9028-c23293137873) · 5:30 · work [110ef885](https://musicbrainz.org/work/110ef885-612c-4335-a07c-0158c477c793)
+  - why: ISRC USMO10111135: 1 of 1 recordings fit
+- **Stevie Wonder – Smile** (3:21)
+  - file: `Stevie Wonder/With A Song In My Heart (1963)/03 - Smile.flac`
+  - writes: Smile [25ac7f36](https://musicbrainz.org/recording/25ac7f36-290b-49cc-8004-b0e73820e60c) · 3:20 · work [fff472ab](https://musicbrainz.org/work/fff472ab-6373-386b-8a2b-caf7efe6171e)
+  - why: ISRC USMO10200056: 1 of 1 recordings fit
+- **Sunlightsquare – Papa Was a Rolling Stone (Extended Mix)** (5:01)
+  - file: `Sunlightsquare/Super People _ Papa Was a Rolling Stone (2015)/05 - Papa Was a Rolling Stone (Extended Mix).mp3`
+  - writes: Papa Was a Rolling Stone - Extended Mix [c2f6fd12](https://musicbrainz.org/recording/c2f6fd12-ed38-4133-af0c-18a273c97598) · 5:01
+  - why: ISRC GBLMR1500007: 1 of 1 recordings fit
+- **Take Care – This Feeling Will Pass** (2:05)
+  - file: `Take Care/Reject (2022)/03 - This Feeling Will Pass.flac`
+  - writes: This Feeling Will Pass [a05db2e0](https://musicbrainz.org/recording/a05db2e0-8744-42be-b462-8fcc71ddada1) · 2:04 · work [8aa2350a](https://musicbrainz.org/work/8aa2350a-6d9d-4906-9d3c-f5f57b781d5a)
+  - why: ISRC GX8KD2230947: 1 of 1 recordings fit
+- **The Budos Band – Up From the South** (3:27)
+  - file: `The Budos Band/The Budos Band (2005)/01 - Up From the South.flac`
+  - writes: Up From the South [19ef4462](https://musicbrainz.org/recording/19ef4462-6d5d-4fee-9ddf-7cbdf32522a5) · 3:27 · work [b9eec09d](https://musicbrainz.org/work/b9eec09d-d271-4f6e-8700-f76059ea891d)
+  - why: ISRC USA370651091: 1 of 1 recordings fit
+- **The Crusaders – Street Life** (11:17)
+  - file: `The Crusaders/Street Life (1979)/01 - Street Life.flac`
+  - writes: Street Life [c2efd853](https://musicbrainz.org/recording/c2efd853-686b-43b2-b064-2ccd963943ff) · 11:13 · work [761ef9cc](https://musicbrainz.org/work/761ef9cc-5eb8-3155-a887-5aef0b7b41d0)
+  - why: ISRC USMC17948328: 1 of 2 recordings fit
+- **The Doobie Brothers – What a Fool Believes** (3:44)
+  - file: `The Doobie Brothers/Minute by Minute (1978)/02 - What a Fool Believes.flac`
+  - writes: What a Fool Believes [6764b741](https://musicbrainz.org/recording/6764b741-fc9f-40d5-bbd5-d0ed0982ef07) · 3:43 · work [10cac3fb](https://musicbrainz.org/work/10cac3fb-4142-3161-829a-15ad7fc0c862)
+  - why: ISRC USWB10902441: 1 of 1 recordings fit
+- **The Egyptian Lover – Everything She Wants** (4:33)
+  - file: `The Egyptian Lover/1985 (2018)/03 - Everything She Wants.flac`
+  - writes: Everything She Wants [de5ebc47](https://musicbrainz.org/recording/de5ebc47-fc20-4440-98e9-4892653d7721) · 4:33 · work [68d641f5](https://musicbrainz.org/work/68d641f5-e692-4d1e-bdcf-bf1b740fb6e9)
+  - why: ISRC US2391898503: 1 of 1 recordings fit
+- **The Gap Band – Outstanding** (3:19)
+  - file: `The Gap Band/The Gap Band IV (1982)/04 - Outstanding.flac`
+  - writes: Outstanding [5a342497](https://musicbrainz.org/recording/5a342497-43e7-4c5b-b75b-4b7caef9946d) · 3:18 · work [e677b955](https://musicbrainz.org/work/e677b955-df3a-4f9c-97b0-9a6942f54150)
+  - why: ISRC USPR38205279: 1 of 1 recordings fit
+- **The Jacksons – Blame It on the Boogie** (3:35)
+  - file: `The Jacksons/Destiny (1978)/01 - Blame It on the Boogie.flac`
+  - writes: Blame It on the Boogie [f021c48e](https://musicbrainz.org/recording/f021c48e-6322-4e07-bfc1-3090853cc041) · 3:32 · work [8ffc75e5](https://musicbrainz.org/work/8ffc75e5-3ddb-4a6a-a2d5-8ec5ecee1c78)
+  - why: ISRC USSM17801024: 1 of 1 recordings fit
+- **The Roots – Thought @ Work** (4:44)
+  - file: `The Roots/Phrenology (2002)/07 - Thought @ Work.flac`
+  - writes: Thought @ Work [9981e133](https://musicbrainz.org/recording/9981e133-39bd-4f94-86db-c91f94db1ad2) · 4:43 · work [2b2ed62d](https://musicbrainz.org/work/2b2ed62d-d343-3725-b072-4cb3ee990300)
+  - why: ISRC USMC10201426: 1 of 2 recordings fit
+- **The Roots – You Got Me** (4:19)
+  - file: `The Roots/Things Fall Apart (1999)/15 - You Got Me.flac`
+  - writes: You Got Me [cefcb6a8](https://musicbrainz.org/recording/cefcb6a8-4770-44b1-a1d2-5cb536b051cf) · 4:19 · work [9858d217](https://musicbrainz.org/work/9858d217-502c-4e26-8dad-78df8567e435)
+  - why: ISRC USMC19858697: 1 of 2 recordings fit
+- **The Teskey Brothers – Crying Shame** (3:52)
+  - file: `The Teskey Brothers/Half Mile Harvest (2018)/01 - Crying Shame.flac`
+  - writes: Crying Shame [ae01fe2c](https://musicbrainz.org/recording/ae01fe2c-6153-48ce-9740-992b48c4b00a) · 3:52
+  - why: ISRC TCACU1689341: 1 of 1 recordings fit
+- **Thin Lizzy – Still In Love With You** (5:40)
+  - file: `Thin Lizzy/Nightlife (Deluxe Edition) (1974)/04 - Still In Love With You.flac`
+  - writes: Still in Love With You [4f34d125](https://musicbrainz.org/recording/4f34d125-7d5a-4527-aa63-3878cba73aed) · 5:40 · work [cefd696d](https://musicbrainz.org/work/cefd696d-1573-333c-9e48-e5270e4d9240)
+  - why: ISRC GBF080080089: 1 of 3 recordings fit
+- **Title Fight – Head in the Ceiling Fan** (4:00)
+  - file: `Title Fight/Floral Green (2012)/05 - Head in the Ceiling Fan.flac`
+  - writes: Head in the Ceiling Fan [495bb8b3](https://musicbrainz.org/recording/495bb8b3-2841-4e22-b431-c7f5a5b00b11) · 4:02 · work [711624b3](https://musicbrainz.org/work/711624b3-d6a7-4a1f-ac7a-267ac7a776e3)
+  - why: ISRC USA6G1250905: 1 of 1 recordings fit
+- **Tom Browne – Charisma** (3:43)
+  - file: `Tom Browne/Yours Truly (1981)/03 - Charisma.flac`
+  - writes: Charisma [eaf462b2](https://musicbrainz.org/recording/eaf462b2-62fa-4088-8be4-6fe32d20d144) · 3:42
+  - why: ISRC USAR10500368: 1 of 1 recordings fit
+- **Tony! Toni! Toné! – Feels Good** (4:58)
+  - file: `Tony! Toni! Toné!/The Revival (1990)/01 - Feels Good.flac`
+  - writes: Feels Good [358cb2c5](https://musicbrainz.org/recording/358cb2c5-8eb9-429e-91dd-c660364ca67d) · 4:58 · work [6ae71f5d](https://musicbrainz.org/work/6ae71f5d-ecbc-4af9-8fa3-574f901a8971)
+  - why: ISRC USMR19087280: 1 of 2 recordings fit
+- **War – Leroy's Latin Lament: Lonnie Dreams/The Way We Feel/ La Fiesta/Lament** (6:45)
+  - file: `War/Why Can't We Be Friends_ (50th Anniversary Collector's Edition) (1975)/04 - Leroy's Latin Lament_ Lonnie Dreams_The Way We Feel_ La Fiesta_Lament.mp3`
+  - writes: Leroy's Latin Lament: Lonnie Dreams/The Way We Feel/ La Fiesta/Lament [23784262](https://musicbrainz.org/recording/23784262-bcf9-42f6-bbf6-a7fbadee9117) · 6:45
+  - why: ISRC USRHD0703032: 1 of 2 recordings fit
+- **Wendell Harrison – Winter** (6:40)
+  - file: `Wendell Harrison/Organic Dream (1981)/02 - Winter.flac`
+  - writes: Winter [31bc400c](https://musicbrainz.org/recording/31bc400c-7f75-4c14-8478-8cf44ad8fc18) · 6:39
+  - why: ISRC USLNH1206702: 1 of 1 recordings fit
+- **Wendell Harrison – Peace of Mind** (7:19)
+  - file: `Wendell Harrison/Organic Dream (1981)/04 - Peace of Mind.flac`
+  - writes: Peace of Mind [16fd9f09](https://musicbrainz.org/recording/16fd9f09-1e9c-4946-ba31-a0edb2c00f94) · 7:18
+  - why: ISRC USLNH1206704: 1 of 1 recordings fit
+- **Wendell Harrison – A Green Meadow** (5:55)
+  - file: `Wendell Harrison/Organic Dream (1981)/06 - A Green Meadow.flac`
+  - writes: A Green Meadow [12779ce2](https://musicbrainz.org/recording/12779ce2-0ebb-4bb6-b667-ce8dc5fe2ed7) · 5:55
+  - why: ISRC USLNH1206706: 1 of 1 recordings fit
+- **Westside Gunn – Dudley Boyz (feat. Action Bronson)** (2:02)
+  - file: `Westside Gunn/FLYGOD (2016)/17 - Dudley Boyz (feat. Action Bronson).flac`
+  - writes: Dudley Boyz [90cb927f](https://musicbrainz.org/recording/90cb927f-2707-4dde-bc8b-5824e9a5ed27) · 2:02
+  - why: ISRC USUYG1094349: 1 of 1 recordings fit
+- **Wham! – Everything She Wants** (5:03)
+  - file: `Wham!/Make It Big (1984)/02 - Everything She Wants.flac`
+  - writes: Everything She Wants [2afa442d](https://musicbrainz.org/recording/2afa442d-33bc-46eb-9df2-4fa2b182cb06) · 5:03 · work [aca26004](https://musicbrainz.org/work/aca26004-4723-3a70-bae9-723adbc2f21f)
+  - why: ISRC GBBBN0009300: 1 of 2 recordings fit
+- **Wings – Arrow Through Me** (3:37)
+  - file: `Wings/Back To The Egg (1979)/07 - Arrow Through Me.flac`
+  - writes: Arrow Through Me [cb0af6b7](https://musicbrainz.org/recording/cb0af6b7-420a-4356-8ab0-96800148df41) · 3:38 · work [45a42f2e](https://musicbrainz.org/work/45a42f2e-e87c-3080-b665-5ef9f39e2d32)
+  - why: ISRC GBCCS0700022: 1 of 1 recordings fit
+- **Yazmin Lacey – Sun Is Ours** (1:08)
+  - file: `Yazmin Lacey/Black Moon (2017)/06 - Sun Is Ours.flac`
+  - writes: Sun Is Ours [b73e9fec](https://musicbrainz.org/recording/b73e9fec-cc53-49b0-b86d-14c0cf38d643) · 1:08
+  - why: ISRC UKKZF1700006: 1 of 1 recordings fit
+- **Young Franco, General Levy & Tommy Villiers – Give Thanks, Give Praise** (3:42)
+  - file: `Young Franco, General Levy & Tommy Villiers/it's Franky baby! (2025)/08 - Give Thanks, Give Praise.flac`
+  - writes: Give Thanks, Give Praise [8b94659f](https://musicbrainz.org/recording/8b94659f-451e-4276-9621-13284adc3175) · 3:42
+  - why: ISRC AUNE32400021: 1 of 1 recordings fit
+- **Ziggy Marley – Rainbow in the Sky** (3:08)
+  - file: `Ziggy Marley/Dragonfly (2003)/07 - Rainbow in the Sky.flac`
+  - writes: Rainbow in the Sky [cbab80bc](https://musicbrainz.org/recording/cbab80bc-f52b-47bd-bb66-bec88bebd4ce) · 3:08
+  - why: ISRC USPM10300032: 1 of 1 recordings fit
+
+## search (239)
+
+An artist + title search found exactly one recording with the same lead artist, title, version label and length (±4 s), or a tie broken by the file's ISRC or album. **Not accepted by default.**
+
+- **A Taste Of Honey – Rescue Me** (3:23)
+  - file: `A Taste Of Honey/Twice As Sweet (1980)/02 - Rescue Me.flac`
+  - writes: Rescue Me [5c84934a](https://musicbrainz.org/recording/5c84934a-01f2-403f-be85-1d3169cf469c) · 3:23
+  - why: ISRC USCA29901293: 0 of 0 recordings fit; search: 1 of 10 results fit
+- **ATW – 100%** (6:03)
+  - file: `ATW/Atw002 (2022)/02 - 100%.flac`
+  - writes: 100% [114b4122](https://musicbrainz.org/recording/114b4122-20af-40d1-9aef-775bbcb5dc58) · 6:03
+  - why: ISRC GBLFP2243563: 0 of 0 recordings fit; search: 1 of 2 results fit
+- **Admas – Anchi Bale Game** (5:15)
+  - file: `Admas/Singles/Anchi Bale Game.mp3`
+  - writes: Anchi Bale Game [4c9fd8c8](https://musicbrainz.org/recording/4c9fd8c8-54b6-402c-ad5c-50e22749c68d) · 5:15
+  - why: search: 1 of 2 results fit
+- **Ahmad Jamal – A Foggy Day** (4:23)
+  - file: `Ahmad Jamal/Chamber Music Of The New Jazz (1955)/02 - A Foggy Day.flac`
+  - writes: A Foggy Day [364c8ff5](https://musicbrainz.org/recording/364c8ff5-07bf-4d44-89ce-ee6bf72d08c8) · 4:26 · work [f2d4ab2e](https://musicbrainz.org/work/f2d4ab2e-9ea6-338f-8343-f0c557d4cb6b)
+  - why: ISRC USGR10401131: 0 of 0 recordings fit; search: 4 of 5 results fit; tie broken by album
+- **American Gypsy – Don't Give Up** (4:49)
+  - file: `American Gypsy/Angel Eyes (1974)/16 - Don't Give Up.mp3`
+  - writes: Don't Give Up [21ebcc3c](https://musicbrainz.org/recording/21ebcc3c-f0cc-4278-b517-d6102db40452) · 4:49
+  - why: search: 1 of 1 results fit
+- **Amon Tobin – Stoney Street** (5:53)
+  - file: `Amon Tobin/Bricolage/00 - Stoney Street.m4a`
+  - writes: Stoney Street [fe6445a9](https://musicbrainz.org/recording/fe6445a9-325e-4093-93a8-b3b1dc50deb6) · 5:53 · work [dc4a692d](https://musicbrainz.org/work/dc4a692d-c9ad-4079-8270-08ef5c460ad2)
+  - why: search: 1 of 2 results fit
+- **Angie Stone – Wish I Didn't Miss You** (4:31)
+  - file: `Angie Stone/Mahogany Soul (2001)/06 - Wish I Didn't Miss You.mp3`
+  - writes: Wish I Didn’t Miss You [abb74399](https://musicbrainz.org/recording/abb74399-9a94-4c28-a645-7d319d7fab49) · 4:30 · work [ee8fefa7](https://musicbrainz.org/work/ee8fefa7-ebf0-4b2a-815d-1fcda0d43aec)
+  - why: search: 9 of 79 results fit; tie broken by album
+- **Avril Lavigne – Sk8er Boi** (3:27)
+  - file: `Avril Lavigne/Let Go (2002)/03 - Sk8er Boi.flac`
+  - writes: Sk8er Boi [f06649e9](https://musicbrainz.org/recording/f06649e9-056a-4e73-9e97-91cd96efb3ba) · 3:24 · work [c74ee22e](https://musicbrainz.org/work/c74ee22e-e610-331d-8493-a934cefa0791)
+  - why: search: 5 of 45 results fit; tie broken by album
+- **Barry White – Staying Power** (6:10)
+  - file: `Barry White/Staying Power (1999)/01 - Staying Power.flac`
+  - writes: Staying Power [94076140](https://musicbrainz.org/recording/94076140-59e3-4388-9750-c1911003a1cc) · 6:10 · work [e1ff1af0](https://musicbrainz.org/work/e1ff1af0-d5a6-4c16-af31-90e942338939)
+  - why: ISRC US5Q80900079: 0 of 0 recordings fit; search: 4 of 7 results fit; tie broken by album
+- **Bernard Wright – Spinnin'** (5:33)
+  - file: `Bernard Wright/'Nard (1981)/04 - Spinnin'.mp3`
+  - writes: Spinnin’ [fe1bedf9](https://musicbrainz.org/recording/fe1bedf9-1528-409c-8cb4-9f2c2c671dd0) · 5:33
+  - why: search: 2 of 4 results fit; tie broken by album
+- **Betty Carter – Open The Door** (3:12)
+  - file: `Betty Carter/American Beauty Soundtrack (1999)/09 - Open The Door.mp3`
+  - writes: Open the Door [58095211](https://musicbrainz.org/recording/58095211-88a4-4bd0-9dd4-382439b71b5b) · 3:12 · work [75aae42c](https://musicbrainz.org/work/75aae42c-e0dc-4697-8e3e-4f2818c82a4e)
+  - why: search: 1 of 11 results fit
+- **Bill Evans – We Will Meet Again** (2:35)
+  - file: `Bill Evans/We Will Meet Again (1980)/08 - We Will Meet Again.flac`
+  - writes: We Will Meet Again [51d51265](https://musicbrainz.org/recording/51d51265-0003-4258-ac29-24c20759ef55) · 2:34 · work [34a9cbda](https://musicbrainz.org/work/34a9cbda-b030-3957-8895-34ac05e635fe)
+  - why: ISRC USWB10105156: 0 of 0 recordings fit; search: 3 of 6 results fit; tie broken by album
+- **Birdlegs & Pauline – Mist Of A Dream** (3:38)
+  - file: `Birdlegs & Pauline/Birdlegs & Pauline (1964)/04 - Mist Of A Dream.flac`
+  - writes: Mist of a Dream [08f49dcc](https://musicbrainz.org/recording/08f49dcc-dc88-4191-9e8f-728f34212302) · 3:38
+  - why: ISRC USCW61803804: 0 of 0 recordings fit; search: 1 of 3 results fit
+- **Bob Marley & The Wailers – Waiting In Vain** (4:17)
+  - file: `Bob Marley & The Wailers/Legend (2002)/11 - Waiting In Vain.mp3`
+  - writes: Waiting in Vain [4d8ca8d4](https://musicbrainz.org/recording/4d8ca8d4-6254-4967-b4db-53e5844e79d0) · 4:16 · work [a7fb843e](https://musicbrainz.org/work/a7fb843e-5e9e-3f16-886b-0228f68d064d)
+  - why: search: 5 of 47 results fit; tie broken by album
+- **Bobbi Humphrey – Baby's Gone (Remastered 1999)** (8:49)
+  - file: `Bobbi Humphrey/Blacks And Blues (1973)/06 - Baby's Gone (Remastered 1999).mp3`
+  - writes: Baby’s Gone [4511943e](https://musicbrainz.org/recording/4511943e-9d99-4dd5-a141-d36ac1b48746) · 8:49 · work [682e1da8](https://musicbrainz.org/work/682e1da8-5f43-403d-9a6b-2fcd7b4c8f15)
+  - why: search: 1 of 1 results fit
+- **Bobbi Humphrey – Baby's Gone** (8:49)
+  - file: `Bobbi Humphrey/Blacks And Blues (1973)/06 - Baby's Gone.flac`
+  - writes: Baby’s Gone [4511943e](https://musicbrainz.org/recording/4511943e-9d99-4dd5-a141-d36ac1b48746) · 8:49 · work [682e1da8](https://musicbrainz.org/work/682e1da8-5f43-403d-9a6b-2fcd7b4c8f15)
+  - why: ISRC USBN29800967: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **Bobbi Humphrey – Blacks and Blues** (4:39)
+  - file: `Bobbi Humphrey/Blacks and Blues (1999)/00 - Blacks and Blues.mp3`
+  - writes: Blacks and Blues [849c0b99](https://musicbrainz.org/recording/849c0b99-e4ab-4519-aaf6-a6b58ec95133) · 4:37 · work [50285a4d](https://musicbrainz.org/work/50285a4d-3d1b-477c-958d-6ddd11ed33bd)
+  - why: search: 1 of 3 results fit
+- **Britney Spears – Toxic** (3:20)
+  - file: `Britney Spears/Greatest Hits, My Prerogative (1999)/02 - Toxic.flac`
+  - writes: Toxic [ffb6e773](https://musicbrainz.org/recording/ffb6e773-2d24-420c-90ce-36b6025f31e2) · 3:20 · work [97d8e491](https://musicbrainz.org/work/97d8e491-c9fa-3b67-8b08-f534ef36081c)
+  - why: search: 1 of 75 results fit
+- **Britney Spears – Oops... I Did It Again** (3:32)
+  - file: `Britney Spears/Greatest Hits, My Prerogative (1999)/04 - Oops... I Did It Again.flac`
+  - writes: Oops!…I Did It Again [44abd7d3](https://musicbrainz.org/recording/44abd7d3-c593-4587-a109-6d9582f13f36) · 3:32 · work [19862b40](https://musicbrainz.org/work/19862b40-6a25-3499-8b8c-2a647007d1bb)
+  - why: search: 6 of 39 results fit; tie broken by album
+- **Bubbles – We Can Ride the Boogie (Rock With You)** (6:00)
+  - file: `Bubbles/Jungle Tekno, Volume 1 (1992)/03 - We Can Ride the Boogie (Rock With You).flac`
+  - writes: We Can Ride the Boogie (Rock With You) [db8fe500](https://musicbrainz.org/recording/db8fe500-047b-4c3f-b9aa-6176ad97a342) · 6:00 · work [38645821](https://musicbrainz.org/work/38645821-c0a7-46c4-b3d7-bed97ff529be)
+  - why: search: 2 of 3 results fit; tie broken by album
+- **Buckshot LeFonque – I Know Why the Caged Bird Sings** (8:06)
+  - file: `Buckshot LeFonque/Buckshot LeFonque (1994)/03 - I Know Why the Caged Bird Sings.mp3`
+  - writes: I Know Why the Caged Bird Sings [19748e7a](https://musicbrainz.org/recording/19748e7a-f45e-4de6-856e-bca600935e0a) · 8:05 · work [9c70d4ba](https://musicbrainz.org/work/9c70d4ba-f10b-381d-8e49-69c0d199382a)
+  - why: search: 1 of 1 results fit
+- **Buckshot LeFonque – Hotter Than Hot** (4:18)
+  - file: `Buckshot LeFonque/Buckshot Lefonque (1994)/09 - Hotter Than Hot.flac`
+  - writes: Hotter Than Hot [1af64f0c](https://musicbrainz.org/recording/1af64f0c-5fef-4a02-b9e9-2cb55b3a84aa) · 4:20
+  - why: ISRC USSM10027444: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **Carol Dionne – I'm In Love With You** (5:57)
+  - file: `Carol Dionne/Under the Influence Vol.6 compiled by Faze Action (2018)/01 - I'm In Love With You.flac`
+  - writes: I’m in Love With You [c393d578](https://musicbrainz.org/recording/c393d578-265a-4d2e-9186-a73d65d3bd36) · 5:59
+  - why: ISRC GBPKF1800004: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **Chaka Khan – I'm Every Woman** (4:10)
+  - file: `Chaka Khan/Chaka (1978)/01 - I'm Every Woman.mp3`
+  - writes: I’m Every Woman [9604f244](https://musicbrainz.org/recording/9604f244-e6c6-4fab-9353-e633ed68dec2) · 4:07 · work [27c14c92](https://musicbrainz.org/work/27c14c92-43f0-43a6-87d5-6a4ca3f94499)
+  - why: search: 6 of 92 results fit; tie broken by album
+- **Charles Mingus – II B.S.** (4:49)
+  - file: `Charles Mingus/Mingus Mingus Mingus Mingus Mingus (1963)/01 - II B.S_.mp3`
+  - writes: II B.S. [f5c11824](https://musicbrainz.org/recording/f5c11824-b27f-4eed-8c11-3b7ad20ca85d) · 4:49 · work [4fc6204f](https://musicbrainz.org/work/4fc6204f-c1d4-4648-b56a-85b1d8488dfd)
+  - why: search: 3 of 6 results fit; tie broken by album
+- **Charley Crockett – I Am Not Afraid** (2:45)
+  - file: `Charley Crockett/In the Night (2016)/03 - I Am Not Afraid.flac`
+  - writes: I Am Not Afraid [a5284fbd](https://musicbrainz.org/recording/a5284fbd-49c1-49fc-b2b7-7c475c82d403) · 2:45 · work [3593f462](https://musicbrainz.org/work/3593f462-cf3e-4e31-8cd7-d6168c388bf0)
+  - why: ISRC USDY41641445: 0 of 0 recordings fit; search: 1 of 2 results fit
+- **Chocolate Milk – Groove City** (3:31)
+  - file: `Chocolate Milk/Ice Cold Funk_ The Greatest Grooves of Chocolate Milk (1998)/07 - Groove City.mp3`
+  - writes: Groove City [f96a0db8](https://musicbrainz.org/recording/f96a0db8-38c4-483a-9453-e9f950e07d4d) · 3:28 · work [6c0d4f9c](https://musicbrainz.org/work/6c0d4f9c-6450-4d54-b9bf-df24f5573aa7)
+  - why: search: 1 of 1 results fit
+- **Chocolate Milk – Groove City** (3:29)
+  - file: `Chocolate Milk/Milky Way (1979)/06 - Groove City.flac`
+  - writes: Groove City [f96a0db8](https://musicbrainz.org/recording/f96a0db8-38c4-483a-9453-e9f950e07d4d) · 3:28 · work [6c0d4f9c](https://musicbrainz.org/work/6c0d4f9c-6450-4d54-b9bf-df24f5573aa7)
+  - why: ISRC USRC17808012: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **Cleveland Francis – The Willow Tree** (4:19)
+  - file: `Cleveland Francis/Beyond The Willow Tree (2022)/01 - The Willow Tree.mp3`
+  - writes: The Willow Tree [41941b8d](https://musicbrainz.org/recording/41941b8d-bbd9-44ab-994b-fb1dadc883df) · 4:19
+  - why: search: 1 of 4 results fit
+- **Common Saints – Summer Sun** (4:49)
+  - file: `Common Saints/Summer Sun (2020)/01 - Summer Sun.flac`
+  - writes: Summer Sun [6de8c355](https://musicbrainz.org/recording/6de8c355-b6ee-4e2b-9632-d659a48bdf86) · 4:49
+  - why: ISRC US23A1512008: 0 of 2 recordings fit; search: 1 of 3 results fit
+- **TOTO – Georgy Porgy** (4:08)
+  - file: `Compilations/Intuition (1981)/03 - Georgy Porgy.flac`
+  - writes: Georgy Porgy [96adc49c](https://musicbrainz.org/recording/96adc49c-462b-4611-9d4f-877dcde313c3) · 4:09 · work [fcc22c25](https://musicbrainz.org/work/fcc22c25-fd14-326f-8bd0-e4e966f886ce)
+  - why: ISRC USSM17800433: 2 of 2 recordings fit; search: 13 of 75 results fit; tie broken by album
+- **Marvin Gaye – What's Going On** (3:53)
+  - file: `Compilations/pure soul 96/01 - What's Going On.mp3`
+  - writes: What’s Going On [ba3e69e7](https://musicbrainz.org/recording/ba3e69e7-0c36-42af-bf1a-7c0036451fe2) · 3:53 · work [8c9e1987](https://musicbrainz.org/work/8c9e1987-99a5-3985-b182-d9eaf181749a)
+  - why: search: 15 of 100 results fit; tie broken by album
+- **Cortex – Oh! Lord** (6:23)
+  - file: `Cortex/Cortex, Vol. 2 (1977)/10 - Oh! Lord.flac`
+  - writes: Oh! Lord [5eb61cdf](https://musicbrainz.org/recording/5eb61cdf-daff-4270-8c13-f0578ae2f548) · 6:22
+  - why: ISRC FR96X1605690: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **Cortex – Oh! Lord** (6:23)
+  - file: `Cortex/Volume 2 (1977)/10 - Oh! Lord.mp3`
+  - writes: Oh! Lord [5eb61cdf](https://musicbrainz.org/recording/5eb61cdf-daff-4270-8c13-f0578ae2f548) · 6:22
+  - why: search: 1 of 1 results fit
+- **Cru – Just Another Case** (3:36)
+  - file: `Cru/Da Dirty 30 (1997)/04 - Just Another Case.flac`
+  - writes: Just Another Case [9eab2121](https://musicbrainz.org/recording/9eab2121-ec78-4b40-92fe-141517c22f31) · 3:36
+  - why: ISRC USRL19700527: 0 of 0 recordings fit; search: 2 of 2 results fit; tie broken by album
+- **Daft Punk – Aerodynamic** (3:33)
+  - file: `Daft Punk/Discovery (2001)/02 - Aerodynamic.flac`
+  - writes: Aerodynamic [97414e77](https://musicbrainz.org/recording/97414e77-d4ae-4c25-a7d9-efee274aef43) · 3:33
+  - why: search: 1 of 58 results fit
+- **Daft Punk – Harder, Better, Faster, Stronger** (3:46)
+  - file: `Daft Punk/Discovery (2001)/04 - Harder, Better, Faster, Stronger.flac`
+  - writes: Harder, Better, Faster, Stronger [f1a6a40f](https://musicbrainz.org/recording/f1a6a40f-78f5-4918-968d-f64363bae94c) · 3:44 · work [fb670a7d](https://musicbrainz.org/work/fb670a7d-4e22-3f65-8d3f-7cf2c29c6601)
+  - why: search: 3 of 100 results fit; tie broken by album
+- **Daft Punk – Voyager** (3:48)
+  - file: `Daft Punk/Discovery (2001)/10 - Voyager.flac`
+  - writes: Voyager [e1fe1d12](https://musicbrainz.org/recording/e1fe1d12-dac2-4325-ae1b-25e0ef06b998) · 3:48 · work [126676fd](https://musicbrainz.org/work/126676fd-9f48-3d21-9ce4-701a132ad82d)
+  - why: search: 2 of 20 results fit; tie broken by album
+- **Daft Punk – Veridis Quo** (5:45)
+  - file: `Daft Punk/Discovery (2001)/11 - Veridis Quo.flac`
+  - writes: Veridis Quo [2a220770](https://musicbrainz.org/recording/2a220770-1150-4190-b0e0-57d89a0a7469) · 5:45 · work [f7818f82](https://musicbrainz.org/work/f7818f82-ac89-3443-8d8e-467f49e80b9f)
+  - why: search: 1 of 14 results fit
+- **Dan Hartman – Love Is a Natural** (6:20)
+  - file: `Dan Hartman/Instant Replay (Expanded Edition) (1978)/05 - Love Is a Natural.flac`
+  - writes: Love Is a Natural [115a08a8](https://musicbrainz.org/recording/115a08a8-703d-45b9-bc5d-aac5b912af00) · 6:18 · work [4ff70d01](https://musicbrainz.org/work/4ff70d01-2061-4d67-a44a-62c90c8c2ad9)
+  - why: ISRC USSM11301519: 0 of 0 recordings fit; search: 1 of 2 results fit
+- **David Bendeth – Easy Ridin'** (2:53)
+  - file: `David Bendeth/Adrenalin (1979)/03 - Easy Ridin'.flac`
+  - writes: Easy Ridin' [9a3d64af](https://musicbrainz.org/recording/9a3d64af-d1b7-4541-87ca-b3fd40af5c5f) · 2:49
+  - why: ISRC USTC30744160: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **David Bendeth – A Colorful Dream** (4:33)
+  - file: `David Bendeth/Just Dessert (1981)/07 - A Colorful Dream.flac`
+  - writes: A Colorful Dream [2911e464](https://musicbrainz.org/recording/2911e464-589a-4584-9cce-04c03332a099) · 4:33
+  - why: ISRC TCAAW1153962: 0 of 0 recordings fit; search: 1 of 2 results fit
+- **David Bendeth – Acapulco Featuring Billy Cobham** (4:42)
+  - file: `David Bendeth/Just Dessert (1981)/10 - Acapulco Featuring Billy Cobham.flac`
+  - writes: Acapulco Featuring Billy Cobham [474dae36](https://musicbrainz.org/recording/474dae36-04f9-4158-835a-cc1bc987e3d6) · 4:42
+  - why: ISRC TCAAW1153969: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **David T. Walker – On Love** (4:59)
+  - file: `David T. Walker/On Love (1976)/01 - On Love.mp3`
+  - writes: On Love [86847c94](https://musicbrainz.org/recording/86847c94-df82-461e-a6d6-4d9bbde1f501) · 4:59
+  - why: search: 1 of 2 results fit
+- **Dawn Penn – Chilling** (4:35)
+  - file: `Dawn Penn/Vintage 2 (2012)/02 - Chilling.flac`
+  - writes: Chilling [9a9cc9c3](https://musicbrainz.org/recording/9a9cc9c3-487d-4407-80d0-1f7d089b665a) · 4:33
+  - why: ISRC FR6V81278078: 0 of 0 recordings fit; search: 1 of 2 results fit
+- **Digable Planets – Where I'm From** (4:35)
+  - file: `Digable Planets/Reachin' (A New Refutation Of Time And Space)/00 - Where I'm From.m4a`
+  - writes: Where I’m From [11e1c34c](https://musicbrainz.org/recording/11e1c34c-bec3-41c9-92a3-ee94b8a712e7) · 4:35 · work [e02770ce](https://musicbrainz.org/work/e02770ce-6249-3313-915a-bdc6b205e1d5)
+  - why: search: 2 of 17 results fit; tie broken by album
+- **Diggs Duke – Something In My Soul** (1:44)
+  - file: `Diggs Duke/Offering For Anxious (2014)/08 - Something In My Soul.flac`
+  - writes: Something in My Soul [788bd29e](https://musicbrainz.org/recording/788bd29e-0159-4ae6-81ce-f19896cccb41) · 1:44
+  - why: search: 2 of 3 results fit; tie broken by album
+- **Diggs Duke – Something in My Soul** (1:44)
+  - file: `Diggs Duke/Offering for Anxious (2013)/08 - Something in My Soul.flac`
+  - writes: Something in My Soul [788bd29e](https://musicbrainz.org/recording/788bd29e-0159-4ae6-81ce-f19896cccb41) · 1:44
+  - why: ISRC GBMEF1300626: 0 of 0 recordings fit; search: 2 of 3 results fit; tie broken by album
+- **Dionne Warwick – (They Long to Be) Close to You** (2:26)
+  - file: `Dionne Warwick/Make Way for Dionne Warwick (1964)/03 - (They Long to Be) Close to You.flac`
+  - writes: (They Long to Be) Close to You [4bd97f1f](https://musicbrainz.org/recording/4bd97f1f-f4eb-47af-bd12-f4be8ed37c30) · 2:25 · work [31ad6e20](https://musicbrainz.org/work/31ad6e20-d507-3b77-8d69-86ffe34332a2)
+  - why: ISRC USWSP0000160: 2 of 3 recordings fit; search: 5 of 15 results fit; tie broken by album
+- **Donald Byrd – Woman of the World** (6:51)
+  - file: `Donald Byrd/1973 - Street Lady (1973)/06 - Woman of the World.mp3`
+  - writes: Woman of the World [ea2a0ac4](https://musicbrainz.org/recording/ea2a0ac4-8cb0-4427-9211-8e8f69a4e6a0) · 6:51
+  - why: search: 1 of 2 results fit
+- **Donald Byrd – Dominoes** (4:32)
+  - file: `Donald Byrd/Blue Break Beats Vol. 3 (1996)/10 - Dominoes.mp3`
+  - writes: Dominoes [77ddb737](https://musicbrainz.org/recording/77ddb737-e349-49ce-a468-5daecf7275b5) · 4:33
+  - why: search: 1 of 15 results fit
+- **Donald Byrd – The Dude** (7:48)
+  - file: `Donald Byrd/Electric Byrd (1970)/04 - The Dude.mp3`
+  - writes: The Dude [61715b64](https://musicbrainz.org/recording/61715b64-4233-4fde-8713-767147565090) · 7:49 · work [a7f96902](https://musicbrainz.org/work/a7f96902-e030-4d3a-9439-4fc180d5fc1f)
+  - why: search: 1 of 1 results fit
+- **Donald Byrd – Dominoes** (4:33)
+  - file: `Donald Byrd/Places And Spaces (1975)/03 - Dominoes.flac`
+  - writes: Dominoes [77ddb737](https://musicbrainz.org/recording/77ddb737-e349-49ce-a468-5daecf7275b5) · 4:33
+  - why: ISRC USBN29600359: 0 of 2 recordings fit; search: 1 of 15 results fit
+- **Dora Morelenbaum – VW BLUE** (1:46)
+  - file: `Dora Morelenbaum/Pique (2024)/07 - VW BLUE.flac`
+  - writes: VW BLUE [f097a237](https://musicbrainz.org/recording/f097a237-300b-47d6-8548-626dde85c939) · 1:46
+  - why: ISRC BRM052400007: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **Dr. Buzzard's Original Savannah Band – The Seven Year Itch** (4:40)
+  - file: `Dr. Buzzard's Original Savannah Band/The Seven Year Itch (2023)/01 - The Seven Year Itch.flac`
+  - writes: The Seven Year Itch [03b67711](https://musicbrainz.org/recording/03b67711-8779-4b4b-b0b9-79cc3af5858e) · 4:41
+  - why: ISRC TCAGM2205749: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **Durand Jones & The Indications – Sea of Love** (3:48)
+  - file: `Durand Jones & The Indications/Private Space (2021)/09 - Sea of Love.flac`
+  - writes: Sea of Love [c29781f3](https://musicbrainz.org/recording/c29781f3-57f8-45b0-8370-295c35b93e58) · 3:47
+  - why: ISRC USJ5G2122709: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **Earth Wind & Fire – Fantasy** (3:58)
+  - file: `Earth Wind & Fire/Live In Rio (1979)/00 - Fantasy.mp3`
+  - writes: Fantasy [263205b0](https://musicbrainz.org/recording/263205b0-c057-414e-ba76-ca68af3f1b3e) · 3:55 · work [292680f1](https://musicbrainz.org/work/292680f1-3558-3071-9106-dfbfb890272f)
+  - why: search: 1 of 83 results fit
+- **Earth, Wind & Fire – After the Love Is Gone** (6:04)
+  - file: `Earth, Wind & Fire/Live in Rio (2002)/11 - After the Love Is Gone.flac`
+  - writes: After the Love Is Gone [2da41cb4](https://musicbrainz.org/recording/2da41cb4-eacd-47db-b1eb-41bc8fc7e0aa) · 6:04 · work [70c35f17](https://musicbrainz.org/work/70c35f17-152c-35b4-a5c7-78719926b7d8)
+  - why: ISRC USKRI0310111: 0 of 0 recordings fit; search: 1 of 19 results fit
+- **Earth, Wind & Fire – In The Stone (The Reflex Revision)** (6:22)
+  - file: `Earth, Wind & Fire/The Reflex (73 Bumper Pack) (2019)/35 - In The Stone (The Reflex Revision).flac`
+  - writes: In the Stone (The Reflex revision) [528c3a63](https://musicbrainz.org/recording/528c3a63-e58b-4aaa-a27a-4a8666a507b3) · 6:22
+  - why: search: 1 of 29 results fit
+- **Eddie Kendricks – Date With The Rain** (2:41)
+  - file: `Eddie Kendricks/People... Hold On (1972)/07 - Date With The Rain.mp3`
+  - writes: Date With the Rain [f2b7180c](https://musicbrainz.org/recording/f2b7180c-25bb-4b10-9189-aa415d105bd5) · 2:43 · work [4482e111](https://musicbrainz.org/work/4482e111-45c0-49eb-b969-2cd0ef93119f)
+  - why: search: 1 of 7 results fit
+- **Elvin Jones – Buzz-AT** (6:33)
+  - file: `Elvin Jones/Elvin! (1995)/02 - Buzz-AT.flac`
+  - writes: Buzz-At [63c91a77](https://musicbrainz.org/recording/63c91a77-51e2-420f-a702-b7f4f2813094) · 6:33 · work [5c42a664](https://musicbrainz.org/work/5c42a664-dfc4-4c49-b8cf-e6384efa846e)
+  - why: ISRC USFI86200898: 0 of 0 recordings fit; search: 1 of 2 results fit
+- **Erroll Garner – Sunny** (3:19)
+  - file: `Erroll Garner/Ready Take One (2016)/04 - Sunny.flac`
+  - writes: Sunny [52741ea1](https://musicbrainz.org/recording/52741ea1-5370-44f4-9350-f8485fdeb1fd) · 3:19
+  - why: ISRC USQX91601704: 0 of 0 recordings fit; search: 1 of 22 results fit
+- **Evanescence – Bring Me To Life** (3:57)
+  - file: `Evanescence/Fallen (2002)/02 - Bring Me To Life.flac`
+  - writes: Bring Me to Life [c24eb26a](https://musicbrainz.org/recording/c24eb26a-04d6-4f09-9449-9bc334f78ede) · 3:57 · work [2722996e](https://musicbrainz.org/work/2722996e-ca58-368a-b5e7-0ca622256ea3)
+  - why: search: 8 of 93 results fit; tie broken by album
+- **Femi Kuti – Journey Through Life** (3:46)
+  - file: `Femi Kuti/Journey Through Life/00 - Journey Through Life.m4a`
+  - writes: Journey Through Life [c8d75320](https://musicbrainz.org/recording/c8d75320-c1c9-45ba-b298-4f0dd84e661e) · 3:46
+  - why: search: 1 of 1 results fit
+- **First Choice – Let No Man Put Asunder (Shep Pettibone 12" Mix)** (8:02)
+  - file: `First Choice/Delusions (Bonus Version) (1977)/12 - Let No Man Put Asunder (Shep Pettibone 12_ Mix).mp3`
+  - writes: Let No Man Put Asunder (original Shep Pettibone 12" mix) [afc65041](https://musicbrainz.org/recording/afc65041-080b-48f1-b64f-4a8325faf3f2) · 7:58
+  - why: ISRC QMRSZ1601382: 0 of 2 recordings fit; search: 1 of 100 results fit
+- **George Benson – Everything Must Change** (8:10)
+  - file: `George Benson/In Flight (1976)/06 - Everything Must Change.mp3`
+  - writes: Everything Must Change [5ea2424d](https://musicbrainz.org/recording/5ea2424d-4b38-4e79-be09-389cfe966510) · 8:07 · work [12c58092](https://musicbrainz.org/work/12c58092-f922-433b-a570-a497c513c1d0)
+  - why: search: 1 of 3 results fit
+- **George Benson – Love Ballad** (5:17)
+  - file: `George Benson/Livin' Inside Your Love (2003)/07 - Love Ballad.mp3`
+  - writes: Love Ballad [ceb445c9](https://musicbrainz.org/recording/ceb445c9-332f-4d01-bbf6-0fef6140489c) · 5:16 · work [476e3a1c](https://musicbrainz.org/work/476e3a1c-099e-3d6d-b5f1-9822bc046905)
+  - why: search: 2 of 16 results fit; tie broken by album
+- **Mall Grab – Pool Party Music** (6:08)
+  - file: `Gigi D'Agostino/2015 - 2017 (2021)/01 - Pool Party Music.flac`
+  - writes: Pool Party Music [c5cbd2ca](https://musicbrainz.org/recording/c5cbd2ca-709c-4eb2-a7eb-d6d21b13b20f) · 6:07
+  - why: search: 2 of 2 results fit; tie broken by album
+- **Gigi D'Agostino – L'Amour Toujours** (6:58)
+  - file: `Gigi D'Agostino/2015 - 2017 (2021)/02 - L'Amour Toujours.flac`
+  - writes: L'amour toujours [590ab625](https://musicbrainz.org/recording/590ab625-631e-4829-896a-8a4dae8ca3fc) · 6:56 · work [ace24c3c](https://musicbrainz.org/work/ace24c3c-1132-318e-81af-9a13ffb18028)
+  - why: search: 6 of 100 results fit; tie broken by album
+- **Fatboy Slim – The Rockafeller Skank** (7:25)
+  - file: `Gigi D'Agostino/2015 - 2017 (2021)/02 - The Rockafeller Skank.flac`
+  - writes: The Rockafeller Skank [d7bf913d](https://musicbrainz.org/recording/d7bf913d-3649-4dfc-b767-4b340f87c9ca) · 7:25 · work [32d815ed](https://musicbrainz.org/work/32d815ed-f1ee-349b-b102-e9250982d00c)
+  - why: search: 2 of 83 results fit; tie broken by album
+- **Gigi D'Agostino – Bla Bla Bla** (4:15)
+  - file: `Gigi D'Agostino/2015 - 2017 (2021)/04 - Bla Bla Bla.flac`
+  - writes: Bla Bla Bla [e7ea4f9e](https://musicbrainz.org/recording/e7ea4f9e-5585-40be-b1f0-db04fd89ce37) · 4:15
+  - why: search: 4 of 100 results fit; tie broken by album
+- **Gil Scott-Heron – Morning Thoughts** (4:41)
+  - file: `Gil Scott-Heron/Reflections (1981)/04 - Morning Thoughts.flac`
+  - writes: Morning Thoughts [45a228cb](https://musicbrainz.org/recording/45a228cb-0323-4ed8-938c-5b90bab42b28) · 4:43 · work [9076fc0c](https://musicbrainz.org/work/9076fc0c-3a2e-4649-aaa9-c2057df5390d)
+  - why: ISRC USAR18100194: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **Gil Scott-Heron – Morning Thoughts** (4:41)
+  - file: `Gil Scott-Heron/Reflections (1981)/04 - Morning Thoughts.mp3`
+  - writes: Morning Thoughts [45a228cb](https://musicbrainz.org/recording/45a228cb-0323-4ed8-938c-5b90bab42b28) · 4:43 · work [9076fc0c](https://musicbrainz.org/work/9076fc0c-3a2e-4649-aaa9-c2057df5390d)
+  - why: search: 1 of 1 results fit
+- **Gorillaz – Dirty Harry** (3:48)
+  - file: `Gorillaz/Demon Days (2005)/01 - Dirty Harry.flac`
+  - writes: Dirty Harry [d3c7f208](https://musicbrainz.org/recording/d3c7f208-cf61-4988-8e79-77d24878caf4) · 3:50 · work [a806f1a0](https://musicbrainz.org/work/a806f1a0-7fde-3446-90d5-dadaed3d2d63)
+  - why: search: 3 of 40 results fit; tie broken by album
+- **Graham Central Station – The Jam** (8:13)
+  - file: `Graham Central Station/Ain't No 'Bout-A-Doubt It (1975)/01 - The Jam.mp3`
+  - writes: The Jam [04b3927f](https://musicbrainz.org/recording/04b3927f-3ced-4e3f-97d1-954506e506c1) · 8:14 · work [eb76e325](https://musicbrainz.org/work/eb76e325-88aa-43bf-b683-2d72b51451c2)
+  - why: search: 1 of 7 results fit
+- **Gyedu-Blay Ambolley – Highlife** (5:00)
+  - file: `Gyedu-Blay Ambolley/Ambolley (1982)/01 - Highlife.flac`
+  - writes: Highlife [e0d97efa](https://musicbrainz.org/recording/e0d97efa-b277-4044-8373-6dce976a8b79) · 5:00
+  - why: ISRC GBCLQ1800310: 0 of 0 recordings fit; search: 1 of 3 results fit
+- **Gyedu-Blay Ambolley – Highlife** (4:58)
+  - file: `Gyedu-Blay Ambolley/Mr Bongo Record Club Vol. 3 (2019)/11 - Highlife.mp3`
+  - writes: Highlife [e0d97efa](https://musicbrainz.org/recording/e0d97efa-b277-4044-8373-6dce976a8b79) · 5:00
+  - why: search: 1 of 3 results fit
+- **Gábor Szabó – Both Sides Now** (2:57)
+  - file: `Gábor Szabó/1969 (1969)/03 - Both Sides Now.flac`
+  - writes: Both Sides Now [9abc2947](https://musicbrainz.org/recording/9abc2947-bc92-4826-8171-fa391798a7bc) · 2:57
+  - why: ISRC USA560663440: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **Half Pint – I Am Not a Substitute Lover** (3:48)
+  - file: `Half Pint/Down in Jamaica_ 40 Years of VP Records (2019)/33 - I Am Not a Substitute Lover.mp3`
+  - writes: I Am Not a Substitute Lover [0f3e45a9](https://musicbrainz.org/recording/0f3e45a9-f28e-4323-99fb-495ce4ae34d0) · 3:48
+  - why: search: 2 of 3 results fit; tie broken by album
+- **Herb Alpert & The Tijuana Brass – A Taste Of Honey** (2:44)
+  - file: `Herb Alpert & The Tijuana Brass/Whipped Cream & Other Delights (1965)/01 - A Taste Of Honey.flac`
+  - writes: A Taste of Honey [f55a196a](https://musicbrainz.org/recording/f55a196a-60cb-42ef-a449-7d3c615377e9) · 2:44
+  - why: ISRC QM4221500056: 0 of 1 recordings fit; search: 2 of 4 results fit; tie broken by album
+- **Herbie Hancock – Just Around the Corner** (7:36)
+  - file: `Herbie Hancock/Mr. Hands (1980)/03 - Just Around the Corner.flac`
+  - writes: Just Around the Corner [86d85ffc](https://musicbrainz.org/recording/86d85ffc-b202-45e8-a1d4-b85b9b68d6c8) · 7:36 · work [80cab0f3](https://musicbrainz.org/work/80cab0f3-054f-457c-a51e-17b6520bf698)
+  - why: ISRC USSM18000433: 2 of 2 recordings fit; search: 4 of 9 results fit; tie broken by album
+- **Herbie Hancock – Gentle Thoughts** (7:02)
+  - file: `Herbie Hancock/Secrets (1976)/05 - Gentle Thoughts.mp3`
+  - writes: Gentle Thoughts [d20d5be9](https://musicbrainz.org/recording/d20d5be9-a355-4cf1-9635-1b3ecd75f6b2) · 7:05 · work [0e774217](https://musicbrainz.org/work/0e774217-ffbf-4964-82eb-f3c623cf41f3)
+  - why: search: 2 of 4 results fit; tie broken by album
+- **Huey Daze – Bishopgate Jewel Case** (3:23)
+  - file: `Huey Daze/Minuet (2016)/01 - Bishopgate Jewel Case.flac`
+  - writes: Bishopgate Jewel Case [4f0d555d](https://musicbrainz.org/recording/4f0d555d-3990-46c7-8f13-9a4b5dc9f6b2) · 3:23
+  - why: ISRC QZFYW1996408: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **Idris Muhammad – Could Heaven Ever Be Like This - Walker & Royce and Chris Lorenzo Remix** (3:41)
+  - file: `Idris Muhammad/Could Heaven Ever Be Like This (Walker & Royce and Chris Lorenzo Remix) (2022)/01 - Could Heaven Ever Be Like This - Walker & Royce and Chris Lorenzo Remix.flac`
+  - writes: Could Heaven Ever Be Like This (Walker & Royce and Chris Lorenzo remix) [ed94914e](https://musicbrainz.org/recording/ed94914e-4f53-4313-8e35-177f4398fa13) · 3:41
+  - why: ISRC USUS12200408: 0 of 0 recordings fit; search: 1 of 19 results fit
+- **Jaco Pastorius – Come On, Come Over** (3:53)
+  - file: `Jaco Pastorius/Jaco Pastorius (1976)/02 - Come On, Come Over.flac`
+  - writes: Come On, Come Over [ea7948fc](https://musicbrainz.org/recording/ea7948fc-eb3f-466f-981c-a72e88215e6d) · 3:53 · work [204276fe](https://musicbrainz.org/work/204276fe-c563-3923-9973-c78b2df9b58d)
+  - why: ISRC USSM17500549: 2 of 3 recordings fit; search: 3 of 5 results fit; tie broken by album
+- **Jamiroquai – Talullah** (6:04)
+  - file: `Jamiroquai/Dynamite (2005)/07 - Talullah.mp3`
+  - writes: Talullah [273951d8](https://musicbrainz.org/recording/273951d8-8740-47e2-9049-5e02d36680a5) · 6:07 · work [620666bb](https://musicbrainz.org/work/620666bb-2ea1-49d8-9f46-d73141ebae06)
+  - why: search: 1 of 4 results fit
+- **Jamiroquai – Virtual Insanity (Salaam Remi Remix)** (5:43)
+  - file: `Jamiroquai/Virtual Insanity (Bklava Remix) (2022)/08 - Virtual Insanity (Salaam Remi Remix).flac`
+  - writes: Virtual Insanity (Salaam Remi Remix) [74356cb2](https://musicbrainz.org/recording/74356cb2-facb-411c-8908-873bb0b2259f) · 5:43
+  - why: ISRC GBARL1201921: 2 of 2 recordings fit; search: 2 of 63 results fit; tie broken by album
+- **Chico DeBarge – Soopaman Lover (feat. Erick Sermon & Redman)** (1:48)
+  - file: `Jamiroquai/Virtual Insanity (Bklava Remix) (2022)/19 - Soopaman Lover (feat. Erick Sermon & Redman).mp3`
+  - writes: Soopaman Lover [34000b9c](https://musicbrainz.org/recording/34000b9c-726c-404f-817a-6c4cbf9b7e13) · 1:48
+  - why: ISRC 'UICZ-3073' is not one; not looked up; search: 1 of 6 results fit
+- **Jennifer Lara – Hold Me Baby** (2:50)
+  - file: `Jennifer Lara/Studio One Presents Jennifer Lara (1981)/13 - Hold Me Baby.flac`
+  - writes: Hold Me Baby [be9ea5c5](https://musicbrainz.org/recording/be9ea5c5-2a4c-44a4-9959-f47ac3e92d75) · 2:50
+  - why: ISRC JMA020601386: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **Jennifer Lopez – If You Had My Love** (4:26)
+  - file: `Jennifer Lopez/On The 6 (1999)/01 - If You Had My Love.mp3`
+  - writes: If You Had My Love [00ae6422](https://musicbrainz.org/recording/00ae6422-41d4-4a65-adfc-903a1027385f) · 4:26 · work [473c77ed](https://musicbrainz.org/work/473c77ed-1c1b-45f2-b7c7-788b0df5e7ba)
+  - why: search: 4 of 86 results fit; tie broken by album
+- **Jill Scott – Golden** (3:52)
+  - file: `Jill Scott/Beautifully Human - Words And (2004)/03 - Golden.mp3`
+  - writes: Golden [1c3fc56e](https://musicbrainz.org/recording/1c3fc56e-3dbc-47df-a3e0-941c9e76a1cb) · 3:51 · work [10dc9ddf](https://musicbrainz.org/work/10dc9ddf-b95f-4b38-9a12-dda406643304)
+  - why: search: 1 of 33 results fit
+- **Jill Scott – He Loves Me (Lyzel In E Flat) - Jill Scott** (4:46)
+  - file: `Jill Scott/Who Is Jill Scott- (Words And Sounds Vol. 1)/07 - He Loves Me (Lyzel In E Flat) - Jill Scott.mp3`
+  - writes: He Loves Me (Lyzel in E Flat) [4e58e95e](https://musicbrainz.org/recording/4e58e95e-661c-4eac-ad7d-d866f5ce8ca2) · 4:46 · work [2b6fe604](https://musicbrainz.org/work/2b6fe604-bf42-47a7-a51b-63aa3ee3e728)
+  - why: search: 1 of 14 results fit
+- **Julee Cruise – Rockin' Back Inside My Heart** (5:49)
+  - file: `Julee Cruise/Floating Into The Night (1989)/04 - Rockin' Back Inside My Heart.flac`
+  - writes: Rockin’ Back Inside My Heart [cfacabb7](https://musicbrainz.org/recording/cfacabb7-5c7a-4d6b-8bfd-52e773e2c776) · 5:49 · work [d28670c4](https://musicbrainz.org/work/d28670c4-07eb-3ac1-ab05-f4bbbd77210a)
+  - why: ISRC USWB10101658: 2 of 2 recordings fit; search: 2 of 20 results fit; tie broken by album
+- **Junko Ohashi – 素顔のままで** (5:39)
+  - file: `Junko Ohashi/MAGICAL 大橋純子の世界 III (1984)/12 - 素顔のままで.mp3`
+  - writes: 素顔のままで [461a5b9e](https://musicbrainz.org/recording/461a5b9e-d6a9-48c4-90c3-21a8d856a099) · 5:39
+  - why: ISRC JPPO08391620: 0 of 2 recordings fit; search: 1 of 1 results fit
+- **Justin Scharvona – Buck Bumble Main Theme** (2:27)
+  - file: `Justin Scharvona/Buck Bumble (Original Soundtrack) (2024)/00 - Buck Bumble Main Theme.mp3`
+  - writes: Buck Bumble Main Theme [81a98a68](https://musicbrainz.org/recording/81a98a68-7219-4e49-bad5-db196a511abb) · 2:27
+  - why: search: 1 of 1 results fit
+- **Justin Timberlake – Senorita** (4:57)
+  - file: `Justin Timberlake/Justified/00 - Senorita.mp3`
+  - writes: Señorita [5889fbcc](https://musicbrainz.org/recording/5889fbcc-4611-46a9-b27c-4105e6fc58b1) · 4:55 · work [9d917195](https://musicbrainz.org/work/9d917195-91fe-401e-9eb0-8bfb5b074175)
+  - why: search: 3 of 39 results fit; tie broken by album
+- **Justin Timberlake – Señorita** (4:58)
+  - file: `Justin Timberlake/Justified/01 - Señorita.flac`
+  - writes: Señorita [5889fbcc](https://musicbrainz.org/recording/5889fbcc-4611-46a9-b27c-4105e6fc58b1) · 4:55 · work [9d917195](https://musicbrainz.org/work/9d917195-91fe-401e-9eb0-8bfb5b074175)
+  - why: search: 3 of 39 results fit; tie broken by album
+- **Justin Timberlake – Rock Your Body** (4:28)
+  - file: `Justin Timberlake/Justified/03 - Rock Your Body.flac`
+  - writes: Rock Your Body [fc4df577](https://musicbrainz.org/recording/fc4df577-131b-4b88-b468-37a1b9a69570) · 4:27 · work [6178d89d](https://musicbrainz.org/work/6178d89d-325b-4be9-9c66-2f666751cd6a)
+  - why: search: 4 of 55 results fit; tie broken by album
+- **Kadhja Bonet – Joy** (4:07)
+  - file: `Kadhja Bonet/Childqueen/00 - Joy.m4a`
+  - writes: Joy [7b322982](https://musicbrainz.org/recording/7b322982-f598-46f3-836d-9bc0cf5f91a9) · 4:07
+  - why: search: 1 of 1 results fit
+- **Kassin – Coisa No.11～11番目のコト** (3:25)
+  - file: `Kassin/「ミチコとハッチン」オリジナル サウンドトラック CHAPTER-2 (2009)/01 - Coisa No.11～11番目のコト.flac`
+  - writes: Coisa No.11～11番目のコト [a83f94ce](https://musicbrainz.org/recording/a83f94ce-e89d-4cda-a997-101d49905703) · 3:25
+  - why: ISRC JPVI00902870: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **Kleeer – Happy Me** (4:54)
+  - file: `Kleeer/I Love to Dance (1979)/03 - Happy Me.flac`
+  - writes: Happy Me [456bfe0c](https://musicbrainz.org/recording/456bfe0c-e69b-47ce-bd43-4a2bdc2a202e) · 4:52
+  - why: ISRC USAT20612734: 0 of 1 recordings fit; search: 1 of 2 results fit
+- **Lady Gaga – Born This Way** (4:20)
+  - file: `Lady Gaga/Born This Way (2011)/02 - Born This Way.flac`
+  - writes: Born This Way [8ddbdf9c](https://musicbrainz.org/recording/8ddbdf9c-7400-4889-984d-17813c513c7c) · 4:20 · work [c2b27b3d](https://musicbrainz.org/work/c2b27b3d-4fe7-3daa-ad38-147936522869)
+  - why: search: 4 of 60 results fit; tie broken by album
+- **Lady Gaga – Just Dance** (4:01)
+  - file: `Lady Gaga/The Fame (2008)/01 - Just Dance.flac`
+  - writes: Just Dance [0810268f](https://musicbrainz.org/recording/0810268f-2e52-4f89-86be-42762ea3f6d4) · 4:02 · work [31c68d30](https://musicbrainz.org/work/31c68d30-dc50-3268-a8d5-188d2811f7c7)
+  - why: search: 2 of 100 results fit; tie broken by album
+- **Lady Gaga – Poker Face** (3:59)
+  - file: `Lady Gaga/The Fame (2008)/04 - Poker Face.flac`
+  - writes: Poker Face [ce3a5a96](https://musicbrainz.org/recording/ce3a5a96-e755-4742-9f20-2578600daa4c) · 3:57 · work [9f6363b8](https://musicbrainz.org/work/9f6363b8-7df7-3732-b2b6-94c0f02e0bde)
+  - why: search: 3 of 81 results fit; tie broken by album
+- **Lamont Dozier – Breaking Out All Over** (5:06)
+  - file: `Lamont Dozier/Out Here On My Own (1974)/01 - Breaking Out All Over.mp3`
+  - writes: Breaking Out All Over [bf07181e](https://musicbrainz.org/recording/bf07181e-a929-440f-b164-dbea6cc18f26) · 5:02
+  - why: search: 2 of 4 results fit; tie broken by album
+- **Lenny Kravitz – It Ain't Over 'Til It's Over** (4:03)
+  - file: `Lenny Kravitz/Mama Said (1991)/04 - It Ain't Over 'Til It's Over.flac`
+  - writes: It Ain’t Over ’Til It’s Over [960d358d](https://musicbrainz.org/recording/960d358d-b00f-48da-90b8-4e3643a29074) · 4:03 · work [64089d05](https://musicbrainz.org/work/64089d05-4784-3c4f-8db4-1fc899a63393)
+  - why: ISRC USVI29100003: 2 of 3 recordings fit; search: 6 of 26 results fit; tie broken by album
+- **Leo Nocentelli – Thinking of the Day** (2:36)
+  - file: `Leo Nocentelli/Another Side (2021)/01 - Thinking of the Day.flac`
+  - writes: Thinking of the Day [673ffbf4](https://musicbrainz.org/recording/673ffbf4-2c6e-4a5a-9811-1653d0b8826f) · 2:35
+  - why: ISRC USDEA2119101: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **Leston Paul – All Nite Tonight - Mix** (6:10)
+  - file: `Leston Paul/Under the Influence Vol.6 compiled by Faze Action (2018)/02 - All Nite Tonight - Mix.flac`
+  - writes: All Nite Tonight (mix) [e9d28526](https://musicbrainz.org/recording/e9d28526-9b93-4dc1-97ab-b092cd531611) · 6:12
+  - why: ISRC GBPKF1800005: 0 of 0 recordings fit; search: 1 of 4 results fit
+- **Lidell Townsell & M.T.F. – Get with U** (4:00)
+  - file: `Lidell Townsell & M.T.F_/Harmony WEB (1992)/03 - Get with U.mp3`
+  - writes: Get With U [cd68e234](https://musicbrainz.org/recording/cd68e234-a30c-4d68-aed7-8bfaee79fa5c) · 3:59
+  - why: search: 1 of 7 results fit
+- **Lil Ugly Mane – Drain Counter** (3:03)
+  - file: `Lil Ugly Mane/Oblivion Access/00 - Drain Counter.m4a`
+  - writes: Drain Counter [6494fb9f](https://musicbrainz.org/recording/6494fb9f-87a4-4fa6-9558-11d0dfd92f48) · 3:03
+  - why: search: 3 of 3 results fit; tie broken by album
+- **Linx – You're Lying (12' Mix)** (6:37)
+  - file: `Linx/Intuition (1981)/11 - You're Lying (12' Mix).flac`
+  - writes: You’re Lying (12″ mix) [386d1d13](https://musicbrainz.org/recording/386d1d13-d3b5-4d81-952e-dbc5b889b11d) · 6:36 · work [c4f643b2](https://musicbrainz.org/work/c4f643b2-823c-4e05-bad6-0b7a43f9d322)
+  - why: search: 1 of 18 results fit
+- **Linx – You're Lying (12" Mix)** (6:37)
+  - file: `Linx/Intuition (1981)/11 - You're Lying (12_ Mix).mp3`
+  - writes: You’re Lying (12″ mix) [386d1d13](https://musicbrainz.org/recording/386d1d13-d3b5-4d81-952e-dbc5b889b11d) · 6:36 · work [c4f643b2](https://musicbrainz.org/work/c4f643b2-823c-4e05-bad6-0b7a43f9d322)
+  - why: search: 1 of 18 results fit
+- **Love Apple – Call Me When You Want Me** (5:31)
+  - file: `Love Apple/Love Apple (2012)/02 - Call Me When You Want Me.flac`
+  - writes: Call Me When You Want Me [368e3391](https://musicbrainz.org/recording/368e3391-3f7d-43ba-8621-433acfa07bb1) · 5:31
+  - why: ISRC USCW61242502: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **Lucy Pearl – Dance Tonight** (3:41)
+  - file: `Lucy Pearl/Lucy Pearl (2000)/03 - Dance Tonight.mp3`
+  - writes: Dance Tonight [a6e1b9b8](https://musicbrainz.org/recording/a6e1b9b8-159b-401c-88b7-2a207b01ca15) · 3:41
+  - why: search: 3 of 27 results fit; tie broken by album
+- **Luiz Bonfá – Uma Prece (A Prayer)** (2:36)
+  - file: `Luiz Bonfá/Solo in Rio 1959/06 - Uma Prece (A Prayer).mp3`
+  - writes: Uma Prece [A Prayer] [50be54ed](https://musicbrainz.org/recording/50be54ed-75e2-4b4d-94eb-5a04df497599) · 2:36
+  - why: ISRC USSF10548306: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **Luiz Bonfá – Variações em Violão (Variations on Guitar)** (1:28)
+  - file: `Luiz Bonfá/Solo in Rio 1959/13 - Variações em Violão (Variations on Guitar).mp3`
+  - writes: Variações em Violão [Variations on Guitar] [d2d6b780](https://musicbrainz.org/recording/d2d6b780-994b-44b7-9d5f-2867930ece6b) · 1:28
+  - why: ISRC USSF10548313: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **Luiz Bonfá – Samba de Orfeu** (1:16)
+  - file: `Luiz Bonfá/Solo in Rio 1959/24 - Samba de Orfeu.mp3`
+  - writes: Samba de Orfeu [6f724b47](https://musicbrainz.org/recording/6f724b47-b5fc-4387-9119-243c5c93b319) · 1:16
+  - why: ISRC USSF10548324: 0 of 0 recordings fit; search: 3 of 13 results fit; tie broken by album
+- **Luiz Bonfá – Uma Prece (A Prayer)** (2:36)
+  - file: `Luiz Bonfá/Solo in Rio 1959 (2005)/06 - Uma Prece (A Prayer).flac`
+  - writes: Uma Prece [A Prayer] [50be54ed](https://musicbrainz.org/recording/50be54ed-75e2-4b4d-94eb-5a04df497599) · 2:36
+  - why: ISRC USSF10548306: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **Luiz Bonfá – Amor sem Adeus (Love without Goodbye)** (2:04)
+  - file: `Luiz Bonfá/Solo in Rio 1959 (2005)/12 - Amor sem Adeus (Love without Goodbye).flac`
+  - writes: Amor sem Adeus [Love without Goodbye] [a65ce4aa](https://musicbrainz.org/recording/a65ce4aa-aeaf-4849-b12f-228cda3df9e5) · 2:04
+  - why: ISRC USSF10548312: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **Luiz Bonfá – Prelude to Adventure in Space** (1:59)
+  - file: `Luiz Bonfá/Solo in Rio 1959 (2005)/19 - Prelude to Adventure in Space.flac`
+  - writes: Prelude to Adventure in Space [cc0003a5](https://musicbrainz.org/recording/cc0003a5-b89e-4015-8760-1a6b17aa2269) · 1:59
+  - why: ISRC USSF10548319: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **Lynda Dawn – Arise** (2:32)
+  - file: `Lynda Dawn/At First Light (2019)/03 - Arise.flac`
+  - writes: Arise [8d714f3c](https://musicbrainz.org/recording/8d714f3c-c447-40db-bf1c-24eeef7b4769) · 2:32
+  - why: ISRC CAK471903103: 0 of 0 recordings fit; search: 1 of 2 results fit
+- **Lynda Dawn – Arise** (2:33)
+  - file: `Lynda Dawn/At First Light (2019)/03 - Arise.mp3`
+  - writes: Arise [8d714f3c](https://musicbrainz.org/recording/8d714f3c-c447-40db-bf1c-24eeef7b4769) · 2:32
+  - why: search: 1 of 2 results fit
+- **M Beat feat. General Levy – Incredible** (4:15)
+  - file: `M Beat feat. General Levy/UK Top 100 Hits 1994 (1994)/74 - Incredible.flac`
+  - writes: Incredible [7a345d60](https://musicbrainz.org/recording/7a345d60-5de7-4353-a095-a238eac117b6) · 4:15 · work [2a91fb05](https://musicbrainz.org/work/2a91fb05-3cd3-46aa-821b-40163591b7ac)
+  - why: search: 1 of 61 results fit
+- **M-Beat Feat General Levy – Incredible (Phibes Remix)** (5:19)
+  - file: `M-Beat Feat General Levy/Incredible (Phibes Remix) (2016)/01 - Incredible (Phibes Remix).flac`
+  - writes: Incredible (Phibes remix) [5b425c4e](https://musicbrainz.org/recording/5b425c4e-73da-4a13-aaae-a19eb67d8395) · 5:18
+  - why: search: 1 of 61 results fit
+- **M-Beat Ft General Levy – Incredible (Jungle Steppers Mix)** (5:02)
+  - file: `M-Beat Ft General Levy/Incredible (New Remixes) (1994)/02 - Incredible (Jungle Steppers Mix).mp3`
+  - writes: Incredible (Jungle Steppers mix) [00413ea4](https://musicbrainz.org/recording/00413ea4-0912-4f09-b1a0-c0f41b6728ef) · 5:02 · work [2a91fb05](https://musicbrainz.org/work/2a91fb05-3cd3-46aa-821b-40163591b7ac)
+  - why: search: 1 of 61 results fit
+- **Mac Dre – Feelin' Myself** (3:45)
+  - file: `Mac Dre/Ronald Dregan (2004)/01 - Feelin' Myself.mp3`
+  - writes: Feelin’ Myself [d58fe802](https://musicbrainz.org/recording/d58fe802-0e5f-4ace-88e3-66f08750f8aa) · 3:45
+  - why: search: 2 of 6 results fit; tie broken by album
+- **Marcos Valle – Parabéns** (8:34)
+  - file: `Marcos Valle/Contrasts (2004)/09 - Parabéns.flac`
+  - writes: Parabens [9a3719be](https://musicbrainz.org/recording/9a3719be-0d43-4241-a845-bfd2ae9aadbc) · 8:34 · work [0a3e39dd](https://musicbrainz.org/work/0a3e39dd-2aba-4da2-899f-6a598baa762d)
+  - why: ISRC GBDCR0400359: 0 of 0 recordings fit; search: 8 of 18 results fit; tie broken by album
+- **Marcos Valle – Parabéns** (8:34)
+  - file: `Marcos Valle/Contrasts (2004)/09 - Parabéns.mp3`
+  - writes: Parabens [9a3719be](https://musicbrainz.org/recording/9a3719be-0d43-4241-a845-bfd2ae9aadbc) · 8:34 · work [0a3e39dd](https://musicbrainz.org/work/0a3e39dd-2aba-4da2-899f-6a598baa762d)
+  - why: search: 8 of 18 results fit; tie broken by album
+- **Marcos Valle – Nêga do Balaio - Buscemi's Jungle Jazz Remix** (6:12)
+  - file: `Marcos Valle/Contrasts (2004)/14 - Nêga do Balaio - Buscemi's Jungle Jazz Remix.flac`
+  - writes: Nega do balaio (Buscemi's Jungle Jazz remix) [05ede966](https://musicbrainz.org/recording/05ede966-3c25-4175-bb4d-684ef503021c) · 6:11
+  - why: ISRC GBDCR0400375: 0 of 0 recordings fit; search: 1 of 4 results fit
+- **Marcos Valle – Estrelar** (5:13)
+  - file: `Marcos Valle/Marcos Valle (1983)/01 - Estrelar.flac`
+  - writes: Estrelar [4450f5b9](https://musicbrainz.org/recording/4450f5b9-7b12-46d4-afa7-1e3bd705e888) · 5:13
+  - why: ISRC BRSGL8300152: 0 of 0 recordings fit; search: 3 of 8 results fit; tie broken by album
+- **Marcos Valle – Estrelar** (5:13)
+  - file: `Marcos Valle/Marcos Valle (1983)/01 - Estrelar.mp3`
+  - writes: Estrelar [4450f5b9](https://musicbrainz.org/recording/4450f5b9-7b12-46d4-afa7-1e3bd705e888) · 5:13
+  - why: search: 3 of 8 results fit; tie broken by album
+- **Marvin Gaye – Falling In Love Again** (4:39)
+  - file: `Marvin Gaye/Here My Dear/00 - Falling In Love Again.m4a`
+  - writes: Falling in Love Again [ea3bb011](https://musicbrainz.org/recording/ea3bb011-77e9-4524-b6e3-db680b0a9ca8) · 4:39 · work [e4ea1450](https://musicbrainz.org/work/e4ea1450-b135-46c5-921b-6377af53f763)
+  - why: search: 1 of 2 results fit
+- **Marvin Gaye – What's Going On** (3:53)
+  - file: `Marvin Gaye/What's Going On (1971)/01 - What's Going On.mp3`
+  - writes: What’s Going On [ba3e69e7](https://musicbrainz.org/recording/ba3e69e7-0c36-42af-bf1a-7c0036451fe2) · 3:53 · work [8c9e1987](https://musicbrainz.org/work/8c9e1987-99a5-3985-b182-d9eaf181749a)
+  - why: search: 16 of 100 results fit; tie broken by album
+- **Mary J. Blige – Mary Jane (All Night Long)** (4:39)
+  - file: `Mary J. Blige/Mary Jane (All Night Long) (1995)/01 - Mary Jane (All Night Long).mp3`
+  - writes: Mary Jane (All Night Long) [3360e8f2](https://musicbrainz.org/recording/3360e8f2-0fc9-4c76-841d-d2f03796dd24) · 4:39 · work [a8d869e7](https://musicbrainz.org/work/a8d869e7-f0af-4746-aa89-eafa30e321e1)
+  - why: search: 3 of 30 results fit; tie broken by album
+- **Mayer Hawthorne – I Wish It Would Rain** (3:59)
+  - file: `Mayer Hawthorne/A Strange Arrangement (2009)/06 - I Wish It Would Rain.flac`
+  - writes: I Wish It Would Rain [adb2483e](https://musicbrainz.org/recording/adb2483e-7bff-40e2-b486-234b88d8d6c8) · 3:55
+  - why: ISRC US2S70919006: 0 of 0 recordings fit; search: 2 of 8 results fit; tie broken by album
+- **Menahan Street Band – Home Again** (3:22)
+  - file: `Menahan Street Band/Make the Road By Walking (2008)/03 - Home Again.flac`
+  - writes: Home Again! [51c293c6](https://musicbrainz.org/recording/51c293c6-b814-4832-9a61-fe5220310f51) · 3:22
+  - why: ISRC US4GZ0801503: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **Michael Franks – Monkey See-Monkey Do** (3:35)
+  - file: `Michael Franks/The Art of Tea (1976)/03 - Monkey See-Monkey Do.mp3`
+  - writes: Monkey See—Monkey Do [0f4f2786](https://musicbrainz.org/recording/0f4f2786-d6b8-4ab9-b364-9bb1d3b07fc7) · 3:35 · work [f063b77d](https://musicbrainz.org/work/f063b77d-3d8e-3bf3-8fd1-8955ceedce87)
+  - why: search: 2 of 5 results fit; tie broken by album
+- **Michael Jackson – Don't Stop 'Til You Get Enough** (6:04)
+  - file: `Michael Jackson/HIStory - Past, Present And Future - Book I (1982)/02 - Don't Stop 'Til You Get Enough.flac`
+  - writes: Don’t Stop ’Til You Get Enough [2797d6d2](https://musicbrainz.org/recording/2797d6d2-c735-4b48-ae00-8efbf5393517) · 6:05 · work [a6c7b8ad](https://musicbrainz.org/work/a6c7b8ad-6a65-3e76-932c-e74c920dea6e)
+  - why: search: 8 of 60 results fit; tie broken by album
+- **Michael Jackson – Man In The Mirror** (5:20)
+  - file: `Michael Jackson/HIStory - Past, Present And Future - Book I (1982)/02 - Man In The Mirror.flac`
+  - writes: Man in the Mirror [a52309e7](https://musicbrainz.org/recording/a52309e7-7471-43d7-876e-b198fa6c3a20) · 5:19 · work [802abd11](https://musicbrainz.org/work/802abd11-d658-3f4e-8211-a29d3acc54ec)
+  - why: search: 5 of 62 results fit; tie broken by album
+- **Michael Jackson – Wanna Be Startin' Somethin'** (6:04)
+  - file: `Michael Jackson/HIStory - Past, Present And Future - Book I (1982)/03 - Wanna Be Startin' Somethin'.flac`
+  - writes: Wanna Be Startin’ Somethin’ [2460a241](https://musicbrainz.org/recording/2460a241-6ff4-49f1-80f9-36051534e9ae) · 6:03 · work [afec4a5d](https://musicbrainz.org/work/afec4a5d-5ac6-309a-be7c-ee4f919730c3)
+  - why: search: 7 of 69 results fit; tie broken by album
+- **Michael Jackson – Beat It** (4:18)
+  - file: `Michael Jackson/HIStory - Past, Present And Future - Book I (1982)/04 - Beat It.flac`
+  - writes: Beat It [de798de6](https://musicbrainz.org/recording/de798de6-70fc-49f6-b580-339cd2e62052) · 4:18 · work [8fc1410a](https://musicbrainz.org/work/8fc1410a-81ac-342b-ae0a-66b9102c141a)
+  - why: search: 10 of 100 results fit; tie broken by album
+- **Michael Jackson – Bad** (4:09)
+  - file: `Michael Jackson/HIStory - Past, Present And Future - Book I (1982)/06 - Bad.flac`
+  - writes: Bad [47eaab1a](https://musicbrainz.org/recording/47eaab1a-667b-490d-8094-168e7d0d9ad1) · 4:07 · work [b06efbd2](https://musicbrainz.org/work/b06efbd2-1520-37d8-bb17-c27093451c42)
+  - why: search: 14 of 100 results fit; tie broken by album
+- **Michael Jackson – Break of Dawn** (5:31)
+  - file: `Michael Jackson/Invincible (2001)/04 - Break of Dawn.flac`
+  - writes: Break of Dawn [f48703b5](https://musicbrainz.org/recording/f48703b5-789f-4f93-89e3-a9fe895a89d1) · 5:32 · work [f2b9caac](https://musicbrainz.org/work/f2b9caac-4115-39a5-b389-d117bfd0d24d)
+  - why: search: 1 of 2 results fit
+- **Michael Jackson – Rock With You (Frankie Knuckles Remix)** (7:43)
+  - file: `Michael Jackson/Off the Wall (1983)/06 - Rock With You (Frankie Knuckles Remix).flac`
+  - writes: Rock With You (Frankie Knuckles remix) [c66e51a4](https://musicbrainz.org/recording/c66e51a4-d496-49c3-9d3c-c213d80bb37e) · 7:43 · work [1dda55be](https://musicbrainz.org/work/1dda55be-3469-3282-a6ce-a1373ce1ba5f)
+  - why: search: 1 of 97 results fit
+- **Milton Wright – The Silence That You Keep** (3:27)
+  - file: `Milton Wright/Friends and Buddies (1975)/08 - The Silence That You Keep.flac`
+  - writes: The Silence That You Keep [41132375](https://musicbrainz.org/recording/41132375-a817-4809-af5c-0a11d4c5444b) · 3:27
+  - why: ISRC USBEN0800109: 0 of 0 recordings fit; search: 3 of 4 results fit; tie broken by album
+- **Mobb Deep – Shook Ones, Pt. II** (5:26)
+  - file: `Mobb Deep/The Infamous (1995)/15 - Shook Ones, Pt. II.flac`
+  - writes: Shook Ones, Pt. II [144fd997](https://musicbrainz.org/recording/144fd997-7a29-428e-8306-99427f563517) · 5:25
+  - why: ISRC USRC19401295: 0 of 2 recordings fit; search: 1 of 13 results fit
+- **Mário Rui Silva – Ngisumba** (4:47)
+  - file: `Mário Rui Silva/Stories from Another Time 1982-1988 (2021)/04 - Ngisumba.flac`
+  - writes: Ngisumba [4523c423](https://musicbrainz.org/recording/4523c423-743b-49cf-8c77-eceba90d41b7) · 4:47
+  - why: ISRC DEG932101760: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **N.W.A – Express Yourself** (4:26)
+  - file: `N.W.A/Straight Outta Compton (1988)/01 - Express Yourself.flac`
+  - writes: Express Yourself [b7fa4a61](https://musicbrainz.org/recording/b7fa4a61-2446-40ea-b2d2-a7802a215134) · 4:25 · work [5ccba98b](https://musicbrainz.org/work/5ccba98b-b00f-3b05-aab0-174da6601e6f)
+  - why: search: 6 of 45 results fit; tie broken by album
+- **OutKast – Hey Ya!** (3:55)
+  - file: `OutKast/Speakerboxxx_The Love Below (2003)/03 - Hey Ya!.flac`
+  - writes: Hey Ya! [d1a3d960](https://musicbrainz.org/recording/d1a3d960-7668-4755-a09b-135dc1393845) · 3:55 · work [8fc06b7b](https://musicbrainz.org/work/8fc06b7b-9639-3fda-b873-8dc247df8526)
+  - why: search: 9 of 56 results fit; tie broken by album
+- **Paul Desmond – Samba Cantina** (5:42)
+  - file: `Paul Desmond/Bossa Antigua (1964)/04 - Samba Cantina.mp3`
+  - writes: Samba cantina [ece608ad](https://musicbrainz.org/recording/ece608ad-fb90-4e11-a826-6d823730fb95) · 5:42
+  - why: search: 4 of 8 results fit; tie broken by album
+- **Paul Desmond – Samba Cantina** (5:42)
+  - file: `Paul Desmond/Bossa Antigua (1997)/04 - Samba Cantina.flac`
+  - writes: Samba cantina [ece608ad](https://musicbrainz.org/recording/ece608ad-fb90-4e11-a826-6d823730fb95) · 5:42
+  - why: ISRC USBB16401007: 0 of 0 recordings fit; search: 4 of 8 results fit; tie broken by album
+- **Penny Goodwin – What's Goin On** (5:40)
+  - file: `Penny Goodwin/Portrait Of A Gemini (1973)/09 - What's Goin On.mp3`
+  - writes: What’s Goin On [a5d942ce](https://musicbrainz.org/recording/a5d942ce-a531-4c90-a7d7-a707cbd94ec1) · 5:42
+  - why: search: 1 of 1 results fit
+- **People Under The Stairs – Montego Slay** (3:58)
+  - file: `People Under The Stairs/Acid Raindrops (2002)/05 - Montego Slay.flac`
+  - writes: Montego Slay [8e657e92](https://musicbrainz.org/recording/8e657e92-835a-494b-b273-a5e31443e7f7) · 3:58
+  - why: ISRC USOM80312405: 0 of 0 recordings fit; search: 1 of 3 results fit
+- **Pharoah Sanders – Love Is Everywhere** (5:23)
+  - file: `Pharoah Sanders/Wisdom Through Music/00 - Love Is Everywhere.m4a`
+  - writes: Love Is Everywhere [842762fa](https://musicbrainz.org/recording/842762fa-6083-4138-acaa-cb2f6b783216) · 5:21 · work [5ad0dc03](https://musicbrainz.org/work/5ad0dc03-0534-4b5b-83e6-1583bd672278)
+  - why: search: 1 of 5 results fit
+- **Ruby Rushton – Together at Last** (1:41)
+  - file: `Piero Umiliani/Trudi's Songbook Vol. 2 (2017)/05 - Together at Last.flac`
+  - writes: Together at Last [5344da49](https://musicbrainz.org/recording/5344da49-9af8-412a-b9f7-a477840e7dc8) · 1:41
+  - why: search: 1 of 1 results fit
+- **Ruby Rushton – Together at Last** (1:41)
+  - file: `Piero Umiliani/Trudi's Songbook Vol. 2 (2017)/05 - Together at Last.mp3`
+  - writes: Together at Last [5344da49](https://musicbrainz.org/recording/5344da49-9af8-412a-b9f7-a477840e7dc8) · 1:41
+  - why: search: 1 of 1 results fit
+- **Marvin Gaye – falling in love again** (4:39)
+  - file: `Piero Umiliani/Trudi's Songbook Vol. 2 (2017)/13 -  falling in love again.mp3`
+  - writes: Falling in Love Again [ea3bb011](https://musicbrainz.org/recording/ea3bb011-77e9-4524-b6e3-db680b0a9ca8) · 4:39 · work [e4ea1450](https://musicbrainz.org/work/e4ea1450-b135-46c5-921b-6377af53f763)
+  - why: search: 1 of 2 results fit
+- **Pilgrim Fathers Orchestra – Touch Me Don't Stop** (7:23)
+  - file: `Pilgrim Fathers Orchestra/Under The Influence vol. 6 (2018)/03 - Touch Me Don't Stop.mp3`
+  - writes: Touch Me Don’t Stop [584e09e8](https://musicbrainz.org/recording/584e09e8-8be7-4c82-9a3f-1d6d323691fa) · 7:25
+  - why: search: 1 of 1 results fit
+- **Pilgrim Fathers Orchestra – Touch Me Don't Stop** (7:23)
+  - file: `Pilgrim Fathers Orchestra/Under the Influence Vol.6 compiled by Faze Action (2018)/06 - Touch Me Don't Stop.flac`
+  - writes: Touch Me Don’t Stop [584e09e8](https://musicbrainz.org/recording/584e09e8-8be7-4c82-9a3f-1d6d323691fa) · 7:25
+  - why: ISRC ITE211700007: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **Pino D'Angio – Okay Okay** (4:19)
+  - file: `Pino D'Angio/_.. Balla! (1981)/04 - Okay Okay.mp3`
+  - writes: Okay Okay [44aadc46](https://musicbrainz.org/recording/44aadc46-598a-4a3d-894e-31d515cc6115) · 4:20
+  - why: search: 2 of 3 results fit; tie broken by album; 2 works, none proposed
+- **Player – Givin' It All** (4:18)
+  - file: `Player/A Room With A View (1980)/07 - Givin' It All.flac`
+  - writes: Givin’ It All [793cc922](https://musicbrainz.org/recording/793cc922-f38b-4c78-853c-724f4ab1ff56) · 4:19 · work [3f95fc7b](https://musicbrainz.org/work/3f95fc7b-3253-43a0-a494-cd20c90f5547)
+  - why: ISRC USWWW0201027: 0 of 0 recordings fit; search: 3 of 3 results fit; tie broken by album
+- **Player – Givin' It All** (4:16)
+  - file: `Player/Baby Come Back_ The Best of Player (1998)/07 - Givin' It All.mp3`
+  - writes: Givin' It All [23d479c2](https://musicbrainz.org/recording/23d479c2-c392-476f-b534-4c277f1e9949) · 4:18
+  - why: search: 3 of 3 results fit; tie broken by album
+- **Pleasure – Glide** (6:30)
+  - file: `Pleasure/The Funk Box (2000)/00 - Glide.mp3`
+  - writes: Glide [1f66ce93](https://musicbrainz.org/recording/1f66ce93-90b9-4f2a-ac9d-451052f06c53) · 6:26
+  - why: search: 1 of 13 results fit
+- **Queen – Cool Cat** (3:29)
+  - file: `Queen/Hot Space (1982)/10 - Cool Cat.mp3`
+  - writes: Cool Cat [e86921bb](https://musicbrainz.org/recording/e86921bb-70d2-409b-b3a3-fb169842ee74) · 3:30 · work [e1adc1c1](https://musicbrainz.org/work/e1adc1c1-d293-4c2f-8185-8f7a68e9587d)
+  - why: search: 2 of 16 results fit; tie broken by album
+- **Raheem DeVaughn – Guess Who Loves You More** (5:20)
+  - file: `Raheem DeVaughn/The Love Experience (2005)/03 - Guess Who Loves You More.flac`
+  - writes: Guess Who Loves You More [76f7fabf](https://musicbrainz.org/recording/76f7fabf-616c-4640-a5ea-6fa1ee9b496b) · 5:20
+  - why: ISRC USJI10400908: 0 of 0 recordings fit; search: 2 of 7 results fit; tie broken by album
+- **Raphael Saadiq – What's Life Like** (2:50)
+  - file: `Raphael Saadiq/Instant Vintage (Retail) (2002)/18 - What's Life Like.mp3`
+  - writes: What’s Life Like [9c531ccf](https://musicbrainz.org/recording/9c531ccf-371d-48b7-babf-394995edc30e) · 2:50
+  - why: search: 1 of 2 results fit
+- **Rene & Angela – Imaginary Playmates** (4:38)
+  - file: `Rene & Angela/Wall To Wall (1981)/07 - Imaginary Playmates.flac`
+  - writes: Imaginary Playmates [8789fc45](https://musicbrainz.org/recording/8789fc45-ccb5-49d4-a3a2-7d608f9eb4b3) · 4:35
+  - why: ISRC USCA29601702: 0 of 0 recordings fit; search: 1 of 3 results fit
+- **Robert Palmer – Sneakin' Sally Through the Alley** (4:27)
+  - file: `Robert Palmer/Sneakin' Sally Through the Alley (1974)/03 - Sneakin' Sally Through the Alley.mp3`
+  - writes: Sneakin’ Sally Through the Alley [d6b86f7d](https://musicbrainz.org/recording/d6b86f7d-05c2-4195-b707-fef12a84ab8c) · 4:26 · work [d8cc4667](https://musicbrainz.org/work/d8cc4667-4584-4925-9b87-4f00ffb7da6a)
+  - why: search: 7 of 20 results fit; tie broken by album
+- **Ronnie Foster – Let's Stay Together** (4:54)
+  - file: `Ronnie Foster/Two Headed Freap (1972)/05 - Let's Stay Together.mp3`
+  - writes: Let’s Stay Together [cbdf3426](https://musicbrainz.org/recording/cbdf3426-4c38-4d3d-b4fb-499ca7faa08e) · 4:54
+  - why: search: 1 of 1 results fit
+- **Ronnie Foster – Chunky** (4:53)
+  - file: `Ronnie Foster/Two-Headed Freap (1972)/01 - Chunky.mp3`
+  - writes: Chunky [fa61ae3d](https://musicbrainz.org/recording/fa61ae3d-53ee-40c1-aeee-4e6406287534) · 4:53
+  - why: search: 2 of 4 results fit; tie broken by album
+- **Ronnie Foster – Let's Stay Together** (4:54)
+  - file: `Ronnie Foster/Two-Headed Freap (1972)/05 - Let's Stay Together.mp3`
+  - writes: Let’s Stay Together [cbdf3426](https://musicbrainz.org/recording/cbdf3426-4c38-4d3d-b4fb-499ca7faa08e) · 4:54
+  - why: search: 1 of 1 results fit
+- **Ronnie Foster – Kentucky Fried Chicken** (4:59)
+  - file: `Ronnie Foster/Two-Headed Freap (1972)/08 - Kentucky Fried Chicken.mp3`
+  - writes: Kentucky Fried Chicken [e68ba316](https://musicbrainz.org/recording/e68ba316-4e5b-402a-b8d6-481a1c66c019) · 4:59
+  - why: search: 1 of 1 results fit
+- **Roy Ayers – What You Won't Do For Love** (5:51)
+  - file: `Roy Ayers/No Stranger To Love (1979)/02 - What You Won't Do For Love.mp3`
+  - writes: What You Won’t Do for Love [f006ab28](https://musicbrainz.org/recording/f006ab28-4295-4bbd-b83a-639a2ae03b9d) · 5:50 · work [ab369932](https://musicbrainz.org/work/ab369932-0f6f-3e3f-8845-b3b46c0c0a81)
+  - why: search: 4 of 4 results fit; tie broken by album
+- **Roy Ayers Ubiquity – Ain't No Sunshine** (6:23)
+  - file: `Roy Ayers Ubiquity/Red Black & Green (1973)/01 - Ain't No Sunshine.mp3`
+  - writes: Ain’t No Sunshine [360829d9](https://musicbrainz.org/recording/360829d9-46a3-468a-a2c7-eddbc744b449) · 6:20 · work [2e9136a2](https://musicbrainz.org/work/2e9136a2-90a9-3144-b4c1-8aba75b8e459)
+  - why: search: 1 of 1 results fit
+- **Ruby And The Romantics – Our Day Will Come** (2:33)
+  - file: `Ruby And The Romantics/Our Day Will Come/00 - Our Day Will Come.m4a`
+  - writes: Our Day Will Come [1e19e12e](https://musicbrainz.org/recording/1e19e12e-3735-4b17-931a-be8efe5a0cbe) · 2:33 · work [5e85e88a](https://musicbrainz.org/work/5e85e88a-0906-4fd9-9da0-28958d4c928f)
+  - why: search: 24 of 31 results fit; tie broken by album
+- **Ruby Rushton – Together at Last** (1:41)
+  - file: `Ruby Rushton/Trudi's Songbook _ Volume Two (2017)/05 - Together at Last.mp3`
+  - writes: Together at Last [5344da49](https://musicbrainz.org/recording/5344da49-9af8-412a-b9f7-a477840e7dc8) · 1:41
+  - why: search: 1 of 1 results fit
+- **Ruby Rushton – Together at Last** (1:41)
+  - file: `Ruby Rushton/Trudi's Songbook, Vol. 2 (2018)/05 - Together at Last.flac`
+  - writes: Together at Last [5344da49](https://musicbrainz.org/recording/5344da49-9af8-412a-b9f7-a477840e7dc8) · 1:41
+  - why: ISRC UKCFF1700076: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **Ruby Rushton – Together At Last** (1:41)
+  - file: `Ruby Rushton/Trudi's Songbook_ Volume Two (2017)/05 - Together At Last.mp3`
+  - writes: Together at Last [5344da49](https://musicbrainz.org/recording/5344da49-9af8-412a-b9f7-a477840e7dc8) · 1:41
+  - why: ISRC UKCFF1700076: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **Ryo Fukui – Early Summer** (10:40)
+  - file: `Ryo Fukui/シーナリィ/00 - Early Summer.m4a`
+  - writes: Early Summer [d469a2c6](https://musicbrainz.org/recording/d469a2c6-6015-46f8-888c-ed7d63b4fd2e) · 10:39
+  - why: search: 1 of 3 results fit
+- **Sade – By Your Side** (4:40)
+  - file: `Sade/Lovers Rock (2000)/01 - By Your Side.flac`
+  - writes: By Your Side [ca3d5889](https://musicbrainz.org/recording/ca3d5889-206b-4316-8181-6f4812fd6ece) · 4:36 · work [85a9d81f](https://musicbrainz.org/work/85a9d81f-7c8e-3440-843d-c312c39667fb)
+  - why: ISRC GBBBM0002171: 0 of 2 recordings fit; search: 1 of 49 results fit
+- **September – Ostavi Trag** (4:05)
+  - file: `September/Singles/Ostavi Trag.mp3`
+  - writes: Ostavi trag [86910d74](https://musicbrainz.org/recording/86910d74-d0d0-471c-8694-0af7311b6324) · 4:05
+  - why: search: 1 of 2 results fit
+- **September – Ostavi Trag** (4:03)
+  - file: `September/Zadnja Avantura (1976)/06 - Ostavi Trag.mp3`
+  - writes: Ostavi trag [86910d74](https://musicbrainz.org/recording/86910d74-d0d0-471c-8694-0af7311b6324) · 4:05
+  - why: search: 1 of 2 results fit
+- **Shuggie Otis – Inspiration Information** (4:12)
+  - file: `Shuggie Otis/Inspiration Information (1974)/01 - Inspiration Information.mp3`
+  - writes: Inspiration Information [c6cb24b4](https://musicbrainz.org/recording/c6cb24b4-e808-4f59-b121-8290a766b2f2) · 4:12 · work [95e1e516](https://musicbrainz.org/work/95e1e516-e805-3730-a8af-c6fdd7d7d2b5)
+  - why: search: 5 of 10 results fit; tie broken by album
+- **Sivuca – Ain't No Sunshine** (4:48)
+  - file: `Sivuca/Sivuca  (1973)/08 - Ain't No Sunshine.mp3`
+  - writes: Ain’t No Sunshine [bf93cadc](https://musicbrainz.org/recording/bf93cadc-220e-4a9e-8a0b-4906db2cb502) · 4:46 · work [2e9136a2](https://musicbrainz.org/work/2e9136a2-90a9-3144-b4c1-8aba75b8e459)
+  - why: search: 4 of 6 results fit; tie broken by album
+- **Sivuca – Ain't No Sunshine** (4:49)
+  - file: `Sivuca/Sivuca (1973)/06 - Ain't No Sunshine.flac`
+  - writes: Ain’t No Sunshine [bf93cadc](https://musicbrainz.org/recording/bf93cadc-220e-4a9e-8a0b-4906db2cb502) · 4:46 · work [2e9136a2](https://musicbrainz.org/work/2e9136a2-90a9-3144-b4c1-8aba75b8e459)
+  - why: ISRC USVG29707603: 0 of 0 recordings fit; search: 5 of 6 results fit; tie broken by album
+- **Soneros De Verdad – A Buena Vista** (3:14)
+  - file: `Soneros De Verdad/A Buena Vista_ Barrio De La Habana (2004)/01 - A Buena Vista.flac`
+  - writes: A Buena Vista [eaba1bf1](https://musicbrainz.org/recording/eaba1bf1-0c49-4386-9157-d5c8064d7a07) · 3:14
+  - why: ISRC DEE790010410: 0 of 0 recordings fit; search: 5 of 7 results fit; tie broken by album
+- **Soneros de Verdad – A Buena Vista** (3:13)
+  - file: `Soneros de Verdad/Putumayo Presents_ Cuba! Cuba! (2017)/01 - A Buena Vista.mp3`
+  - writes: A Buena Vista [4651b6fd](https://musicbrainz.org/recording/4651b6fd-488a-4047-a43e-351a795a6f77) · 3:12
+  - why: search: 6 of 7 results fit; tie broken by album
+- **Splendor – All Night Long** (5:59)
+  - file: `Splendor/Splendor (1979)/01 - All Night Long.mp3`
+  - writes: All Night Long [1b6a03db](https://musicbrainz.org/recording/1b6a03db-94c1-429b-9bb8-045ecb31493d) · 5:58
+  - why: search: 2 of 2 results fit; tie broken by album
+- **Spyro Gyra – Morning Dance** (3:56)
+  - file: `Spyro Gyra/Morning Dance (1979)/01 - Morning Dance.flac`
+  - writes: Morning Dance [30e4d971](https://musicbrainz.org/recording/30e4d971-10e3-46ed-b14f-b4ed920edf9a) · 4:00 · work [c369f42b](https://musicbrainz.org/work/c369f42b-23ae-434c-b1dc-be1a179dc3b8)
+  - why: ISRC USAR49980010: 0 of 0 recordings fit; search: 24 of 34 results fit; tie broken by album
+- **Steely Dan – Black Cow** (5:10)
+  - file: `Steely Dan/Aja (1977)/01 - Black Cow.flac`
+  - writes: Black Cow [f6cfd4dd](https://musicbrainz.org/recording/f6cfd4dd-3396-48c7-926b-28594d5116a3) · 5:07 · work [e2b3703e](https://musicbrainz.org/work/e2b3703e-e860-3ef2-89f9-f68c43fa6cc2)
+  - why: ISRC USMC17647228: 0 of 1 recordings fit; search: 1 of 15 results fit
+- **Stevie Wonder – The First Garden** (2:33)
+  - file: `Stevie Wonder/Journey Through The Secret Life Of Plants (1979)/02 - The First Garden.flac`
+  - writes: The First Garden [775ec6de](https://musicbrainz.org/recording/775ec6de-6567-4196-a27f-63d5fd0b14f4) · 2:36 · work [f414cc15](https://musicbrainz.org/work/f414cc15-3df7-458d-ae21-a11d73b604ca)
+  - why: ISRC USUM71406440: 0 of 0 recordings fit; search: 1 of 3 results fit
+- **Stevie Wonder – Sir Duke** (3:52)
+  - file: `Stevie Wonder/Songs In The Key of Life (1976)/05 - Sir Duke.flac`
+  - writes: Sir Duke [05b6bdda](https://musicbrainz.org/recording/05b6bdda-3219-4756-af17-d0d9cdcdb104) · 3:54 · work [5bdaad71](https://musicbrainz.org/work/5bdaad71-c999-3e69-840d-c3ee91363de1)
+  - why: search: 2 of 19 results fit; tie broken by album
+- **Stevie Wonder – I Wish** (4:13)
+  - file: `Stevie Wonder/Songs In The Key of Life (1976)/06 - I Wish.flac`
+  - writes: I Wish [014cebe0](https://musicbrainz.org/recording/014cebe0-cd19-4814-b06d-b6b07aa8ae99) · 4:12 · work [f1ec67e8](https://musicbrainz.org/work/f1ec67e8-d74b-36fc-a164-52b0f0be82d9)
+  - why: search: 3 of 23 results fit; tie broken by album
+- **Stevie Wonder – Pastime Paradise** (3:28)
+  - file: `Stevie Wonder/Songs In The Key of Life (1976)/08 - Pastime Paradise.flac`
+  - writes: Pastime Paradise [e97bedfc](https://musicbrainz.org/recording/e97bedfc-b0ee-4cb6-8343-03a714caab15) · 3:28 · work [92b8aa93](https://musicbrainz.org/work/92b8aa93-5993-3257-b240-47fb0db100a4)
+  - why: search: 1 of 9 results fit
+- **Stevie Wonder – Summer Soft** (4:14)
+  - file: `Stevie Wonder/Songs In The Key of Life (1976)/09 - Summer Soft.flac`
+  - writes: Summer Soft [56f08341](https://musicbrainz.org/recording/56f08341-e310-4b42-90d0-892fe031209c) · 4:14 · work [14bd505a](https://musicbrainz.org/work/14bd505a-0170-399c-80e9-3158f69330c7)
+  - why: search: 1 of 2 results fit
+- **Stevie Wonder – Isn't She Lovely** (6:35)
+  - file: `Stevie Wonder/Songs In The Key of Life (1976)/11 - Isn't She Lovely.flac`
+  - writes: Isn’t She Lovely [8186c4c4](https://musicbrainz.org/recording/8186c4c4-3575-41b6-b9e6-2941d46acf26) · 6:34 · work [1232d084](https://musicbrainz.org/work/1232d084-6a01-33cf-b14f-65c49f97e2e6)
+  - why: search: 6 of 18 results fit; tie broken by album
+- **Stevie Wonder – As** (7:09)
+  - file: `Stevie Wonder/Songs In The Key of Life (1976)/16 - As.flac`
+  - writes: As [aae32ac0](https://musicbrainz.org/recording/aae32ac0-6e8c-4ef6-b1c4-57467935f73f) · 7:08 · work [dabe337e](https://musicbrainz.org/work/dabe337e-199b-3bfe-b500-52f6576ea53d)
+  - why: search: 1 of 20 results fit
+- **Stevie Wonder – Superstition** (4:29)
+  - file: `Stevie Wonder/The Definitive Collection (1972)/01 - Superstition.mp3`
+  - writes: Superstition [1d9a8f3b](https://musicbrainz.org/recording/1d9a8f3b-e7b7-44b0-a004-04bc62f9755b) · 4:26 · work [6fc63240](https://musicbrainz.org/work/6fc63240-adf1-3fef-a116-75a8f99d28a8)
+  - why: search: 5 of 69 results fit; tie broken by album
+- **Sunbear – Mood 2 "Love At First Sight"** (2:49)
+  - file: `Sunbear/Sunbear (1977)/08 - Mood 2 _Love At First Sight_.mp3`
+  - writes: Mood 2 "Love At First Sight" [c50a2cb1](https://musicbrainz.org/recording/c50a2cb1-0c47-4668-9577-ce09962aba90) · 2:48
+  - why: search: 1 of 1 results fit
+- **Sunlightsquare – Super People (Extended Mix)** (5:26)
+  - file: `Sunlightsquare/Super People ,  Papa Was A Rolling Stone (2015)/00 - Super People (Extended Mix).mp3`
+  - writes: Super People - Extended Mix [673f7544](https://musicbrainz.org/recording/673f7544-19c8-4891-b74b-cbe2d3814814) · 5:26
+  - why: search: 1 of 4 results fit
+- **Sy Smith – Perspective** (4:08)
+  - file: `Sy Smith/Sometimes a Rose Will Grow in Concrete/00 - Perspective.m4a`
+  - writes: Perspective [4e494dfd](https://musicbrainz.org/recording/4e494dfd-fa95-48b5-9037-56d056763703) · 4:08
+  - why: search: 1 of 4 results fit
+- **TOTO – Georgy Porgy** (4:08)
+  - file: `TOTO/Toto (1978)/03 - Georgy Porgy.flac`
+  - writes: Georgy Porgy [96adc49c](https://musicbrainz.org/recording/96adc49c-462b-4611-9d4f-877dcde313c3) · 4:09 · work [fcc22c25](https://musicbrainz.org/work/fcc22c25-fd14-326f-8bd0-e4e966f886ce)
+  - why: ISRC USSM17800433: 2 of 2 recordings fit; search: 13 of 75 results fit; tie broken by album
+- **Tania Maria – Bom Bom Bom Tchi Tchi Tchi** (4:53)
+  - file: `Tania Maria/The Concord Jazz Heritage Series (1983)/03 - Bom Bom Bom Tchi Tchi Tchi.flac`
+  - writes: Bom bom bom tchi tchi tchi [f39ae0c4](https://musicbrainz.org/recording/f39ae0c4-aabd-4815-87b6-53af1a7d6ee1) · 4:55
+  - why: ISRC USC4R0505991: 0 of 0 recordings fit; search: 4 of 5 results fit; tie broken by album
+- **Tania Maria – Começar De Novo** (5:01)
+  - file: `Tania Maria/The Concord Jazz Heritage Series (1983)/05 - Começar De Novo.flac`
+  - writes: Comecar de novo [82d4d72e](https://musicbrainz.org/recording/82d4d72e-e2fd-482e-8be9-a0e2c69f9227) · 5:03
+  - why: ISRC USC4R0505972: 0 of 0 recordings fit; search: 2 of 2 results fit; tie broken by album
+- **Tania Maria – Euzinha** (6:29)
+  - file: `Tania Maria/The Concord Jazz Heritage Series (1983)/07 - Euzinha.flac`
+  - writes: Euzinha [597f2c9f](https://musicbrainz.org/recording/597f2c9f-f352-4380-9fce-2b016cfc23fd) · 6:29
+  - why: ISRC USC4R0300830: 0 of 0 recordings fit; search: 4 of 4 results fit; tie broken by album
+- **The Beach Boys – Good Vibrations** (4:12)
+  - file: `The Beach Boys/The SMiLE Sessions (1966)/07 - Good Vibrations.flac`
+  - writes: Good Vibrations [d1af7025](https://musicbrainz.org/recording/d1af7025-d56f-4374-afaa-3271c642e3c6) · 4:15 · work [ede10e9a](https://musicbrainz.org/work/ede10e9a-0625-3f56-97e7-b2676451d2e1)
+  - why: search: 2 of 100 results fit; tie broken by album
+- **The Blackbyrds – Walking In Rhythm** (4:12)
+  - file: `The Blackbyrds/Flying Start/01 - Walking In Rhythm.flac`
+  - writes: Walking in Rhythm [55b582f0](https://musicbrainz.org/recording/55b582f0-e3c2-4351-81f3-3b319454bee1) · 4:13 · work [364c1a8e](https://musicbrainz.org/work/364c1a8e-ac64-46be-b2e0-46b22f6e1034)
+  - why: ISRC USFI87400248: 0 of 0 recordings fit; search: 10 of 22 results fit; tie broken by album
+- **The Blackbyrds – Reggins** (4:05)
+  - file: `The Blackbyrds/The Blackbyrds (1974)/03 - Reggins.flac`
+  - writes: Reggins [3aa987f9](https://musicbrainz.org/recording/3aa987f9-487e-47a1-9c44-f9a4e7fe076e) · 4:08
+  - why: ISRC USC4R2004332: 0 of 0 recordings fit; search: 2 of 2 results fit; tie broken by album
+- **The California Honeydrops – All Day, All Night** (2:12)
+  - file: `The California Honeydrops/Like You Mean It (2013)/04 - All Day, All Night.flac`
+  - writes: All Day, All Night [3114d8e6](https://musicbrainz.org/recording/3114d8e6-1285-4b85-adc6-e66b1eb916c8) · 2:11 · work [48887471](https://musicbrainz.org/work/48887471-3c9f-4eaa-ac1b-7f2038b5755f)
+  - why: ISRC USQXT1300004: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **The Communards – Don't Leave Me This Way** (4:50)
+  - file: `The Communards/Don't Leave Me This Way (1986)/02 - Don't Leave Me This Way.flac`
+  - writes: Don't Leave Me This Way [58d96a98](https://musicbrainz.org/recording/58d96a98-1778-4ee5-87df-36b81b2f2633) · 4:50 · work [1162a0b4](https://musicbrainz.org/work/1162a0b4-6c43-3902-b713-5f898de93637)
+  - why: search: 10 of 100 results fit; tie broken by album
+- **The Doobie Brothers – What A Fool Believes** (3:43)
+  - file: `The Doobie Brothers/Sounds Of The Seventies - 1979 (1979)/18 - What A Fool Believes.mp3`
+  - writes: What a Fool Believes [6764b741](https://musicbrainz.org/recording/6764b741-fc9f-40d5-bbd5-d0ed0982ef07) · 3:43 · work [10cac3fb](https://musicbrainz.org/work/10cac3fb-4142-3161-829a-15ad7fc0c862)
+  - why: search: 11 of 36 results fit; tie broken by album
+- **The Dynamics – Move on Up** (5:59)
+  - file: `The Dynamics/Disco Reggae (2013)/08 - Move on Up.flac`
+  - writes: Move on Up [fb93f797](https://musicbrainz.org/recording/fb93f797-5670-48bd-8f3d-ed5284ec7f90) · 5:59 · work [e2dc7297](https://musicbrainz.org/work/e2dc7297-3db2-35c8-8f88-3a1a6d870eb1)
+  - why: ISRC FR2VZ9900088: 0 of 1 recordings fit; search: 1 of 7 results fit
+- **The Four Seasons – December, 1963 (Oh What a Night!)** (3:32)
+  - file: `The Four Seasons/Who Loves You (1975)/06 - December, 1963 (Oh What a Night!).flac`
+  - writes: December, 1963 (Oh, What a Night) [f22db82f](https://musicbrainz.org/recording/f22db82f-6c55-45cf-966c-ad64662bba5b) · 3:30 · work [dbff941e](https://musicbrainz.org/work/dbff941e-c429-4382-a61c-f184b5d50454)
+  - why: ISRC USRH10175221: 2 of 5 recordings fit; search: 21 of 100 results fit; tie broken by album
+- **The Jackson 5 – Who's Lovin' You** (4:00)
+  - file: `The Jackson 5/Diana Ross Presents The Jackson 5 (1969)/08 - Who's Lovin' You.flac`
+  - writes: Who’s Lovin’ You [4793e1b5](https://musicbrainz.org/recording/4793e1b5-ad23-4316-b91e-088fd3d51ab0) · 4:01 · work [db393934](https://musicbrainz.org/work/db393934-0471-3283-9230-f65f486fe707)
+  - why: ISRC USMO16982624: 2 of 3 recordings fit; search: 4 of 19 results fit; tie broken by album
+- **The Notations – A New Day** (3:11)
+  - file: `The Notations/Still Here_ 1967-1973 (2015)/01 - A New Day.flac`
+  - writes: A New Day [ac14aa63](https://musicbrainz.org/recording/ac14aa63-0f1e-41cd-9d4b-ad57964977c5) · 3:11
+  - why: ISRC USCW60613021: 0 of 0 recordings fit; search: 3 of 4 results fit; tie broken by album
+- **The Singers Unlimited – More I Can Not Wish You** (3:35)
+  - file: `The Singers Unlimited/The Complete A Capella Sessions (2014)/09 - More I Can Not Wish You.mp3`
+  - writes: More I Can Not Wish You [3cd84b34](https://musicbrainz.org/recording/3cd84b34-be5f-4cad-a159-dd845d2e079e) · 3:37 · work [943a12bc](https://musicbrainz.org/work/943a12bc-bb49-41f8-830d-7285d136795b)
+  - why: search: 1 of 1 results fit
+- **The Singers Unlimited – Killing Me Softly with His Song** (4:20)
+  - file: `The Singers Unlimited/The Complete a Capella Sessions (2014)/12 - Killing Me Softly with His Song.flac`
+  - writes: Killing Me Softly With His Song [7c43db15](https://musicbrainz.org/recording/7c43db15-1756-4fbe-b1e2-96328ff68d27) · 4:21 · work [361e7754](https://musicbrainz.org/work/361e7754-b571-3c66-9140-fc203e15dac9)
+  - why: ISRC DEA117500570: 0 of 0 recordings fit; search: 1 of 2 results fit
+- **The Wood Brothers – Sing About It** (3:41)
+  - file: `The Wood Brothers/The Muse (2013)/03 - Sing About It.flac`
+  - writes: Sing About It [199a1a27](https://musicbrainz.org/recording/199a1a27-30c7-4c84-adb4-a12106b2116f) · 3:41 · work [8d3f6f4b](https://musicbrainz.org/work/8d3f6f4b-426a-41db-a40f-a4636011274a)
+  - why: ISRC QMZ6E1300115: 0 of 0 recordings fit; search: 1 of 2 results fit
+- **Tim Maia – Do Leme Ao Pontal** (3:12)
+  - file: `Tim Maia/World Psychedelic Classics 4_ Nobody Can Live Forever_ The Existential Soul of Tim Maia (2012)/07 - Do Leme Ao Pontal.flac`
+  - writes: Do Leme ao Pontal [0e9db871](https://musicbrainz.org/recording/0e9db871-e11f-4891-9936-365140ea8496) · 3:12
+  - why: ISRC USLB10710007: 0 of 0 recordings fit; search: 1 of 7 results fit
+- **Toto – Georgy Porgy** (4:10)
+  - file: `Toto/Legend - The Best of (1996)/03 - Georgy Porgy.mp3`
+  - writes: Georgy Porgy [96adc49c](https://musicbrainz.org/recording/96adc49c-462b-4611-9d4f-877dcde313c3) · 4:09 · work [fcc22c25](https://musicbrainz.org/work/fcc22c25-fd14-326f-8bd0-e4e966f886ce)
+  - why: search: 13 of 75 results fit; tie broken by album
+- **Twain – The Magician** (5:53)
+  - file: `Twain/Noon (2022)/06 - The Magician.flac`
+  - writes: The Magician [195d026f](https://musicbrainz.org/recording/195d026f-913c-4b32-9c2d-34a204ab88ae) · 5:53
+  - why: ISRC QZEPW1905406: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **Twain – 2 Lovers** (3:34)
+  - file: `Twain/Noon (2022)/07 - 2 Lovers.flac`
+  - writes: 2 Lovers [8f1b85c2](https://musicbrainz.org/recording/8f1b85c2-e97f-4dd9-9825-b3151a223675) · 3:34
+  - why: ISRC QZEPW1905407: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **Twain – Good Old Friend (for Charlie)** (4:18)
+  - file: `Twain/Rare Feeling (2017)/09 - Good Old Friend (for Charlie).mp3`
+  - writes: Good Old Friend (For Charlie) [3c7992ff](https://musicbrainz.org/recording/3c7992ff-3868-4009-8cdc-77583eb598ef) · 4:18
+  - why: search: 1 of 1 results fit
+- **Usher – U Remind Me** (4:30)
+  - file: `Usher/8701 (2001)/02 - U Remind Me.flac`
+  - writes: U Remind Me [4d4bd21c](https://musicbrainz.org/recording/4d4bd21c-864f-4fca-9174-93a9e6577ad8) · 4:27 · work [7b261241](https://musicbrainz.org/work/7b261241-2fbe-4f90-a33d-1be888784bdc)
+  - why: search: 15 of 48 results fit; tie broken by album
+- **Usher – I Can't Let U Go** (3:31)
+  - file: `Usher/8701 (2001)/03 - I Can't Let U Go.flac`
+  - writes: I Can’t Let U Go [5b79908d](https://musicbrainz.org/recording/5b79908d-777c-454a-83a9-47ef20ff27e0) · 3:29 · work [eb60f1d7](https://musicbrainz.org/work/eb60f1d7-cea9-4440-b70e-b3b557060a91)
+  - why: search: 1 of 3 results fit
+- **Usher – U Don't Have to Call** (4:32)
+  - file: `Usher/8701 (2001)/04 - U Don't Have to Call.flac`
+  - writes: U Don’t Have to Call [d42349a0](https://musicbrainz.org/recording/d42349a0-4f4f-4413-89e2-f80e2c493f8e) · 4:29 · work [c6d47bd1](https://musicbrainz.org/work/c6d47bd1-451b-43a6-9f0e-6a01b81791de)
+  - why: search: 1 of 21 results fit
+- **Usher – Yeah!** (4:09)
+  - file: `Usher/Confessions (2004)/02 - Yeah!.flac`
+  - writes: Yeah! [4f595ab5](https://musicbrainz.org/recording/4f595ab5-18bb-4007-b17d-066a0e704234) · 4:10 · work [5cb6dc42](https://musicbrainz.org/work/5cb6dc42-5cc2-42c8-af15-f4f8806e3cf0)
+  - why: search: 6 of 45 results fit; tie broken by album
+- **Augustus Pablo – Peace and Love Dub** (2:52)
+  - file: `Various Artists/Down Santic Way (2005)/01 - Peace and Love Dub.flac`
+  - writes: Peace and Love Dub [bef293b9](https://musicbrainz.org/recording/bef293b9-d865-4146-9eb9-002a52043d7a) · 2:52
+  - why: ISRC GBMHG0604601: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **Walter Wanderley – It Hurts To Say Goodbye** (2:11)
+  - file: `Walter Wanderley/Batucada (1967)/04 - It Hurts To Say Goodbye.flac`
+  - writes: It Hurts to Say Goodbye [106d8870](https://musicbrainz.org/recording/106d8870-bafc-4b08-b86b-d91b53cee894) · 2:11
+  - why: ISRC USGR10200967: 0 of 0 recordings fit; search: 2 of 3 results fit; tie broken by album
+- **Weldon Irvine – What's Goin' on** (4:40)
+  - file: `Weldon Irvine/Sinbad (1976)/03 - What's Goin' on.mp3`
+  - writes: What’s Goin’ On? [551ab283](https://musicbrainz.org/recording/551ab283-9597-4b20-988e-13ddd33efdca) · 4:39
+  - why: search: 1 of 1 results fit
+- **Weldon Irvine – I Love You** (3:06)
+  - file: `Weldon Irvine/Sinbad (1976)/04 - I Love You.mp3`
+  - writes: I Love You [4151e488](https://musicbrainz.org/recording/4151e488-82e8-455c-8394-ef02cd4c1697) · 3:02 · work [df827277](https://musicbrainz.org/work/df827277-4f2f-33a0-9f55-4321a04f787b)
+  - why: search: 1 of 4 results fit
+- **Wendell Harrison – Peace Of Mind** (7:19)
+  - file: `Wendell Harrison/Organic Dream (1981)/04 - Peace Of Mind.mp3`
+  - writes: Peace of Mind [16fd9f09](https://musicbrainz.org/recording/16fd9f09-1e9c-4946-ba31-a0edb2c00f94) · 7:18
+  - why: search: 1 of 1 results fit
+- **Wendell Harrison – Peace Of Mind** (7:18)
+  - file: `Wendell Harrison/pure soul 96/04 - Peace Of Mind.mp3`
+  - writes: Peace of Mind [16fd9f09](https://musicbrainz.org/recording/16fd9f09-1e9c-4946-ba31-a0edb2c00f94) · 7:18
+  - why: search: 1 of 1 results fit
+- **Whatever, Dad – Death of the Phone Call** (1:35)
+  - file: `Whatever, Dad/Huli Ka (2017)/02 - Death of the Phone Call.flac`
+  - writes: death of the phone call [8af93a70](https://musicbrainz.org/recording/8af93a70-ae71-4719-ace9-111fa77d598c) · 1:35
+  - why: ISRC USQY51792135: 0 of 0 recordings fit; search: 1 of 1 results fit
+- **William DeVaughn – Figures Can't Calculate (The Love I Have for You)** (3:48)
+  - file: `William DeVaughn/Be Thankful for What You Got (1980)/04 - Figures Can't Calculate (The Love I Have for You).flac`
+  - writes: Figures Can't Calculate (The Love I Have for You) [d19ed00d](https://musicbrainz.org/recording/d19ed00d-afdb-497d-a16b-980becfbace2) · 3:47
+  - why: ISRC CAU118004566: 0 of 0 recordings fit; search: 2 of 2 results fit; tie broken by album
+- **Willie Colón – Oh Qué Será?** (5:04)
+  - file: `Willie Colón/Greatest Hits (2008)/14 - Oh Qué Será_.flac`
+  - writes: Oh qué será [b343256c](https://musicbrainz.org/recording/b343256c-f9a3-46cf-840e-18b10b0cde5c) · 5:04
+  - why: ISRC USDBB0610539: 0 of 0 recordings fit; search: 1 of 6 results fit
+- **donald byrd – the dude** (7:49)
+  - file: `donald byrd/electric byrd (2015)/04 - the dude.mp3`
+  - writes: The Dude [61715b64](https://musicbrainz.org/recording/61715b64-4233-4fde-8713-767147565090) · 7:49 · work [a7f96902](https://musicbrainz.org/work/a7f96902-e030-4d3a-9439-4fc180d5fc1f)
+  - why: search: 1 of 1 results fit
+- **willie wright – in the beauty of the night** (4:37)
+  - file: `willie wright/telling the truth (2011)/05 - in the beauty of the night.mp3`
+  - writes: In the Beauty of the Night [6e0b3d51](https://musicbrainz.org/recording/6e0b3d51-682f-4e9f-98d2-f92f3aa1935a) · 4:37
+  - why: search: 2 of 2 results fit; tie broken by album
+- **高中正義 – THAT'S THE WAY OF THE WORLD** (6:15)
+  - file: `高中正義/オン・ギター (1978)/07 - THAT'S THE WAY OF THE WORLD.mp3`
+  - writes: THAT’S THE WAY OF THE WORLD [b83534b2](https://musicbrainz.org/recording/b83534b2-5eba-4472-8550-c81d5c209af1) · 6:15 · work [001da00b](https://musicbrainz.org/work/001da00b-d7b8-38fe-867a-9a24ca093f7f)
+  - why: search: 1 of 1 results fit
+
+## ambiguous (116)
+
+Several recordings fit equally (MusicBrainz duplicates of one recording). Nothing is proposed. To pick one, set `"choose": "<mbid>"` on the row in the JSON (only a listed candidate counts).
+
+- **50 Cent – In da Club** (3:13)
+  - file: `50 Cent/Get Rich or Die Tryin’ (2003)/01 - In da Club.flac`
+  - why: search: 8 of 97 results fit at 3:14, 3:14, 3:15, 3:13, 3:15, 3:15, 3:13, 3:14
+  - candidates:
+    - [980c2874](https://musicbrainz.org/recording/980c2874-e0de-4a1c-aed7-559961a9956e) · 3:14 · In da Club · 50 Cent · Het beste uit de MNM 1000 (2015)
+    - [2a37edf8](https://musicbrainz.org/recording/2a37edf8-16ae-40b1-b69d-a762b2a8b24b) · 3:14 · In da Club · 50 Cent · 100 Greatest 00s Hip-Hop
+    - [cd7d7e0d](https://musicbrainz.org/recording/cd7d7e0d-c8ed-49e1-8803-d3440ec41243) · 3:15 · In Da Club · 50 Cent · Hip-Hop At Fifty
+    - [4a752d4c](https://musicbrainz.org/recording/4a752d4c-87a9-481a-af7f-3e4e09029a7d) · 3:13 · In da Club · 50 Cent · Le Rap : C’était mieux avant
+    - [1a080387](https://musicbrainz.org/recording/1a080387-d977-4ef1-83af-0ae8f47453e7) · 3:15 · In da Club · 50 Cent · Urban Crate
+    - [99fd187c](https://musicbrainz.org/recording/99fd187c-7bb9-457b-9765-0b6f47eca661) · 3:15 · In Da Club · 50 Cent · Straight Outta Old Skool
+    - [0db667c6](https://musicbrainz.org/recording/0db667c6-9e02-46f0-aa15-04d7aa1a1c39) · 3:13 · In Da Club · 50 Cent · 00s Mixtape
+    - [4106452d](https://musicbrainz.org/recording/4106452d-74c8-417f-ac8d-3feb1e5e20f8) · 3:14 · In da Club · 50 Cent · Dr. Dre : L’Intégrale
+- **Al Green – Have You Been Making out Ok** (3:46)
+  - file: `Al Green/Call Me (1973)/02 - Have You Been Making out Ok.flac`
+  - why: ISRC US2HK0914602: 0 of 0 recordings fit; search: 11 of 12 results fit at 3:43, 3:42, 3:45, 3:47, 3:47, 3:46, 3:46, 3:44, 3:43, 3:47, 3:46
+  - candidates:
+    - [2e28bb57](https://musicbrainz.org/recording/2e28bb57-c05e-4c71-bbfe-ae7f2c798fb6) · 3:43 · Have You Been Making Out OK? · Al Green · What's the Question? Volume 1
+    - [a5331040](https://musicbrainz.org/recording/a5331040-24de-4f3e-b070-44accf7cde2b) · 3:42 · Have You Been Making Out O.K. · Al Green · Call Me
+    - [7eb1b003](https://musicbrainz.org/recording/7eb1b003-50f9-42e6-8745-e060629f59b3) · 3:45 · Have You Been Making Out OK? · Al Green · Unusual Sounds
+    - [a140c4e4](https://musicbrainz.org/recording/a140c4e4-190b-48b7-9090-6baa9f678744) · 3:47 · Have You Been Making Out Ok · Al Green · A Deep Shade of Green
+    - [04bc4430](https://musicbrainz.org/recording/04bc4430-62f8-4553-b2ae-4b24b5e47a28) · 3:47 · Have You Been Making Out OK · Al Green · Body + Soul: The ’70s
+    - [9fa58723](https://musicbrainz.org/recording/9fa58723-f4fa-46b6-ae2c-047d39ddd317) · 3:46 · Have You Been Making Out OK · Al Green · Call Me
+    - [a782c1cf](https://musicbrainz.org/recording/a782c1cf-666f-4049-a829-d2e1865c4baf) · 3:46 · Have You Been Making Out OK? · Al Green · I'm Still in Love With You & Call Me
+    - [6da8a993](https://musicbrainz.org/recording/6da8a993-5b6f-4bae-92cc-03e791b638f1) · 3:44 · Have You Been Making Out O.K. · Al Green · Oxford American: Southern Music CD #15 - Tennessee
+    - [387fd2a8](https://musicbrainz.org/recording/387fd2a8-b0ef-4098-aa66-15a275c4da6b) · 3:43 · Have You Been Making Out O.K. · Al Green · Classic Love Jams
+    - [e11f5faa](https://musicbrainz.org/recording/e11f5faa-bd52-4932-b0ed-a7d1d709a555) · 3:47 · Have You Been Making Out O.K. · Al Green · Al Green: Anthology
+    - [49772377](https://musicbrainz.org/recording/49772377-0601-4252-aec5-8904608eebf0) · 3:46 · Have You Been Making out Ok · Al Green · Call Me
+- **Al Green – Simply Beautiful** (4:14)
+  - file: `Al Green/I'm Still in Love With You/05 - Simply Beautiful.mp3`
+  - why: search: 16 of 26 results fit at 4:16, 4:11, 4:13, 4:13, 4:11, 4:16, 4:14, 4:15, 4:12, 4:15, 4:12, 4:14, 4:14, 4:12, 4:12, 4:15
+  - candidates:
+    - [4630b33b](https://musicbrainz.org/recording/4630b33b-c641-4af3-9ab1-6e20b0b5e9a7) · 4:16 · Simply Beautiful · Al Green · I'm Still in Love With You & Call Me
+    - [0c512d4d](https://musicbrainz.org/recording/0c512d4d-e2e2-420e-b20f-081cff71cd35) · 4:11 · Simply Beautiful · Al Green · Milchbar // Seaside Season 5
+    - [f5f13a6d](https://musicbrainz.org/recording/f5f13a6d-8d81-46fc-9ba4-0bff2d7b7d2c) · 4:13 · Simply Beautiful · Al Green · L‐O‐V‐E: The Essential Al Green
+    - [06b5d8f2](https://musicbrainz.org/recording/06b5d8f2-131a-4918-b2ea-161c089fcce0) · 4:13 · Simply Beautiful · Al Green · New Woman: The Autumn Collection
+    - [390376e6](https://musicbrainz.org/recording/390376e6-afa1-44dd-98fd-c2a48437a252) · 4:11 · Simply Beautiful · Al Green · Kanye West: The Samples, Volume 1
+    - [a83b7cf2](https://musicbrainz.org/recording/a83b7cf2-3ec1-4154-bdd2-2214b8b0c1e4) · 4:16 · Simply Beautiful · Al Green · A Deep Shade of Green
+    - [d85c18ae](https://musicbrainz.org/recording/d85c18ae-ab21-4cd2-abb1-c5dcd208d104) · 4:14 · Simply Beautiful · Al Green · Nu Soul
+    - [68c4a0f2](https://musicbrainz.org/recording/68c4a0f2-83d5-4b86-a303-6d59fe18752b) · 4:15 · Simply Beautiful · Al Green · Simply Beautiful: The Love Songs
+    - [da55a9b4](https://musicbrainz.org/recording/da55a9b4-a5e4-4576-b837-a596ade3873d) · 4:12 · Simply Beautiful · Al Green · The Absolute Best
+    - [aada93f6](https://musicbrainz.org/recording/aada93f6-c9ac-49bd-b06c-0d76e95410ca) · 4:15 · Simply Beautiful · Al Green · The Legendary Hi Records Albums, Volume 1
+    - [209c122a](https://musicbrainz.org/recording/209c122a-c3d5-4492-82c5-2f1350dfba42) · 4:12 · Simply Beautiful · Al Green · I'm Still in Love With You
+    - [b870fa90](https://musicbrainz.org/recording/b870fa90-13b6-4d07-bf82-e9f5f51893f6) · 4:14 · Simply Beautiful · Al Green · Love and Happiness: The Very Best of Al Green
+    - [46f9da3f](https://musicbrainz.org/recording/46f9da3f-4b10-4168-8798-149ab9fdbc2e) · 4:14 · Simply Beautiful · Al Green · Hi Times : The R&b Years Sampler
+    - [0e8bf478](https://musicbrainz.org/recording/0e8bf478-a0e9-4677-b0e8-f027ffa03a1a) · 4:12 · Simply Beautiful · Al Green · Nova Classics One to Ten
+    - [7f997a13](https://musicbrainz.org/recording/7f997a13-ff8e-4bba-8eb5-4f617b24ac9d) · 4:12 · Simply Beautiful · Al Green · I'm Still in Love with You
+    - [913ad383](https://musicbrainz.org/recording/913ad383-a1b3-473e-b237-92310f50434b) · 4:15 · Simply Beautiful · Al Green · Shaolin Soul (Episode 2)
+- **Arthur Verocai – Dedicada a ela** (3:33)
+  - file: `Arthur Verocai/Arthur Verocai (1972)/05 - Dedicada a ela.flac`
+  - why: ISRC BRWMB0201050: 0 of 0 recordings fit; search: 2 of 5 results fit at 3:33, 3:33
+  - candidates:
+    - [a365588f](https://musicbrainz.org/recording/a365588f-3fd8-4cd1-a5c8-8e101af4ae68) · 3:33 · Dedicada a ela · Arthur Verocai · Arthur Verocai
+    - [3deec6c8](https://musicbrainz.org/recording/3deec6c8-f833-432c-86bf-39bcdfd212ee) · 3:33 · Dedicada a ela · Arthur Verocai · Arthur Verocai
+- **Astrud Gilberto – Where Are They Now?** (3:12)
+  - file: `Astrud Gilberto/Windy (1968)/11 - Where Are They Now_.flac`
+  - why: ISRC USGR10400776: 0 of 0 recordings fit; search: 2 of 2 results fit at 3:12, 3:09
+  - candidates:
+    - [88dd1560](https://musicbrainz.org/recording/88dd1560-cf04-4b5a-8b61-e608c1787e4f) · 3:12 · Where Are They Now? · Astrud Gilberto · 5 Original Albums
+    - [96575912](https://musicbrainz.org/recording/96575912-eb5d-499a-8ffe-0420a9fda2c9) · 3:09 · Where Are They Now? · Astrud Gilberto · Windy
+- **Average White Band – When Will You Be Mine** (4:26)
+  - file: `Average White Band/Feel No Fret...And More (1979)/01 - When Will You Be Mine.flac`
+  - why: ISRC USAT20500688: 0 of 1 recordings fit; search: 4 of 13 results fit at 4:25, 4:26, 4:25, 4:26
+  - candidates:
+    - [d9b81134](https://musicbrainz.org/recording/d9b81134-57ff-462a-aebd-71e3f67f8d89) · 4:25 · When Will You Be Mine · Average White Band · 100 Hits: Disco Fever
+    - [7cd951c7](https://musicbrainz.org/recording/7cd951c7-a5f5-4ff1-bf9c-6d62348b0c52) · 4:26 · When Will You Be Mine · Average White Band · Gold
+    - [6843fc8d](https://musicbrainz.org/recording/6843fc8d-7306-4de3-806e-b6c2aacfa809) · 4:25 · When Will You Be Mine · Average White Band · Greatest
+    - [8c587d02](https://musicbrainz.org/recording/8c587d02-d733-45a5-a6fd-7a082b9f51d0) · 4:26 · When Will You Be Mine · Average White Band · The Essential Selection
+- **Average White Band – Queen of My Soul** (6:02)
+  - file: `Average White Band/Soul Searching (1976)/05 - Queen of My Soul.flac`
+  - why: ISRC USAT20105942: 0 of 0 recordings fit; search: 7 of 17 results fit at 6:05, 6:04, 6:05, 6:04, 6:05, 6:05, 6:05
+  - candidates:
+    - [43a15a8a](https://musicbrainz.org/recording/43a15a8a-1ef1-4017-b294-1b061cf6544b) · 6:05 · Queen of My Soul · Average White Band · Pick Up the Pieces: The Very Best of the Average White Band
+    - [f297bcc4](https://musicbrainz.org/recording/f297bcc4-3bcd-487b-99c7-88765c33853c) · 6:04 · Queen Of My Soul · Average White Band · Greatest
+    - [f882ab6b](https://musicbrainz.org/recording/f882ab6b-23dd-4e8f-acba-a5ebe5741224) · 6:05 · Queen Of My Soul · Average White Band · Volume VIII
+    - [e7f72e67](https://musicbrainz.org/recording/e7f72e67-b2b9-4f2f-9622-12d2f369f4a6) · 6:04 · Queen of My Soul · Average White Band · Soul & The City
+    - [5f2870fa](https://musicbrainz.org/recording/5f2870fa-5371-4421-926d-ca90cac5bdb2) · 6:05 · Queen of My Soul · Average White Band · Soul Searching
+    - [bb1a84d5](https://musicbrainz.org/recording/bb1a84d5-3a25-4ecd-b96b-d471b0a16658) · 6:05 · Queen of My Soul · Average White Band · 3/60: Legends of Soul
+    - [85b89294](https://musicbrainz.org/recording/85b89294-42a0-4e54-916f-18398cf96e26) · 6:05 · Queen of My Soul · Average White Band · Soul Searching
+- **Average White Band – Queen of My Soul** (6:05)
+  - file: `Average White Band/Soul Searching (1976)/05 - Queen of My Soul.mp3`
+  - why: search: 8 of 17 results fit at 6:05, 6:04, 6:05, 6:04, 6:05, 6:07, 6:05, 6:05
+  - candidates:
+    - [43a15a8a](https://musicbrainz.org/recording/43a15a8a-1ef1-4017-b294-1b061cf6544b) · 6:05 · Queen of My Soul · Average White Band · Pick Up the Pieces: The Very Best of the Average White Band
+    - [f297bcc4](https://musicbrainz.org/recording/f297bcc4-3bcd-487b-99c7-88765c33853c) · 6:04 · Queen Of My Soul · Average White Band · Greatest
+    - [f882ab6b](https://musicbrainz.org/recording/f882ab6b-23dd-4e8f-acba-a5ebe5741224) · 6:05 · Queen Of My Soul · Average White Band · Volume VIII
+    - [e7f72e67](https://musicbrainz.org/recording/e7f72e67-b2b9-4f2f-9622-12d2f369f4a6) · 6:04 · Queen of My Soul · Average White Band · Soul & The City
+    - [5f2870fa](https://musicbrainz.org/recording/5f2870fa-5371-4421-926d-ca90cac5bdb2) · 6:05 · Queen of My Soul · Average White Band · Soul Searching
+    - [bfc84f2c](https://musicbrainz.org/recording/bfc84f2c-99ed-47a6-87c5-78df39a61af6) · 6:07 · Queen of My Soul · Average White Band · Soul Searching
+    - [bb1a84d5](https://musicbrainz.org/recording/bb1a84d5-3a25-4ecd-b96b-d471b0a16658) · 6:05 · Queen of My Soul · Average White Band · 3/60: Legends of Soul
+    - [85b89294](https://musicbrainz.org/recording/85b89294-42a0-4e54-916f-18398cf96e26) · 6:05 · Queen of My Soul · Average White Band · Soul Searching
+- **Avril Lavigne – Girlfriend** (3:37)
+  - file: `Avril Lavigne/The Best Damn Thing (2007)/01 - Girlfriend.flac`
+  - why: search: 6 of 64 results fit at 3:35, 3:38, 3:38, 3:37, 3:38, 3:39
+  - candidates:
+    - [ec8661d7](https://musicbrainz.org/recording/ec8661d7-edb0-437f-a07a-532bad48af28) · 3:35 · Girlfriend · Avril Lavigne · Top 40 Zeroes: The Ultimate Top 40 Collection
+    - [5d0cc877](https://musicbrainz.org/recording/5d0cc877-10e6-4193-ad6a-d86f66858b8e) · 3:38 · Girlfriend · Avril Lavigne · Los Número Uno 40 (El disco de Los Éxitos)
+    - [d2adba55](https://musicbrainz.org/recording/d2adba55-c9da-418f-9f49-c0e4b80e5cdc) · 3:38 · Girlfriend · Avril Lavigne · Biggest – 19 Hits in One Super Value Album
+    - [613565f6](https://musicbrainz.org/recording/613565f6-a80b-4a87-a3f9-11d4034fc5d1) · 3:37 · Girlfriend · Avril Lavigne · Hit Connection 2007.2
+    - [91dd8be1](https://musicbrainz.org/recording/91dd8be1-95ae-4800-86d5-328d019b8c9b) · 3:38 · Girlfriend · Avril Lavigne · Drive Time Anthems
+    - [f01dddde](https://musicbrainz.org/recording/f01dddde-9065-42f7-9fdd-e8d388281a50) · 3:39 · Girlfriend · Avril Lavigne · So Fresh: The #1 Hits
+- **Bill Evans – What Are You Doing The Rest Of Your Life?** (4:09)
+  - file: `Bill Evans/From Left to Right/01 - What Are You Doing The Rest Of Your Life_.mp3`
+  - why: search: 2 of 28 results fit at 4:09, 4:09
+  - candidates:
+    - [cef7e0c3](https://musicbrainz.org/recording/cef7e0c3-05b4-4b57-9b33-bf76ce4834f9) · 4:09 · What Are You Doing the Rest of Your Life? · Bill Evans · From Left to Right
+    - [821cb228](https://musicbrainz.org/recording/821cb228-16d3-491e-8859-2281db43b972) · 4:09 · What Are You Doing The Rest Of Your Life? · Bill Evans · From Left To Right
+- **Billy Brooks – Fourty Days** (6:17)
+  - file: `Billy Brooks/Windows of the Mind (1974)/09 - Fourty Days.flac`
+  - why: ISRC UKCHV1500109: 0 of 0 recordings fit; search: 3 of 5 results fit at 6:19, 6:18, 6:16
+  - candidates:
+    - [b9409fcb](https://musicbrainz.org/recording/b9409fcb-f212-46d2-8c24-9b3bb242c1ef) · 6:19 · Fourty Days · Billy Brooks · Tribe Vibes Vol. 1
+    - [ade99f1e](https://musicbrainz.org/recording/ade99f1e-093f-48bf-bbd9-f1bb2771f25d) · 6:18 · Fourty Days · Billy Brooks · London Jazz Classics 2
+    - [8e179f7e](https://musicbrainz.org/recording/8e179f7e-f2ec-44bb-a058-7b9f9a33212c) · 6:16 · Fourty Days · Billy Brooks · Dusty Fingers Volume 1
+- **Billy Joel – Piano Man** (5:37)
+  - file: `Billy Joel/Greatest Hits Volume I & Volume II (1973)/01 - Piano Man.flac`
+  - why: search: 6 of 81 results fit at 5:37, 5:36, 5:37, 5:39, 5:39, 5:39
+  - candidates:
+    - [99ff41ab](https://musicbrainz.org/recording/99ff41ab-7a91-4abd-8c23-4877aea37afd) · 5:37 · Piano Man · Billy Joel · Het beste uit 20 jaar top 2000
+    - [f3488a27](https://musicbrainz.org/recording/f3488a27-ef89-402d-885b-89a6bf482eb9) · 5:36 · Piano Man · Billy Joel · Greatest Hits Volume I & Volume II
+    - [c7d48754](https://musicbrainz.org/recording/c7d48754-5c4d-4eb9-ab0b-c0c191309e00) · 5:37 · Piano Man · Billy Joel · Billy Joel Souvenir
+    - [cfc92c9b](https://musicbrainz.org/recording/cfc92c9b-2da8-40ca-99d8-abe9a37f465c) · 5:39 · Piano Man · Billy Joel · BMI’s 50th Anniversary Collection: The Explosion of American Music 1940–1990
+    - [873dda7d](https://musicbrainz.org/recording/873dda7d-5041-4fb4-a881-559da95553a1) · 5:39 · Piano Man · Billy Joel · The Hits
+    - [92ac918a](https://musicbrainz.org/recording/92ac918a-07f6-4f5e-b356-5897723310ca) · 5:39 · Piano Man · Billy Joel · Classic Soft Rock: Into the Night
+- **Brass Construction – Movin'** (8:41)
+  - file: `Brass Construction/The 70's - Get Dancing (CD 2)/08 - Movin'.mp3`
+  - why: search: 3 of 73 results fit at 8:39, 8:38, 8:40
+  - candidates:
+    - [3e383b03](https://musicbrainz.org/recording/3e383b03-c8dd-4e23-a646-d59906266f40) · 8:39 · Movin' · Brass Construction · Movin' / Changin'
+    - [2b640b0f](https://musicbrainz.org/recording/2b640b0f-cf2d-4002-9715-3d326408e14b) · 8:38 · Movin' · Brass Construction · Something For The Weekend (10 Extended Soul Weekender Classics)
+    - [db1bfbce](https://musicbrainz.org/recording/db1bfbce-97f2-4feb-82e0-a2c8beddfdca) · 8:40 · Movin' · Brass Construction · Jazz Funk Classics Vol. 1
+- **Carole King – Brighter** (2:45)
+  - file: `Carole King/Music (1971)/09 - Brighter.flac`
+  - why: ISRC USSM10020459: 0 of 1 recordings fit; search: 4 of 12 results fit at 2:45, 2:44, 2:44, 2:42
+  - candidates:
+    - [18bcd9b5](https://musicbrainz.org/recording/18bcd9b5-a770-463b-bbd4-a37f6662c1f8) · 2:45 · Brighter · Carole King · Carole King
+    - [21ff370c](https://musicbrainz.org/recording/21ff370c-982b-4230-b5eb-b83397037c6f) · 2:44 · Brighter · Carole King · Breaking up Is Hard to Do
+    - [afc4ade9](https://musicbrainz.org/recording/afc4ade9-bd19-45bb-a9e3-272a72352c20) · 2:44 · Brighter · Carole King · Colección 5 Estrellas: Carole King
+    - [0f06bbc6](https://musicbrainz.org/recording/0f06bbc6-2caa-4a31-b4f7-7eaaa0f70b5e) · 2:42 · Brighter · Carole King · Simply the best
+- **Cheryl Lynn – Got To Be Real** (5:08)
+  - file: `Cheryl Lynn/Singles/Got To Be Real.mp3`
+  - why: search: 13 of 100 results fit at 5:06, 5:08, 5:06, 5:06, 5:07, 5:08, 5:07, 5:07, 5:08, 5:08, 5:10, 5:07, 5:08
+  - candidates:
+    - [782d9362](https://musicbrainz.org/recording/782d9362-7ec5-413a-8d54-34a7b9373e4c) · 5:06 · Got to Be Real · Cheryl Lynn · Free Soul Party
+    - [bde707df](https://musicbrainz.org/recording/bde707df-aca9-47d7-9a1e-1fcf07ad4009) · 5:08 · Got to Be Real · Cheryl Lynn · Searchin’ My Soul
+    - [08ebe5bd](https://musicbrainz.org/recording/08ebe5bd-8b2e-449b-bb84-ae37b1c5899a) · 5:06 · Got to Be Real · Cheryl Lynn · The No. 1 Disco Album
+    - [91147506](https://musicbrainz.org/recording/91147506-20e0-4bb0-b84f-0cb2c3053f15) · 5:06 · Got To Be Real · Cheryl Lynn · Dancin' 'n' Disco
+    - [c7587785](https://musicbrainz.org/recording/c7587785-5014-49c3-a72f-ed0215d8ff8c) · 5:07 · Got To Be Real · Cheryl Lynn · Double Knit Dance Hits
+    - [bc7c4e10](https://musicbrainz.org/recording/bc7c4e10-ab18-48af-9d4b-33c3ab36f75e) · 5:08 · Got to Be Real · Cheryl Lynn · Soul Grooves (Soul Dance, Soul Love, Soul Evergreens)
+    - [66694153](https://musicbrainz.org/recording/66694153-c664-4817-a3de-17d7be1dd725) · 5:07 · Got to Be Real · Cheryl Lynn · Party Pack
+    - [889a22bc](https://musicbrainz.org/recording/889a22bc-c00a-4ef4-b414-da1f127484f1) · 5:07 · Got to Be Real · Cheryl Lynn · Magic Soul
+    - [384706f2](https://musicbrainz.org/recording/384706f2-6ae0-4d36-98ce-0a47e69329f2) · 5:08 · Got to be Real · Cheryl Lynn · NOW Presents Disco
+    - [89f30967](https://musicbrainz.org/recording/89f30967-2262-4736-99be-694f7a1d9b8e) · 5:08 · Got to Be Real · Cheryl Lynn · Disco Hits
+    - [d1b9cb8b](https://musicbrainz.org/recording/d1b9cb8b-4960-4a5b-ab58-2b13bcb9eb0b) · 5:10 · Got to Be Real · Cheryl Lynn · [ Origins ] Disco
+    - [49f4d144](https://musicbrainz.org/recording/49f4d144-279c-4c55-90a0-100db71214b4) · 5:07 · Got to Be Real (album version) · Cheryl Lynn · Boogie Wonderland: The Legendary Sound of 70s Disco
+    - [2adac54a](https://musicbrainz.org/recording/2adac54a-7b09-4bb8-ba29-0b9f4eaf671e) · 5:08 · Got to Be Real (original mix) · Cheryl Lynn · Classic Beats, Vol. 19
+- **Chicago Gangsters – Let Me Go** (2:47)
+  - file: `Chicago Gangsters/I Choose You (formerly Blind Over You) (1975)/08 - Let Me Go.flac`
+  - why: ISRC USAR40837008: 0 of 0 recordings fit; search: 2 of 2 results fit at 2:48, 2:48
+  - candidates:
+    - [826d6ef9](https://musicbrainz.org/recording/826d6ef9-6eba-4cf7-bee7-85baeb474c70) · 2:48 · Let Me Go · Chicago Gangsters · Blind Over You
+    - [4df00383](https://musicbrainz.org/recording/4df00383-329f-420b-8689-c0e457f1dfd4) · 2:48 · Let Me Go · Chicago Gangsters · I Choose You
+- **Chuck Mangione – Feels So Good** (9:37)
+  - file: `Chuck Mangione/Feels So Good (1977)/01 - Feels So Good.flac`
+  - why: ISRC USAM17700535: 0 of 1 recordings fit; search: 7 of 44 results fit at 9:36, 9:38, 9:39, 9:35, 9:36, 9:36, 9:37
+  - candidates:
+    - [0e47db05](https://musicbrainz.org/recording/0e47db05-a1c0-4a4a-8a06-60b44a84bfe8) · 9:36 · Feels So Good · Chuck Mangione · Empik Jazz Club: The Very Best of Chuck Mangione
+    - [c0e91be3](https://musicbrainz.org/recording/c0e91be3-06b6-4b3d-b9c3-e14b5c4e6252) · 9:38 · Feels So Good · Chuck Mangione · 20th Century Masters: The Millennium Collection: The Best of Chuck Mangione
+    - [1240ed7f](https://musicbrainz.org/recording/1240ed7f-99f9-479d-a208-fa74c7870dfa) · 9:39 · Feels So Good · Chuck Mangione · Funky Jazz 6 - Cool & Soul
+    - [bc4b73e2](https://musicbrainz.org/recording/bc4b73e2-19a1-48d4-a167-fb507079156d) · 9:35 · Feels So Good · Chuck Mangione · Feels So Good: The Smoothest Hits
+    - [f09bd648](https://musicbrainz.org/recording/f09bd648-3dd8-4ff7-8107-e5a6363c707f) · 9:36 · Feels So Good · Chuck Mangione · Giganci Jazzu 20 - The Best Of The Rest
+    - [d2391322](https://musicbrainz.org/recording/d2391322-35c9-42c1-87c9-8c05bb3ee4d4) · 9:36 · Feels So Good · Chuck Mangione · Chuck Mangione's Finest Hour
+    - [0e776198](https://musicbrainz.org/recording/0e776198-1af3-481a-8218-dc6d03f7b9b0) · 9:37 · Feels So Good · Chuck Mangione · Feels So Good: 12 Jazz Funk Classics
+- **Daft Punk – Touch (Feat. Paul Williams)** (8:19)
+  - file: `Daft Punk/Random Access Memories (Japanese Edition) (2013)/07 - Touch (Feat. Paul Williams).mp3`
+  - why: search: 3 of 22 results fit at 8:19, 8:19, 8:18
+  - candidates:
+    - [69266d5b](https://musicbrainz.org/recording/69266d5b-4c5f-49c1-b539-892342d8ec8a) · 8:19 · Touch · Daft Punk feat. Paul Williams · Random Access Memories
+    - [5d71ae92](https://musicbrainz.org/recording/5d71ae92-a308-4088-84d5-94a25ff7e49b) · 8:19 · Touch · Daft Punk feat. Paul Williams · Random Access Memories
+    - [2c718ee9](https://musicbrainz.org/recording/2c718ee9-ad54-4016-ae43-e8df5ea1b4e1) · 8:18 · Touch · Daft Punk feat. Paul Williams · Random Access Memories
+- **Deniece Williams – Free** (5:59)
+  - file: `Deniece Williams/50 Years Anniversary Album (2020)/05 - Free.mp3`
+  - why: search: 6 of 44 results fit at 6:01, 5:57, 6:01, 5:57, 5:58, 5:58
+  - candidates:
+    - [bc5b8f6b](https://musicbrainz.org/recording/bc5b8f6b-e257-4cdc-833e-6a8936c388fc) · 6:01 · Free · Deniece Williams · Kaori's Collection
+    - [035c3f13](https://musicbrainz.org/recording/035c3f13-3330-4161-a3a7-5c0dbdc21e1e) · 5:57 · Free · Deniece Williams · Remember Your 70's - 1976-1979 (Volume 2)
+    - [fa48a01b](https://musicbrainz.org/recording/fa48a01b-5ef5-45f0-9618-d67567416df7) · 6:01 · Free · Deniece Williams · JAY'S SELECTION
+    - [30ccee43](https://musicbrainz.org/recording/30ccee43-8c82-4594-8694-e003f40323e3) · 5:57 · Free · Deniece Williams · In The House
+    - [5b0f6005](https://musicbrainz.org/recording/5b0f6005-63cf-4557-86bd-ee844212df4f) · 5:58 · Free · Deniece Williams · Summer Fling - 16 soulful tracks selected by Audun Vinger
+    - [5c60f86a](https://musicbrainz.org/recording/5c60f86a-daa8-4c07-8f94-2a4a101bed8c) · 5:58 · Free · Deniece Williams · The 70s
+- **Don Blackman – Holding You Loving You** (4:10)
+  - file: `Don Blackman/Don Blackman/00 - Holding You Loving You.m4a`
+  - why: search: 7 of 19 results fit at 4:11, 4:10, 4:11, 4:09, 4:10, 4:12, 4:13
+  - candidates:
+    - [f18de7c3](https://musicbrainz.org/recording/f18de7c3-c40a-4408-a727-ac1115b5e1e5) · 4:11 · Holding You, Loving You · Don Blackman · Dusty Fingers, Volume 1
+    - [2eff150f](https://musicbrainz.org/recording/2eff150f-7b1f-4fea-97f9-7998c2bf49d3) · 4:10 · Holding You, Loving You · Don Blackman · The Best Of Rare
+    - [6ceaf04c](https://musicbrainz.org/recording/6ceaf04c-1300-42ab-9fd4-87e0810d5be7) · 4:11 · Holding You, Loving You · Don Blackman · Free Soul Visions
+    - [8fc302e2](https://musicbrainz.org/recording/8fc302e2-5508-4013-bbfd-2ca93e39fe1c) · 4:09 · Holding You, Loving You · Don Blackman · Rare (A Rare Collection Of Grooves)
+    - [5effd374](https://musicbrainz.org/recording/5effd374-e00c-4ab3-853d-e0380a3ba059) · 4:10 · Holding You, Loving You · Don Blackman · Dusty Fingers Volume 1
+    - [1a09500c](https://musicbrainz.org/recording/1a09500c-5a08-4381-9fcb-cb8ef0aed520) · 4:12 · Holding You, Loving You · Don Blackman · Urban Chill
+    - [31a92ddb](https://musicbrainz.org/recording/31a92ddb-9550-431a-a5e4-1b767efe59b9) · 4:13 · Holding You, Loving You · Don Blackman · Strange Games and Funky Things III
+- **Donald Byrd – I Feel Like Loving You Today** (6:56)
+  - file: `Donald Byrd/pure soul 150 (2010)/14 - I Feel Like Loving You Today.mp3`
+  - why: search: 5 of 8 results fit at 6:58, 6:55, 6:58, 6:55, 6:58
+  - candidates:
+    - [a1f3164c](https://musicbrainz.org/recording/a1f3164c-be66-4aaa-9dc0-ac806a31907d) · 6:58 · I Feel Like Loving You Today · Donald Byrd · Body & Soul: Sunshine Soul
+    - [8561a7b5](https://musicbrainz.org/recording/8561a7b5-a84a-475f-b026-b8df0c8033f4) · 6:55 · I Feel Like Loving You Today · Donald Byrd · 2-Step Soul Classics
+    - [3baa2bad](https://musicbrainz.org/recording/3baa2bad-50d1-42ef-a596-1d3a2e1542f2) · 6:58 · I Feel Like Loving You Today · Donald Byrd · The Jazz Funk Collection
+    - [78250270](https://musicbrainz.org/recording/78250270-5ef6-4b7d-8df6-8025a324ab67) · 6:55 · I Feel Like Loving You Today · Donald Byrd · Tutu: Smooth Jazz
+    - [3ac42def](https://musicbrainz.org/recording/3ac42def-9937-44ee-9496-1d98dec9fc57) · 6:58 · I Feel Like Loving You Today · Donald Byrd · Sweet Soul & Funky Music Vol.4
+- **Double Exposure – My Love Is Free** (9:40)
+  - file: `Double Exposure/John Morales - The M&M Mixes Vol. 2 - NYC Underground Disco Anthems & Previously Unreleased Exclusive Disco Mixes  (2011)/08 - My Love Is Free.mp3`
+  - why: search: 5 of 61 results fit at 9:43, 9:41, 9:43, 9:43, 9:41
+  - candidates:
+    - [af09e6b5](https://musicbrainz.org/recording/af09e6b5-2e83-43e6-a6cf-7c5456a7a86f) · 9:43 · My Love Is Free · Double Exposure · Salsoul Classics, Vol. 1
+    - [b8295fd3](https://musicbrainz.org/recording/b8295fd3-46ae-454e-84b7-f0529c28053e) · 9:41 · My Love Is Free · Double Exposure · Salsoul 12" Disco Classics Vol. 2
+    - [5fe60cf6](https://musicbrainz.org/recording/5fe60cf6-ac3d-4f55-9821-624a9590fda7) · 9:43 · My Love Is Free · Double Exposure · Grandmaster Flash Presents: Salsoul Jam 2000
+    - [d4c1f60c](https://musicbrainz.org/recording/d4c1f60c-27f8-45d0-82c1-eb04b4093c7e) · 9:43 · My Love Is Free · Double Exposure · The Original Salsoul Classics, Volume 2
+    - [31c40208](https://musicbrainz.org/recording/31c40208-d827-4f8a-bb34-4ff0c3739d1e) · 9:41 · My Love Is Free (Original) · Double Exposure · Ten Percent / My Love Is Free
+- **Double Exposure – My Love Is Free (tom Moulton 12” Mix)** (9:41)
+  - file: `Double Exposure/Mixology_ The Definitive Salsoul Mixes (2011)/08 - My Love Is Free (tom Moulton 12” Mix).mp3`
+  - why: search: 3 of 61 results fit at 9:42, 9:40, 9:40
+  - candidates:
+    - [bc42e602](https://musicbrainz.org/recording/bc42e602-b243-4828-97ba-11a01745474e) · 9:42 · My Love Is Free (Tom Moulton 12” mix) · Double Exposure · Salsoul Records: The Original Disco Mixes, Vol. 1
+    - [52cd41a3](https://musicbrainz.org/recording/52cd41a3-9298-4c3a-8f27-449d8bcaa742) · 9:40 · My Love Is Free (Tom Moulton original 12" mix) · Double Exposure · My Love Is Free - The Best of Double Exposure
+    - [5c4a16ab](https://musicbrainz.org/recording/5c4a16ab-d447-4a61-9293-14b867007a70) · 9:40 · My Love Is Free (original Tom Moulton 12″ mix) · Double Exposure · The Definitive Salsoul Mixes
+- **Double Exposure – My Love Is Free (The Reflex Revision)** (8:07)
+  - file: `Double Exposure/djsoundtop.com (2020)/00 - My Love Is Free (The Reflex Revision).mp3`
+  - why: search: 2 of 61 results fit at 8:06, 8:06
+  - candidates:
+    - [b4f0f3c2](https://musicbrainz.org/recording/b4f0f3c2-9046-4763-aae8-69d6aef1e453) · 8:06 · My Love Is Free (The Reflex Revision) · Double Exposure · Ten Percent
+    - [27732478](https://musicbrainz.org/recording/27732478-bb75-4d19-b664-9a7856b51b32) · 8:06 · My Love Is Free (The Reflex Revision) · Double Exposure · My Love Is Free (The Reflex Revision)
+- **Eagles – I Can't Tell You Why  (2013 Remaster)** (4:55)
+  - file: `Eagles/The Long Run (Hi-Res Version)/02 - I Can't Tell You Why  (2013 Remaster).mp3`
+  - why: search: 9 of 66 results fit at 4:52, 4:52, 4:55, 4:56, 4:51, 4:57, 4:55, 4:55, 4:54
+  - candidates:
+    - [19afc461](https://musicbrainz.org/recording/19afc461-f5d5-4ecd-9806-1e493b1bbfd5) · 4:52 · I Can't Tell You Why · Eagles · Alive
+    - [ad573bb7](https://musicbrainz.org/recording/ad573bb7-a54a-4ba1-877d-edf8cac96f09) · 4:52 · I Can’t Tell You Why · Eagles · Eagles
+    - [93ca9126](https://musicbrainz.org/recording/93ca9126-150d-465b-b1af-f1ec1d75bad5) · 4:55 · I Can’t Tell You Why · Eagles · Eagles
+    - [fd664c77](https://musicbrainz.org/recording/fd664c77-4ba4-4ded-b725-752a44d8efe4) · 4:56 · I Can’t Tell You Why · Eagles · Rubáiyát: The Originals
+    - [df49468c](https://musicbrainz.org/recording/df49468c-b246-4f73-a5c9-8f9d36464c2f) · 4:51 · I Can’t Tell You Why · Eagles · The Eagle Has Landed
+    - [480a98f5](https://musicbrainz.org/recording/480a98f5-3d07-4e86-aa19-89e962754e38) · 4:57 · I Can't Tell You Why · Eagles · Nostalgia 14: How Deep Is Your Love
+    - [53fad7e6](https://musicbrainz.org/recording/53fad7e6-0b45-4fdf-ae65-53da69546783) · 4:55 · I Can’t Tell You Why · Eagles · The Long Run
+    - [3049fa30](https://musicbrainz.org/recording/3049fa30-8fe4-40aa-b819-e43786e7c654) · 4:55 · I Can’t Tell You Why · Eagles · Best Ballads
+    - [3b7ae962](https://musicbrainz.org/recording/3b7ae962-74bd-490a-a429-43ad0dbb3eec) · 4:54 · I Can’t Tell You Why · Eagles · Nice and Easy
+- **Earth Wind & Fire – Got To Get You Into My Life** (4:11)
+  - file: `Earth Wind & Fire/Live In Rio (1979)/00 - Got To Get You Into My Life.mp3`
+  - why: search: 6 of 25 results fit at 4:11, 4:14, 4:12, 4:11, 4:10, 4:12
+  - candidates:
+    - [5faad119](https://musicbrainz.org/recording/5faad119-06cb-4777-b4b3-6e8eb80d0ae8) · 4:11 · Got to Get You Into My Life · Earth, Wind & Fire · Greatest Hits Live!
+    - [a10315d2](https://musicbrainz.org/recording/a10315d2-9895-4a0b-820f-82bdba367fd7) · 4:14 · Got to Get You Into My Life · Earth, Wind & Fire · Remembering Lennon & The Beatles
+    - [2d19ed2b](https://musicbrainz.org/recording/2d19ed2b-4216-4ae6-b528-15bc52f82d4f) · 4:12 · Got to Get You Into My Life · Earth, Wind & Fire · Best of
+    - [96cdc957](https://musicbrainz.org/recording/96cdc957-2475-458e-a25a-2755bd1e18ff) · 4:11 · Got to Get You Into My Life · Earth, Wind & Fire · Ultimate Collection
+    - [2135b8bb](https://musicbrainz.org/recording/2135b8bb-be66-4ae2-a05c-15bff2c6a06c) · 4:10 · Got to Get You Into My Life · Earth, Wind & Fire · Le canzoni del secolo, Volume 14
+    - [6e255476](https://musicbrainz.org/recording/6e255476-0884-4ce8-937d-759764092ad2) · 4:12 · Got to Get You Into My Life · Earth, Wind & Fire · Superhits
+- **Earth Wind & Fire – Fantasy** (4:39)
+  - file: `Earth Wind & Fire/Live in Rio/00 - Fantasy.m4a`
+  - why: search: 11 of 83 results fit at 4:39, 4:37, 4:39, 4:39, 4:38, 4:38, 4:37, 4:39, 4:38, 4:37, 4:38
+  - candidates:
+    - [e77d02bc](https://musicbrainz.org/recording/e77d02bc-1016-450f-b5e9-9e9998050f7b) · 4:39 · Fantasy · Earth, Wind & Fire · Soul Grooves (Soul Dance, Soul Love, Soul Evergreens)
+    - [4ed25902](https://musicbrainz.org/recording/4ed25902-c644-4443-80e8-dd549b5c8c47) · 4:37 · Fantasy · Earth, Wind & Fire · Genieten
+    - [e3db5c30](https://musicbrainz.org/recording/e3db5c30-0c4a-4073-b85b-f2dba27747a6) · 4:39 · Fantasy · Earth, Wind & Fire · Now, Then & Forever
+    - [782edd9d](https://musicbrainz.org/recording/782edd9d-d1c6-463a-929f-fdf87a4ae87e) · 4:39 · Fantasy · Earth, Wind & Fire · Summerfeelings
+    - [b4beecd5](https://musicbrainz.org/recording/b4beecd5-9a6c-4d8c-8618-05666544293b) · 4:38 · Fantasy · Earth, Wind & Fire · All 'N All
+    - [eb0e73b7](https://musicbrainz.org/recording/eb0e73b7-902d-4ecf-b8ee-7fc27ca7629e) · 4:38 · Fantasy · Earth, Wind & Fire · The Columbia Masters
+    - [dde1df85](https://musicbrainz.org/recording/dde1df85-329d-4709-bc66-28e2c3f25d16) · 4:37 · Fantasy · Earth, Wind & Fire · Disco Nights Volume 7
+    - [80527a10](https://musicbrainz.org/recording/80527a10-e763-4102-81d4-cc2c965fd6cb) · 4:39 · Fantasy · Earth, Wind & Fire · Best of
+    - [afd7d61b](https://musicbrainz.org/recording/afd7d61b-bd07-42ea-9b85-d5829f7934f3) · 4:38 · Fantasy · Earth, Wind & Fire · Radio 2 Top 2000
+    - [75008313](https://musicbrainz.org/recording/75008313-92c4-44a2-b094-371dcfd13ac2) · 4:37 · Fantasy · Earth, Wind & Fire · Street Life (The 1991 Swingout Pop Special)
+    - [13f5af1a](https://musicbrainz.org/recording/13f5af1a-fd9f-4ab1-a6e9-f78aa9749e57) · 4:38 · Fantasy · Earth, Wind & Fire · Waar Zijn De Seventies? (Hier Zijn De Seventies)
+- **Earth Wind & Fire – Got to Get You into My Life** (4:03)
+  - file: `Earth Wind & Fire/Live in Rio/00 - Got to Get You into My Life.m4a`
+  - why: search: 3 of 25 results fit at 4:04, 4:05, 4:07
+  - candidates:
+    - [21a1ef83](https://musicbrainz.org/recording/21a1ef83-7f6d-4579-b156-8dc4fb5977a6) · 4:04 · Got to Get You Into My Life · Earth, Wind & Fire · The Columbia Masters
+    - [80c95051](https://musicbrainz.org/recording/80c95051-ea04-4867-929f-612eaf4adcfa) · 4:05 · Got to Get You Into My Life · Earth, Wind & Fire · Earth, Wind & Fire in Brazil
+    - [d9a7aacd](https://musicbrainz.org/recording/d9a7aacd-c1f4-49f7-816b-b3455b53f2ad) · 4:07 · Got to Get You Into My Life · Earth, Wind & Fire · Come Together: Celebrating the Songs of Lennon & McCartney
+- **Earth, Wind & Fire – Beijo (Interlude)** (1:23)
+  - file: `Earth, Wind & Fire/Love Songs [Sony 2004] (2004)/05 - Beijo (Interlude).mp3`
+  - why: search: 4 of 8 results fit at 1:20, 1:21, 1:21, 1:23
+  - candidates:
+    - [0414cd73](https://musicbrainz.org/recording/0414cd73-e169-45c3-8cac-23867db2d87a) · 1:20 · Beijo (interlude) · Earth, Wind & Fire · All ’n All
+    - [676beb41](https://musicbrainz.org/recording/676beb41-aa95-423f-b705-47996f914e93) · 1:21 · Beijo (Interlude) · Earth, Wind & Fire · All 'N All
+    - [6f665a1d](https://musicbrainz.org/recording/6f665a1d-cc4d-498d-ba1c-6d76ea7e8fd0) · 1:21 · Beijo (Interlude) · Earth, Wind & Fire · Love Songs
+    - [5e6ce187](https://musicbrainz.org/recording/5e6ce187-0700-4565-b527-e46a71e5bad8) · 1:23 · Beijo (interlude) · Earth, Wind & Fire · Best of
+- **Eddie Santiago – Que Locura Enamorarme De Ti** (5:10)
+  - file: `Eddie Santiago/De Verdad (1996)/09 - Que Locura Enamorarme De Ti.flac`
+  - why: ISRC USWWW0201784: 0 of 0 recordings fit; search: 3 of 11 results fit at 5:09, 5:09, 5:11
+  - candidates:
+    - [1df0d331](https://musicbrainz.org/recording/1df0d331-72b5-4cb1-82f4-074e8263b26f) · 5:09 · Qué locura enamorarme de ti · Eddie Santiago · Lluvia (Baile total)
+    - [f1c27277](https://musicbrainz.org/recording/f1c27277-9da8-4073-b361-ec268b7f886c) · 5:09 · Que locura enamorarme de ti · Eddie Santiago · Serie 32
+    - [12bc6f82](https://musicbrainz.org/recording/12bc6f82-5e34-4278-b2de-8ef78bb1f3f0) · 5:11 · Qué locura enamorarme de ti · Eddie Santiago · Frente a frente
+- **Edwin Starr – Easin' In** (3:15)
+  - file: `Edwin Starr/Hell Up In Harlem (Original Motion Picture Soundtrack) (1974)/02 - Easin' In.flac`
+  - why: ISRC USMO17484736: 0 of 1 recordings fit; search: 5 of 14 results fit at 3:17, 3:15, 3:18, 3:18, 3:14
+  - candidates:
+    - [d291256e](https://musicbrainz.org/recording/d291256e-98c7-4f0f-90f1-32bffc5bd8c6) · 3:17 · Easin' In · Edwin Starr · Pulp Fusion: Fully Loaded
+    - [8159fabb](https://musicbrainz.org/recording/8159fabb-382f-41e0-b7ac-70e02a2a0d72) · 3:15 · Easin’ In · Edwin Starr · Sweet Soul & Funky Music “Blaxploitation Edition”
+    - [c456d6e2](https://musicbrainz.org/recording/c456d6e2-cfc5-4f59-ad25-2de565ece339) · 3:18 · Easin' In · Edwin Starr · Funky Soundtrack Sensations
+    - [c45edc2a](https://musicbrainz.org/recording/c45edc2a-6d46-42f1-a091-476cb243b7b4) · 3:18 · Easin' In · Edwin Starr · Superbad Funk & Cinematic Soul
+    - [243f4af8](https://musicbrainz.org/recording/243f4af8-c70b-4a11-bafc-81668b6344b6) · 3:14 · Easin' In · Edwin Starr · Free Soul Parade
+- **Electric Light Orchestra – Showdown** (4:10)
+  - file: `Electric Light Orchestra/All Over The World_ The Very Best Of ELO (2005)/14 - Showdown.flac`
+  - why: ISRC USSM19805098: 0 of 1 recordings fit; search: 6 of 39 results fit at 4:09, 4:12, 4:10, 4:11, 4:10, 4:13
+  - candidates:
+    - [befa3597](https://musicbrainz.org/recording/befa3597-d9c9-46d5-b429-542b4233a731) · 4:09 · Showdown · Electric Light Orchestra · Best Rock Ballads 2
+    - [6a87c670](https://musicbrainz.org/recording/6a87c670-70a3-457b-bc91-79e7d4e26011) · 4:12 · Showdown · Electric Light Orchestra · Grandes Éxitos Del Milenio
+    - [085d1ede](https://musicbrainz.org/recording/085d1ede-5abb-49cf-8691-e8030bd779d2) · 4:10 · Showdown · Electric Light Orchestra · The Best of the Seventies
+    - [6724fe2a](https://musicbrainz.org/recording/6724fe2a-24dc-41fc-988a-7ea9c7fe3ca5) · 4:11 · Showdown · Electric Light Orchestra · Rock Classics
+    - [44b96684](https://musicbrainz.org/recording/44b96684-b0e6-437b-af1b-5906241a04ca) · 4:10 · Showdown · Electric Light Orchestra · Rock: 93 Original Hits
+    - [c903db57](https://musicbrainz.org/recording/c903db57-9347-4739-8db3-76d3d9394d25) · 4:13 · Showdown · Electric Light Orchestra · Riding the Rock Machine: British Seventies Classic Rock
+- **Electric Light Orchestra – Showdown** (4:10)
+  - file: `Electric Light Orchestra/Now Yearbook Extra '73 (2023)/02 - Showdown.mp3`
+  - why: search: 6 of 39 results fit at 4:09, 4:12, 4:10, 4:11, 4:10, 4:13
+  - candidates:
+    - [befa3597](https://musicbrainz.org/recording/befa3597-d9c9-46d5-b429-542b4233a731) · 4:09 · Showdown · Electric Light Orchestra · Best Rock Ballads 2
+    - [6a87c670](https://musicbrainz.org/recording/6a87c670-70a3-457b-bc91-79e7d4e26011) · 4:12 · Showdown · Electric Light Orchestra · Grandes Éxitos Del Milenio
+    - [085d1ede](https://musicbrainz.org/recording/085d1ede-5abb-49cf-8691-e8030bd779d2) · 4:10 · Showdown · Electric Light Orchestra · The Best of the Seventies
+    - [6724fe2a](https://musicbrainz.org/recording/6724fe2a-24dc-41fc-988a-7ea9c7fe3ca5) · 4:11 · Showdown · Electric Light Orchestra · Rock Classics
+    - [44b96684](https://musicbrainz.org/recording/44b96684-b0e6-437b-af1b-5906241a04ca) · 4:10 · Showdown · Electric Light Orchestra · Rock: 93 Original Hits
+    - [c903db57](https://musicbrainz.org/recording/c903db57-9347-4739-8db3-76d3d9394d25) · 4:13 · Showdown · Electric Light Orchestra · Riding the Rock Machine: British Seventies Classic Rock
+- **Eric Burdon; War – Spill The Wine** (4:55)
+  - file: `Eric Burdon; War/Eric Burdon Declares War (2020)/03 - Spill The Wine.mp3`
+  - why: ISRC USRHD0610295: 0 of 1 recordings fit; search: 11 of 50 results fit at 4:54, 4:57, 4:57, 4:56, 4:56, 4:57, 4:53, 4:56, 4:56, 4:55, 4:56
+  - candidates:
+    - [10e1d539](https://musicbrainz.org/recording/10e1d539-9eb0-439c-9926-e126340c3739) · 4:54 · Spill the Wine · Eric Burdon · House of the Rising Sun
+    - [87d8146f](https://musicbrainz.org/recording/87d8146f-c548-41f6-99d3-bf20c9c0f2fb) · 4:57 · Spill the Wine · Eric Burdon · Seventies
+    - [e9d568a1](https://musicbrainz.org/recording/e9d568a1-99e4-4417-8003-1b3006574b59) · 4:57 · Spill the Wine · Eric Burdon · House of the Rising Sun
+    - [5ef5b651](https://musicbrainz.org/recording/5ef5b651-43b1-4a54-81a9-70bba928f4eb) · 4:56 · Spill the Wine · Eric Burdon · Greatest Hits
+    - [4c97d20f](https://musicbrainz.org/recording/4c97d20f-272c-4ad3-b719-12eeff7e3420) · 4:56 · Spill the Wine · Eric Burdon · Summer Beer & BBQ Party Album
+    - [16e2eb88](https://musicbrainz.org/recording/16e2eb88-e5fa-4493-b6c8-60f53652cbac) · 4:57 · Spill the Wine · Eric Burdon · Elite Rock Collection
+    - [c52d026c](https://musicbrainz.org/recording/c52d026c-a079-4489-9aa8-9f80c145fa9e) · 4:53 · Spill the Wine · Eric Burdon · 100 Rock Hits
+    - [2656721c](https://musicbrainz.org/recording/2656721c-f35d-4f3b-a2cc-dc2b372c5953) · 4:56 · Spill the Wine · Eric Burdon · Eric Burdon and The Animals
+    - [1cab9124](https://musicbrainz.org/recording/1cab9124-c835-4d0a-bfff-5f94a30c8e51) · 4:56 · Spill the Wine · Eric Burdon · Eric Burdon
+    - [59f44163](https://musicbrainz.org/recording/59f44163-fb5f-4308-855e-a0255d71b915) · 4:55 · Spill the Wine · Eric Burdon · The Masters
+    - [8098991c](https://musicbrainz.org/recording/8098991c-0642-4a94-8dcf-b9f0c2c12d09) · 4:56 · Spill the Wine · Eric Burdon · Songs that shaped a decade
+- **Erroll Garner – Laura** (2:45)
+  - file: `Erroll Garner/Penthouse Serenade_ The Debonair Erroll Garner (2009)/10 - Laura.mp3`
+  - why: search: 27 of 55 results fit at 2:47, 2:48, 2:47, 2:42, 2:44, 2:47, 2:46, 2:47, 2:47, 2:45, 2:43, 2:46, 2:43, 2:48, 2:44, 2:44, 2:45, 2:43, 2:42, 2:44, 2:43, 2:47, 2:45, 2:47, 2:44, 2:46, 2:46
+  - candidates:
+    - [211f3413](https://musicbrainz.org/recording/211f3413-8713-4744-9c50-b80ea9621e99) · 2:47 · Laura · Erroll Garner · This Is Jazz 13
+    - [6dc26461](https://musicbrainz.org/recording/6dc26461-1a1c-4e08-9787-0bdc77f9913d) · 2:48 · Laura · Erroll Garner · Cherchez La Femme (1944-1954)
+    - [1e5393ac](https://musicbrainz.org/recording/1e5393ac-aa8a-468c-bde8-c3e637de0bf3) · 2:47 · Laura · Erroll Garner · Classic Jazz
+    - [b7c1628c](https://musicbrainz.org/recording/b7c1628c-f664-4f94-ad30-8e09872106c3) · 2:42 · Laura · Erroll Garner · Les 100 plus grand thèmes du Jazz
+    - [6dc65677](https://musicbrainz.org/recording/6dc65677-64ce-4c70-86fe-7e49005779a7) · 2:44 · Laura · Erroll Garner · The Complete Savoy Master Takes
+    - [808acb36](https://musicbrainz.org/recording/808acb36-a58f-4598-b806-16744129cdb3) · 2:47 · Laura · Erroll Garner · The Savoy Collection
+    - [6ea96834](https://musicbrainz.org/recording/6ea96834-db5d-4e59-b7c9-786ea5000149) · 2:46 · Laura · Erroll Garner · The Real... Erroll Garner
+    - [0a22a8b5](https://musicbrainz.org/recording/0a22a8b5-dd1d-4ea9-a610-81a150e0c4e2) · 2:47 · Laura · Erroll Garner · Supreme Jazz: Erroll Garner
+    - [3f571761](https://musicbrainz.org/recording/3f571761-162f-4be3-8559-2323fa6dac60) · 2:47 · Laura · Erroll Garner · Misty
+    - [09924825](https://musicbrainz.org/recording/09924825-61da-4660-81ca-2c48511fe1e6) · 2:45 · Laura · Erroll Garner · The Savoy Story, Volume One: Jazz
+    - [7e38ab82](https://musicbrainz.org/recording/7e38ab82-5c50-45c9-b626-1cf57f9c1371) · 2:43 · Laura · Erroll Garner · Jazz
+    - [0757b774](https://musicbrainz.org/recording/0757b774-7b07-42b7-bdfd-c02845ceb395) · 2:46 · Laura · Erroll Garner · Great Jazz Giants: Smooth Jazz, Volume 3
+    - [76042325](https://musicbrainz.org/recording/76042325-d842-442f-a5b4-b1cd63c4a262) · 2:43 · Laura · Erroll Garner · Masters of Jazz
+    - [9d6305fb](https://musicbrainz.org/recording/9d6305fb-551d-4e7c-9d90-1d113c77e116) · 2:48 · Laura · Erroll Garner · The Chronological Classics: Erroll Garner 1949, Volume 2
+    - [363613b6](https://musicbrainz.org/recording/363613b6-db8a-4b21-9a76-3fa1d1596eef) · 2:44 · Laura · Erroll Garner · The Chronological Classics: Erroll Garner 1950-1951
+    - [983f812d](https://musicbrainz.org/recording/983f812d-5a05-4660-90cc-f3c4ccde01e8) · 2:44 · Laura · Erroll Garner · Timeless Erroll Garner
+    - [4fb5ce7a](https://musicbrainz.org/recording/4fb5ce7a-7746-447e-84e5-6399d8608390) · 2:45 · Laura · Erroll Garner · Errol Garner Playing Piano Solos, Vol. 2
+    - [ed26415f](https://musicbrainz.org/recording/ed26415f-8590-4338-b130-5d9da664a39f) · 2:43 · Laura · Erroll Garner · Swing Jazz Moods
+    - [9907342c](https://musicbrainz.org/recording/9907342c-8fea-4ed9-a7cf-1689169dca63) · 2:42 · Laura · Erroll Garner · More Of The Most Relaxing Jazz Music In The Universe
+    - [f0497dac](https://musicbrainz.org/recording/f0497dac-12fc-41a7-89d9-9f7368b47dab) · 2:44 · Laura · Erroll Garner · Gems
+    - [350a35f3](https://musicbrainz.org/recording/350a35f3-050f-4ecc-a580-cc1129eb78d8) · 2:43 · Laura · Erroll Garner · Pastel
+    - [09998cab](https://musicbrainz.org/recording/09998cab-aff7-44e5-8e1b-e2c0209ee3af) · 2:47 · Laura · Erroll Garner · I'm in the Mood for Love
+    - [d948b0ca](https://musicbrainz.org/recording/d948b0ca-76fe-4dbb-952f-49c6dfd20c54) · 2:45 · Laura · Erroll Garner · Play It Again, Erroll!
+    - [f42844b0](https://musicbrainz.org/recording/f42844b0-aefa-4bf5-af7c-d9dc5c8e7027) · 2:47 · Laura · Erroll Garner · Long Ago and Far Away
+    - [575032a6](https://musicbrainz.org/recording/575032a6-2ee2-4bfa-aab8-606ba2324ace) · 2:44 · Laura · Erroll Garner · Mellow Jazz
+    - [acfbe56a](https://musicbrainz.org/recording/acfbe56a-8d5d-4edf-9768-3523380816bf) · 2:46 · Laura · Erroll Garner · Erroll Garner
+    - [b86e4dcd](https://musicbrainz.org/recording/b86e4dcd-d065-4e3c-b9d1-93849d4afc53) · 2:46 · Laura · Erroll Garner · Honeysuckle Rose
+- **Frankie Valli & The Four Seasons – December, 1963 (Oh What a Night!)** (3:20)
+  - file: `Frankie Valli & The Four Seasons/Flashback Favorites 70's & 80's (2024)/33 - December, 1963 (Oh What a Night!).mp3`
+  - why: search: 8 of 22 results fit at 3:20, 3:17, 3:17, 3:18, 3:21, 3:21, 3:17, 3:22
+  - candidates:
+    - [bc2cffbc](https://musicbrainz.org/recording/bc2cffbc-54a7-468a-8b4b-6d64667acf83) · 3:20 · December 1963 (Oh, What a Night) · Frankie Valli and The Four Seasons · The Magic of Disco
+    - [b822876d](https://musicbrainz.org/recording/b822876d-9038-4081-8590-5dc549f8e4af) · 3:17 · December, 1963 (Oh What a Night) · Frankie Valli & The Four Seasons · Ultimate Seventies: The Classics
+    - [7ae7e474](https://musicbrainz.org/recording/7ae7e474-446b-40fe-9caa-6955018e8f0e) · 3:17 · December, 1963 (Oh What a Night!) · Frankie Valli & The Four Seasons · 70 Hits of the... 70s
+    - [4a415d93](https://musicbrainz.org/recording/4a415d93-978f-4f07-9d64-3bf573dde893) · 3:18 · December, 1963 (Oh, What a Night) · Frankie Valli & the Four Seasons · Now Yearbook '76
+    - [844854ec](https://musicbrainz.org/recording/844854ec-34b8-4642-99e8-ac22bf5925fc) · 3:21 · December, 1963 (Oh What a Night!) · Frankie Valli & The Four Seasons · Ultimate 70s
+    - [3259d4a1](https://musicbrainz.org/recording/3259d4a1-be44-43ff-934c-31150ec59639) · 3:21 · December. 1963 (Oh, What a Night!) · Frankie Valli and the Four Seasons · Veronica’s Top 1000 Allertijden: Editie 2010
+    - [62f18dca](https://musicbrainz.org/recording/62f18dca-f366-4ff4-8800-e535df23ac9f) · 3:17 · December 1963 (Oh What a Night) · Frankie Valli & The Four Seasons · Car Singalong: The Ultimate Collection
+    - [594c3595](https://musicbrainz.org/recording/594c3595-108a-4757-b8e6-a10eec35ca16) · 3:22 · December, 1963 (Oh What a Night) · Frankie Valli & The Four Seasons · Audio With a G: Sounds of a Jersey Boy, the Music of Bob Gaudio
+- **Gang Starr – Deadly Habitz** (4:15)
+  - file: `Gang Starr/The Ownerz (2003)/07 - Deadly Habitz.flac`
+  - why: ISRC USVI20300094: 0 of 1 recordings fit; search: 2 of 8 results fit at 4:12, 4:13
+  - candidates:
+    - [1ce351cf](https://musicbrainz.org/recording/1ce351cf-c48a-45e7-b1a8-0de8732f6307) · 4:12 · Deadly Habitz · Gang Starr · The Ownerz: The Instrumentals
+    - [ecb16bd5](https://musicbrainz.org/recording/ecb16bd5-8029-4e74-93e2-54974a88396a) · 4:13 · Deadly Habitz · Gang Starr · Warm & Scratchy 4
+- **George Benson – Love Ballad** (4:16)
+  - file: `George Benson/Livin' Inside Your Love (1979)/07 - Love Ballad.flac`
+  - why: ISRC USWB10105198: 0 of 1 recordings fit; search: 6 of 16 results fit at 4:15, 4:18, 4:19, 4:18, 4:19, 4:17
+  - candidates:
+    - [31b85dca](https://musicbrainz.org/recording/31b85dca-07b5-47a6-a90a-2eb1e0a2a16b) · 4:15 · Love Ballad · George Benson · Golden Hits
+    - [551d2f21](https://musicbrainz.org/recording/551d2f21-ff63-4838-8bb6-e73ac90cb401) · 4:18 · Love Ballad · George Benson · The Greatest Hits of All
+    - [efadde7e](https://musicbrainz.org/recording/efadde7e-2ca8-4531-9567-1a193a4331be) · 4:19 · Love Ballad · George Benson · The Essential Selection
+    - [8896c94e](https://musicbrainz.org/recording/8896c94e-a302-4a74-9b8d-17b0e70d9bb2) · 4:18 · Love Ballad · George Benson · Smooth 70s
+    - [eb6eb7e7](https://musicbrainz.org/recording/eb6eb7e7-b157-41a8-8f17-d7c4cadbada2) · 4:19 · Love Ballad · George Benson · Essentials …The Very Best of George Benson
+    - [800a6f4f](https://musicbrainz.org/recording/800a6f4f-cede-4645-be59-b55c82595a5b) · 4:17 · Love Ballad · George Benson · Sweet Soul of the ’70s
+- **George Benson – Give Me The Night** (5:00)
+  - file: `George Benson/The Best Of George Benson (1980)/00 - Give Me The Night.mp3`
+  - why: search: 12 of 67 results fit at 5:01, 5:03, 4:59, 5:00, 5:00, 5:02, 5:00, 4:58, 5:01, 5:01, 5:01, 5:01
+  - candidates:
+    - [9ff10401](https://musicbrainz.org/recording/9ff10401-4265-4738-a7fd-26b909932700) · 5:01 · Give Me the Night · George Benson · 80s Soul Classics 1980-1984
+    - [981eb81c](https://musicbrainz.org/recording/981eb81c-8c6b-4c5f-b8d9-339e685c8197) · 5:03 · Give Me the Night · George Benson · The Summer Breeze Collection
+    - [b314ef91](https://musicbrainz.org/recording/b314ef91-41e3-4d58-a93b-36f454e86d38) · 4:59 · Give Me the Night · George Benson · The Very Best of Smooth Jazz
+    - [c616a7ca](https://musicbrainz.org/recording/c616a7ca-0e29-4ebb-a890-5a7cef60fb4f) · 5:00 · Give Me the Night · George Benson · Music in Black, Volume 1
+    - [e01fc2d8](https://musicbrainz.org/recording/e01fc2d8-b6ef-485a-85d2-3e5ae704817c) · 5:00 · Give Me the Night · George Benson · Quiet Storm
+    - [b53691b0](https://musicbrainz.org/recording/b53691b0-46e9-459f-8d5b-30087e4986a3) · 5:02 · Give Me the Night · George Benson · 1000 klassiekers: De absolute top, Vol. 5
+    - [f5847731](https://musicbrainz.org/recording/f5847731-ba24-43ba-98e7-8c11e34b881e) · 5:00 · Give Me the Night · George Benson · 80s Radio Hits
+    - [9b7101af](https://musicbrainz.org/recording/9b7101af-f2b8-47b0-b65f-171cc23b56bd) · 4:58 · Give Me the Night · George Benson · Kult! Präsentiert Funky Dance Grooves: The Long Versions
+    - [e2688da5](https://musicbrainz.org/recording/e2688da5-8bf5-49b2-bef5-b0c742a067e9) · 5:01 · Give Me the Night · George Benson · Summer Breezin'
+    - [f71e68bd](https://musicbrainz.org/recording/f71e68bd-98a5-4f30-ab72-e54b8083841b) · 5:01 · Give Me The Night · George Benson · Grand New World
+    - [717ca25c](https://musicbrainz.org/recording/717ca25c-1ca9-4910-9b0b-ff65789a29a7) · 5:01 · Give Me the Night · George Benson · The Songs of Rod Temperton
+    - [8cd0968d](https://musicbrainz.org/recording/8cd0968d-82cc-4481-8c4a-d06bec6af759) · 5:01 · Give Me the Night · George Benson · Disco
+- **George Benson – Turn Your Love Around** (3:52)
+  - file: `George Benson/The George Benson Collection (1981)/00 - Turn Your Love Around.mp3`
+  - why: search: 11 of 21 results fit at 3:52, 3:51, 3:51, 3:50, 3:50, 3:53, 3:50, 3:49, 3:50, 3:52, 3:50
+  - candidates:
+    - [2736f9fa](https://musicbrainz.org/recording/2736f9fa-dd93-4555-b983-89f74351e249) · 3:52 · Turn Your Love Around · George Benson · Jay Graydon Works
+    - [95de9a2c](https://musicbrainz.org/recording/95de9a2c-ffe2-4a71-b69a-fa9cabbde130) · 3:51 · Turn Your Love Around · George Benson · Quiet Storm
+    - [02c89e9c](https://musicbrainz.org/recording/02c89e9c-e1aa-4369-881a-62a8e688397a) · 3:51 · Turn Your Love Around · George Benson · At This Moment
+    - [4fc02674](https://musicbrainz.org/recording/4fc02674-af2a-40d5-a5e1-abe3c427b310) · 3:50 · Turn Your Love Around · George Benson · Chill Lounge
+    - [7f86cc7f](https://musicbrainz.org/recording/7f86cc7f-3bb5-4eb8-bbd9-561220428ba3) · 3:50 · Turn Your Love Around · George Benson · Summer Breezin'
+    - [8e38856b](https://musicbrainz.org/recording/8e38856b-b71f-46c6-8262-1f7f9ffc92b6) · 3:53 · Turn Your Love Around · George Benson · Essentials …The Very Best of George Benson
+    - [99888428](https://musicbrainz.org/recording/99888428-de41-478e-ab14-990e301af869) · 3:50 · Turn Your Love Around · George Benson · 80’s Pop Beyond the Hits
+    - [4572c92b](https://musicbrainz.org/recording/4572c92b-b7ac-446f-b87f-83d74feef645) · 3:49 · Turn Your Love Around · George Benson · The George Benson Collection
+    - [5d067317](https://musicbrainz.org/recording/5d067317-fe65-47af-a996-41e3abc66e8c) · 3:50 · Turn Your Love Around · George Benson · Groove
+    - [e62164fb](https://musicbrainz.org/recording/e62164fb-c454-4909-bd2b-38421af0e69f) · 3:52 · Turn Your Love Around · George Benson · A Yacht Rock Odyssey
+    - [90ca18fe](https://musicbrainz.org/recording/90ca18fe-82fc-4b67-b9ee-223fe4fc27a8) · 3:50 · Turn Your Love Around · George Benson · The George Benson Collection
+- **George Benson – Shape Of Things To Come** (5:15)
+  - file: `George Benson/The Shape Of Things To Come (1968)/03 - Shape Of Things To Come.flac`
+  - why: ISRC USPR36800017: 2 of 2 recordings fit; search: 6 of 7 results fit at 5:17, 5:14, 5:15, 5:16, 5:15, 5:16
+  - candidates:
+    - [600bd9c3](https://musicbrainz.org/recording/600bd9c3-0a5d-41ae-b2d5-24543fa2acb4) · 5:17 · Shape of Things to Come · George Benson · The Other Side of George Benson
+    - [8169856d](https://musicbrainz.org/recording/8169856d-eece-4409-aa78-4b1235b3f842) · 5:14 · Shape Of Things To Come · George Benson · Jazz Guitar - Verve 50
+    - [8e099fae](https://musicbrainz.org/recording/8e099fae-9d5e-4142-962c-5db9f4f32338) · 5:15 · Shape of Things to Come · George Benson · The Best
+    - [b70c2aff](https://musicbrainz.org/recording/b70c2aff-8829-4b9e-bf0a-c286fff145f9) · 5:16 · Shape of Things to Come · George Benson · Martin Freeman and Eddie Piller Present Jazz on the Corner Two
+    - [9488adba](https://musicbrainz.org/recording/9488adba-51ba-4892-9cbe-7c722e7e9d0a) · 5:15 · Shape Of Things To Come · George Benson · George Benson: Hits & Rarities
+    - [1c30b44b](https://musicbrainz.org/recording/1c30b44b-8c0a-41a0-9334-3592fd6e0096) · 5:16 · Shape of Things to Come · George Benson · Shape of Things to Come
+- **Gino Soccio – The Visitors (Original)** (6:49)
+  - file: `Gino Soccio/Outline/00 - The Visitors (Original).flac`
+  - why: search: 2 of 6 results fit at 6:45, 6:49
+  - candidates:
+    - [2e387271](https://musicbrainz.org/recording/2e387271-d494-44b4-af19-a1438e4920cc) · 6:45 · The Visitors · Gino Soccio · The Visitors
+    - [3f03b470](https://musicbrainz.org/recording/3f03b470-97ab-446a-b345-146f01e132b9) · 6:49 · The Visitors (Original) · Gino Soccio · Outline
+- **Gino Soccio – So Lonely** (2:04)
+  - file: `Gino Soccio/Outline/03 - So Lonely.mp3`
+  - why: search: 3 of 3 results fit at 2:03, 2:04, 2:02
+  - candidates:
+    - [883f0206](https://musicbrainz.org/recording/883f0206-8017-4f91-9c47-45a3ba301c94) · 2:03 · So Lonely · Gino Soccio · Dancer
+    - [54eef2bd](https://musicbrainz.org/recording/54eef2bd-5433-4367-bcc7-eb24994ae824) · 2:04 · So Lonely · Gino Soccio · Outline
+    - [9b56a4ff](https://musicbrainz.org/recording/9b56a4ff-b0d2-4a92-a7f7-e280d1e9736f) · 2:02 · So Lonely · Gino Soccio · Outline
+- **Gino Soccio – There's A Woman** (8:20)
+  - file: `Gino Soccio/Outline/06 - There's A Woman.mp3`
+  - why: search: 2 of 2 results fit at 8:20, 8:18
+  - candidates:
+    - [bc7800b6](https://musicbrainz.org/recording/bc7800b6-36cb-4b22-b7bf-751619e654ba) · 8:20 · There's a Woman · Gino Soccio · Outline
+    - [a8b076ab](https://musicbrainz.org/recording/a8b076ab-1332-4d02-a6f9-14d91062aaa3) · 8:18 · There's a Woman · Gino Soccio · Outline
+- **Gorillaz – Feel Good Inc.** (3:43)
+  - file: `Gorillaz/Demon Days (2005)/02 - Feel Good Inc_.flac`
+  - why: search: 4 of 59 results fit at 3:43, 3:41, 3:41, 3:41
+  - candidates:
+    - [6772ef1f](https://musicbrainz.org/recording/6772ef1f-9e6b-4931-9b2f-68a32725183e) · 3:43 · Feel Good Inc · Gorillaz · Playing - The 00s
+    - [26fac97e](https://musicbrainz.org/recording/26fac97e-418d-4b17-ab2b-1b9cd0a8f9f6) · 3:41 · Feel Good Inc. · Gorillaz · Demon Days
+    - [084982b8](https://musicbrainz.org/recording/084982b8-926c-49f8-87c0-839635655676) · 3:41 · Feel Good Inc. · Gorillaz · Demon Days · (album version)
+    - [5081d9f7](https://musicbrainz.org/recording/5081d9f7-f3f9-4f90-a0b1-b18bd320900c) · 3:41 · Feel Good Inc. · Gorillaz feat. De La Soul · Now! Hits Référence 2005
+- **Greg Henderson – Dreamin' (Original 12 Inch Club Mix)** (7:34)
+  - file: `Greg Henderson/Grand 12-Inches 20 - compiled by Ben Liebrand (6-CD) (2023)/09 - Dreamin' (Original 12 Inch Club Mix).flac`
+  - why: search: 2 of 13 results fit at 7:33, 7:31
+  - candidates:
+    - [dcb52b1a](https://musicbrainz.org/recording/dcb52b1a-7eb8-45fa-b039-b515aea77c4c) · 7:33 · Dreamin’ (Original 12″ Club Mix) · Greg Henderson · Nighttime Lovers Volume 35
+    - [5d94fc8b](https://musicbrainz.org/recording/5d94fc8b-cd01-418a-803d-a9fb48d6e9a2) · 7:31 · Dreamin’ (original 12″ club mix) · Greg Henderson · Grand 12‐Inches 20
+- **Gwen McCrae – All This Love That I'm Givin'** (4:01)
+  - file: `Gwen McCrae/Complete 80's Soul Weekender Disc 3 (2005)/02 - All This Love That I'm Givin'.mp3`
+  - why: search: 3 of 7 results fit at 4:00, 4:00, 4:00
+  - candidates:
+    - [21530a23](https://musicbrainz.org/recording/21530a23-322f-46ae-8ae7-8aca6563e444) · 4:00 · All This Love That I’m Givin · Gwen McCrae · Girlfriend’s Boyfriend · (re-recording)
+    - [d81815ff](https://musicbrainz.org/recording/d81815ff-399a-45ba-b257-2d24d2c4d856) · 4:00 · All This Love That I'm Givin' · Gwen McCrae · Nostalgie Disco Funk
+    - [0ad2d4ff](https://musicbrainz.org/recording/0ad2d4ff-bc42-44e6-bc32-ae7a6ade1211) · 4:00 · All This Love That I'm Givin · Gwen McCrae · Sampled Funk
+- **Gwen Stefani – Hollaback Girl** (3:19)
+  - file: `Gwen Stefani/Love.Angel.Music.Baby. (2004)/03 - Hollaback Girl.flac`
+  - why: search: 17 of 70 results fit at 3:22, 3:22, 3:20, 3:18, 3:21, 3:20, 3:22, 3:20, 3:19, 3:19, 3:20, 3:22, 3:16, 3:21, 3:20, 3:20, 3:19
+  - candidates:
+    - [ce0ff801](https://musicbrainz.org/recording/ce0ff801-43b8-4b2d-acde-08a0739e77d4) · 3:22 · Hollaback Girl · Gwen Stefani · Hits 2Hot to Handle
+    - [4cc7673d](https://musicbrainz.org/recording/4cc7673d-6fa8-413c-8bcd-e2896cd8eebf) · 3:22 · Hollaback Girl · Gwen Stefani · Greatest Hits
+    - [c41e4a9a](https://musicbrainz.org/recording/c41e4a9a-021a-4d15-9ce8-d4e8a0586861) · 3:20 · Hollaback Girl · Gwen Stefani · Party Summer Sound Waves
+    - [c47e06a6](https://musicbrainz.org/recording/c47e06a6-365a-4b23-b537-35adaa35b55d) · 3:18 · Hollaback Girl · Gwen Stefani · 100% Black, Noveno Volumen
+    - [28eb96f3](https://musicbrainz.org/recording/28eb96f3-2a6f-4c23-ab51-0a3d099b39fe) · 3:21 · Hollaback Girl · Gwen Stefani · R&B Divas
+    - [539167ba](https://musicbrainz.org/recording/539167ba-a704-4908-b25c-d07918294598) · 3:20 · Hollaback Girl · Gwen Stefani · Hits for Kids, Volume 15
+    - [bba1d5d6](https://musicbrainz.org/recording/bba1d5d6-10a9-4886-8b5a-73ca57ba762a) · 3:22 · Hollaback Girl · Gwen Stefani · Dance Party 2
+    - [f14ef2d3](https://musicbrainz.org/recording/f14ef2d3-5cb2-4d31-8225-aec2a337874c) · 3:20 · Hollaback Girl · Gwen Stefani · The Singles Collection
+    - [66059d42](https://musicbrainz.org/recording/66059d42-86db-4128-84d9-f998bf6f42c5) · 3:19 · Hollaback Girl · Gwen Stefani · Piece by Piece Full Soundtrack
+    - [2515c74f](https://musicbrainz.org/recording/2515c74f-0669-48a9-adfd-0b98911ecb56) · 3:19 · Hollaback Girl · Gwen Stefani · 00s Mixtape
+    - [4780a223](https://musicbrainz.org/recording/4780a223-402f-4b35-9e3d-c87c638ed079) · 3:20 · Hollaback Girl · Gwen Stefani · Hit Club 2005.3
+    - [26974590](https://musicbrainz.org/recording/26974590-6ff6-48b0-99f1-1fcc341940af) · 3:22 · Hollaback Girl · Gwen Stefani · 2Hot: All the Hottest Hits
+    - [21880d45](https://musicbrainz.org/recording/21880d45-8043-4a68-b2f3-4eeb2d67f6ca) · 3:16 · Hollaback Girl · Gwen Stefani · YTV Big Fun Party Mix 7
+    - [ed190e23](https://musicbrainz.org/recording/ed190e23-81a6-49c8-b936-30a67cc79dd4) · 3:21 · Hollaback Girl · Gwen Stefani · Girls Allowed
+    - [0bea10bf](https://musicbrainz.org/recording/0bea10bf-6786-4d66-88b2-07dbc98d12ab) · 3:20 · Hollaback Girl · Gwen Stefani · Party Until the End
+    - [58bcb1e6](https://musicbrainz.org/recording/58bcb1e6-26e3-45c8-90a5-eb4554f75c0d) · 3:20 · Hollaback Girl · Gwen Stefani · Urban Crate
+    - [0f0bebd0](https://musicbrainz.org/recording/0f0bebd0-0af7-4fab-9187-06917bfa8f3c) · 3:19 · Hollaback Girl (Remastered 2019) · Gwen Stefani · NOW Legendary Pop Icons
+- **Harry Nilsson – Coconut** (3:52)
+  - file: `Harry Nilsson/Nilsson Schmilsson/00 - Coconut.m4a`
+  - why: search: 11 of 16 results fit at 3:50, 3:51, 3:52, 3:50, 3:54, 3:52, 3:51, 3:49, 3:54, 3:50, 3:52
+  - candidates:
+    - [09a753fb](https://musicbrainz.org/recording/09a753fb-277c-4076-875d-04204448213b) · 3:50 · Coconut · Harry Nilsson · Old Navy: Cool Kids & Groovy Grown-Ups
+    - [5822b777](https://musicbrainz.org/recording/5822b777-21bb-4453-a1ea-783b7820ae08) · 3:51 · Coconut · Harry Nilsson · House, M.D.: Season 5
+    - [fcb6ae2d](https://musicbrainz.org/recording/fcb6ae2d-6ddf-4574-b25a-a47d4079fb0e) · 3:52 · Coconut · Harry Nilsson · Double Feature Soundtracks From the Quentin Tarantino Films Reservoir Dogs & Pulp Fiction
+    - [2b4ec35d](https://musicbrainz.org/recording/2b4ec35d-8f6c-428a-92ad-730b2b0a8462) · 3:50 · Coconut · Harry Nilsson · Alan Wake Unofficial Soundtrack
+    - [12d40b95](https://musicbrainz.org/recording/12d40b95-dc23-441e-bed6-869622224df1) · 3:54 · Coconut · Harry Nilsson · Everybody's Talkin'
+    - [07cf0aaa](https://musicbrainz.org/recording/07cf0aaa-420d-468d-9203-9e544e3fea5d) · 3:52 · Coconut · Harry Nilsson · Summer Sippin’
+    - [1b3ef4c3](https://musicbrainz.org/recording/1b3ef4c3-712a-4c81-afc9-b9bbe8c61ce0) · 3:51 · Coconut · Harry Nilsson · Reservoir Dogs: Music From the Original Motion Picture Soundtrack
+    - [81d6914b](https://musicbrainz.org/recording/81d6914b-c7db-41ee-94e7-eab9b66a79e5) · 3:49 · Coconut · Harry Nilsson · Summer Luau
+    - [1ca9a643](https://musicbrainz.org/recording/1ca9a643-0e28-4a52-af05-f9911c6d4058) · 3:54 · Coconut · Harry Nilsson · The Masters
+    - [3ea6e433](https://musicbrainz.org/recording/3ea6e433-81c3-46fe-9870-eafd7b4fb425) · 3:50 · Coconut · Harry Nilsson · Tarantino : Best of B.O.
+    - [b4ce9761](https://musicbrainz.org/recording/b4ce9761-3bbe-481f-8f35-10727254ef04) · 3:52 · Coconut · Harry Nilsson · Hits of the 70’s
+- **Herbie Hancock – Doin' It** (6:42)
+  - file: `Herbie Hancock/Secrets/00 - Doin' It.m4a`
+  - why: search: 2 of 9 results fit at 6:43, 6:42
+  - candidates:
+    - [724cd992](https://musicbrainz.org/recording/724cd992-72ff-4060-90b7-4e2c67fce925) · 6:43 · Doin' It · Herbie Hancock · Doin' It: 12 Jazzfunk Classics
+    - [c604f732](https://musicbrainz.org/recording/c604f732-67c5-41ff-8e82-12da5ef29651) · 6:42 · Doin' It (Album Version) · Herbie Hancock · Rockit
+- **Jamiroquai – Cosmic Girl (Remastered)** (4:04)
+  - file: `Jamiroquai/Travelling Without Moving (CD1) (2013)/02 - Cosmic Girl (Remastered).flac`
+  - why: search: 4 of 100 results fit at 4:03, 4:04, 4:04, 4:04
+  - candidates:
+    - [859af282](https://musicbrainz.org/recording/859af282-2d44-4c54-b005-69760828e998) · 4:03 · Cosmic Girl · Jamiroquai · Best of '99
+    - [41774a99](https://musicbrainz.org/recording/41774a99-eb7b-43e3-b152-22118467564e) · 4:04 · Cosmic Girl · Jamiroquai · Jura
+    - [76c67da1](https://musicbrainz.org/recording/76c67da1-fa97-4b37-b7cb-f6340ebadeb6) · 4:04 · Cosmic Girl · Jamiroquai · Travelling Without Moving
+    - [d5afe3e1](https://musicbrainz.org/recording/d5afe3e1-824f-4b91-9844-a6da2d7724cd) · 4:04 · Cosmic Girl · Jamiroquai · Traveling Without Moving
+- **Janet Kay – Silly Games** (3:58)
+  - file: `Janet Kay/The Definitive Hits Collection (1977-1985) (2011)/18 - Silly Games.flac`
+  - why: ISRC USHM91158891: 0 of 0 recordings fit; search: 18 of 34 results fit at 3:57, 3:56, 3:54, 3:54, 4:01, 3:57, 3:56, 3:55, 3:55, 3:58, 3:56, 3:57, 3:57, 3:58, 3:56, 4:00, 4:01, 3:54
+  - candidates:
+    - [e17ea967](https://musicbrainz.org/recording/e17ea967-fae6-4b26-9adb-84624faea36b) · 3:57 · Silly Games · Janet Kay · Levi Roots presents: Reggae Reggae Hits
+    - [2a5b48aa](https://musicbrainz.org/recording/2a5b48aa-30b3-4a60-88c7-529408dada8d) · 3:56 · Silly Games · Janet Kay · Girls
+    - [a728db29](https://musicbrainz.org/recording/a728db29-de9a-4703-8536-10b476366208) · 3:54 · Silly Games · Janet Kay · my first mixtape
+    - [d62c1ea2](https://musicbrainz.org/recording/d62c1ea2-b854-41dc-a9fd-f16383692aaf) · 3:54 · Silly Games · Janet Kay · Jammin’
+    - [ad5131ef](https://musicbrainz.org/recording/ad5131ef-244b-426e-aae9-3baf0bb91e2b) · 4:01 · Silly Games · Janet Kay · Soft Reggae
+    - [8376ce77](https://musicbrainz.org/recording/8376ce77-f0a4-459a-9ecc-f407b08b2c24) · 3:57 · Silly Games · Janet Kay · Island Reggae
+    - [872b36c9](https://musicbrainz.org/recording/872b36c9-7f0b-4c67-aaf9-3a1b041249cf) · 3:56 · Silly Games · Janet Kay · Fantastic 70s
+    - [d4ad400d](https://musicbrainz.org/recording/d4ad400d-7e1e-4355-93ed-bcb4a147688a) · 3:55 · Silly Games · Janet Kay · DJs Guide to… Reggae
+    - [b5a4f984](https://musicbrainz.org/recording/b5a4f984-b626-4d98-9bcc-807770cc39ee) · 3:55 · Silly Games · Janet Kay · The Reggae Album: 42 Massive Reggae Anthems
+    - [86ddbaec](https://musicbrainz.org/recording/86ddbaec-eeda-4a6d-9bfd-1a3609d75e13) · 3:58 · Silly Games · Janet Kay · The DuBMASTER: The Essential Anthology
+    - [40e0519f](https://musicbrainz.org/recording/40e0519f-2a73-4986-8a76-cf446b708c5c) · 3:56 · Silly Games · Janet Kay · I Love Reggae
+    - [e5c86986](https://musicbrainz.org/recording/e5c86986-1b31-4c64-8eff-237e9f185991) · 3:57 · Silly Games · Janet Kay · NOW YEARBOOK 1979
+    - [446d68db](https://musicbrainz.org/recording/446d68db-cec2-4f8f-a1ed-17db9f7367fc) · 3:57 · Silly Games · Janet Kay · NOW That’s What I Call 70s Pop
+    - [395eb6d2](https://musicbrainz.org/recording/395eb6d2-6506-43a0-bf7f-e8c56d05a65a) · 3:58 · Silly Games · Janet Kay · Sweet Harmony: 1970s Reggae Love Songs
+    - [fe2e64af](https://musicbrainz.org/recording/fe2e64af-da7b-42fa-8430-f2a804b136a0) · 3:56 · Silly Games · Janet Kay · Different: The Dennis Bovell Singles Collection 1977-1981
+    - [a6b96a91](https://musicbrainz.org/recording/a6b96a91-db78-41b4-96d9-3c7f7ee286d8) · 4:00 · Silly Games · Janet Kay · One Love - The Very Best of Reggae
+    - [44937e16](https://musicbrainz.org/recording/44937e16-3a5f-4e33-aa8a-d01aaba9254a) · 4:01 · Silly Games · Janet Kay · The No.1 Reggae Album
+    - [047461be](https://musicbrainz.org/recording/047461be-d9ef-4f00-a08b-99c82268c510) · 3:54 · Silly Games · Janet Kay · Roots Rock Rebels: When Punk Met Reggae 1975-1982
+- **Jimi Hendrix – Third Stone From The Sun** (6:44)
+  - file: `Jimi Hendrix/Are You Experienced (1967)/09 - Third Stone From The Sun.flac`
+  - why: ISRC USQX90900773: 0 of 1 recordings fit; search: 2 of 31 results fit at 6:48, 6:42
+  - candidates:
+    - [77bef2d3](https://musicbrainz.org/recording/77bef2d3-6b03-4b53-921a-0ee1d129d263) · 6:48 · Third Stone From the Sun · Jimi Hendrix · The Dreamers
+    - [00888395](https://musicbrainz.org/recording/00888395-ffc2-4f83-80a4-8a5429663c13) · 6:42 · Third Stone From the Sun · Jimi Hendrix · Voodoo Chile (slight return)
+- **Jimi Hendrix – Third Stone From The Sun** (6:44)
+  - file: `Jimi Hendrix/Are You Experienced_ (1967)/09 - Third Stone From The Sun.mp3`
+  - why: search: 2 of 31 results fit at 6:48, 6:42
+  - candidates:
+    - [77bef2d3](https://musicbrainz.org/recording/77bef2d3-6b03-4b53-921a-0ee1d129d263) · 6:48 · Third Stone From the Sun · Jimi Hendrix · The Dreamers
+    - [00888395](https://musicbrainz.org/recording/00888395-ffc2-4f83-80a4-8a5429663c13) · 6:42 · Third Stone From the Sun · Jimi Hendrix · Voodoo Chile (slight return)
+- **Joni Mitchell – Both Sides Now** (5:45)
+  - file: `Joni Mitchell/Both Sides Now (2000)/12 - Both Sides Now.flac`
+  - why: ISRC USRE19901438: 0 of 1 recordings fit; search: 2 of 58 results fit at 5:45, 5:47
+  - candidates:
+    - [04e68346](https://musicbrainz.org/recording/04e68346-2603-47ed-974b-2a3683841051) · 5:45 · Both Sides Now · Joni Mitchell · Howie ♥ WBR
+    - [ac194d3e](https://musicbrainz.org/recording/ac194d3e-3784-4a23-ba32-da29fb687fae) · 5:47 · Both Sides Now · Joni Mitchell · Gay Pride: Sampler 2000
+- **Julius Rodriguez – In Heaven** (5:04)
+  - file: `Julius Rodriguez/Let Sound Tell All/08 - In Heaven.mp3`
+  - why: search: 2 of 2 results fit at 5:03, 5:03
+  - candidates:
+    - [e7f5fc12](https://musicbrainz.org/recording/e7f5fc12-c7f8-4099-a6b5-ad6190509c05) · 5:03 · In Heaven · Julius Rodriguez · Let Sound Tell All
+    - [520acbad](https://musicbrainz.org/recording/520acbad-4d24-428a-9c52-6c30dd9aeda7) · 5:03 · In Heaven · Julius Rodriguez · Let Sound Tell All
+- **Jurassic 5 – Canto De Ossanha** (4:19)
+  - file: `Jurassic 5/Feedback (2006)/15 - Canto De Ossanha.flac`
+  - why: ISRC USUM70604512: 2 of 2 recordings fit; search: 2 of 5 results fit at 4:20, 4:19
+  - candidates:
+    - [a30ca44f](https://musicbrainz.org/recording/a30ca44f-f4a0-411e-b26b-766cd58e5f9e) · 4:20 · Canto De Ossanha · Jurassic 5 · Feedback
+    - [8703ebeb](https://musicbrainz.org/recording/8703ebeb-d8d6-4557-bbd6-1064800420bf) · 4:19 · Canto de Ossanha · Jurassic 5 · Feedback
+- **Justin Timberlake – SexyBack** (4:05)
+  - file: `Justin Timberlake/Futuresex _ Lovesounds (2006)/02 - SexyBack.flac`
+  - why: search: 5 of 64 results fit at 4:01, 4:02, 4:03, 4:01, 4:05
+  - candidates:
+    - [a7c551fb](https://musicbrainz.org/recording/a7c551fb-f3f7-4697-b0ad-c98c66c94a03) · 4:01 · SexyBack · Justin Timberlake · HitClub 2006.4
+    - [3eb93fe3](https://musicbrainz.org/recording/3eb93fe3-146f-4533-9f07-2deb7d7bcd5b) · 4:02 · Sexyback · Justin Timberlake · Absolute Dance Anthems
+    - [87500ff7](https://musicbrainz.org/recording/87500ff7-4a6d-46c2-a1a9-96c7280a4398) · 4:03 · SexyBack · Justin Timberlake · Greatest Hits & Collaboration
+    - [be48c8c8](https://musicbrainz.org/recording/be48c8c8-873b-45e3-90b7-bcdf5c6826b8) · 4:01 · SexyBack · Justin Timberlake · Bravo Hits 55
+    - [70fba75e](https://musicbrainz.org/recording/70fba75e-f05d-4ba4-a2c3-67ebfb98c787) · 4:05 · Sexyback · Justin Timberlake · Alle Tiders Summerparty
+- **LL Cool J – Mama Said Knock You Out** (4:44)
+  - file: `LL Cool J/The Roots Of Rap (1990)/02 - Mama Said Knock You Out.flac`
+  - why: search: 11 of 60 results fit at 4:48, 4:47, 4:48, 4:48, 4:46, 4:48, 4:48, 4:47, 4:48, 4:48, 4:47
+  - candidates:
+    - [fbe22a6e](https://musicbrainz.org/recording/fbe22a6e-f71c-4cb3-a12d-15406c1ff507) · 4:48 · Mama Said Knock You Out · LL Cool J · Icon: LL Cool J
+    - [d9e1727a](https://musicbrainz.org/recording/d9e1727a-a077-49ff-8310-875548de9230) · 4:47 · Mama Said Knock You Out · LL Cool J · The Radio Essential Series
+    - [c43dc9d9](https://musicbrainz.org/recording/c43dc9d9-dba4-4a2d-a6ee-ad0e900461f8) · 4:48 · Mama Said Knock You Out · LL Cool J · Rappers Delight: Back in the Day
+    - [2bd18915](https://musicbrainz.org/recording/2bd18915-d388-464e-a522-8089cef1d284) · 4:48 · Mama Said Knock You Out · LL Cool J · Kiss Presents The Hip Hop Collection
+    - [a732b85f](https://musicbrainz.org/recording/a732b85f-54be-403f-a973-e115539d2631) · 4:46 · Mama Said Knock You Out · LL Cool J · The Grandmaster Flash Collection
+    - [775ff1b7](https://musicbrainz.org/recording/775ff1b7-e9be-460c-879c-78a9e15cfb48) · 4:48 · Mama Said Knock You Out · LL Cool J · Latest & Greatest Hip-Hop
+    - [488bc1dc](https://musicbrainz.org/recording/488bc1dc-fe6d-4cf9-ace9-af49ed2e90cc) · 4:48 · Mama Said Knock You Out · LL Cool J · Hip Hop: The Collection
+    - [4877897b](https://musicbrainz.org/recording/4877897b-a8fb-441a-9092-ebf9244d91d1) · 4:47 · Mama Said Knock You Out · LL Cool J · Clubland: Jump Around
+    - [ea0b78fa](https://musicbrainz.org/recording/ea0b78fa-cada-4fb4-bed5-fa6d8a689e49) · 4:48 · Mama Said Knock You Out · LL Cool J · Hip Hop V
+    - [3991f574](https://musicbrainz.org/recording/3991f574-e567-4e0f-908a-70fa3d7e2961) · 4:48 · Mama Said Knock You Out · LL Cool J · Road Trip: The Ultimate Collection
+    - [fea589d0](https://musicbrainz.org/recording/fea589d0-31dd-4d8b-b84e-d01999e66cab) · 4:47 · Mama Said Knock You Out · LL Cool J · Ministry of Sound: Anthems: Hip-Hop III
+- **Linx – You're Lying** (3:46)
+  - file: `Linx/Eighties Soul Weekender (1996)/17 - You're Lying.mp3`
+  - why: search: 2 of 18 results fit at 3:45, 3:49
+  - candidates:
+    - [84af5543](https://musicbrainz.org/recording/84af5543-d60c-44ec-b6c6-de5f4c3d650a) · 3:45 · You’re Lying · Linx · Soul Weekender 2
+    - [b872e37e](https://musicbrainz.org/recording/b872e37e-5cbd-4c59-bcba-bf7847c119f1) · 3:49 · You’re Lying · Linx · The Best of David Grant & Linx
+- **Love De-Luxe – Here Comes That Sound Again** (8:52)
+  - file: `Love De-Luxe/Viaje Com A Excelsior - A Maquina Do Som - Vol. 8/05 - Here Comes That Sound Again.mp3`
+  - why: search: 2 of 8 results fit at 8:52, 8:52
+  - candidates:
+    - [df93917a](https://musicbrainz.org/recording/df93917a-87b6-427e-af88-80141e0c2ad6) · 8:52 · Here Comes That Sound Again · Love De-Luxe · Best Disco
+    - [5bd34568](https://musicbrainz.org/recording/5bd34568-7ce2-4b3a-af9e-b39bf026f8aa) · 8:52 · Here Comes That Sound Again · Love De-Luxe · Home Disco
+- **Luther Vandross – Never Too Much** (3:51)
+  - file: `Luther Vandross/Never Too Much/01 - Never Too Much.flac`
+  - why: ISRC USSM18100805: 2 of 4 recordings fit; search: 2 of 83 results fit at 3:50, 3:50
+  - candidates:
+    - [346684f1](https://musicbrainz.org/recording/346684f1-5398-4658-9768-d4b31c11a973) · 3:50 · Never Too Much · Luther Vandross · The Old Skool
+    - [fd18d79b](https://musicbrainz.org/recording/fd18d79b-6a95-4d30-87e8-48af204d49e5) · 3:50 · Never Too Much · Luther Vandross · The Ultimate Luther Vandross
+- **Marvin Gaye – I Want You** (4:36)
+  - file: `Marvin Gaye/I Want You (1976)/101 - I Want You.mp3`
+  - why: search: 5 of 50 results fit at 4:35, 4:39, 4:37, 4:33, 4:37
+  - candidates:
+    - [71204d5a](https://musicbrainz.org/recording/71204d5a-1a35-47f3-a9a0-2ada46e1c0ef) · 4:35 · I Want You · Marvin Gaye · The Concert Anthology
+    - [82c1cabf](https://musicbrainz.org/recording/82c1cabf-5ccd-4f06-999c-4b8082acc8d6) · 4:39 · I Want You · Marvin Gaye · The Essential Collection
+    - [01798b83](https://musicbrainz.org/recording/01798b83-888c-4d43-9686-cd5e4c3470ad) · 4:37 · I Want You · Marvin Gaye · Forever Gold (Live)
+    - [a98af3be](https://musicbrainz.org/recording/a98af3be-ed41-472f-965f-f2e38d79e0b2) · 4:33 · I Want You · Marvin Gaye · Essential Soul Volume 1
+    - [650d4b64](https://musicbrainz.org/recording/650d4b64-4513-4994-87f8-8904a73a45ae) · 4:37 · I Want You · Marvin Gaye · The Soundboard Archive 1978-1983
+- **Marvin Gaye – Save The Children** (4:03)
+  - file: `Marvin Gaye/Singles/Save The Children.mp3`
+  - why: search: 6 of 17 results fit at 4:03, 4:06, 4:05, 4:04, 4:01, 4:03
+  - candidates:
+    - [bb889801](https://musicbrainz.org/recording/bb889801-d922-425b-9715-f9c0a053db73) · 4:03 · Save the Children · Marvin Gaye · What’s Going On: Then, Now, Always
+    - [927c2ed2](https://musicbrainz.org/recording/927c2ed2-fbec-4d19-b967-6816d0c47e5b) · 4:06 · Save the Children · Marvin Gaye · What’s Going On
+    - [dac20015](https://musicbrainz.org/recording/dac20015-4e59-433d-86a3-ea183520a45e) · 4:05 · Save the Children · Marvin Gaye · What’s Going On
+    - [084fefcc](https://musicbrainz.org/recording/084fefcc-9327-4bf3-ab9c-491c94fecb0c) · 4:04 · Save the Children · Marvin Gaye · A Musical Testament 1964–1984
+    - [55077256](https://musicbrainz.org/recording/55077256-571f-4cd5-8c7a-a71cfd219b64) · 4:01 · Save the Children · Marvin Gaye · What’s Going On
+    - [91def940](https://musicbrainz.org/recording/91def940-d9ab-4a85-bb7b-8a3aeeab699f) · 4:03 · Save the Children · Marvin Gaye · What’s Going On
+- **Marvin Gaye – Save The Children** (4:03)
+  - file: `Marvin Gaye/What's Going On (1971)/04 - Save The Children.flac`
+  - why: ISRC USMO17100044: 0 of 1 recordings fit; search: 6 of 17 results fit at 4:03, 4:06, 4:05, 4:04, 4:01, 4:03
+  - candidates:
+    - [bb889801](https://musicbrainz.org/recording/bb889801-d922-425b-9715-f9c0a053db73) · 4:03 · Save the Children · Marvin Gaye · What’s Going On: Then, Now, Always
+    - [927c2ed2](https://musicbrainz.org/recording/927c2ed2-fbec-4d19-b967-6816d0c47e5b) · 4:06 · Save the Children · Marvin Gaye · What’s Going On
+    - [dac20015](https://musicbrainz.org/recording/dac20015-4e59-433d-86a3-ea183520a45e) · 4:05 · Save the Children · Marvin Gaye · What’s Going On
+    - [084fefcc](https://musicbrainz.org/recording/084fefcc-9327-4bf3-ab9c-491c94fecb0c) · 4:04 · Save the Children · Marvin Gaye · A Musical Testament 1964–1984
+    - [55077256](https://musicbrainz.org/recording/55077256-571f-4cd5-8c7a-a71cfd219b64) · 4:01 · Save the Children · Marvin Gaye · What’s Going On
+    - [91def940](https://musicbrainz.org/recording/91def940-d9ab-4a85-bb7b-8a3aeeab699f) · 4:03 · Save the Children · Marvin Gaye · What’s Going On
+- **Marvin Gaye – Right On** (7:31)
+  - file: `Marvin Gaye/What's Going On (1971)/07 - Right On.flac`
+  - why: ISRC USMO17100047: 0 of 1 recordings fit; search: 3 of 12 results fit at 7:31, 7:31, 7:32
+  - candidates:
+    - [a5c8ad0d](https://musicbrainz.org/recording/a5c8ad0d-ce25-4f4c-af36-5c32194d8934) · 7:31 · Right On · Marvin Gaye · What’s Going On
+    - [b0f78c63](https://musicbrainz.org/recording/b0f78c63-9d43-49a4-b29b-e612d6d4613f) · 7:31 · Right On · Marvin Gaye · What’s Going On: Then, Now, Always
+    - [017bb596](https://musicbrainz.org/recording/017bb596-f084-423f-91fa-8148ad9ad293) · 7:32 · Right On · Marvin Gaye · What’s Going On
+- **Marvin Gaye – Inner City Blues (Make Me Wanna Holler)** (5:28)
+  - file: `Marvin Gaye/What's Going On (1971)/09 - Inner City Blues (Make Me Wanna Holler).mp3`
+  - why: search: 12 of 68 results fit at 5:30, 5:24, 5:28, 5:28, 5:28, 5:28, 5:29, 5:28, 5:24, 5:27, 5:29, 5:28
+  - candidates:
+    - [238ee6d1](https://musicbrainz.org/recording/238ee6d1-cc28-4b8f-91d9-09e1f134e051) · 5:30 · Inner City Blues (Make Me Wanna Holler) · Marvin Gaye · What’s Going On
+    - [cca8e070](https://musicbrainz.org/recording/cca8e070-3faf-4fe2-adb5-b5ed3946afa4) · 5:24 · Inner City Blues (Make Me Wanna Holler) · Marvin Gaye · Soul Platinum
+    - [a033f134](https://musicbrainz.org/recording/a033f134-9f25-4bf9-9591-81b1c91baff5) · 5:28 · Inner City Blues (Make Me Wanna Holler) · Marvin Gaye · Eddie Bauer Down Time
+    - [ac541ef9](https://musicbrainz.org/recording/ac541ef9-c207-4cc4-885d-708e824ace7f) · 5:28 · Inner City Blues (Make Me Wanna Holler) · Marvin Gaye · Discoveries
+    - [967a4e38](https://musicbrainz.org/recording/967a4e38-0234-47dc-b6d3-5acbc083e0f8) · 5:28 · Inner City Blues (Make Me Wanna Holler) · Marvin Gaye · Motown Essentials
+    - [6087a11e](https://musicbrainz.org/recording/6087a11e-773e-4b05-bfce-c42f0b03b2c3) · 5:28 · Inner City Blues (Make Me Wanna Holler) · Marvin Gaye · Saturn Soul Edition
+    - [d1fa8eda](https://musicbrainz.org/recording/d1fa8eda-3ccf-4e93-9894-a72489a17dbd) · 5:29 · Inner City Blues (Make Me Wanna Holler) · Marvin Gaye · Solid Gold Soul: Superbad! The Soul of the City
+    - [244ad02c](https://musicbrainz.org/recording/244ad02c-83d5-411d-9ec9-3c298f746ebb) · 5:28 · Inner City Blues (Make Me Wanna Holler) · Marvin Gaye · What’s Going On: Then, Now, Always
+    - [224e556e](https://musicbrainz.org/recording/224e556e-3553-47f3-88e2-b4068325a858) · 5:24 · Inner City Blues (Make Me Wanna Holler) · Marvin Gaye · The Concert Anthology
+    - [6e1a8a5b](https://musicbrainz.org/recording/6e1a8a5b-5535-4376-8c97-1b4f7cad1a4a) · 5:27 · Inner City Blues (Make Me Wanna Holler) · Marvin Gaye · Soul Legends
+    - [b28ca27f](https://musicbrainz.org/recording/b28ca27f-b3a2-49e2-a15c-87564cb7ff1d) · 5:29 · Inner City Blues (Make Me Wanna Holler) · Marvin Gaye · Grand Theft Auto IV: The Vibe 98.8
+    - [f2420aba](https://musicbrainz.org/recording/f2420aba-5ef8-4a2c-b75f-c873839d1f2a) · 5:28 · Inner City Blues (Make Me Wanna Holler) · Marvin Gaye · What’s Going On
+- **Mary J. Blige – Mary Jane (All Night Long)** (4:39)
+  - file: `Mary J. Blige/My Life/01 - Mary Jane (All Night Long).flac`
+  - why: ISRC USMC19443975: 3 of 3 recordings fit; search: 3 of 30 results fit at 4:39, 4:37, 4:41
+  - candidates:
+    - [3360e8f2](https://musicbrainz.org/recording/3360e8f2-0fc9-4c76-841d-d2f03796dd24) · 4:39 · Mary Jane (All Night Long) · Mary J. Blige · My Life
+    - [3929e187](https://musicbrainz.org/recording/3929e187-bb3c-49cc-9085-4fcdfafc2f92) · 4:37 · Mary Jane (All Night Long) · Mary J. Blige · My Life
+    - [deec09eb](https://musicbrainz.org/recording/deec09eb-1a4f-4101-a56c-c71b42cd9c09) · 4:41 · Mary Jane (All Night long) · Mary J. Blige · 90er Ohrwurmer
+- **Mary Jane Girls – All Night Long** (5:47)
+  - file: `Mary Jane Girls/Mary Jane Girls/00 - All Night Long.flac`
+  - why: search: 6 of 83 results fit at 5:46, 5:46, 5:45, 5:48, 5:47, 5:48
+  - candidates:
+    - [6d8a1e3c](https://musicbrainz.org/recording/6d8a1e3c-965b-4a2a-8cbd-338e9fa4a864) · 5:46 · All Night Long · Mary Jane Girls · The Best Of Rick James & Friends-Volume 2
+    - [b0c0d1c4](https://musicbrainz.org/recording/b0c0d1c4-5b90-471c-8e5d-ab44f980ed02) · 5:46 · All Night Long · Mary Jane Girls · Body + Soul: Battle of the Groups the Ladies
+    - [42b1a9a5](https://musicbrainz.org/recording/42b1a9a5-a3b9-48e4-88fa-f8907a86fa23) · 5:45 · All Night Long · Mary Jane Girls · Magic Soul
+    - [1536d4cf](https://musicbrainz.org/recording/1536d4cf-70b7-4cc3-a56d-0ca17986d189) · 5:48 · All Night Long · Mary Jane Girls · Bitchin': The Sound and Fury of Rick James
+    - [d9d18b3b](https://musicbrainz.org/recording/d9d18b3b-8a4b-4590-9395-f20ebf284d81) · 5:47 · All Night Long · Mary Jane Girls · You Don't Mess With The Zohan
+    - [c52bb2e1](https://musicbrainz.org/recording/c52bb2e1-c6ae-48cc-ba36-22fec259b80c) · 5:48 · All Night Long · Mary Jane Girls · 20th Century Masters: The Millennium Collection: The Best of Mary Jane Girls
+- **Michael Jackson – Billie Jean** (4:54)
+  - file: `Michael Jackson/HIStory - Past, Present And Future - Book I (1982)/01 - Billie Jean.flac`
+  - why: search: 7 of 100 results fit at 4:53, 4:52, 4:57, 4:51, 4:57, 4:55, 4:55
+  - candidates:
+    - [6fc751a2](https://musicbrainz.org/recording/6fc751a2-8e69-4fce-892b-7efa3ff20234) · 4:53 · Billie Jean · Michael Jackson · YTMND Soundtrack, Volume 15
+    - [d0caf45a](https://musicbrainz.org/recording/d0caf45a-58d5-40f6-b09d-276d5e7661a3) · 4:52 · Billie Jean · Michael Jackson · Greatest Hits
+    - [8fc9e99b](https://musicbrainz.org/recording/8fc9e99b-60cf-45da-a5ea-afc113b4ea23) · 4:57 · Billie Jean · Michael Jackson · The Best Of Michael Jackson (2009)
+    - [b98fe22e](https://musicbrainz.org/recording/b98fe22e-2881-4f47-9250-c97033c380c7) · 4:51 · Billie Jean · Michael Jackson · Mobile Beat
+    - [7d5245ae](https://musicbrainz.org/recording/7d5245ae-a3b7-4b88-a3a8-27d8fdd109c5) · 4:57 · Billie Jean · Michael Jackson · Stereoplay Highlights CD 8: Meisterwerke Aus Pop und Rock
+    - [eca2877f](https://musicbrainz.org/recording/eca2877f-8423-4639-8fe2-fa8c0060aa2f) · 4:55 · Billie Jean · Michael Jackson · Billie Jean
+    - [91c43ca8](https://musicbrainz.org/recording/91c43ca8-6822-41b4-939d-6c87fa0cbcc9) · 4:55 · Billie Jean · Michael Jackson · Alle Tiders Summerparty
+- **Michael Jackson – I Just Can't Stop Loving You** (4:11)
+  - file: `Michael Jackson/HIStory - Past, Present And Future - Book I (1982)/01 - I Just Can't Stop Loving You.flac`
+  - why: search: 6 of 66 results fit at 4:08, 4:10, 4:12, 4:12, 4:12, 4:12
+  - candidates:
+    - [1bb755c3](https://musicbrainz.org/recording/1bb755c3-0b99-48be-98aa-55a00790ebf1) · 4:08 · I Just Can’t Stop Loving You · Michael Jackson · Absolute Love Deluxe
+    - [43282de3](https://musicbrainz.org/recording/43282de3-4b49-4cd4-912a-c8b86dec3227) · 4:10 · I Just Can’t Stop Loving You · Michael Jackson · Best of Love 3
+    - [edf9408d](https://musicbrainz.org/recording/edf9408d-529f-4f8d-9169-3c0ef2f2b118) · 4:12 · I Just Can't Stop Loving You · Michael Jackson · Greatest Love Songs 2 (I ❤ You)
+    - [44a62b04](https://musicbrainz.org/recording/44a62b04-9926-4ffd-aa71-153d178fb192) · 4:12 · I Just Can't Stop Loving You (album version) · Michael Jackson · King of Pop: Special German Edition
+    - [7451946d](https://musicbrainz.org/recording/7451946d-9ed0-4487-bd36-0dda573b203b) · 4:12 · I Just Can't Stop Loving You (album version) · Michael Jackson · The Essential Michael Jackson
+    - [989b8f97](https://musicbrainz.org/recording/989b8f97-1d03-4bf9-ab88-1601056dd5fb) · 4:12 · I Just Can’t Stop Loving You · Michael Jackson feat. Siedah Garrett · Kuschelrock 30
+- **Michael Jackson – Heaven Can Wait** (4:51)
+  - file: `Michael Jackson/Invincible (2001)/01 - Heaven Can Wait.flac`
+  - why: search: 2 of 3 results fit at 4:50, 4:49
+  - candidates:
+    - [56d3e0e8](https://musicbrainz.org/recording/56d3e0e8-de8d-46f3-a8ae-1811604ee72a) · 4:50 · Heaven Can Wait · Michael Jackson · Invincible
+    - [33013138](https://musicbrainz.org/recording/33013138-08af-4b31-86e5-c8b37e2fa108) · 4:49 · Heaven Can Wait · Michael Jackson · Invincible
+- **Michael Jackson – P.Y.T. (Pretty Young Thing)** (3:59)
+  - file: `Michael Jackson/Thriller (1982)/04 - P.Y.T. (Pretty Young Thing).flac`
+  - why: search: 4 of 15 results fit at 4:01, 3:58, 3:59, 3:59
+  - candidates:
+    - [c80a7fe2](https://musicbrainz.org/recording/c80a7fe2-369a-41c0-9074-1575887ebdb8) · 4:01 · P.Y.T. (Pretty Young Thing) · Michael Jackson · The 12″ Mixes
+    - [4db5a03f](https://musicbrainz.org/recording/4db5a03f-5e1d-4c3d-aa0d-64ff05e035bd) · 3:58 · P.Y.T. (Pretty Young Thing) · Michael Jackson · Thriller
+    - [c389908c](https://musicbrainz.org/recording/c389908c-eb28-473b-a2a0-21cfa7314da3) · 3:59 · P.Y.T. (Pretty Young Thing) · Michael Jackson · The Best Of Michael Jackson (2009)
+    - [7e82e767](https://musicbrainz.org/recording/7e82e767-94a3-4b72-8d79-4623aa4ac584) · 3:59 · P.Y.T. (Pretty Young Thing) · Michael Jackson · Thriller [25th Anniversary Edition]
+- **Miles Davis Quintet – Diane** (7:47)
+  - file: `Miles Davis/Steamin' [Rudy Van Gelder edition] (1961)/04 - Diane.flac`
+  - why: ISRC USFI80700230: 0 of 0 recordings fit; search: 3 of 5 results fit at 7:45, 7:50, 7:49
+  - candidates:
+    - [ee676d15](https://musicbrainz.org/recording/ee676d15-4a8e-46f3-9dbc-e9cb35bff3b1) · 7:45 · Diane · Miles Davis Quintet · Evolution of a Genius: Miles Davis 1945 – 1958
+    - [9aac83ba](https://musicbrainz.org/recording/9aac83ba-2a3c-47fa-acba-cbab2e79b89b) · 7:50 · Diane · Miles Davis Quintet · The First Great Quintet (1955/56)
+    - [ec687a30](https://musicbrainz.org/recording/ec687a30-031e-48c2-a992-e202015055b7) · 7:49 · Diane · Miles Davis Quintet · Miles '56 · (studio, 1956-05-11)
+- **Paco de Lucia – Entre Dos Aguas** (6:02)
+  - file: `Paco de Lucia/Nueva Antologia (2004) [2 Disc] (2004)/03 - Entre Dos Aguas.mp3`
+  - why: search: 18 of 33 results fit at 6:01, 5:59, 5:59, 6:01, 6:03, 6:01, 6:02, 6:01, 6:02, 6:00, 6:01, 6:01, 6:03, 6:02, 6:00, 6:00, 6:01, 6:03
+  - candidates:
+    - [b4ee1782](https://musicbrainz.org/recording/b4ee1782-a699-4c1b-827d-1803867a4363) · 6:01 · Entre dos Aguas · Paco de Lucía · Gold
+    - [7c9dd74b](https://musicbrainz.org/recording/7c9dd74b-2e78-4989-a194-493964c1640e) · 5:59 · Entre dos aguas · Paco de Lucía · Best Flamenco in the World Ever
+    - [b79da144](https://musicbrainz.org/recording/b79da144-7e77-4ce5-ac66-277658177670) · 5:59 · Entre dos aguas · Paco de Lucía · Los 70.4
+    - [582cae0a](https://musicbrainz.org/recording/582cae0a-8f81-48c6-9aeb-82c4ec7151cb) · 6:01 · Entre dos aguas · Paco de Lucía · Los más flamencos
+    - [f680b46a](https://musicbrainz.org/recording/f680b46a-0a27-40df-b329-496e4b35f870) · 6:03 · Entre Dos Aguas · Paco de Lucía · Café del Mar Ultimate Collection
+    - [433268b6](https://musicbrainz.org/recording/433268b6-6d37-4b00-a783-42c03bfc62a2) · 6:01 · Entre dos aguas · Paco de Lucía · Cachitos gourmet
+    - [d7d5a400](https://musicbrainz.org/recording/d7d5a400-234d-450c-bb11-f89bac16e448) · 6:02 · Entre dos aguas · Paco de Lucía · Entre dos aguas
+    - [b214e317](https://musicbrainz.org/recording/b214e317-70cf-4e9c-9a3a-8e58f56717d4) · 6:01 · Entre dos aguas · Paco de Lucía · Básicos
+    - [f93b1a27](https://musicbrainz.org/recording/f93b1a27-651b-452f-8e50-024f2b8066a2) · 6:02 · Entre Dos Aguas · Paco de Lucía · Anthology
+    - [9f430ce7](https://musicbrainz.org/recording/9f430ce7-a23e-4243-a7cf-f4d5d422c091) · 6:00 · Entre dos aguas · Paco de Lucía · Café del Mar: The Best Of · (Café del Mar)
+    - [49ca2839](https://musicbrainz.org/recording/49ca2839-333e-4ceb-87c0-f0eaaaee9c9f) · 6:01 · Entre Dos Aguas · Paco de Lucía · The Best of Instrumental Music, Volume 1
+    - [47cd63ab](https://musicbrainz.org/recording/47cd63ab-a836-4e69-86d2-8fe4795cac89) · 6:01 · Entre Dos Aguas · Paco de Lucía · Café Del Mar - Ibiza - Volumen Dos
+    - [ad6416a1](https://musicbrainz.org/recording/ad6416a1-7758-421a-a5e6-fc2922a2a208) · 6:03 · Entre Dos Aguas · Paco De Lucía · Salvemos el Mediterráneo
+    - [d0c21879](https://musicbrainz.org/recording/d0c21879-3b2e-452f-87de-4b722866e9ab) · 6:02 · Entre dos aguas · Paco de Lucía · El Framenco es... Paco de Lucía
+    - [84003627](https://musicbrainz.org/recording/84003627-9d66-43bf-9e66-336bb3c1e000) · 6:00 · Entre dos Aguas · Paco de Lucia · Empik Jazz Club: The Very Best of Paco de Lucia
+    - [505b94a1](https://musicbrainz.org/recording/505b94a1-099a-4c34-be36-572b7f0a2a65) · 6:00 · Entre dos aguas · Paco de Lucía · Flamenco para niños
+    - [2ae46519](https://musicbrainz.org/recording/2ae46519-62c5-4215-90ef-b942eecba503) · 6:01 · Entre Dos Aguas · Paco de Lucía · Integral
+    - [4c7d8d9b](https://musicbrainz.org/recording/4c7d8d9b-4166-4fc2-86c8-bc33c2f797ac) · 6:03 · Entre Dos Aguas (Remastered 2014) · Paco De Lucía · La búsqueda
+- **Pepe Link – Vem Menina** (6:07)
+  - file: `Pepe Link/Balearic Biscuits, Vol. 4 (2024)/16 - Vem Menina.mp3`
+  - why: search: 2 of 2 results fit at 6:07, 6:07
+  - candidates:
+    - [731b6c11](https://musicbrainz.org/recording/731b6c11-625e-425c-b65b-1e64128fadaf) · 6:07 · Vem Menina · Pepe Link · Summer Sessions Monte-Carlo by Ravin
+    - [5c9e14a2](https://musicbrainz.org/recording/5c9e14a2-c032-415f-8ff7-d97f4443bdb5) · 6:07 · Vem Menina · Pepe Link · Scenes From My Soul
+- **Pepe Link – Vem Menina** (6:07)
+  - file: `Pepe Link/Summer Sessions Monte-Carlo (2025)/04 - Vem Menina.mp3`
+  - why: search: 2 of 2 results fit at 6:07, 6:07
+  - candidates:
+    - [731b6c11](https://musicbrainz.org/recording/731b6c11-625e-425c-b65b-1e64128fadaf) · 6:07 · Vem Menina · Pepe Link · Summer Sessions Monte-Carlo by Ravin
+    - [5c9e14a2](https://musicbrainz.org/recording/5c9e14a2-c032-415f-8ff7-d97f4443bdb5) · 6:07 · Vem Menina · Pepe Link · Scenes From My Soul
+- **Pharoah Sanders – Love Will Find a Way** (14:27)
+  - file: `Pharoah Sanders/Love Will Find a Way (Expanded Edition)/00 - Love Will Find a Way.m4a`
+  - why: search: 2 of 4 results fit at 14:27, 14:27
+  - candidates:
+    - [27dc7782](https://musicbrainz.org/recording/27dc7782-294c-4b0f-9cd7-c13d6163259a) · 14:27 · Love Will Find a Way · Pharoah Sanders · Pharoah
+    - [4ea716b8](https://musicbrainz.org/recording/4ea716b8-f12d-46ee-91bf-3c0e78f5a3ee) · 14:27 · Love Will Find a Way · Pharoah Sanders · Love Will Find a Way
+- **Pharoah Sanders – Love Will Find a Way** (5:11)
+  - file: `Pharoah Sanders/Love Will Find a Way (Expanded Edition) (1978)/01 - Love Will Find a Way.mp3`
+  - why: search: 2 of 4 results fit at 5:14, 5:08
+  - candidates:
+    - [8f77c550](https://musicbrainz.org/recording/8f77c550-5c9f-4a7a-8fd9-80fdefe141a4) · 5:14 · Love Will Find a Way · Pharoah Sanders · Love Will Find a Way
+    - [bb890c49](https://musicbrainz.org/recording/bb890c49-c891-42cd-8ff9-44b719d3e957) · 5:08 · Love Will Find a Way · Pharoah Sanders · Anthology: You’ve Got to Have Freedom
+- **Piero Umiliani – Mahe'** (2:42)
+  - file: `Piero Umiliani/La Ragazza Dalla Pelle di Luna OST (1971)/03 - Mahe'.mp3`
+  - why: search: 5 of 5 results fit at 2:39, 2:42, 2:39, 2:39, 2:42
+  - candidates:
+    - [faaa3779](https://musicbrainz.org/recording/faaa3779-fda0-408b-94dc-271bf5be74d5) · 2:39 · Mahe' · Piero Umiliani · La ragazza dalla pelle di luna
+    - [0b43445c](https://musicbrainz.org/recording/0b43445c-9ea3-40d9-a131-30142d434fd6) · 2:42 · Mahe' · Piero Umiliani · La ragazza dalla pelle di luna
+    - [360674f7](https://musicbrainz.org/recording/360674f7-466f-4a41-b060-587cf10aad5a) · 2:39 · Mahe' · Piero Umiliani · La Ragazza Dalla Pelle Di Luna
+    - [8f4039df](https://musicbrainz.org/recording/8f4039df-b97b-47cf-8170-e4501e93c8c7) · 2:39 · Mahè · Piero Umiliani · La ragazza dalla pelle di luna
+    - [48a3547c](https://musicbrainz.org/recording/48a3547c-365c-49be-a7a5-80f51e0acb46) · 2:42 · Mahè · Piero Umiliani · La ragazza dalla pelle di luna
+- **Piero Umiliani – Pelle Di Luna** (3:17)
+  - file: `Piero Umiliani/The Woman With The Skin Of The (1970)/00 - Pelle Di Luna.mp3`
+  - why: search: 3 of 28 results fit at 3:15, 3:17, 3:15
+  - candidates:
+    - [4f2d534e](https://musicbrainz.org/recording/4f2d534e-437b-44d6-ac35-112add43a5fd) · 3:15 · Pelle Di Luna · Piero Umiliani · La Ragazza Dalla Pelle Di Luna
+    - [fe7affb1](https://musicbrainz.org/recording/fe7affb1-989c-433b-84af-e95d136e5ff4) · 3:17 · Pelle di luna · Piero Umiliani · La ragazza dalla pelle di luna
+    - [24ada10f](https://musicbrainz.org/recording/24ada10f-b8a3-4e2c-ba42-b35037c02f1a) · 3:15 · Pelle di luna · Piero Umiliani · La ragazza dalla pelle di luna
+- **Earth, Wind & Fire – After The Love Has Gone** (4:28)
+  - file: `Piero Umiliani/Trudi's Songbook Vol. 2 (2017)/00 - After The Love Has Gone.mp3`
+  - why: search: 13 of 61 results fit at 4:25, 4:25, 4:24, 4:28, 4:28, 4:31, 4:31, 4:29, 4:27, 4:27, 4:27, 4:25, 4:28
+  - candidates:
+    - [b5aa24e1](https://musicbrainz.org/recording/b5aa24e1-fa91-4890-90af-da13d49732df) · 4:25 · After the Love Has Gone · Earth, Wind & Fire · 24 Karat ECHT GOLD - The Very Best of Earth, Wind & Fire
+    - [29e41adc](https://musicbrainz.org/recording/29e41adc-1a30-460e-b5b5-2a636685f524) · 4:25 · After the Love Has Gone · Earth, Wind & Fire · Prom Night
+    - [93634736](https://musicbrainz.org/recording/93634736-a486-4941-9a43-c3a6012c9d79) · 4:24 · After the Love Has Gone · Earth, Wind & Fire · The Best 100 Love Songs
+    - [efcf16c9](https://musicbrainz.org/recording/efcf16c9-9648-4d45-aa42-20627f2369ef) · 4:28 · After the Love Has Gone · Earth, Wind & Fire · Now, Then & Forever
+    - [d86e7c84](https://musicbrainz.org/recording/d86e7c84-4150-4b2c-8cf5-1c694711a23f) · 4:28 · After the Love Has Gone · Earth, Wind & Fire · Essential Love Ballads
+    - [98439e59](https://musicbrainz.org/recording/98439e59-e649-4e4d-97ed-5c5ceaa0d06b) · 4:31 · After The Love Has Gone · Earth, Wind & Fire · Best of 12" Gold Volume 6
+    - [5f4473f7](https://musicbrainz.org/recording/5f4473f7-ae6e-45cb-b36d-382069e431cb) · 4:31 · After the Love Has Gone · Earth, Wind & Fire · Top 10 Hits Vol 1
+    - [f951f62c](https://musicbrainz.org/recording/f951f62c-a2eb-441e-a3ac-1ad1450927f5) · 4:29 · After the Love Has Gone · Earth, Wind & Fire · Soul of the '70s: Always And Forever
+    - [27854f57](https://musicbrainz.org/recording/27854f57-dba9-43dc-bde4-a61b34995cbf) · 4:27 · After the Love Has Gone · Earth, Wind & Fire · Love Song Collection
+    - [99e0b337](https://musicbrainz.org/recording/99e0b337-77fc-4748-8191-b6faee0feb1b) · 4:27 · After the Love Has Gone · Earth, Wind & Fire · Love Affair
+    - [0c72059f](https://musicbrainz.org/recording/0c72059f-b5f1-4118-9860-d08301656d09) · 4:27 · After the Love Has Gone · Earth, Wind & Fire · Best of
+    - [c6779e0d](https://musicbrainz.org/recording/c6779e0d-4c5e-4403-925e-4e5d63b3d586) · 4:25 · After the Love Has Gone · Earth, Wind & Fire · Disco Cheek 80’s Selected by DJ OSSHY
+    - [72e6cbd8](https://musicbrainz.org/recording/72e6cbd8-0b62-482b-a39e-ea62a5d678d8) · 4:28 · After the Love Has Gone · Earth, Wind & Fire · The Columbia Masters
+- **Piero Umiliani – Mahe'** (2:42)
+  - file: `Piero Umiliani/Trudi's Songbook Vol. 2 (2017)/03 - Mahe'.mp3`
+  - why: search: 5 of 5 results fit at 2:39, 2:42, 2:39, 2:39, 2:42
+  - candidates:
+    - [faaa3779](https://musicbrainz.org/recording/faaa3779-fda0-408b-94dc-271bf5be74d5) · 2:39 · Mahe' · Piero Umiliani · La ragazza dalla pelle di luna
+    - [0b43445c](https://musicbrainz.org/recording/0b43445c-9ea3-40d9-a131-30142d434fd6) · 2:42 · Mahe' · Piero Umiliani · La ragazza dalla pelle di luna
+    - [360674f7](https://musicbrainz.org/recording/360674f7-466f-4a41-b060-587cf10aad5a) · 2:39 · Mahe' · Piero Umiliani · La Ragazza Dalla Pelle Di Luna
+    - [8f4039df](https://musicbrainz.org/recording/8f4039df-b97b-47cf-8170-e4501e93c8c7) · 2:39 · Mahè · Piero Umiliani · La ragazza dalla pelle di luna
+    - [48a3547c](https://musicbrainz.org/recording/48a3547c-365c-49be-a7a5-80f51e0acb46) · 2:42 · Mahè · Piero Umiliani · La ragazza dalla pelle di luna
+- **Chico Debarge – Virgin (Album Version)** (4:57)
+  - file: `Piero Umiliani/Trudi's Songbook Vol. 2 (2017)/05 - Virgin (Album Version).mp3`
+  - why: ISRC 'U12-56233' is not one; not looked up; search: 2 of 2 results fit at 4:58, 4:55
+  - candidates:
+    - [46426522](https://musicbrainz.org/recording/46426522-99a2-4727-9e4e-6828491f0f9f) · 4:58 · Virgin · Chico DeBarge · Long Time No See
+    - [8bad7461](https://musicbrainz.org/recording/8bad7461-a110-4a02-a3a7-fba1a71ca908) · 4:55 · Virgin · Chico DeBarge · Soopaman Lover
+- **Queen – Cool Cat** (3:29)
+  - file: `Queen/Hot Space (Deluxe Remastered Version)/00 - Cool Cat.flac`
+  - why: search: 2 of 16 results fit at 3:30, 3:29
+  - candidates:
+    - [e86921bb](https://musicbrainz.org/recording/e86921bb-70d2-409b-b3a3-fb169842ee74) · 3:30 · Cool Cat · Queen · Hot Space
+    - [855e4866](https://musicbrainz.org/recording/855e4866-9268-4649-a325-026e3018a354) · 3:29 · Cool Cat · Queen · Coverin’
+- **Rasputin's Stash – Sweet Vibe** (3:26)
+  - file: `Rasputin's Stash/Hidden Stash (2016)/07 - Sweet Vibe.flac`
+  - why: ISRC GBRH31200192: 0 of 0 recordings fit; search: 3 of 4 results fit at 3:26, 3:30, 3:28
+  - candidates:
+    - [b8700641](https://musicbrainz.org/recording/b8700641-f489-44ab-8428-16def0b7b758) · 3:26 · Sweet Vibe · Rasputin’s Stash · Hidden Stash
+    - [cdf5f82a](https://musicbrainz.org/recording/cdf5f82a-5bd2-4b7c-a041-c5df116fa888) · 3:30 · Sweet Vibe · Rasputin’s Stash · Devil Made Me Do It
+    - [f8e521ff](https://musicbrainz.org/recording/f8e521ff-b0aa-4fdd-8ffc-de0328a55367) · 3:28 · Sweet Vibe · Rasputin’s Stash · Hidden Stash
+- **Rasputin's Stash – Sweet Vibe** (3:26)
+  - file: `Rasputin's Stash/Hidden Stash (2016)/07 - Sweet Vibe.mp3`
+  - why: search: 3 of 4 results fit at 3:26, 3:30, 3:28
+  - candidates:
+    - [b8700641](https://musicbrainz.org/recording/b8700641-f489-44ab-8428-16def0b7b758) · 3:26 · Sweet Vibe · Rasputin’s Stash · Hidden Stash
+    - [cdf5f82a](https://musicbrainz.org/recording/cdf5f82a-5bd2-4b7c-a041-c5df116fa888) · 3:30 · Sweet Vibe · Rasputin’s Stash · Devil Made Me Do It
+    - [f8e521ff](https://musicbrainz.org/recording/f8e521ff-b0aa-4fdd-8ffc-de0328a55367) · 3:28 · Sweet Vibe · Rasputin’s Stash · Hidden Stash
+- **Rick James – Mary Jane** (4:57)
+  - file: `Rick James/Come Get It! (Expanded Edition) (1978)/06 - Mary Jane.flac`
+  - why: ISRC USMO17800017: 3 of 3 recordings fit; search: 5 of 32 results fit at 4:59, 4:55, 4:59, 4:57, 4:55
+  - candidates:
+    - [75fdd5c2](https://musicbrainz.org/recording/75fdd5c2-6403-47c0-b06d-d26af3646102) · 4:59 · Mary Jane · Rick James · Key to the Groove, Vol. 2
+    - [93ba3c96](https://musicbrainz.org/recording/93ba3c96-2bc2-4e4e-a77a-f1bf5f33d0fa) · 4:55 · Mary Jane · Rick James · Old School Jams 8
+    - [8c5be13e](https://musicbrainz.org/recording/8c5be13e-4f4a-4e10-a214-ef2d40848cac) · 4:59 · Mary Jane · Rick James · 100% Funk
+    - [ef8b530a](https://musicbrainz.org/recording/ef8b530a-b811-4384-8b00-cd552ad2892d) · 4:57 · Mary Jane · Rick James · Gold Album (disc 2)
+    - [138b5992](https://musicbrainz.org/recording/138b5992-3b5f-4f20-bac7-4e33b9cacce5) · 4:55 · Mary Jane · Rick James · Motown Remixed & Unmixed
+- **Roy Ayers – Coffy Is The Color** (3:04)
+  - file: `Roy Ayers/Coffy Soundtrack/01 - Coffy Is The Color.mp3`
+  - why: search: 2 of 4 results fit at 3:03, 3:00
+  - candidates:
+    - [380b2bf3](https://musicbrainz.org/recording/380b2bf3-84ba-4ce8-bb96-09fe20b6d986) · 3:03 · Coffy Is the Color · Roy Ayers · 70s Movie Hits Collected
+    - [4f4381ac](https://musicbrainz.org/recording/4f4381ac-8233-4992-8f93-932338cc5914) · 3:00 · Coffy Is the Color · Roy Ayers · Can You Dig It? The Music and Politics of Black Action Films 1968–75
+- **Slick Rick – Children's Story** (3:56)
+  - file: `Slick Rick/The Roots Of Rap (1988)/05 - Children's Story.flac`
+  - why: search: 5 of 25 results fit at 3:59, 3:58, 3:59, 3:59, 3:56
+  - candidates:
+    - [efc1307c](https://musicbrainz.org/recording/efc1307c-cd85-4815-aeb5-ce2cf775a47e) · 3:59 · Children’s Story · Slick Rick · MTV Presents Def Jam: Let the People Speak
+    - [5f580790](https://musicbrainz.org/recording/5f580790-1899-4704-be62-8907ad75c697) · 3:58 · Children's Story · Slick Rick · True Crime: New York City soundtrack
+    - [6df8aea9](https://musicbrainz.org/recording/6df8aea9-290f-4c28-8f2d-bad590d7b561) · 3:59 · Children’s Story · Slick Rick · Hip Hop: The Golden Era 1979–1999
+    - [c7b7157b](https://musicbrainz.org/recording/c7b7157b-ba78-4141-bf26-2f54fc997960) · 3:59 · Children's Story · Slick Rick · Süddeutsche Zeitung \| Diskothek: 1988: Ein Jahr und seine 20 Songs
+    - [5f92fa9f](https://musicbrainz.org/recording/5f92fa9f-979f-4b84-b5f8-4acc631e5342) · 3:56 · Children's Story · Slick Rick · Tommy Boy Presents: Hip Hop Essentials 1979-1991 Volume One - Volume Twelve
+- **Smokey Robinson – Why You Wanna See My Bad Side** (3:45)
+  - file: `Smokey Robinson/pure soul 128/00 - Why You Wanna See My Bad Side.mp3`
+  - why: search: 2 of 5 results fit at 3:47, 3:45
+  - candidates:
+    - [77b9269b](https://musicbrainz.org/recording/77b9269b-953f-4024-9663-707cfc2f4e77) · 3:47 · Why You Wanna See My Bad Side · Smokey Robinson · 70s Summer Hits
+    - [94caad7f](https://musicbrainz.org/recording/94caad7f-c029-4a58-977c-892253229a8e) · 3:45 · Why You Wanna See My Bad Side? · Smokey Robinson · Love Breeze
+- **Spargo – Head Up To The Sky** (4:25)
+  - file: `Spargo/Good Time Spirit (1980)/06 - Head Up To The Sky.flac`
+  - why: ISRC NLC288000089: 0 of 1 recordings fit; search: 2 of 9 results fit at 4:26, 4:25
+  - candidates:
+    - [79996301](https://musicbrainz.org/recording/79996301-4349-4718-92e0-27e9b694f020) · 4:26 · Head Up to the Sky · Spargo · The Best Disco in Town
+    - [0a88d695](https://musicbrainz.org/recording/0a88d695-d0ac-4d18-a511-1f840526d5d4) · 4:25 · Head Up to the Sky · Spargo · Best of Spargo
+- **Spargo – Head Up To The Sky** (4:25)
+  - file: `Spargo/Singles/Head Up To The Sky.mp3`
+  - why: search: 2 of 9 results fit at 4:26, 4:25
+  - candidates:
+    - [79996301](https://musicbrainz.org/recording/79996301-4349-4718-92e0-27e9b694f020) · 4:26 · Head Up to the Sky · Spargo · The Best Disco in Town
+    - [0a88d695](https://musicbrainz.org/recording/0a88d695-d0ac-4d18-a511-1f840526d5d4) · 4:25 · Head Up to the Sky · Spargo · Best of Spargo
+- **Stevie Wonder – I Wish** (4:15)
+  - file: `Stevie Wonder/The Definitive Collection CD1/03 - I Wish.mp3`
+  - why: search: 4 of 23 results fit at 4:11, 4:17, 4:13, 4:12
+  - candidates:
+    - [a6b7b260](https://musicbrainz.org/recording/a6b7b260-2aa3-4779-8114-c76360edf9ce) · 4:11 · I Wish · Stevie Wonder · Jobete Music Presents the Wonder of Stevie
+    - [d5decae5](https://musicbrainz.org/recording/d5decae5-318a-4549-8eef-c7a5377334e1) · 4:17 · I Wish · Stevie Wonder · Best
+    - [0d1781b9](https://musicbrainz.org/recording/0d1781b9-e605-42bb-87aa-45d8a05a4e9b) · 4:13 · I Wish · Stevie Wonder · Piece by Piece Full Soundtrack
+    - [014cebe0](https://musicbrainz.org/recording/014cebe0-cd19-4814-b06d-b6b07aa8ae99) · 4:12 · I Wish · Stevie Wonder · Songs in the Key of Life
+- **Sunbear – Fantasy** (3:58)
+  - file: `Sunbear/Sunbear (1977)/06 - Fantasy.mp3`
+  - why: search: 2 of 2 results fit at 4:00, 3:57
+  - candidates:
+    - [dfd8855b](https://musicbrainz.org/recording/dfd8855b-9c70-47b9-a0f3-ba45a3c619cd) · 4:00 · Fantasy · Sunbear · Sunbear
+    - [a5c38182](https://musicbrainz.org/recording/a5c38182-ead6-4fae-8831-0c5268bc18cb) · 3:57 · Fantasy · Sunbear · Sunbear
+- **Sunbear – Rhythm of Our Souls** (3:50)
+  - file: `Sunbear/Sunbear (1977)/09 - Rhythm of Our Souls.mp3`
+  - why: search: 2 of 2 results fit at 3:49, 3:49
+  - candidates:
+    - [bbbbf316](https://musicbrainz.org/recording/bbbbf316-b7fe-444b-955d-e94ab4d1c99c) · 3:49 · Rhythm Of Our Souls · Sunbear · Sunbear
+    - [3bdfee5a](https://musicbrainz.org/recording/3bdfee5a-3497-4957-9b56-fc56c8c9f1dc) · 3:49 · Rhythm Of Our Souls · Sunbear · Sunbear
+- **Tania Maria – Sangria** (3:56)
+  - file: `Tania Maria/Come with me (1983)/01 - Sangria.mp3`
+  - why: search: 4 of 7 results fit at 3:53, 3:56, 3:54, 3:53
+  - candidates:
+    - [33fd49c3](https://musicbrainz.org/recording/33fd49c3-20a4-420b-bd97-6b8cce20f0dd) · 3:53 · Sangria · Tania Maria · The Concord Jazz Heritage Series
+    - [d8cff7db](https://musicbrainz.org/recording/d8cff7db-8728-4586-b132-d1056ea500ba) · 3:56 · Sangria · Tania Maria · Come With Me
+    - [a470f919](https://musicbrainz.org/recording/a470f919-8ab8-4598-97f4-6f5ad0a6588a) · 3:54 · Sangria · Tania Maria · The Very Best of Tania Maria
+    - [ebd959c6](https://musicbrainz.org/recording/ebd959c6-d294-41d9-88ca-f3ecdfac048d) · 3:53 · Sangria · Tania Maria · Come With Me
+- **Tania Maria – Bom Bom Bom Tchi Tchi Tchi** (4:56)
+  - file: `Tania Maria/Jazz Moods_ Twilight In Rio (2004)/03 - Bom Bom Bom Tchi Tchi Tchi.mp3`
+  - why: search: 4 of 5 results fit at 4:55, 4:56, 4:55, 4:55
+  - candidates:
+    - [f39ae0c4](https://musicbrainz.org/recording/f39ae0c4-aabd-4815-87b6-53af1a7d6ee1) · 4:55 · Bom bom bom tchi tchi tchi · Tania Maria · The Concord Jazz Heritage Series
+    - [e611eee3](https://musicbrainz.org/recording/e611eee3-c3bd-4143-90c6-4eda7a6e78d3) · 4:56 · Bom Bom Bom Tchi Tchi Tchi · Tania Maria · The Very Best of Tania Maria
+    - [8caecad7](https://musicbrainz.org/recording/8caecad7-8c6d-4f22-8e1e-87354bfec652) · 4:55 · Bom bom bom tchi tchi tchi · Tania Maria · Twilight in Rio
+    - [82e291cc](https://musicbrainz.org/recording/82e291cc-0518-4dc5-bce5-f598e7dfa888) · 4:55 · Bom Bom Bom Tchi Tchi Tchi · Tania Maria · Outrageous
+- **Technotronic – Pump Up the Jam** (5:23)
+  - file: `Technotronic/90s R&B (1995)/01 - Pump Up the Jam.mp3`
+  - why: search: 7 of 100 results fit at 5:21, 5:19, 5:22, 5:22, 5:22, 5:20, 5:20
+  - candidates:
+    - [ef1dbd00](https://musicbrainz.org/recording/ef1dbd00-1b58-4d70-afeb-ff03853f0d36) · 5:21 · Pump Up the Jam · Technotronic · Rainbow Rave Up!
+    - [836a767b](https://musicbrainz.org/recording/836a767b-ced0-4b97-b920-ddf88aea054a) · 5:19 · Pump Up the Jam · Technotronic · Techno Dance Classics, Volume 1: Pump Up the Jam
+    - [42661c59](https://musicbrainz.org/recording/42661c59-8403-415f-bdea-67b248dfd256) · 5:22 · Pump Up the Jam · Technotronic · Planet Hollywood Favorite Movie Tracks
+    - [0d957e8b](https://musicbrainz.org/recording/0d957e8b-c051-4f83-9c37-5295f1ba3fa4) · 5:22 · Pump Up the Jam · Technotronic · 5@8 Années 80 Volume 2
+    - [5965450d](https://musicbrainz.org/recording/5965450d-ba65-4104-8074-cee6aeb5a838) · 5:22 · Pump up the jam · Technotronic · Dance Express 2
+    - [17f7fbeb](https://musicbrainz.org/recording/17f7fbeb-3252-4006-90db-d3f71df36fcd) · 5:20 · Pump Up the Jam · Technotronic · 80s Best Of by uDiscover
+    - [77a89e21](https://musicbrainz.org/recording/77a89e21-3c99-4a22-b90a-b496f27b8821) · 5:20 · Pump Up the Jam · Technotronic · Party Summer Sound Waves
+- **The Blackbyrds – Walking In Rhythm** (4:12)
+  - file: `The Blackbyrds/Billboard Year-End Hot 100 singles of 1975 (1975)/52 - Walking In Rhythm.mp3`
+  - why: ISRC USFI87400248: 0 of 0 recordings fit; search: 10 of 22 results fit at 4:14, 4:14, 4:11, 4:14, 4:15, 4:15, 4:10, 4:14, 4:13, 4:14
+  - candidates:
+    - [ce869a97](https://musicbrainz.org/recording/ce869a97-f6ca-42cd-b629-53bcf7fdc8be) · 4:14 · Walking in Rhythm · The Blackbyrds · NOW That's What I Call 70s Soul
+    - [2941d0a8](https://musicbrainz.org/recording/2941d0a8-ee1b-40ae-833e-8146372a2fa6) · 4:14 · Walking in Rhythm · The Blackbyrds · Mystic Music Presents Good Times
+    - [1ebab74c](https://musicbrainz.org/recording/1ebab74c-1573-42a4-9c23-e654a19182f4) · 4:11 · Walking in Rhythm · The Blackbyrds · 101 Disco Classics
+    - [f5a13668](https://musicbrainz.org/recording/f5a13668-d698-423a-ad5a-9f060313c8ac) · 4:14 · Walking in Rhythm · The Blackbyrds · Soul Brother: 19 Classics from the 70's
+    - [2f28c569](https://musicbrainz.org/recording/2f28c569-40dc-42b4-98e9-a94ba7d2411c) · 4:15 · Walking in Rhythm · The Blackbyrds · The Jazz Funk Collection
+    - [1990a66b](https://musicbrainz.org/recording/1990a66b-fde6-4aa4-bcf5-45635d69bca7) · 4:15 · Walking in Rhythm · The Blackbyrds · GoldDisc - Update 5
+    - [84277bf0](https://musicbrainz.org/recording/84277bf0-d9b5-495f-a7d0-8e1bdbd775f2) · 4:10 · Walking in Rhythm · The Blackbyrds · Pacha: 10 Years Funky Room
+    - [d53e7fa9](https://musicbrainz.org/recording/d53e7fa9-aff0-47ab-bbea-ffbf3574900a) · 4:14 · Walking in Rhythm · The Blackbyrds · The Disco Generation
+    - [55b582f0](https://musicbrainz.org/recording/55b582f0-e3c2-4351-81f3-3b319454bee1) · 4:13 · Walking in Rhythm · The Blackbyrds · Flying Start
+    - [687faa17](https://musicbrainz.org/recording/687faa17-7819-4237-a58e-71086a115ff3) · 4:14 · Walking in Rhythm (album version) · The Blackbyrds · Soul Party Weekend
+- **The Crusaders – Street Life** (11:17)
+  - file: `The Crusaders/Street Life/01 - Street Life.mp3`
+  - why: search: 5 of 71 results fit at 11:18, 11:20, 11:13, 11:15, 11:18
+  - candidates:
+    - [91fa2858](https://musicbrainz.org/recording/91fa2858-d2ba-4d76-83c1-65e2cfdf7bc2) · 11:18 · Street Life · The Crusaders · Classic Cuts Presents: The 12″ Box: Disco
+    - [f8f592b3](https://musicbrainz.org/recording/f8f592b3-cb99-469d-8ee8-2d6cdfc3ee7e) · 11:20 · Street Life · The Crusaders · Club Classics, Volume 2
+    - [c2efd853](https://musicbrainz.org/recording/c2efd853-686b-43b2-b064-2ccd963943ff) · 11:13 · Street Life · The Crusaders · Soul Shadows
+    - [244dd9ea](https://musicbrainz.org/recording/244dd9ea-ae20-445d-b780-cdff2f073e17) · 11:15 · Street Life · The Crusaders · Street Life
+    - [14d3d52f](https://musicbrainz.org/recording/14d3d52f-64b1-45b4-b04d-29118e6484e5) · 11:18 · Street Life · The Crusaders feat Randy Crawford · Street Life
+- **The Singers Unlimited – Nature Boy** (3:27)
+  - file: `The Singers Unlimited/A Cappella Ii (1974)/08 - Nature Boy.mp3`
+  - why: search: 3 of 3 results fit at 3:24, 3:27, 3:27
+  - candidates:
+    - [53138fd1](https://musicbrainz.org/recording/53138fd1-17df-4517-8ec8-7c931da32fce) · 3:24 · Nature Boy · The Singers Unlimited · A Capella II
+    - [19d73625](https://musicbrainz.org/recording/19d73625-686a-4ff0-b693-ccf0fa8efed2) · 3:27 · Nature Boy · The Singers Unlimited · Magic Voices
+    - [2a506d5f](https://musicbrainz.org/recording/2a506d5f-662b-45a9-a88e-51b6c299e2c6) · 3:27 · Nature Boy · The Singers Unlimited · The Complete A Capella Sessions
+- **Timbaland – Give It To Me (feat. Nelly Furtado, Justin Timberlake)** (3:54)
+  - file: `Timbaland/Shock Value (2007)/02 - Give It To Me (feat. Nelly Furtado, Justin Timberlake).flac`
+  - why: search: 3 of 43 results fit at 3:54, 3:57, 3:55
+  - candidates:
+    - [7faa4e94](https://musicbrainz.org/recording/7faa4e94-42e4-4ffc-a552-8130528069c1) · 3:54 · Give It to Me · Timbaland · Ultimate R&B 2007
+    - [28f1c87b](https://musicbrainz.org/recording/28f1c87b-19f8-4cac-9f8b-34471fc17146) · 3:57 · Give It to Me · Timbaland feat. Nelly Furtado & Justin Timberlake · Now That’s What I Call Music 24
+    - [5c7269e4](https://musicbrainz.org/recording/5c7269e4-c6a0-4a71-8a3d-393c6871bba1) · 3:55 · Give It to Me · Timbaland feat. Justin Timberlake and Nelly Furtado
+- **Tom Browne – Funkin' for Jamaica** (4:41)
+  - file: `Tom Browne/Funkin' For Jamaica/00 - Funkin' for Jamaica.m4a`
+  - why: search: 30 of 100 results fit at 4:41, 4:41, 4:39, 4:41, 4:42, 4:40, 4:40, 4:38, 4:40, 4:38, 4:42, 4:41, 4:41, 4:41, 4:42, 4:41, 4:39, 4:39, 4:40, 4:42, 4:38, 4:42, 4:40, 4:38, 4:40, 4:44, 4:42, 4:37, 4:42, 4:43
+  - candidates:
+    - [1c1364af](https://musicbrainz.org/recording/1c1364af-de1e-4b7e-bc84-e12234e98871) · 4:41 · Funkin’ for Jamaica · Tom Browne · Summer Club Classics
+    - [8a826a11](https://musicbrainz.org/recording/8a826a11-01a4-46a7-8572-99fcfbfce8b4) · 4:41 · Funkin’ for Jamaica · Tom Browne · Classic Jazz Funk, Volume 1
+    - [a2c88f76](https://musicbrainz.org/recording/a2c88f76-0e60-4964-b117-3f76c03c8c93) · 4:39 · Funkin' for Jamaica · Tom Browne · Disco Inferno 2
+    - [9433f124](https://musicbrainz.org/recording/9433f124-13b2-47a0-a64d-792302a952fe) · 4:41 · Funkin’ for Jamaica · Tom Browne · Funk Essentials
+    - [2bcb789c](https://musicbrainz.org/recording/2bcb789c-92a9-4916-93fa-f2f93cfa2a76) · 4:42 · Funkin’ for Jamaica · Tom Browne · Real '80s R&B
+    - [2b323d83](https://musicbrainz.org/recording/2b323d83-4454-4ffa-986a-0c80bc5cb4f3) · 4:40 · Funkin’ for Jamaica · Tom Browne · Funk Soul Brother
+    - [c5a22a9f](https://musicbrainz.org/recording/c5a22a9f-9ea5-4636-828f-1024a18114a1) · 4:40 · Funkin' For Jamaica · Tom Browne · Jazz Funk Classics Vol. 1
+    - [a9bc1874](https://musicbrainz.org/recording/a9bc1874-0c95-4ed7-a7b6-2c318e03eb60) · 4:38 · Funkin' for Jamaica · Tom Browne · Best Disco Classics 2
+    - [5d2cd9d7](https://musicbrainz.org/recording/5d2cd9d7-abb5-4898-b60b-f48cd44e8c32) · 4:40 · Funkin’ for Jamaica · Tom Browne · Funk Soul Classics
+    - [f7c5ccfe](https://musicbrainz.org/recording/f7c5ccfe-04aa-4967-8739-e5559afcfdf7) · 4:38 · Funkin' for Jamaica · Tom Browne · We Got the Funk
+    - [80d63601](https://musicbrainz.org/recording/80d63601-3722-4ebb-8d44-40c58ac291cd) · 4:42 · Funkin' for Jamaica · Tom Browne · Best of 12" Gold, Volume 3
+    - [47a3e55c](https://musicbrainz.org/recording/47a3e55c-a9bd-4990-a5f8-503663fc8a1c) · 4:41 · Funkin’ for Jamaica · Tom Browne · Studio 54 *5th Edition* - The Biggest and Best Disco Collection Ever!
+    - [2852ef9a](https://musicbrainz.org/recording/2852ef9a-4c47-4a0a-80a3-3e07d07896dd) · 4:41 · Funkin’ for Jamaica · Tom Browne · Discobar Galaxie: Give Up Your Food for Funk
+    - [ab137993](https://musicbrainz.org/recording/ab137993-2ca9-4478-9e8e-044ae48f9909) · 4:41 · Funkin' for Jamaica · Tom Browne · The Best Of 80's Groove
+    - [31bbd9de](https://musicbrainz.org/recording/31bbd9de-f128-4c0b-abbe-8128ea52fcfd) · 4:42 · Funkin’ for Jamaica · Tom Browne · Twelve Inch Eighties: Can You Feel It
+    - [2d47e8b5](https://musicbrainz.org/recording/2d47e8b5-30d6-4d42-bbe1-235e7b37f04b) · 4:41 · Funkin' For Jamaica · Tom Browne · Magnum Opus 3
+    - [834ad977](https://musicbrainz.org/recording/834ad977-b031-4eb4-8861-337bf29ad805) · 4:39 · Funkin' for Jamaica · Tom Browne · The Best of Jazz Fusion
+    - [3a24d665](https://musicbrainz.org/recording/3a24d665-2c40-44d5-ba56-a2b99b2d7dcb) · 4:39 · Funkin' for Jamaica · Tom Browne · The Greatest Disco Collection
+    - [6bef6ad3](https://musicbrainz.org/recording/6bef6ad3-df53-4757-999b-53b269adad53) · 4:40 · Funkin' for Jamaica · Tom Browne · Cool Cuts
+    - [368fd14c](https://musicbrainz.org/recording/368fd14c-f578-414e-b558-dd9056854975) · 4:42 · Funkin' for Jamaica · Tom Browne · Funkin' for Jamaica
+    - [d4c5bffe](https://musicbrainz.org/recording/d4c5bffe-3108-4937-bace-3e937df4eff7) · 4:38 · Funkin for Jamaica · Tom Browne · Dancin’ Master
+    - [c4dad6b2](https://musicbrainz.org/recording/c4dad6b2-6480-4cd8-b8d8-b900b40fb3b9) · 4:42 · Funkin’ for Jamaica · Tom Browne · 105 Disco Hits
+    - [77f159fc](https://musicbrainz.org/recording/77f159fc-9222-4e6d-9fbb-c007f4286a6b) · 4:40 · Funkin’ For Jamaica · Tom Browne · Funkin’ For Jamaica
+    - [69e053c7](https://musicbrainz.org/recording/69e053c7-4fce-4254-a78d-5f650cdcab04) · 4:38 · Funkin' For Jamaica · Tom Browne · 12 Inch-Original Versions Vol. 4
+    - [7d839112](https://musicbrainz.org/recording/7d839112-303c-4f45-b944-27db2b07b13b) · 4:40 · Funkin’ for Jamaica · Tom Browne · The Ultimate Music Collection
+    - [2c53a4b8](https://musicbrainz.org/recording/2c53a4b8-14db-4b15-bcd7-03051264f847) · 4:44 · Funkin’ for Jamaica · Tom Browne · Dance Music Chronicle ~History of Dance Music
+    - [eabd537d](https://musicbrainz.org/recording/eabd537d-c522-47b4-92fd-ea130620ad1a) · 4:42 · Funkin’ for Jamaica · Tom Browne · Summer Classics
+    - [cb2cf83f](https://musicbrainz.org/recording/cb2cf83f-ddfa-4ae0-8f49-5ac74d150a88) · 4:37 · Funkin' for Jamaica · Tom Browne · Dancefloor Smash Hits of the Eighties
+    - [24f2f082](https://musicbrainz.org/recording/24f2f082-6ef8-43f6-b2d7-69992682af4d) · 4:42 · Funkin’ for Jamaica · Tom Browne · Love Approach
+    - [b58a641e](https://musicbrainz.org/recording/b58a641e-715e-4833-80dc-360cb8e239e9) · 4:43 · Funkin' for Jamaica · Tom Browne · Solid Gold Soul: Make It Funky
+- **Tom Browne – Funkin' for Jamaica** (4:41)
+  - file: `Tom Browne/Funkin' For Jamaica (1997)/01 - Funkin' for Jamaica.flac`
+  - why: ISRC USAR18000123: 0 of 1 recordings fit; search: 30 of 100 results fit at 4:41, 4:41, 4:39, 4:41, 4:42, 4:40, 4:40, 4:38, 4:40, 4:38, 4:42, 4:41, 4:41, 4:41, 4:42, 4:41, 4:39, 4:39, 4:40, 4:42, 4:38, 4:42, 4:40, 4:38, 4:40, 4:44, 4:42, 4:37, 4:42, 4:43
+  - candidates:
+    - [1c1364af](https://musicbrainz.org/recording/1c1364af-de1e-4b7e-bc84-e12234e98871) · 4:41 · Funkin’ for Jamaica · Tom Browne · Summer Club Classics
+    - [8a826a11](https://musicbrainz.org/recording/8a826a11-01a4-46a7-8572-99fcfbfce8b4) · 4:41 · Funkin’ for Jamaica · Tom Browne · Classic Jazz Funk, Volume 1
+    - [a2c88f76](https://musicbrainz.org/recording/a2c88f76-0e60-4964-b117-3f76c03c8c93) · 4:39 · Funkin' for Jamaica · Tom Browne · Disco Inferno 2
+    - [9433f124](https://musicbrainz.org/recording/9433f124-13b2-47a0-a64d-792302a952fe) · 4:41 · Funkin’ for Jamaica · Tom Browne · Funk Essentials
+    - [2bcb789c](https://musicbrainz.org/recording/2bcb789c-92a9-4916-93fa-f2f93cfa2a76) · 4:42 · Funkin’ for Jamaica · Tom Browne · Real '80s R&B
+    - [2b323d83](https://musicbrainz.org/recording/2b323d83-4454-4ffa-986a-0c80bc5cb4f3) · 4:40 · Funkin’ for Jamaica · Tom Browne · Funk Soul Brother
+    - [c5a22a9f](https://musicbrainz.org/recording/c5a22a9f-9ea5-4636-828f-1024a18114a1) · 4:40 · Funkin' For Jamaica · Tom Browne · Jazz Funk Classics Vol. 1
+    - [a9bc1874](https://musicbrainz.org/recording/a9bc1874-0c95-4ed7-a7b6-2c318e03eb60) · 4:38 · Funkin' for Jamaica · Tom Browne · Best Disco Classics 2
+    - [5d2cd9d7](https://musicbrainz.org/recording/5d2cd9d7-abb5-4898-b60b-f48cd44e8c32) · 4:40 · Funkin’ for Jamaica · Tom Browne · Funk Soul Classics
+    - [f7c5ccfe](https://musicbrainz.org/recording/f7c5ccfe-04aa-4967-8739-e5559afcfdf7) · 4:38 · Funkin' for Jamaica · Tom Browne · We Got the Funk
+    - [80d63601](https://musicbrainz.org/recording/80d63601-3722-4ebb-8d44-40c58ac291cd) · 4:42 · Funkin' for Jamaica · Tom Browne · Best of 12" Gold, Volume 3
+    - [47a3e55c](https://musicbrainz.org/recording/47a3e55c-a9bd-4990-a5f8-503663fc8a1c) · 4:41 · Funkin’ for Jamaica · Tom Browne · Studio 54 *5th Edition* - The Biggest and Best Disco Collection Ever!
+    - [2852ef9a](https://musicbrainz.org/recording/2852ef9a-4c47-4a0a-80a3-3e07d07896dd) · 4:41 · Funkin’ for Jamaica · Tom Browne · Discobar Galaxie: Give Up Your Food for Funk
+    - [ab137993](https://musicbrainz.org/recording/ab137993-2ca9-4478-9e8e-044ae48f9909) · 4:41 · Funkin' for Jamaica · Tom Browne · The Best Of 80's Groove
+    - [31bbd9de](https://musicbrainz.org/recording/31bbd9de-f128-4c0b-abbe-8128ea52fcfd) · 4:42 · Funkin’ for Jamaica · Tom Browne · Twelve Inch Eighties: Can You Feel It
+    - [2d47e8b5](https://musicbrainz.org/recording/2d47e8b5-30d6-4d42-bbe1-235e7b37f04b) · 4:41 · Funkin' For Jamaica · Tom Browne · Magnum Opus 3
+    - [834ad977](https://musicbrainz.org/recording/834ad977-b031-4eb4-8861-337bf29ad805) · 4:39 · Funkin' for Jamaica · Tom Browne · The Best of Jazz Fusion
+    - [3a24d665](https://musicbrainz.org/recording/3a24d665-2c40-44d5-ba56-a2b99b2d7dcb) · 4:39 · Funkin' for Jamaica · Tom Browne · The Greatest Disco Collection
+    - [6bef6ad3](https://musicbrainz.org/recording/6bef6ad3-df53-4757-999b-53b269adad53) · 4:40 · Funkin' for Jamaica · Tom Browne · Cool Cuts
+    - [368fd14c](https://musicbrainz.org/recording/368fd14c-f578-414e-b558-dd9056854975) · 4:42 · Funkin' for Jamaica · Tom Browne · Funkin' for Jamaica
+    - [d4c5bffe](https://musicbrainz.org/recording/d4c5bffe-3108-4937-bace-3e937df4eff7) · 4:38 · Funkin for Jamaica · Tom Browne · Dancin’ Master
+    - [c4dad6b2](https://musicbrainz.org/recording/c4dad6b2-6480-4cd8-b8d8-b900b40fb3b9) · 4:42 · Funkin’ for Jamaica · Tom Browne · 105 Disco Hits
+    - [77f159fc](https://musicbrainz.org/recording/77f159fc-9222-4e6d-9fbb-c007f4286a6b) · 4:40 · Funkin’ For Jamaica · Tom Browne · Funkin’ For Jamaica
+    - [69e053c7](https://musicbrainz.org/recording/69e053c7-4fce-4254-a78d-5f650cdcab04) · 4:38 · Funkin' For Jamaica · Tom Browne · 12 Inch-Original Versions Vol. 4
+    - [7d839112](https://musicbrainz.org/recording/7d839112-303c-4f45-b944-27db2b07b13b) · 4:40 · Funkin’ for Jamaica · Tom Browne · The Ultimate Music Collection
+    - [2c53a4b8](https://musicbrainz.org/recording/2c53a4b8-14db-4b15-bcd7-03051264f847) · 4:44 · Funkin’ for Jamaica · Tom Browne · Dance Music Chronicle ~History of Dance Music
+    - [eabd537d](https://musicbrainz.org/recording/eabd537d-c522-47b4-92fd-ea130620ad1a) · 4:42 · Funkin’ for Jamaica · Tom Browne · Summer Classics
+    - [cb2cf83f](https://musicbrainz.org/recording/cb2cf83f-ddfa-4ae0-8f49-5ac74d150a88) · 4:37 · Funkin' for Jamaica · Tom Browne · Dancefloor Smash Hits of the Eighties
+    - [24f2f082](https://musicbrainz.org/recording/24f2f082-6ef8-43f6-b2d7-69992682af4d) · 4:42 · Funkin’ for Jamaica · Tom Browne · Love Approach
+    - [b58a641e](https://musicbrainz.org/recording/b58a641e-715e-4833-80dc-360cb8e239e9) · 4:43 · Funkin' for Jamaica · Tom Browne · Solid Gold Soul: Make It Funky
+- **Smoke City – Underwater Love** (6:46)
+  - file: `Various Artists/Singles/00 - Underwater Love.mp3`
+  - why: search: 2 of 71 results fit at 6:46, 6:47
+  - candidates:
+    - [4dde190f](https://musicbrainz.org/recording/4dde190f-946f-4bf5-a721-2ac1de11c874) · 6:46 · Underwater Love · Smoke City · Flying Away
+    - [d8080858](https://musicbrainz.org/recording/d8080858-a684-4cd9-85ec-b64ca5550a8e) · 6:47 · Underwater Love · Smoke City · Superspot (i numeri 1 della pubblicità)
+- **War – Low Rider** (3:11)
+  - file: `War/Why Can't We Be Friends_ (1975)/07 - Low Rider.flac`
+  - why: ISRC USRHD0610212: 4 of 4 recordings fit; search: 25 of 60 results fit at 3:09, 3:11, 3:13, 3:13, 3:12, 3:11, 3:09, 3:11, 3:14, 3:13, 3:13, 3:11, 3:11, 3:11, 3:10, 3:11, 3:11, 3:11, 3:11, 3:10, 3:11, 3:14, 3:09, 3:09, 3:14
+  - candidates:
+    - [f269cdf6](https://musicbrainz.org/recording/f269cdf6-9958-407a-9e4f-abe66fc586ab) · 3:09 · Low Rider · War · Old Navy: Get Up and Dance, Vol. 2
+    - [3b8755a7](https://musicbrainz.org/recording/3b8755a7-a9d2-48c6-9600-fcbb0b26b526) · 3:11 · Low Rider · War · The Sound of the City: Los Angeles
+    - [8631c1e1](https://musicbrainz.org/recording/8631c1e1-6b59-4ec0-b3f3-c2b8fb0f4b6a) · 3:13 · Low Rider · War · Simply Seventies
+    - [c6f4c734](https://musicbrainz.org/recording/c6f4c734-55c9-47d3-a1c7-81cb48e39aca) · 3:13 · Low Rider · War · Freewheelin’
+    - [5562f3b7](https://musicbrainz.org/recording/5562f3b7-3fc3-4cd0-a8b0-5f56c9f8426d) · 3:12 · Low Rider · War · The Ultimate Collection: Seventies
+    - [9e6f1095](https://musicbrainz.org/recording/9e6f1095-dab9-4cfc-982d-78a82ace29d0) · 3:11 · Low Rider · War · In the Summertime: Ultimate Summer Anthems
+    - [14928976](https://musicbrainz.org/recording/14928976-397b-4353-95bc-a91eda567030) · 3:09 · Low Rider · War · Funk Essentials
+    - [a9214f14](https://musicbrainz.org/recording/a9214f14-0b82-448d-a0c9-1611253b0a02) · 3:11 · Low Rider · War · Why Can't We Be Friends?
+    - [65d1a187](https://musicbrainz.org/recording/65d1a187-e164-422d-a49b-0b9763835762) · 3:14 · Low Rider · War · Bob Stroud’s Classic Rock Roots, Vol 01
+    - [dc3e5e91](https://musicbrainz.org/recording/dc3e5e91-d007-4418-abf2-b09985aba7c6) · 3:13 · Low Rider · War · Hit the Brakes 2, Volume 16
+    - [52d7de59](https://musicbrainz.org/recording/52d7de59-8634-4ba7-96fc-4dda782131ff) · 3:13 · Low Rider · War · Summer Sun
+    - [c4e8ba76](https://musicbrainz.org/recording/c4e8ba76-6d84-4b38-b90e-163b64adc23c) · 3:11 · Low Rider · War · Racing Rocks: Songs of the Speedway
+    - [94d533c9](https://musicbrainz.org/recording/94d533c9-74c3-4422-b24c-b86ab9c1546a) · 3:11 · Low Rider · War · Golden 70s Pop
+    - [34418a5a](https://musicbrainz.org/recording/34418a5a-26c8-4c38-a17c-da4976f6aec3) · 3:11 · Low Rider · War · The Ultimate Collection Dad
+    - [225b8bfb](https://musicbrainz.org/recording/225b8bfb-71e6-469c-859c-96c9e66ca288) · 3:10 · Low Rider · War · Best Disco
+    - [c86343af](https://musicbrainz.org/recording/c86343af-3b5e-4bae-93c3-035daeada5cb) · 3:11 · Low Rider · War · Classic 70s Road Trip
+    - [6e3cd451](https://musicbrainz.org/recording/6e3cd451-715a-4217-81de-6cd75870781b) · 3:11 · Low Rider · War · Stand by Me: Ultimate Golden Anthems
+    - [e8cc6445](https://musicbrainz.org/recording/e8cc6445-19fb-4b6d-b4ef-0b519a94e5d5) · 3:11 · Low Rider · War · Car Anthems: The Ultimate Collection
+    - [e2964d0e](https://musicbrainz.org/recording/e2964d0e-f737-4850-a2f0-16494f37f4a5) · 3:11 · Low Rider · War · That’s Soul Music, Vol. 2
+    - [0fe14002](https://musicbrainz.org/recording/0fe14002-456d-4e65-bc8f-3c7775bd3c7c) · 3:10 · Low Rider · War · The Old Skool
+    - [917b535e](https://musicbrainz.org/recording/917b535e-01eb-45b2-ace0-b1bada913833) · 3:11 · Low Rider · War · Greatest Hits
+    - [31f521c7](https://musicbrainz.org/recording/31f521c7-4f4a-425c-a472-5314b3b21c97) · 3:14 · Low Rider · War · Lukoil Road Mix 1
+    - [94e472d6](https://musicbrainz.org/recording/94e472d6-31e2-42c2-8743-45082ee4080b) · 3:09 · Low Rider · War · Unconditionally Guaranteed, November 1999: Volume 10
+    - [0100ef63](https://musicbrainz.org/recording/0100ef63-8ce1-4ca4-b9ca-e1f2a80bc0ee) · 3:09 · Low Rider · War · Ultimate Driving Songs: The Classics
+    - [28d53771](https://musicbrainz.org/recording/28d53771-dd80-4f9a-899f-ae8829cc7c60) · 3:14 · Low Rider · War · Soul of the '70s: Back In Love Again
+- **Warren G & Nate Dogg – Regulate** (4:06)
+  - file: `Warren G & Nate Dogg/The Roots Of Rap (1994)/04 - Regulate.flac`
+  - why: search: 8 of 26 results fit at 4:03, 4:02, 4:09, 4:07, 4:08, 4:09, 4:08, 4:07
+  - candidates:
+    - [7354a9de](https://musicbrainz.org/recording/7354a9de-d9df-4858-bf8b-9de31aa6ccfb) · 4:03 · Regulate · Warren G And Nate Dogg · Die Hit-Giganten: Best Of Hip Hop & Rap
+    - [f9ca2258](https://musicbrainz.org/recording/f9ca2258-4acb-402e-b696-5aeaa1076377) · 4:02 · Regulate · Warren G & Nate Dogg · Music News Juli 1994
+    - [d275b855](https://musicbrainz.org/recording/d275b855-6aaa-42f7-886c-a20f858f5dd9) · 4:09 · Regulate · Warren G. & Nate Dogg · The Greatest Hits '94 - Volume 3
+    - [ca425291](https://musicbrainz.org/recording/ca425291-f9a5-408d-95e5-3baebb761ef4) · 4:07 · Regulate · Warren G & Nate Dogg · Die ultimative Chartshow: Die Partykracher der 80er, 90er & 2000er
+    - [d9526517](https://musicbrainz.org/recording/d9526517-7ccc-4eee-81d4-03f2c03b978a) · 4:08 · Regulate · Warren G & Nate Dogg · Now That's What I Call Music! 100% Rap
+    - [e8d9e76b](https://musicbrainz.org/recording/e8d9e76b-af1a-4db3-888a-d98589e1eba0) · 4:09 · Regulate · Warren G & Nate Dogg · Het beste uit De Mega Top 50 van het jaar ’94
+    - [3335744e](https://musicbrainz.org/recording/3335744e-b414-4610-8d29-1b50caa436d0) · 4:08 · Regulate · Warren G & Nate Dogg · Driven By the 90s: 100 Essential Driving Songs
+    - [4e18b8ca](https://musicbrainz.org/recording/4e18b8ca-f198-4b40-9416-ba399d748d25) · 4:07 · Regulate · Warren G. & Nate Dogg · Mega 90
+- **Weldon Irvine – Music Is The Key** (7:36)
+  - file: `Weldon Irvine/Dynagroove vol 1 (1996)/00 - Music Is The Key.mp3`
+  - why: search: 3 of 6 results fit at 7:39, 7:35, 7:38
+  - candidates:
+    - [3f2db780](https://musicbrainz.org/recording/3f2db780-980c-4daa-93d1-e45017864e3e) · 7:39 · Music Is the Key · Weldon Irvine · Strange Soul
+    - [a7d140c4](https://musicbrainz.org/recording/a7d140c4-e9bb-4685-b9c4-027bfc843e43) · 7:35 · Music Is the Key · Weldon Irvine · Nova 1956-1980 : les racines de Nova
+    - [41e0f693](https://musicbrainz.org/recording/41e0f693-977e-4efd-afcc-e83c643f0126) · 7:38 · Music Is the Key · Weldon Irvine · The Vibe! The Ultimate Rare Grooves Series, Volume 7: Spiritual Jazz, Free Speech & Political Grooves
+- **Wes Montgomery – Besame Mucho** (6:29)
+  - file: `Wes Montgomery/Boss Guitar [Original Jazz Classics Remasters] (Remastered 2010 _ Expanded Edition) (2010)/01 - Besame Mucho.flac`
+  - why: ISRC USC4R1016810: 0 of 0 recordings fit; search: 4 of 9 results fit at 6:31, 6:32, 6:31, 6:32
+  - candidates:
+    - [b4488409](https://musicbrainz.org/recording/b4488409-8868-4dad-9ef0-deadb7f06b9f) · 6:31 · Besame Mucho · Wes Montgomery · Wes Montgomery
+    - [09e976c2](https://musicbrainz.org/recording/09e976c2-2188-4f02-bc73-a689bc4f2770) · 6:32 · Besame Mucho · Wes Montgomery · Boss Guitar
+    - [e36c8dd5](https://musicbrainz.org/recording/e36c8dd5-6a85-4c32-aeef-6e529a9d8f3a) · 6:31 · Besame Mucho · Wes Montgomery · The Best of Wes Montgomery
+    - [11821c3e](https://musicbrainz.org/recording/11821c3e-1f35-49a1-8179-5a096e09ae1d) · 6:32 · Besame Mucho · Wes Montgomery · Riverside Profiles: Wes Montgomery
+- **Wes Montgomery – Caravan** (2:37)
+  - file: `Wes Montgomery/Collection/00 - Caravan.mp3`
+  - why: search: 4 of 8 results fit at 2:39, 2:37, 2:38, 2:41
+  - candidates:
+    - [11b38c0f](https://musicbrainz.org/recording/11b38c0f-c44b-4504-80b3-d6f814314886) · 2:39 · Caravan · Wes Montgomery · Movin' Wes
+    - [5a9d2b7c](https://musicbrainz.org/recording/5a9d2b7c-b1d3-41ce-b977-52d1c84a539a) · 2:37 · Caravan · Wes Montgomery · Impressions: The Verve Jazz Sides
+    - [9d38aa33](https://musicbrainz.org/recording/9d38aa33-7eaf-4aa3-a8dc-b9730ef88dc8) · 2:38 · Caravan · Wes Montgomery · L'Africa nel jazz: A Night in Tunisia
+    - [ba3f0604](https://musicbrainz.org/recording/ba3f0604-8aef-42b3-b81c-e49965193c31) · 2:41 · Caravan · Wes Montgomery · 20th Century Masters: The Millennium Collection: The Best of Wes Montgomery
+- **Yusef Lateef – Mystique** (7:40)
+  - file: `Yusef Lateef/The Man With The Big Front Yard (Disc 3) (1998)/03 - Mystique.mp3`
+  - why: search: 3 of 3 results fit at 7:37, 7:40, 7:42
+  - candidates:
+    - [de56cbf7](https://musicbrainz.org/recording/de56cbf7-d46d-4fd5-a9ab-c886216b904e) · 7:37 · Mystique · Yusef Lateef · The Doctor Is In ...And Out
+    - [635448fa](https://musicbrainz.org/recording/635448fa-9981-4546-b4b9-625a71513f00) · 7:40 · Mystique · Yusef Lateef · The Man With the Big Front Yard
+    - [bb0e3fc5](https://musicbrainz.org/recording/bb0e3fc5-1b31-45dd-b1e1-f8aeb34e0187) · 7:42 · Mystique · Yusef Lateef · The Doctor Is In ...And Out
+- **gibson brothers – cuba** (3:48)
+  - file: `gibson brothers/cuba [1979] (1979)/01 - cuba.flac`
+  - why: search: 23 of 100 results fit at 3:44, 3:49, 3:48, 3:50, 3:48, 3:51, 3:45, 3:51, 3:48, 3:52, 3:48, 3:50, 3:51, 3:48, 3:50, 3:50, 3:51, 3:49, 3:45, 3:46, 3:49, 3:47, 3:49
+  - candidates:
+    - [4e9197ff](https://musicbrainz.org/recording/4e9197ff-d45e-4757-b1e1-c6aebb99daf3) · 3:44 · Cuba · Gibson Brothers · 80s Groove Sessions
+    - [f902b783](https://musicbrainz.org/recording/f902b783-e41e-49e9-ac5d-dd474bec1489) · 3:49 · Cuba · Gibson Brothers · The 80’s: The Greatest Hits of the 80’s
+    - [9d66a5f9](https://musicbrainz.org/recording/9d66a5f9-2f8a-4be7-bd3d-3f1cc9d34c04) · 3:48 · Cuba · Gibson Brothers · L’Intégrale Année 80
+    - [2c60c1f2](https://musicbrainz.org/recording/2c60c1f2-1ed6-4061-8784-a8f4d6f606c1) · 3:50 · Cuba · Gibson Brothers · Disco Hits
+    - [eae1e959](https://musicbrainz.org/recording/eae1e959-c40a-438c-a669-dca5fc0e154b) · 3:48 · Cuba · Gibson Brothers · Cuba
+    - [33c74d84](https://musicbrainz.org/recording/33c74d84-0169-4cb2-a793-3ed55d4059a0) · 3:51 · Cuba · Gibson Brothers · Nuits de Folie 80
+    - [5a4b977c](https://musicbrainz.org/recording/5a4b977c-d659-48cc-b17f-5e1be413f4f0) · 3:45 · Cuba · Gibson Brothers · L.A. Hollywood Club Mix
+    - [79e727fb](https://musicbrainz.org/recording/79e727fb-c598-40fc-8dc0-923ee7bbc35d) · 3:51 · Cuba · Gibson Brothers · 80s Super Hits
+    - [e58d80bf](https://musicbrainz.org/recording/e58d80bf-9d4f-411e-8cc6-77b32613bf7e) · 3:48 · Cuba · Gibson Brothers · The Best of Gibson Brothers
+    - [ffcfcaaa](https://musicbrainz.org/recording/ffcfcaaa-3211-4fc8-bc2e-bdee99b57fd6) · 3:52 · Cuba · Gibson Brothers · Años 80 I
+    - [98d2affd](https://musicbrainz.org/recording/98d2affd-0e66-4d97-9a29-531682014964) · 3:48 · Cuba · Gibson Brothers · Muchdance
+    - [5f4a3dd2](https://musicbrainz.org/recording/5f4a3dd2-e22d-4804-9fdd-b56d2d0793bb) · 3:50 · Cuba · Gibson Brothers · Disco Music Collection - Everybody Dance
+    - [65cc613c](https://musicbrainz.org/recording/65cc613c-2ed7-4342-bf80-f69cab0d022f) · 3:51 · Cuba · Gibson Brothers · 80’s Pop Hits
+    - [4012e3b7](https://musicbrainz.org/recording/4012e3b7-2da7-4e1a-a389-6fa57c540d21) · 3:48 · Cuba · Gibson Brothers · Number One Hits of The Seventies
+    - [f57975a9](https://musicbrainz.org/recording/f57975a9-9509-45c3-99e2-7e5eb9c0dd8c) · 3:50 · Cuba · Gibson Brothers · Nostalgie Disco Funk
+    - [5e1dab60](https://musicbrainz.org/recording/5e1dab60-ef7a-4e65-9fc4-82a82e6ce4c8) · 3:50 · Cuba · Gibson Brothers · 80's Disco
+    - [1dbdc8e8](https://musicbrainz.org/recording/1dbdc8e8-2a94-4a00-9696-dc5fc0735860) · 3:51 · Cuba · Gibson Brothers · Le Disque d’or de la fête
+    - [ef3ac3ba](https://musicbrainz.org/recording/ef3ac3ba-b8a3-43ad-b30b-9daa182d36e0) · 3:49 · Cuba · Gibson Brothers · 20 Cool Latin Grooves
+    - [aee5dd9e](https://musicbrainz.org/recording/aee5dd9e-0bba-4c70-9c47-22c60983fda9) · 3:45 · Cuba · Gibson Brothers · As 100 Mais Disco Music
+    - [f70e24bb](https://musicbrainz.org/recording/f70e24bb-45f2-45f5-8242-bac85c3c2d68) · 3:46 · Cuba · Gibson Brothers · 100 Disco Classics: The Sound of My Life
+    - [5f2f2fb8](https://musicbrainz.org/recording/5f2f2fb8-f5ac-432b-a855-82515615b5da) · 3:49 · Cuba · Gibson Brothers · Drive Time
+    - [6114b68a](https://musicbrainz.org/recording/6114b68a-8f56-4502-89e8-4bdb45ee85a8) · 3:47 · Cuba · Gibson Brothers · Latin Top 50
+    - [823a5dbb](https://musicbrainz.org/recording/823a5dbb-7c56-473e-9170-fa836c4dd323) · 3:49 · Cuba · Gibson Brothers · Saturday Night Hits Non-Stop
+- **gibson brothers – latin america** (3:43)
+  - file: `gibson brothers/cuba [1979] (1979)/07 - latin america.flac`
+  - why: search: 2 of 33 results fit at 3:42, 3:43
+  - candidates:
+    - [0d51181e](https://musicbrainz.org/recording/0d51181e-a896-4158-9111-c1bd4f59756f) · 3:42 · Latin America · Gibson Brothers · The Best Of
+    - [03ceda87](https://musicbrainz.org/recording/03ceda87-dbbe-499f-be4b-4ddf62aad582) · 3:43 · Latin America · Gibson Brothers · Cuba
+- **gibson brothers – heaven** (3:46)
+  - file: `gibson brothers/cuba [1979] (1979)/09 - heaven.flac`
+  - why: search: 2 of 15 results fit at 3:46, 3:44
+  - candidates:
+    - [e0782a72](https://musicbrainz.org/recording/e0782a72-2f8f-40f0-bdb5-89ec2fe2ff0b) · 3:46 · Heaven · Gibson Brothers · Cuba
+    - [254bd80b](https://musicbrainz.org/recording/254bd80b-fcac-45a4-b4c6-3054ac813518) · 3:44 · Heaven · Gibson Brothers · L’Intégrale Année 80
+- **m-beat feat. general levy – incredible (booyaka mix)** (4:53)
+  - file: `m-beat feat. general levy/incredible (1994)/02 - incredible (booyaka mix).mp3`
+  - why: search: 2 of 61 results fit at 4:55, 4:55
+  - candidates:
+    - [84c9d99e](https://musicbrainz.org/recording/84c9d99e-469e-4631-99dd-046a1c5339e8) · 4:55 · Incredible (Booyaka mix) · M‐Beat feat. General Levy · Incredible
+    - [f03bd1b4](https://musicbrainz.org/recording/f03bd1b4-18dc-4b96-97d2-c21a059f6a5b) · 4:55 · Incredible (Booyaka Mix) · M-Beat Featuring General Levy · Incredible
+
+## conflict (24)
+
+The evidence disagrees: an existing id that does not fit the file, two different ids in one file, or AcoustID against the search. Nothing is written; worth a look, because M8 trusts recording ids.
+
+- **Akon – Smack That** (3:32)
+  - file: `Akon/Konvicted (2006)/03 - Smack That.flac`
+  - recording: Smack That [14ed2b48](https://musicbrainz.org/recording/14ed2b48-da2d-4151-9ed7-90f9d8ac0f6e) · 3:32
+  - why: the file's id does not fit: MusicBrainz names it 'explicit', the file's title does not
+- **Alberto Baldan Bembo – Tropical Club** (3:15)
+  - file: `Alberto Baldan Bembo/L'amica di mia madre (Colonna sonora originale del film) (1975)/04 - Tropical Club.flac`
+  - recording: Tropical Club [34047921](https://musicbrainz.org/recording/34047921-62cb-4125-900b-9e55c82d40c4) · 3:11
+  - why: the file's id does not fit: length 3:11 vs file 3:15
+- **Alberto Baldan Bembo – Pedro Come** (2:42)
+  - file: `Alberto Baldan Bembo/L'amica di mia madre (Colonna sonora originale del film) (1975)/12 - Pedro Come.flac`
+  - recording: Pedro Come [d66026e8](https://musicbrainz.org/recording/d66026e8-b0bb-46c3-bba7-03aa83a834be) · 2:38
+  - why: the file's id does not fit: length 2:38 vs file 2:42
+- **American Gypsy – Shot Down** (3:33)
+  - file: `American Gypsy/American Gipsy (2014)/07 - Shot Down.flac`
+  - recording: Shot Down [66106aae](https://musicbrainz.org/recording/66106aae-f660-47e7-abed-bc22874f49b4) · 3:20
+  - why: the file's id does not fit: length 3:20 vs file 3:33
+- **Cameo – Candy** (5:42)
+  - file: `Cameo/Atomic Funk (2003)/15 - Candy.mp3`
+  - recording: Candy [3e59a6d9](https://musicbrainz.org/recording/3e59a6d9-0d07-4c00-a4d0-9ff8bab30bc0) · 4:25 · has work [eb6712ce](https://musicbrainz.org/work/eb6712ce-12dd-44ee-a4f5-c1260239af8c)
+  - why: the file's id does not fit: length 4:25 vs file 5:42
+- **Marvin Gaye – Inner City Blues (Make Me Wanna Holler)** (5:28)
+  - file: `Compilations/pure soul 96/09 - Inner City Blues (Make Me Wanna Holler).mp3`
+  - recording: Inner City Blues (Make Me Wanna Holler) [ff8d8140](https://musicbrainz.org/recording/ff8d8140-36f1-44fc-979d-0eb81e724b16) · 5:28
+  - why: the file's id does not fit: MusicBrainz names it 'original LP version', the file's title does not
+- **Digable Planets – It’s Good to Be Here** (5:06)
+  - file: `Digable Planets/Reachin' (A New Refutation Of Time And Space) (1993)/01 - It’s Good to Be Here.flac`
+  - recording: It’s Good to Be Here [2d6d0b5a](https://musicbrainz.org/recording/2d6d0b5a-89b9-44aa-ab83-1208db49bf5f) · 5:01
+  - why: the file's id does not fit: length 5:01 vs file 5:06
+- **Digable Planets – Where I’m From** (4:35)
+  - file: `Digable Planets/Reachin' (A New Refutation Of Time And Space) (1993)/03 - Where I’m From.flac`
+  - recording: Where I’m From [02ce4d65](https://musicbrainz.org/recording/02ce4d65-ac3a-4bfb-8074-909e2d77d4ad) · 4:39
+  - why: the file's id does not fit: MusicBrainz names it 'LP version', the file's title does not
+- **Donald Byrd – The Weasil** (8:59)
+  - file: `Donald Byrd/Early Byrd_ the Best of the Jazz Soul Years (1993)/07 - The Weasil.mp3`
+  - recording: Weasil [089c6880](https://musicbrainz.org/recording/089c6880-1b40-4368-8913-145da02b9e39) · 9:00
+  - why: the file's id does not fit: title 'Weasil'
+- **Herbie Hancock – Gentle Thoughts** (7:02)
+  - file: `Herbie Hancock/Secrets (1976)/05 - Gentle Thoughts.flac`
+  - recording: Gentle Thoughts [01450bb0](https://musicbrainz.org/recording/01450bb0-85f5-49ae-926a-1c0da649c0cf) · 7:05
+  - why: the file's id does not fit: MusicBrainz names it 'quadraphonic mix', the file's title does not
+- **Jamiroquai – Virtual Insanity (live at the Verona Amphitheatre)** (5:31)
+  - file: `Jamiroquai/Virtual Insanity (Bklava Remix) (2022)/23 - Virtual Insanity (live at the Verona Amphitheatre).flac`
+  - recording: Virtual Insanity [d2707f56](https://musicbrainz.org/recording/d2707f56-654f-4c60-808e-c9460ae51a3a) · 5:31 · has work [769c5c09](https://musicbrainz.org/work/769c5c09-7179-310f-b092-77af2ed3462b)
+  - why: the file's id does not fit: version 'Virtual Insanity' vs file 'Virtual Insanity (live at the Verona Amphitheatre)'
+- **Janet Jackson – I Want You** (4:13)
+  - file: `Janet Jackson/Damita Jo (2004)/12 - I Want You.mp3`
+  - recording: I Want You [9d5d71cd](https://musicbrainz.org/recording/9d5d71cd-d1d2-4148-8a18-739c878148e1) · 4:13
+  - why: the file's id does not fit: lead artist: credited 'Janet', file 'Janet Jackson'
+- **Jennifer Lara – A Woman** (2:56)
+  - file: `Jennifer Lara/Studio One Presents Jennifer Lara/01 - A Woman.mp3`
+  - recording: A Woman [e7e424a1](https://musicbrainz.org/recording/e7e424a1-869b-4204-8f7d-b548954f021a) · 2:49
+  - why: the file's id does not fit: length 2:49 vs file 2:56
+- **Jennifer Lara – Loving You** (3:01)
+  - file: `Jennifer Lara/Studio One Presents Jennifer Lara/06 - Loving You.mp3`
+  - recording: Loving You [569fd131](https://musicbrainz.org/recording/569fd131-b804-43fc-9be6-8b6553ce98c1) · 2:54
+  - why: the file's id does not fit: length 2:54 vs file 3:01
+- **Julee Cruise – Rockin' Back Inside My Heart** (5:49)
+  - file: `Julee Cruise/Floating Into The Night LP/04 - Rockin' Back Inside My Heart.mp3`
+  - recording: [USICBRAI](https://musicbrainz.org/recording/USICBRAINZ_TRACKID) · ?
+  - why: the file's recording id 'USICBRAINZ_TRACKID' is not a MusicBrainz id
+- **Michael Jackson – Rock With You** (3:41)
+  - file: `Michael Jackson/Off the Wall (1983)/02 - Rock With You.flac`
+  - recording: Rock With You [687971bf](https://musicbrainz.org/recording/687971bf-d15c-4e63-8067-e9518fbe21bc) · 3:41 · has work [1dda55be](https://musicbrainz.org/work/1dda55be-3469-3282-a6ce-a1373ce1ba5f)
+  - why: the file's id does not fit: MusicBrainz names it 'remix with claps', the file's title does not
+- **Ms. Lauryn Hill – The Miseducation of Lauryn Hill** (3:55)
+  - file: `Ms. Lauryn Hill/The Miseducation of Lauryn Hill (1998)/14 - The Miseducation of Lauryn Hill.mp3`
+  - recording: The Miseducation of Lauryn Hill [51254be6](https://musicbrainz.org/recording/51254be6-4564-444b-a99c-468df5dbafef) · 3:55
+  - why: the file's id does not fit: lead artist: credited 'Lauryn Hill', file 'Ms. Lauryn Hill'
+- **Odetta – Hit Or Miss** (2:14)
+  - file: `Odetta/Its Impossible - At The Best Of Harlem (2015)/02 - Hit Or Miss.mp3`
+  - recording: Hit Or Miss [3aecbf1f](https://musicbrainz.org/recording/3aecbf1f-d60e-4e26-bd5b-b80cd1a70c0b) · ?
+  - why: the file's id does not fit: MusicBrainz has no length for it
+- **Robson Jorge & Lincoln Olivetti – Ginga** (2:55)
+  - file: `Robson Jorge & Lincoln Olivetti/Robson Jorge & Lincoln Olivetti (2014)/11 - Ginga.flac`
+  - recording: Ginga [d9bd2776](https://musicbrainz.org/recording/d9bd2776-1355-484f-9ad1-30114564343b) · 3:02
+  - why: the file's id does not fit: length 3:02 vs file 2:55
+- **Scone Cash Players – Escape From Hell** (1:57)
+  - file: `Scone Cash Players/The Mind Blower (2009)/06 - Escape From Hell.flac`
+  - recording: Escape From Hell [f301d4b7](https://musicbrainz.org/recording/f301d4b7-a8d7-4929-9085-20cfca07703c) · 2:04
+  - why: the file's id does not fit: length 2:04 vs file 1:57
+- **Shaggy – It Wasn't Me** (3:48)
+  - file: `Shaggy/Hot Shot (2000)/10 - It Wasn't Me.flac`
+  - recording: It Wasn’t Me (radio edit) [1f724c5f](https://musicbrainz.org/recording/1f724c5f-1762-4476-a9aa-6247aed69774) · 3:48
+  - why: the file's id does not fit: version 'It Wasn’t Me (radio edit)' vs file "It Wasn't Me"; MusicBrainz merged it into 5933edef-7cf7-4150-b3c3-1eb70305a518
+- **Tania Maria – Sangria** (3:54)
+  - file: `Tania Maria/The Concord Jazz Heritage Series (1983)/01 - Sangria.flac`
+  - recording: Sangria [ef9ac322](https://musicbrainz.org/recording/ef9ac322-b3ce-40e9-b3ad-03cfffe04127) · 4:03
+  - why: the file's id does not fit: length 4:03 vs file 3:54
+- **The Jimi Hendrix Experience – Third Stone From the Sun** (6:44)
+  - file: `The Jimi Hendrix Experience/Are You Experienced (1967)/09 - Third Stone From the Sun.mp3`
+  - recording: Third Stone From the Sun [a9965378](https://musicbrainz.org/recording/a9965378-bb38-4993-bdf3-9b16f662898e) · 6:44
+  - why: the file's id does not fit: MusicBrainz names it 'original stereo studio mix', the file's title does not
+- **Whitney Houston – I'm Every Woman (Clivilles & Cole Every Woman's House club mix)** (10:19)
+  - file: `Whitney Houston/The Unreleased Mixes (2011)/03 - I'm Every Woman (Clivilles & Cole Every Woman's House club mix).flac`
+  - recording: I'm Every Woman (Clivilles & Cole Every Woman's House club mix) [9680328f](https://musicbrainz.org/recording/9680328f-1f87-468a-bd0e-2b6cdf7eaff9) · 10:14
+  - why: the file's id does not fit: length 10:14 vs file 10:19
+
+## none (203)
+
+Nothing fits. Nothing is written. Rows with candidates fit on everything except the lead artist: a person can still `"choose"` one.
+
+- **50 Cent – Get In My Car** (4:06)
+  - file: `50 Cent/The Massacre (2005)/09 - Get In My Car.flac`
+  - why: ISRC USIR10500268: 0 of 1 recordings fit; search: 0 of 6 results fit
+- **A Tribe Called Quest Sir Piers Si Ashton – Bonita Applebum - Sir Piers and Si Ashton's Curious House Mix** (6:55)
+  - file: `A Tribe Called Quest Sir Piers Si Ashton/The Essential New School Vs. Old School (2014)/03 - Bonita Applebum - Sir Piers and Si Ashton's Curious House Mix.flac`
+  - why: ISRC USJI10000074: 0 of 1 recordings fit; search: 0 of 0 results fit; 1 recording(s) fit except the lead artist (credited 'A Tribe Called Quest Vs. Sir Piers & Si Ashton'): for review only
+  - candidates:
+    - [38c5b0bb](https://musicbrainz.org/recording/38c5b0bb-ae6c-4703-935c-540a5de0ccb9) · 6:54 · Bonita Applebum (Sir Piers & Si Ashton’s Curious House mix) · A Tribe Called Quest Vs. Sir Piers & Si Ashton
+- **Aalon – Rock 'N' Roll Gangster** (5:25)
+  - file: `Aalon/Cream City (1977)/02 - Rock 'N' Roll Gangster.flac`
+  - why: ISRC USAR11800088: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **Afro Medusa West Way – Pasilda - Original 12 Inch Westway Mix** (3:37)
+  - file: `Afro Medusa West Way/Pasilda (1999)/03 - Pasilda - Original 12 Inch Westway Mix.flac`
+  - why: ISRC GBCMH0000506: 0 of 1 recordings fit; search: 0 of 0 results fit; 1 recording(s) fit except the lead artist (credited 'Afro Medusa'): for review only
+  - candidates:
+    - [61fba7a6](https://musicbrainz.org/recording/61fba7a6-7782-432d-a53a-def5151d6b47) · 3:37 · Pasilda (12 Inch Westway mix) · Afro Medusa
+- **Agustin Pereyra Lucena – Sambaden** (4:22)
+  - file: `Agustin Pereyra Lucena/Díptico (2014)/01 - Sambaden.flac`
+  - why: ISRC ARZ021400257: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **Agustin Pereyra Lucena – Bossa Borodin** (2:46)
+  - file: `Agustin Pereyra Lucena/Díptico (2014)/02 - Bossa Borodin.flac`
+  - why: ISRC ARZ021400258: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **Agustin Pereyra Lucena – Tres Que Quedaron** (5:26)
+  - file: `Agustin Pereyra Lucena/Díptico (2014)/10 - Tres Que Quedaron.flac`
+  - why: ISRC ARZ021400266: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **Agustin Pereyra Lucena – Despues de Las Seis** (2:54)
+  - file: `Agustin Pereyra Lucena/La Rana (1980)/04 - Despues de Las Seis.flac`
+  - why: ISRC GBDCR2101102: 0 of 1 recordings fit; search: 0 of 1 results fit; 1 recording(s) fit except the lead artist (credited 'Augustin Pereyra Lucena Quartet'): for review only
+  - candidates:
+    - [1dbf5ee4](https://musicbrainz.org/recording/1dbf5ee4-f798-4619-8847-0376dac7ba6d) · 2:54 · Despues de Las Seis · Augustin Pereyra Lucena Quartet
+- **Agustin Pereyra Lucena – La Rana** (5:00)
+  - file: `Agustin Pereyra Lucena/La Rana (1980)/06 - La Rana.flac`
+  - why: ISRC GBDCR2101104: 0 of 1 recordings fit; search: 0 of 0 results fit; 1 recording(s) fit except the lead artist (credited 'Augustin Pereyra Lucena Quartet'): for review only
+  - candidates:
+    - [c6a6b02f](https://musicbrainz.org/recording/c6a6b02f-8240-4505-afaf-c05b18d5e6bf) · 5:00 · La Rana · Augustin Pereyra Lucena Quartet
+- **Agustin Pereyra Lucena Quartet – 3 Horas Da Manha** (3:57)
+  - file: `Agustin Pereyra Lucena Quartet/La Rana (1980)/01 - 3 Horas Da Manha.mp3`
+  - why: search: 0 of 0 results fit
+- **Ahmad Jamal Trio – How About You** (5:30)
+  - file: `Ahmad Jamal/The Complete Ahmad Jamal Trio Argo Sessions 1956-62 (2010)/03 - How About You.flac`
+  - why: ISRC USUM71015008: 0 of 0 recordings fit; search: 0 of 6 results fit; 4 recording(s) fit except the lead artist (credited 'The Ahmad Jamal Trio'): for review only
+  - candidates:
+    - [4371c5b3](https://musicbrainz.org/recording/4371c5b3-6909-462e-b153-efb958f28a03) · 5:27 · How About You · The Ahmad Jamal Trio · The Complete Ahmad Jamal Trio Argo Sessions 1956-62
+    - [8f32b3b6](https://musicbrainz.org/recording/8f32b3b6-e289-4017-bf4d-36fd4ed7b3aa) · 5:30 · How About You? · The Ahmad Jamal Trio · The Complete Recordings
+    - [363e5793](https://musicbrainz.org/recording/363e5793-ec17-4ef1-a09e-79c782196982) · 5:30 · How About You? · The Ahmad Jamal Trio · Count 'Em 88
+    - [2f6e7f74](https://musicbrainz.org/recording/2f6e7f74-d1fc-47ba-83cc-63f77884298e) · 5:27 · How About You · The Ahmad Jamal Trio · Four Classic Albums (Chamber Music of the New Jazz / Ahmad Jamal Trio / Count ‘Em 88 / Listen to the Ahmad Jamal Quintet)
+- **Al Jarreau – We Got By - Live 1977 Version** (8:22)
+  - file: `Al Jarreau/Look to the Rainbow - Live in Europe (1977)/12 - We Got By - Live 1977 Version.flac`
+  - why: ISRC USRH10801369: 0 of 1 recordings fit; search: 0 of 14 results fit
+- **Al Kooper – Lookin' For a Home** (5:52)
+  - file: `Al Kooper/Kooper Session (1969)/04 - Lookin' For a Home.mp3`
+  - why: search: 0 of 1 results fit
+- **Al Kooper – Lookin' for a Home** (5:52)
+  - file: `Al Kooper/Kooper Session (1969)/04 - Lookin' for a Home.flac`
+  - why: ISRC USSM10304229: 0 of 0 recordings fit; search: 0 of 1 results fit
+- **Amanaz – Khala My Friend** (3:28)
+  - file: `Amanaz/Good Luck With Fire (2015)/17 - Khala My Friend.mp3`
+  - why: ISRC 'MRC-044' is not one; not looked up; search: 0 of 5 results fit
+- **American Gypsy – Don`t Give Up** (4:00)
+  - file: `American Gypsy/American Gipsy (2014)/02 - Don`t Give Up.flac`
+  - why: ISRC NLA307500159: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **Amy Winehouse – To Know Him Is To Love Him - Live For NapsterLive, London, UK / 2006** (2:25)
+  - file: `Amy Winehouse/Back To Black (Deluxe Edition) (2006)/07 - To Know Him Is To Love Him - Live For NapsterLive, London, UK _ 2006.flac`
+  - why: ISRC GBUM70606486: 0 of 1 recordings fit; search: 0 of 3 results fit
+- **Andromeda Orchestra Nick The Record – Get Up & Dance - Nick the Record Mix** (7:05)
+  - file: `Andromeda Orchestra Nick The Record/Faze Action Presents_ Disco Excursions, Vol. 1 (2018)/02 - Get Up & Dance - Nick the Record Mix.flac`
+  - why: ISRC GB3DD1800221: 0 of 1 recordings fit; search: 0 of 0 results fit; 1 recording(s) fit except the lead artist (credited 'Andromeda Orchestra'): for review only
+  - candidates:
+    - [a7664969](https://musicbrainz.org/recording/a7664969-8286-42ce-9916-bdae3eebc522) · 7:04 · Get Up & Dance (Nick the Record mix) · Andromeda Orchestra
+- **Backstreet Boys – Everybody (Backsteet's Back)** (4:48)
+  - file: `Backstreet Boys/The Hits_ Chapter One (1997)/02 - Everybody (Backsteet's Back).flac`
+  - why: search: 0 of 0 results fit
+- **Bahamadia The Roots – Da Jawn** (5:19)
+  - file: `Bahamadia/Kollage (1996)/11 - Da Jawn.flac`
+  - why: ISRC USCA20701956: 0 of 1 recordings fit; search: 0 of 0 results fit; 1 recording(s) fit except the lead artist (credited 'Bahamadia'): for review only
+  - candidates:
+    - [25fd73dc](https://musicbrainz.org/recording/25fd73dc-1f71-4622-a7fd-9f41c471d660) · 5:19 · Da Jawn · Bahamadia
+- **Bay Area Playas – Crests Got Me Crazy** (3:29)
+  - file: `Bay Area Playas/Bay Area Playas Greatest Hits (2002)/07 - Crests Got Me Crazy.flac`
+  - why: ISRC USV351362196: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **Blue Iverson – Jennah's Interlude** (1:14)
+  - file: `Blue Iverson/Hotep (2017)/06 - Jennah's Interlude.flac`
+  - why: ISRC USYBL1700972: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **Boris – Naki Kyoku** (12:14)
+  - file: `Boris/Akuma no Uta (2003)/04 - Naki Kyoku.mp3`
+  - why: search: 0 of 2 results fit
+- **Britney Spears – ...Baby One More Time** (6:50)
+  - file: `Britney Spears/Greatest Hits, My Prerogative (1999)/02 - ...Baby One More Time.flac`
+  - why: search: 0 of 71 results fit
+- **Bruno Mars – Fly As Me** (3:39)
+  - file: `Bruno Mars/An Evening With Silk Sonic (2021)/03 - Fly As Me.flac`
+  - why: ISRC USAT22106191: 0 of 1 recordings fit; search: 0 of 0 results fit; 1 recording(s) fit except the lead artist (credited 'Silk Sonic'): for review only
+  - candidates:
+    - [43637245](https://musicbrainz.org/recording/43637245-eb30-4ed9-8a78-36504991dd62) · 3:39 · Fly as Me · Silk Sonic
+- **Bruno Mars – Fly As Me** (3:39)
+  - file: `Bruno Mars/An Evening With Silk Sonic (2021)/03 - Fly As Me.mp3`
+  - why: ISRC 'PMEDIA' is not one; not looked up; search: 0 of 0 results fit
+- **CASIOPEA – ミスティ・レディ** (3:45)
+  - file: `CASIOPEA/PHOTOGRAPHS (2016)/06 - ミスティ・レディ.mp3`
+  - why: search: 0 of 0 results fit
+- **Celia Cruz Willie Colón Johnny Pacheco Y Su Charanga – Quimbara** (4:53)
+  - file: `Celia Cruz Willie Colón Johnny Pacheco Y Su Charanga/The 'Brillante' Best (1978)/05 - Quimbara.flac`
+  - why: ISRC USDBB0601103: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **Chihiro Yamanaka – ライフ・ゴーズ・オン** (4:42)
+  - file: `Chihiro Yamanaka/ギルティ・プレジャー (2016)/04 - ライフ・ゴーズ・オン.flac`
+  - why: ISRC JPPO01615936: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **Chocolate Milk – Doc** (2:46)
+  - file: `Chocolate Milk/Milky Way (1979)/08 - Doc.flac`
+  - why: ISRC USRC11000109: 0 of 0 recordings fit; search: 0 of 1 results fit
+- **Chocolate Milk – Doc** (2:46)
+  - file: `Chocolate Milk/We're All In This Together & Milky Way (2010)/18 - Doc.mp3`
+  - why: search: 0 of 1 results fit
+- **Chris Dave Daniel Crawford – The Moanin' Afta** (3:52)
+  - file: `Chris Dave/Cuffin Season (2020)/08 - The Moanin' Afta.flac`
+  - why: ISRC QZNWU2036144: 0 of 1 recordings fit; search: 0 of 0 results fit; 1 recording(s) fit except the lead artist (credited 'Chris Dave & Daniel Crawford'): for review only
+  - candidates:
+    - [4227f4fb](https://musicbrainz.org/recording/4227f4fb-1757-4937-a36a-b4c5552eead0) · 3:52 · The Moanin Afta · Chris Dave & Daniel Crawford
+- **Christophe – Aline** (2:50)
+  - file: `Christophe/Aline (2000)/01 - Aline.flac`
+  - why: ISRC FR45F6500020: 0 of 1 recordings fit; search: 0 of 8 results fit
+- **Cimarron – Qué manera de quererte** (5:04)
+  - file: `Cimarron/The Most Popular Songs from Cuba (2014)/01 - Qué manera de quererte.flac`
+  - why: ISRC GBCKG0501438: 0 of 0 recordings fit; search: 0 of 3 results fit; 3 recording(s) fit except the lead artist (credited 'Cimarrón De Cuba', 'Grupo Cimarrón De Cuba'): for review only
+  - candidates:
+    - [774a40c8](https://musicbrainz.org/recording/774a40c8-54e3-4cca-8034-85b51d19dae3) · 5:04 · Qué manera de quererte · Cimarrón De Cuba · Tropical Dance Party 2000
+    - [486dc653](https://musicbrainz.org/recording/486dc653-76a0-4dfe-a437-b81a0adccd38) · 5:04 · Qué Manera De Quererte · Grupo Cimarrón De Cuba · Son Popular De Cuba
+    - [74fd1326](https://musicbrainz.org/recording/74fd1326-c2ae-448a-a6d9-624f79f9821b) · 5:04 · Qué manera de quererte · Grupo Cimarrón De Cuba · Cuba, A Musical Journey
+- **Colman Brothers – On a Better Day I'm Dreaming - Tall Black Guy Remix** (4:26)
+  - file: `Colman Brothers/Colman Brothers Remixed (2013)/08 - On a Better Day I'm Dreaming - Tall Black Guy Remix.flac`
+  - why: ISRC GBLQT1200040: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **08 – The Jacksons** (3:32)
+  - file: `Compilations/Le Top De La Disco (1989)/08 - The Jacksons.mp3`
+  - why: search: 0 of 0 results fit
+- **12 – Marvin Gaye** (3:52)
+  - file: `Compilations/Le Top De La Disco (1989)/12 - Marvin Gaye.mp3`
+  - why: search: 0 of 0 results fit
+- ** – The Good Wine** (2:06)
+  - file: `Compilations/pure soul 96/00 - The Good Wine.mp3`
+  - why: no artist or title to search for
+- **Corey Fonville – Feel Like Makin' Love** (4:03)
+  - file: `Corey Fonville/R&B Organ Trio (2026)/01 - Feel Like Makin' Love.flac`
+  - why: ISRC QT6EE2528043: 0 of 1 recordings fit; search: 0 of 1 results fit; 1 recording(s) fit except the lead artist (credited 'Corey Fonville, Sam Fribush, Charlie Hunter'): for review only
+  - candidates:
+    - [f7bad805](https://musicbrainz.org/recording/f7bad805-bb6d-4aa3-8bd2-aabdfa532e90) · 4:03 · Feel Like Makin' Love · Corey Fonville, Sam Fribush, Charlie Hunter
+- **Curtis Mayfield – Move on Up - Single Edit** (2:46)
+  - file: `Curtis Mayfield/Move on Up (1970)/01 - Move on Up - Single Edit.mp3`
+  - why: ISRC USRH11509321: 0 of 1 recordings fit; search: 0 of 100 results fit
+- **D'Swing Danny Kane – Dream It** (4:46)
+  - file: `D'Swing Danny Kane/Early Tapes EP/01 - Dream It.flac`
+  - why: ISRC QMXZD1100878: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **DJ Flex – Eggplant Afrobeat** (2:10)
+  - file: `DJ Flex/Eggplant Afrobeat (2017)/01 - Eggplant Afrobeat.flac`
+  - why: ISRC QM42K1774161: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **DJ KOCO aka SHIMOKITA 45trio – World's Famous** (3:12)
+  - file: `DJ KOCO aka SHIMOKITA/World's Famous (2024)/01 - World's Famous.flac`
+  - why: ISRC JPU202400042: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **DJ Marky – Dia De Sol** (3:31)
+  - file: `DJ Marky/In Rotation (2004)/12 - Dia De Sol.flac`
+  - why: ISRC GBGPZ0300012: 0 of 0 recordings fit; search: 0 of 3 results fit; 1 recording(s) fit except the lead artist (credited 'DJ Marky & XRS feat. Gilberto Gil'): for review only
+  - candidates:
+    - [178ff86a](https://musicbrainz.org/recording/178ff86a-478a-4746-8b49-e010d9e3d32f) · 3:30 · Dia de Sol · DJ Marky & XRS feat. Gilberto Gil · In Rotation
+- **DJ Marky & XRS – Distant Lover** (6:26)
+  - file: `DJ Marky & XRS/Distant Lover _ 25th Floor (2005)/01 - Distant Lover.flac`
+  - why: ISRC GBGPZ0500007: 0 of 0 recordings fit; search: 0 of 2 results fit
+- **DJ Patife – Sambassim - DJ Patife Remix** (3:36)
+  - file: `DJ Patife/Cool Steps Drum 'N' Bass Grooves (2001)/15 - Sambassim - DJ Patife Remix.flac`
+  - why: ISRC FR6V81890608: 0 of 0 recordings fit; search: 0 of 4 results fit
+- **Dabeull, Holybrune – You & I** (3:29)
+  - file: `Dabeull/Intimate Fonk (2019)/04 - You & I.flac`
+  - why: search: 0 of 0 results fit
+- **Daft Punk – Voyager (Dominique Torti's Wild Style Edit)** (4:11)
+  - file: `Daft Punk/Discovery (2001)/40 - Voyager (Dominique Torti's Wild Style Edit).flac`
+  - why: search: 0 of 20 results fit
+- **De La Soul – (3 Is) The Magic Number** (3:16)
+  - file: `De La Soul/3 Feet High and Rising (1989)/02 - (3 Is) The Magic Number.flac`
+  - why: ISRC QMMEH2200048: 0 of 1 recordings fit; search: 0 of 0 results fit
+- **Digable Planets – The Art Of Easing - Live** (5:06)
+  - file: `Digable Planets/Digable Planets Live/00 - The Art Of Easing - Live.m4a`
+  - why: search: 0 of 2 results fit
+- **Digable Planets – The Art Of Easing - Live** (7:44)
+  - file: `Digable Planets/Digable Planets Live (2017)/07 - The Art Of Easing - Live.flac`
+  - why: ISRC US8JA1742007: 0 of 1 recordings fit; search: 0 of 2 results fit
+- **Disclosure – one2three (feat. Leven Kali)** (4:09)
+  - file: `Disclosure/one2three (feat. Leven Kali) (2025)/01 - one2three (feat. Leven Kali).flac`
+  - why: ISRC USA2P2524108: 0 of 1 recordings fit; search: 0 of 3 results fit; 2 recording(s) fit except the lead artist (credited 'Disclosure, Chris Lake + Leven Kali'): for review only
+  - candidates:
+    - [ad920e51](https://musicbrainz.org/recording/ad920e51-5120-49eb-aecc-2451e599847a) · 4:09 · one2three · Disclosure, Chris Lake + Leven Kali
+    - [c2e50af5](https://musicbrainz.org/recording/c2e50af5-d073-4327-b062-ff25b76d3d89) · 4:09 · one2three · Disclosure, Chris Lake + Leven Kali · one2three · (Dolby Atmos)
+- **Donald Byrd – The Weasil** (9:01)
+  - file: `Donald Byrd/Fancy Free (1993)/04 - The Weasil.flac`
+  - why: ISRC USBN29300200: 0 of 1 recordings fit; search: 0 of 0 results fit
+- **Donaty – Chica Baila** (2:02)
+  - file: `Donaty/TY x 3 (2026)/02 - Chica Baila.flac`
+  - why: ISRC QZTVM2645518: 0 of 0 recordings fit; search: 0 of 1 results fit; 1 recording(s) fit except the lead artist (credited 'Donaty & Bryant LR'): for review only
+  - candidates:
+    - [6404b935](https://musicbrainz.org/recording/6404b935-e524-4ffc-bb52-1082571082d0) · 2:02 · Chica Baila · Donaty & Bryant LR · TY x 3
+- **Doudou – Edit - Chloé Caillet 124** (5:33)
+  - file: `Doudou/Beatport Top 100 Summer Sounds August (2022)/33 - Edit - Chloé Caillet 124.mp3`
+  - why: search: 0 of 0 results fit
+- **Dr. Buzzard's Original Savannah Band – Sour & Sweet/Lemon In The Honey - Digitally Mastered - August 1988** (6:04)
+  - file: `Dr. Buzzard's Original Savannah Band/Dr. Buzzard's Original Savannah Band (1976)/07 - Sour & Sweet_Lemon In The Honey - Digitally Mastered - August 1988.flac`
+  - why: ISRC USRC18805846: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **Durand Jones & The Indications Durand Jones Aaron Frazer – Witchoo** (3:43)
+  - file: `Durand Jones & The Indications/Private Space (2021)/02 - Witchoo.flac`
+  - why: ISRC USJ5G2122702: 0 of 1 recordings fit; search: 0 of 0 results fit; 1 recording(s) fit except the lead artist (credited 'Durand Jones & The Indications & Aaron Frazer'): for review only
+  - candidates:
+    - [b8d42002](https://musicbrainz.org/recording/b8d42002-190d-4198-bc51-219d0dc4dcd6) · 3:43 · Witchoo · Durand Jones & The Indications & Aaron Frazer
+- **Earth Wind & Fire – After the Love Is Gone** (4:39)
+  - file: `Earth Wind & Fire/Live in Rio/00 - After the Love Is Gone.m4a`
+  - why: search: 0 of 19 results fit
+- **Earth, Wind & Fire – Let Your Feelings Show (Phatduck Remix)** (5:56)
+  - file: `Earth, Wind & Fire/XPRESS Edits Vol.17_ 'Christmas Crackers Vol.2' (2024)/09 - Let Your Feelings Show (Phatduck Remix).flac`
+  - why: search: 0 of 13 results fit
+- **Elements Of Life,Jasper Street Company,DJ Spen,Gary Hudgins – Stand On The Word - DJ Spen & Gary Hudgins Remix** (7:09)
+  - file: `Elements Of Life,Jasper Street Company,DJ Spen,Gary Hudgins/djsoundtop.com (2023)/00 - Stand On The Word - DJ Spen & Gary Hudgins Remix.mp3`
+  - why: search: 0 of 0 results fit
+- **En Vogue – My Lovin' (You're Never Gonna Get It)** (4:09)
+  - file: `En Vogue/Funky Divas/00 - My Lovin' (You're Never Gonna Get It).m4a`
+  - why: search: 0 of 0 results fit
+- **Erykah Badu – Next Lifetime (Interlude) - Live** (5:28)
+  - file: `Erykah Badu/Live/00 - Next Lifetime (Interlude) - Live.m4a`
+  - why: search: 0 of 2 results fit
+- **Erykah Badu – Next Lifetime - Live** (4:05)
+  - file: `Erykah Badu/Live/00 - Next Lifetime - Live.m4a`
+  - why: search: 0 of 24 results fit
+- **Erykah Badu – Tyrone - Extended Version** (5:45)
+  - file: `Erykah Badu/Live/00 - Tyrone - Extended Version.m4a`
+  - why: search: 0 of 20 results fit
+- **Erykah Badu – Tyrone - Live** (3:46)
+  - file: `Erykah Badu/Live/00 - Tyrone - Live.m4a`
+  - why: search: 0 of 20 results fit
+- **Erykah Badu – Green Eyes** (9:58)
+  - file: `Erykah Badu/Mama's Gun (2000)/14 - Green Eyes.flac`
+  - why: ISRC USMO10001021: 0 of 1 recordings fit; search: 0 of 3 results fit
+- **Esperanza Spalding – Thang (hips)** (4:35)
+  - file: `Esperanza Spalding/12 Little Spells (Deluxe Edition) (2019)/04 - Thang (hips).flac`
+  - why: ISRC USC4R1806709: 0 of 1 recordings fit; search: 0 of 0 results fit
+- **Esperanza Spalding – Touch in Mine (fingers)** (4:53)
+  - file: `Esperanza Spalding/12 Little Spells (Deluxe Edition) (2019)/05 - Touch in Mine (fingers).flac`
+  - why: ISRC USC4R1806710: 0 of 1 recordings fit; search: 0 of 0 results fit
+- **Eva Ayllon – Raices Del Festejo, Le Dije a Papa** (4:07)
+  - file: `Eva Ayllon/Eva Ayllon 25 Años 25 Exitos/04 - Raices Del Festejo, Le Dije a Papa.mp3`
+  - why: search: 0 of 0 results fit
+- **Everything But The Girl – Each and Every One - Home Demo** (2:52)
+  - file: `Everything But The Girl/Eden (Deluxe Edition) (1984)/09 - Each and Every One - Home Demo.flac`
+  - why: ISRC GBAHT1200083: 0 of 1 recordings fit; search: 0 of 11 results fit
+- **Everything But The Girl – Bittersweet - Home Demo** (3:06)
+  - file: `Everything But The Girl/Eden (Deluxe Edition) (1984)/10 - Bittersweet - Home Demo.flac`
+  - why: ISRC GBAHT1200084: 0 of 1 recordings fit; search: 0 of 4 results fit
+- **Everything But The Girl – Soft Touch - Home Demo** (1:49)
+  - file: `Everything But The Girl/Eden (Deluxe Edition) (1984)/13 - Soft Touch - Home Demo.flac`
+  - why: ISRC GBAHT1200087: 0 of 1 recordings fit; search: 0 of 4 results fit
+- **Faze Action Zeke Manyika – Batanayi - Special Dub Mix** (6:24)
+  - file: `Faze Action/Batanayi (Special Disco Mixes) (2026)/01 - Batanayi - Special Dub Mix.flac`
+  - why: ISRC GB3DD2600012: 0 of 0 recordings fit; search: 0 of 1 results fit
+- **Fela Kuti – J.J.D. (Johnny Just Drop), Pt. 1 & 2** (23:21)
+  - file: `Fela Kuti/J.J.D. (Johnny Just Drop) (1976)/01 - J.J.D. (Johnny Just Drop), Pt. 1 & 2.flac`
+  - why: ISRC USME30902162: 0 of 1 recordings fit; search: 0 of 0 results fit
+- **Ferry Ultra – Dangerous Jazz** (7:00)
+  - file: `Ferry Ultra/Dangerous Vibes (1996)/01 - Dangerous Jazz.flac`
+  - why: ISRC DEP080100226: 0 of 0 recordings fit; search: 0 of 2 results fit
+- **Ferry Ultra,Roy Ayers,Emmaculate – Dangerous Vibes - Emmaculate Remix / Edit** (40:45)
+  - file: `Ferry Ultra,Roy Ayers,Emmaculate/Dangerous Vibes/00 - Dangerous Vibes - Emmaculate Remix _ Edit.m4a`
+  - why: search: 0 of 0 results fit
+- **Gary's Gang – KEEP ON DANCIN' - Extended** (7:39)
+  - file: `Gary's Gang/Keep On Dancin' (2007)/02 - KEEP ON DANCIN' - Extended.flac`
+  - why: ISRC USNRS0721616: 0 of 4 recordings fit; search: 0 of 42 results fit
+- **George Benson – Shape Of Things That Are and W** (5:48)
+  - file: `George Benson/Shape Of Things To Come/06 - Shape Of Things That Are and W.mp3`
+  - why: search: 0 of 0 results fit
+- **Good God! – it'll all be over - The Supreme Jubilees** (3:04)
+  - file: `Good God!/Apocryphal Hymns/08 - it'll all be over - The Supreme Jubilees.mp3`
+  - why: search: 0 of 0 results fit
+- **Gorillaz – Kids With Guns** (3:54)
+  - file: `Gorillaz/Demon Days (2005)/03 - Kids With Guns.flac`
+  - why: search: 0 of 22 results fit
+- **Half Pint – I Am Not A Substitute Lover** (3:40)
+  - file: `Half Pint/Strictly The Best Vol. 6/00 - I Am Not A Substitute Lover.m4a`
+  - why: search: 0 of 3 results fit
+- **Heatwave – Boogie Nights - Live** (5:18)
+  - file: `Heatwave/Historic Soul Concerts Of The 70's 'Live In Concert'/00 - Boogie Nights - Live.m4a`
+  - why: search: 0 of 100 results fit
+- **Heatwave – Boogie Nights (12" Single Version)** (5:04)
+  - file: `Heatwave/Twelve Inch Seventies_ Boogie Wonderland (2017)/02 - Boogie Nights (12_ Single Version).flac`
+  - why: search: 0 of 100 results fit
+- **J Dilla – Rico Suave Bossa Nova feat. Azymuth** (5:54)
+  - file: `J Dilla/Welcome 2 Detroit (2021)/34 - Rico Suave Bossa Nova feat. Azymuth.mp3`
+  - why: search: 0 of 0 results fit
+- **J.J. Cale – Cherry** (3:27)
+  - file: `J.J. Cale/Troubadour/00 - Cherry.m4a`
+  - why: search: 0 of 7 results fit
+- **Jack McDuff – To Be Named Later** (4:32)
+  - file: `Jack McDuff/Sophisticated Funk (1976)/03 - To Be Named Later.1.flac`
+  - why: ISRC GBXHC2039842: 0 of 0 recordings fit; search: 0 of 1 results fit
+- **Jack McDuff – To Be Named Later** (4:32)
+  - file: `Jack McDuff/Sophisticated Funk (1976)/03 - To Be Named Later.flac`
+  - why: ISRC GBXHC2039842: 0 of 0 recordings fit; search: 0 of 1 results fit
+- **Jack Mcduff – Who Knows What Tomorrow's Gon** (5:57)
+  - file: `Jack Mcduff/Who Knows What Tomorrow's Gon (1970)/01 - Who Knows What Tomorrow's Gon.mp3`
+  - why: search: 0 of 0 results fit
+- **Jacob Collier – Can't Take My Eyes Off You (Live In London)** (10:15)
+  - file: `Jacob Collier/Piano Ballads - Live From The Djesse World Tour 2022 (2022)/01 - Can't Take My Eyes Off You (Live In London).mp3`
+  - why: ISRC GBUM72206322: 0 of 1 recordings fit; search: 0 of 1 results fit
+- **DJ Marky XRS – Lk** (5:30)
+  - file: `Jamiroquai/Virtual Insanity (Bklava Remix) (2022)/07 - Lk.flac`
+  - why: ISRC GBGPZ0300007: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **Erykah Badu – Boogie Nights / All Night - Live** (6:28)
+  - file: `Jamiroquai/Virtual Insanity (Bklava Remix) (2022)/08 - Boogie Nights _ All Night - Live.flac`
+  - why: ISRC USUR19700437: 0 of 1 recordings fit; search: 0 of 0 results fit
+- **Janet Jackson – I Want You** (4:13)
+  - file: `Janet Jackson/Damita Jo (2004)/12 - I Want You.flac`
+  - why: ISRC USVI20400120: 0 of 1 recordings fit; search: 0 of 23 results fit; 1 recording(s) fit except the lead artist (credited 'Janet'): for review only
+  - candidates:
+    - [9d5d71cd](https://musicbrainz.org/recording/9d5d71cd-d1d2-4148-8a18-739c878148e1) · 4:13 · I Want You · Janet
+- **Jazz Liberatorz – Clin D'oeil** (7:05)
+  - file: `Jazz Liberatorz/Clin D'oeil/00 - Clin D'oeil.m4a`
+  - why: search: 0 of 2 results fit
+- **Jean Claude Gavri – Don't Stop (Essential Floor Filler remix)** (5:55)
+  - file: `Jean Claude Gavri/Pulp Disco (2011)/08 - Don't Stop (Essential Floor Filler remix).mp3`
+  - why: search: 0 of 1 results fit
+- **Jeff Buckley – The Twelfth of Never - Live at Sin-é, New York, NY - July/August 1993** (3:36)
+  - file: `Jeff Buckley/Live At Sin-é (Legacy Edition) (1993)/12 - The Twelfth of Never - Live at Sin-é, New York, NY - July_August 1993.flac`
+  - why: ISRC USSM10306409: 0 of 1 recordings fit; search: 0 of 0 results fit
+- **Jeff Lorber Fusion – Rain Dance** (4:40)
+  - file: `Jeff Lorber Fusion/Water Sign (1979)/06 - Rain Dance.flac`
+  - why: ISRC USAR10000067: 0 of 2 recordings fit; search: 0 of 3 results fit; 1 recording(s) fit except the lead artist (credited 'The Jeff Lorber Fusion'): for review only
+  - candidates:
+    - [0daa4373](https://musicbrainz.org/recording/0daa4373-b217-4941-bec8-ef60bf8abde0) · 4:42 · Rain Dance · The Jeff Lorber Fusion
+- **Jimi Hendrix – Voodoo Chile** (15:00)
+  - file: `Jimi Hendrix/Electric Ladyland (1968)/04 - Voodoo Chile.flac`
+  - why: ISRC USQX90900738: 0 of 1 recordings fit; search: 0 of 100 results fit; 1 recording(s) fit except the lead artist (credited 'The Jimi Hendrix Experience'): for review only
+  - candidates:
+    - [e5b65ee1](https://musicbrainz.org/recording/e5b65ee1-cb21-4092-a939-7013b933c9dd) · 15:00 · Voodoo Chile · The Jimi Hendrix Experience
+- **Joe Bataan – I Wish You Love, Pt. 2** (5:49)
+  - file: `Joe Bataan/Saint Latin's Day Massacre (1971)/03 - I Wish You Love, Pt. 2.flac`
+  - why: ISRC USDBB0609066: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **Johnny Pacheco/ Celia Cruz – Quimbara** (4:52)
+  - file: `Johnny Pacheco_ Celia Cruz/Celia & Johnny (1974)/01 - Quimbara.mp3`
+  - why: ISRC USDBB0600020: 0 of 1 recordings fit; search: 0 of 0 results fit; 1 recording(s) fit except the lead artist (credited 'Celia & Johnny'): for review only
+  - candidates:
+    - [27e69fa6](https://musicbrainz.org/recording/27e69fa6-5a6d-4d43-88ad-0efbec1434b2) · 4:50 · Químbara · Celia & Johnny
+- **KWAME YEBOAH – Aseda** (5:27)
+  - file: `KWAME YEBOAH/Aseda/00 - Aseda.m4a`
+  - why: search: 0 of 0 results fit
+- **Kenny Burrell – Downstairs - Alternate Take 21** (2:33)
+  - file: `Kenny Burrell/Guitar Forms (Expanded Edition) (1965)/13 - Downstairs - Alternate Take 21.flac`
+  - why: ISRC USPR36560058: 0 of 1 recordings fit; search: 0 of 7 results fit
+- **Kleeer – It's Magic** (7:14)
+  - file: `Kleeer/I Love To Dance (1979)/05 - It's Magic.mp3`
+  - why: search: 0 of 3 results fit
+- **Kleeer – Keeep Your Body Workin'** (5:20)
+  - file: `Kleeer/I Love to Dance (1979)/02 - Keeep Your Body Workin'.flac`
+  - why: ISRC USAT20612733: 0 of 1 recordings fit; search: 0 of 2 results fit
+- **Kleeer – Kleeer Sailin'** (5:36)
+  - file: `Kleeer/I Love to Dance (1979)/08 - Kleeer Sailin'.flac`
+  - why: ISRC USAT20612739: 0 of 1 recordings fit; search: 0 of 1 results fit
+- **Lani Hall – Love Song** (3:11)
+  - file: `Lani Hall/Sun Down Lady (1972)/01 - Love Song.flac`
+  - why: ISRC QM4221600061: 0 of 0 recordings fit; search: 0 of 6 results fit
+- **Lani Hall – Love Song** (3:11)
+  - file: `Lani Hall/Sun Down Lady (1972)/01 - Love Song.mp3`
+  - why: search: 0 of 6 results fit
+- **Lelio Luttazzi – Star Dust** (3:32)
+  - file: `Lelio Luttazzi/We Love/00 - Star Dust.m4a`
+  - why: search: 0 of 0 results fit
+- **Leo's Sunshipp – I'm Back For More** (5:05)
+  - file: `Leo's Sunshipp/We Need Each Other (1978)/02 - I'm Back For More.flac`
+  - why: ISRC GBNYT0600203: 0 of 1 recordings fit; search: 0 of 3 results fit
+- **Leon Bridges – Bad Bad News (feat. Terrace Martin) - Ricky's Vibe Tape** (4:07)
+  - file: `Leon Bridges/Bad Bad News (feat. Terrace Martin) [Ricky's Vibe Tape] (2018)/01 - Bad Bad News (feat. Terrace Martin) - Ricky's Vibe Tape.flac`
+  - why: ISRC USSM11804409: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **Lewis Baloue – Let's Fall in Love Tonight** (3:43)
+  - file: `Lewis Baloue/L'Amour (1983)/08 - Let's Fall in Love Tonight.mp3`
+  - why: search: 0 of 0 results fit
+- **Lewis Baloue – Love Showered Me** (4:04)
+  - file: `Lewis Baloue/L'Amour (1983)/09 - Love Showered Me.mp3`
+  - why: search: 0 of 0 results fit
+- **Little Beaver – Party Down - Pt. 1** (3:16)
+  - file: `Little Beaver/Party Down (1974)/01 - Party Down - Pt. 1.flac`
+  - why: ISRC USRH10175366: 0 of 1 recordings fit; search: 0 of 0 results fit
+- **Little Beaver – I Like the Way You Do Your Thing** (4:19)
+  - file: `Little Beaver/When Was the Last Time (1976)/03 - I Like the Way You Do Your Thing.flac`
+  - why: ISRC USBEN1256603: 0 of 0 recordings fit; search: 0 of 2 results fit
+- **Luiz Bonfá – Perdido de Amor (Lost in Love) (1)** (3:26)
+  - file: `Luiz Bonfá/Solo in Rio 1959/10 - Perdido de Amor (Lost in Love) (1).mp3`
+  - why: ISRC USSF10548310: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **Luiz Bonfá – Sambolero [1]** (2:53)
+  - file: `Luiz Bonfá/Solo in Rio 1959 (2005)/04 - Sambolero [1].flac`
+  - why: ISRC USSF10548304: 0 of 1 recordings fit; search: 0 of 0 results fit
+- **M-Beat ft General Levy – Incredible (Slagz Remix)** (3:33)
+  - file: `M-Beat ft General Levy/Isochronic Volume 3 (2015)/08 - Incredible (Slagz Remix).flac`
+  - why: search: 0 of 61 results fit
+- **MFSB,John Morales – Love Is the Message - Philly Long Message Street Strutin' Mix** (15:21)
+  - file: `MFSB,John Morales/Philadelphia International Records_ The John Morales M+M Remixes/00 - Love Is the Message - Philly Long Message Street Strutin' Mix.m4a`
+  - why: search: 0 of 0 results fit
+- **Mall Grab – Pool Party Music (Sonias 2 Euro Bootleg)** (4:56)
+  - file: `Mall Grab/Singles/Pool Party Music (Sonias 2 Euro Bootleg).wav`
+  - why: search: 0 of 2 results fit
+- **Manduka – Mané Garrincha** (4:23)
+  - file: `Manduka/Brasil (1977)/06 - Mané Garrincha.flac`
+  - why: ISRC ARIXB2301002: 0 of 1 recordings fit; search: 0 of 2 results fit
+- **Manduka – Patria Amada, Idolatrada, Salve Salve** (5:00)
+  - file: `Manduka/Manduka (1972)/04 - Patria Amada, Idolatrada, Salve Salve.mp3`
+  - why: search: 0 of 1 results fit; 1 recording(s) fit except the lead artist (credited 'Manduka participación especial Soledad Bravo'): for review only
+  - candidates:
+    - [3a07acde](https://musicbrainz.org/recording/3a07acde-9253-4ebd-835d-c6eadf295f7d) · 5:00 · Patria Amada, Idolatrada, Salve Salve · Manduka participación especial Soledad Bravo · Manduka
+- **Marimba Maria Concepcion – Maricumbia** (3:50)
+  - file: `Marimba Maria Concepcion/Mosaico Nacional Vol. 13. Música de Guatemala para los Latinos (2006)/05 - Maricumbia.flac`
+  - why: ISRC GTA010706642: 0 of 0 recordings fit; search: 0 of 1 results fit
+- **Mary Jane Girls – 11 Candy Man [1983]** (7:44)
+  - file: `Mary Jane Girls/Funky Collector vol. 11 (2001)/11 - 11 Candy Man [1983].mp3`
+  - why: search: 0 of 0 results fit
+- **Masayoshi Takanaka – 伊豆甘夏納豆売り** (6:49)
+  - file: `Masayoshi Takanaka/ALL OF ME (2006)/06 - 伊豆甘夏納豆売り.flac`
+  - why: ISRC JPPO00406950: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **Masayoshi Takanaka – SHE’S RAIN** (6:21)
+  - file: `Masayoshi Takanaka/ALONE (1981)/05 - SHE’S RAIN.flac`
+  - why: ISRC JPKT08100605: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **Masayoshi Takanaka – リオの夢** (7:36)
+  - file: `Masayoshi Takanaka/ALONE (1981)/06 - リオの夢.flac`
+  - why: ISRC JPKT08100606: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **Masayoshi Takanaka – Breezin'** (5:50)
+  - file: `Masayoshi Takanaka/On Guitar (1978)/01 - Breezin'.mp3`
+  - why: search: 0 of 0 results fit
+- **Masayoshi Takanaka – That's the Way of the World** (6:15)
+  - file: `Masayoshi Takanaka/On Guitar (1978)/07 - That's the Way of the World.mp3`
+  - why: search: 0 of 0 results fit
+- **Masayoshi Takanaka – BREEZIN'** (5:50)
+  - file: `Masayoshi Takanaka/オン・ギター/01 - BREEZIN'.mp3`
+  - why: search: 0 of 0 results fit
+- **Masayoshi Takanaka – BREEZIN'** (5:50)
+  - file: `Masayoshi Takanaka/オン・ギター (1994)/01 - BREEZIN'.flac`
+  - why: ISRC JPVI07805390: 0 of 1 recordings fit; search: 0 of 0 results fit; 1 recording(s) fit except the lead artist (credited '高中正義'): for review only
+  - candidates:
+    - [9238fe22](https://musicbrainz.org/recording/9238fe22-6151-4f7a-9884-e39b6824f7ca) · 5:50 · BREEZIN’ · 高中正義
+- **Masayoshi Takanaka – THAT'S THE WAY OF THE WORLD** (6:15)
+  - file: `Masayoshi Takanaka/オン・ギター (1994)/07 - THAT'S THE WAY OF THE WORLD.1.flac`
+  - why: ISRC JPVI07805450: 0 of 1 recordings fit; search: 0 of 0 results fit; 1 recording(s) fit except the lead artist (credited '高中正義'): for review only
+  - candidates:
+    - [b83534b2](https://musicbrainz.org/recording/b83534b2-5eba-4472-8550-c81d5c209af1) · 6:15 · THAT’S THE WAY OF THE WORLD · 高中正義
+- **Masayoshi Takanaka – THAT'S THE WAY OF THE WORLD** (5:45)
+  - file: `Masayoshi Takanaka/オン・ギター (1994)/07 - THAT'S THE WAY OF THE WORLD.flac`
+  - why: ISRC JPVI07805450: 0 of 1 recordings fit; search: 0 of 0 results fit
+- **Maze Frankie Beverly – Before I Let Go** (5:09)
+  - file: `Maze Frankie Beverly/The Greatest Hits_ Lifelines Volume 1 (1989)/10 - Before I Let Go.flac`
+  - why: ISRC USCA28700248: 0 of 4 recordings fit; search: 0 of 0 results fit; 1 recording(s) fit except the lead artist (credited 'Maze feat. Frankie Beverly'): for review only
+  - candidates:
+    - [0a271fb1](https://musicbrainz.org/recording/0a271fb1-00df-44f8-8ff4-f37780a9a2a3) · 5:06 · Before I Let Go · Maze feat. Frankie Beverly
+- **Method Man,Mary J. Blige – I'll Be There For You-You're All I Need To Get By - Puff Daddy Mix** (5:10)
+  - file: `Method Man,Mary J. Blige/Tical (Deluxe Edition) (2014)/05 - I'll Be There For You-You're All I Need To Get By - Puff Daddy Mix.mp3`
+  - why: search: 0 of 0 results fit
+- **Ms. Lauryn Hill – The Miseducation of Lauryn Hill** (3:55)
+  - file: `Ms. Lauryn Hill/The Miseducation of Lauryn Hill (1998)/14 - The Miseducation of Lauryn Hill.flac`
+  - why: ISRC USSM19803114: 0 of 2 recordings fit; search: 0 of 0 results fit; 1 recording(s) fit except the lead artist (credited 'Lauryn Hill'): for review only
+  - candidates:
+    - [51254be6](https://musicbrainz.org/recording/51254be6-4564-444b-a99c-468df5dbafef) · 3:55 · The Miseducation of Lauryn Hill · Lauryn Hill
+- **Nat Turner Rebellion – Never Too Late** (3:28)
+  - file: `Nat Turner Rebellion/Laugh To Keep From Crying (2019)/10 - Never Too Late.flac`
+  - why: ISRC QMMEH1900010: 0 of 0 recordings fit; search: 0 of 1 results fit
+- **Nehruviandoom MF DOOM – Great Things** (3:50)
+  - file: `Nehruviandoom/NEHRUVIANDOOM (2014)/08 - Great Things.flac`
+  - why: ISRC GBMYF1400029: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **Nookie – You Can't Hold Me Back** (7:11)
+  - file: `Nookie/Phuture Funk Volume 2 (2011)/03 - You Can't Hold Me Back.mp3`
+  - why: search: 0 of 2 results fit
+- **O'Donel Levy – Freedom and Good Times** (5:35)
+  - file: `O'Donel Levy/Windows (1976)/03 - Freedom and Good Times.flac`
+  - why: ISRC US25T0891358: 0 of 0 recordings fit; search: 0 of 2 results fit
+- **O'Donel Levy – Freedom and Good Times** (5:35)
+  - file: `O'Donel Levy/Windows (1976)/13 - Freedom and Good Times.mp3`
+  - why: search: 0 of 2 results fit
+- **Odetta – Hit Or Miss - Live** (2:14)
+  - file: `Odetta/It's Impossible (1976)/02 - Hit Or Miss - Live.flac`
+  - why: ISRC SEANF7600102: 0 of 0 recordings fit; search: 0 of 8 results fit
+- **Oliver Cheatham – Get Down Saturday Night (Original 12'' Version)** (6:52)
+  - file: `Oliver Cheatham/Grand 12-Inches vol 1 (2003)/14 - Get Down Saturday Night (Original 12'' Version).flac`
+  - why: search: 0 of 100 results fit
+- **Oliver Dollar – Doin' Ya Thang** (6:55)
+  - file: `Oliver Dollar/Doin' Ya Thang (2011)/01 - Doin' Ya Thang.flac`
+  - why: ISRC GBQ5W1100013: 0 of 1 recordings fit; search: 0 of 0 results fit; 1 recording(s) fit except the lead artist (credited 'Oliver $'): for review only
+  - candidates:
+    - [41cbf83d](https://musicbrainz.org/recording/41cbf83d-c177-4fd9-aa48-d818b30b0ba0) · 6:56 · Doin' Ya Thang · Oliver $
+- **PLATTENLIEFERANT – IN THA TRUNK** (3:34)
+  - file: `PLATTENLIEFERANT/Singles/IN THA TRUNK.wav`
+  - why: search: 0 of 0 results fit
+- **Pharoah Sanders – High Life** (86:33)
+  - file: `Pharoah Sanders/Wisdom Through Music/00 - High Life.m4a`
+  - why: search: 0 of 1 results fit
+- **Piero Umiliani – Tanto Tempo Fa (Sax Version)** (2:04)
+  - file: `Piero Umiliani/Trudi's Songbook Vol. 2 (2017)/09 - Tanto Tempo Fa (Sax Version).mp3`
+  - why: search: 0 of 16 results fit
+- **Piero Umiliani – Pelle Di Luna (Trumpet Version)** (2:33)
+  - file: `Piero Umiliani/Trudi's Songbook Vol. 2 (2017)/13 - Pelle Di Luna (Trumpet Version).mp3`
+  - why: search: 0 of 28 results fit
+- **Quincy Jones – Superwoman** (5:29)
+  - file: `Quincy Jones/The Very Best of Quincy Jones (2000)/14 - Superwoman.flac`
+  - why: search: 0 of 5 results fit
+- **Rahsaan Patterson – Where You Are (Live)** (7:59)
+  - file: `Rahsaan Patterson/Live At The Belasco (2021)/07 - Where You Are (Live).mp3`
+  - why: search: 0 of 19 results fit
+- **Rahsaan Patterson – Can't We Wait a Minute - Live** (10:44)
+  - file: `Rahsaan Patterson/Live at the Belasco (2014)/05 - Can't We Wait a Minute - Live.flac`
+  - why: ISRC US5761403412: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **Rahsaan Patterson – Where You Are - Live** (7:59)
+  - file: `Rahsaan Patterson/Live at the Belasco (2014)/07 - Where You Are - Live.flac`
+  - why: ISRC US5761403414: 0 of 0 recordings fit; search: 0 of 19 results fit
+- **Robert Palmer – Mercy Mercy Me/I Want You (Medley)** (5:57)
+  - file: `Robert Palmer/Heavy Nova (Bonus Tracks Version) (1988)/16 - Mercy Mercy Me_I Want You (Medley).flac`
+  - why: ISRC GB01A9000028: 0 of 1 recordings fit; search: 0 of 0 results fit
+- **Robert Palmer Ft. Gilly G. – Mercy Mercy Me / I Want You (Medley) (12'' Remix)** (7:06)
+  - file: `Robert Palmer Ft. Gilly G_/Grand 12-Inches 19  Compiled By Ben Liebrand (2022)/02 - Mercy Mercy Me _ I Want You (Medley) (12'' Remix).mp3`
+  - why: search: 0 of 0 results fit
+- **Robson Jorge – Raton** (0:53)
+  - file: `Robson Jorge/Robson Jorge e Lincoln Olivetti (1982)/04 - Raton.flac`
+  - why: ISRC BRSGL8100063: 0 of 1 recordings fit; search: 0 of 1 results fit; 1 recording(s) fit except the lead artist (credited 'Robson Jorge & Lincoln Olivetti'): for review only
+  - candidates:
+    - [e856a3e3](https://musicbrainz.org/recording/e856a3e3-733a-4eda-b6e6-9d21eacc99a7) · 0:51 · Raton · Robson Jorge & Lincoln Olivetti
+- **Roy Ayers – Ain't No Sunshine** (6:21)
+  - file: `Roy Ayers/Red, Black & Green (1973)/01 - Ain't No Sunshine.flac`
+  - why: ISRC USGR10400888: 0 of 0 recordings fit; search: 0 of 2 results fit; 1 recording(s) fit except the lead artist (credited 'Roy Ayers Ubiquity'): for review only
+  - candidates:
+    - [360829d9](https://musicbrainz.org/recording/360829d9-46a3-468a-a2c7-eddbc744b449) · 6:20 · Ain’t No Sunshine · Roy Ayers Ubiquity · A Collection of Various Interpretations of Ain’t No Sunshine
+- **Roy Ayers – Sugar - Delfonic Rework** (7:00)
+  - file: `Roy Ayers/Sugar (Delfonic Rework) (2025)/01 - Sugar - Delfonic Rework.flac`
+  - why: ISRC GBEQT2500051: 0 of 0 recordings fit; search: 0 of 12 results fit
+- **SEATBELTS – Rush** (3:34)
+  - file: `SEATBELTS/COWBOY BEBOP (Original Motion Picture Soundtrack) (1998)/02 - Rush.flac`
+  - why: ISRC JPVI09809230: 0 of 1 recordings fit; search: 0 of 2 results fit; 1 recording(s) fit except the lead artist (credited 'シートベルツ'): for review only
+  - candidates:
+    - [94d7a297](https://musicbrainz.org/recording/94d7a297-acc1-4fe9-baa5-5b87f6fff24d) · 3:34 · RUSH · シートベルツ
+- **SHEL – Fascination** (2:26)
+  - file: `SHEL/Fascination (2017)/01 - Fascination.flac`
+  - why: ISRC US59J1700029: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **Sarah Vaughan – The Smiling Hour** (4:17)
+  - file: `Sarah Vaughan/Copacabana (1981)/02 - The Smiling Hour.flac`
+  - why: ISRC USFI88100102: 0 of 1 recordings fit; search: 0 of 1 results fit
+- **Sarah Vaughan – Double Rainbow** (3:32)
+  - file: `Sarah Vaughan/Copacabana (1981)/08 - Double Rainbow.flac`
+  - why: ISRC USFI88100108: 0 of 1 recordings fit; search: 0 of 1 results fit
+- **Sawteeth – Growing Sprout** (5:16)
+  - file: `Sawteeth/Growing Sprout EP (2023)/01 - Growing Sprout.mp3`
+  - why: search: 0 of 2 results fit
+- **Scone Cash Players – Regal Crime** (4:08)
+  - file: `Scone Cash Players/The Mind Blower (2009)/01 - Regal Crime.flac`
+  - why: ISRC QZNWV2042783: 0 of 0 recordings fit; search: 0 of 1 results fit
+- **Scott Grooves Parliament Funkadelic – Mothership Reconnection (feat. Parliament/Funkadelic) - (Daft Punk Remix)** (4:01)
+  - file: `Scott Grooves Parliament Funkadelic/Musique, Vol. 1 (2006)/13 - Mothership Reconnection (feat. Parliament_Funkadelic) - (Daft Punk Remix).flac`
+  - why: ISRC GBBVL9800716: 0 of 2 recordings fit; search: 0 of 0 results fit; 1 recording(s) fit except the lead artist (credited 'Scott Grooves feat. Parliament'): for review only
+  - candidates:
+    - [c18a08e4](https://musicbrainz.org/recording/c18a08e4-abbd-4c98-80c3-01ecc84a2404) · 4:01 · Mothership Reconnection (Daft Punk remix) · Scott Grooves feat. Parliament
+- **Shirley Bassey – Goldfinger - Propellerheads Mix** (5:54)
+  - file: `Shirley Bassey/The Remix Album_ Diamonds Are Forever (2000)/02 - Goldfinger - Propellerheads Mix.flac`
+  - why: ISRC GBAYE0000749: 0 of 1 recordings fit; search: 0 of 54 results fit; 1 recording(s) fit except the lead artist (credited 'Shirley Bassey and Propellerheads'): for review only
+  - candidates:
+    - [7846e62a](https://musicbrainz.org/recording/7846e62a-b513-4b8c-920c-28b173b861ea) · 5:54 · Goldfinger (Propellerheads mix) · Shirley Bassey and Propellerheads
+- **Sivuca – Rosa Na Favela** (3:22)
+  - file: `Sivuca/Sivuca (1974)/05 - Rosa Na Favela.mp3`
+  - why: search: 0 of 1 results fit
+- **Skee – Lo-I Wish** (4:11)
+  - file: `Skee/Yabba-Dabba-Dance! 7 (1996)/04 - Lo-I Wish.mp3`
+  - why: search: 0 of 0 results fit
+- **St Germain – So Flute** (8:28)
+  - file: `St Germain/Tourist (Remastered) (2000)/03 - So Flute.flac`
+  - why: ISRC FR92S1200003: 0 of 1 recordings fit; search: 0 of 16 results fit
+- **Stan Getz,Luiz Bonfá,Maria Toledo – Sambalero** (2:08)
+  - file: `Stan Getz,Luiz Bonfá,Maria Toledo/Jazz Samba Encore!/00 - Sambalero.m4a`
+  - why: search: 0 of 0 results fit
+- **Stevie Wonder – Superwoman (Where Were You When I Needed You)** (8:10)
+  - file: `Stevie Wonder/Music Of My Mind (1972)/02 - Superwoman (Where Were You When I Needed You).flac`
+  - why: ISRC USUMG9900459: 0 of 1 recordings fit; search: 0 of 5 results fit
+- **Studio One – A Change Is Gonna Come - Jennifer Lara** (2:26)
+  - file: `Studio One/Roots Vol 3 (2007)/02 - A Change Is Gonna Come - Jennifer Lara.mp3`
+  - why: search: 0 of 0 results fit
+- **Supreme Jubilees – It'll All Be Over** (3:05)
+  - file: `Supreme Jubilees/It'll All Be Over (2015)/01 - It'll All Be Over.flac`
+  - why: ISRC USDEA1412001: 0 of 1 recordings fit; search: 0 of 4 results fit; 3 recording(s) fit except the lead artist (credited 'The Supreme Jubilees'): for review only
+  - candidates:
+    - [242d9fec](https://musicbrainz.org/recording/242d9fec-82c9-4868-89cb-841a4351f556) · 3:05 · It’ll All Be Over · The Supreme Jubilees
+    - [40dd5d0e](https://musicbrainz.org/recording/40dd5d0e-1fb7-4efa-a2ec-4ad98f8b2789) · 3:04 · It’ll All Be Over · The Supreme Jubilees · Good God! Apocryphal Hymns
+    - [fbaddca3](https://musicbrainz.org/recording/fbaddca3-909c-4666-9ba7-df5179a695a4) · 3:06 · It’ll All Be Over · The Supreme Jubilees · Sweet Soul & Funky Music, Vol. 8
+- **Taj Mahal – Ain't Gwine To Whistle Dixie** (9:11)
+  - file: `Taj Mahal/The Real Thing (1971)/02 - Ain't Gwine To Whistle Dixie.mp3`
+  - why: search: 0 of 6 results fit
+- **Taj Mahal – Ain't Gwine to Whistle Dixie (Any Mo') - Live** (9:11)
+  - file: `Taj Mahal/The Real Thing (1971)/02 - Ain't Gwine to Whistle Dixie (Any Mo') - Live.flac`
+  - why: ISRC USSM10001181: 0 of 0 recordings fit; search: 0 of 3 results fit
+- **Terumasa Hino – ヒノズ・レゲエ** (7:26)
+  - file: `Terumasa Hino/シティ・コネクション (2016)/01 - ヒノズ・レゲエ.flac`
+  - why: ISRC JPVI07900120: 0 of 1 recordings fit; search: 0 of 0 results fit
+- **The Beginning Of The End – When She Made Me Promise** (4:28)
+  - file: `The Beginning Of The End/Funky Nassau/00 - When She Made Me Promise.m4a`
+  - why: search: 0 of 7 results fit
+- **The Lijadu Sisters – Come On Home** (5:21)
+  - file: `The Lijadu Sisters/Horizon Unlimited/00 - Come On Home.m4a`
+  - why: search: 0 of 0 results fit
+- **The Marshall Tucker Band – Everyday (I Have the Blues)** (12:33)
+  - file: `The Marshall Tucker Band/The Marshall Tucker Band (1973)/09 - Everyday (I Have the Blues).flac`
+  - why: ISRC USSE90320370: 0 of 1 recordings fit; search: 0 of 4 results fit
+- **The Montclairs – How Can One Man Live** (3:33)
+  - file: `The Montclairs/Make up for Lost Time (1973)/02 - How Can One Man Live.flac`
+  - why: ISRC QM4TW2191091: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **The Quantic Soul Orchestra – Father (Soul)** (2:23)
+  - file: `The Quantic Soul Orchestra/Tropidélico (2007)/11 - Father (Soul).flac`
+  - why: ISRC GBEUE0700712: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **The Rah Band – Messages from the Stars** (4:14)
+  - file: `The Rah Band/Going Up (1983)/01 - Messages from the Stars.flac`
+  - why: ISRC GBKSK0500009: 0 of 0 recordings fit; search: 0 of 6 results fit
+- **The Roots,Dice Raw – Ain't Sayin' Nothin' New** (4:34)
+  - file: `The Roots,Dice Raw/Things Fall Apart/00 - Ain't Sayin' Nothin' New.m4a`
+  - why: search: 0 of 0 results fit
+- **The S.O.S Band – Groovin' (That's What We're Doin')** (4:26)
+  - file: `The S.O.S Band/S.O.S. III (1982)/09 - Groovin' (That's What We're Doin').flac`
+  - why: ISRC USTS90400017: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **Toumani Diabate & Sidiki Diabaté – Lampedusa (Live)** (7:31)
+  - file: `Toumani Diabate & Sidiki Diabaté/Lamomali Airlines (Live) (2017)/05 - Lampedusa (Live).mp3`
+  - why: search: 0 of 3 results fit
+- **Twain – Love, Go Lightly** (4:26)
+  - file: `Twain/Days of Effort and Ease (2020)/01 - Love, Go Lightly.mp3`
+  - why: search: 0 of 0 results fit
+- **Twain – Georgia’s Song** (3:34)
+  - file: `Twain/Days of Effort and Ease (2020)/03 - Georgia’s Song.mp3`
+  - why: search: 0 of 0 results fit
+- **Twain – Parting** (4:38)
+  - file: `Twain/Days of Effort and Ease (2020)/05 - Parting.mp3`
+  - why: search: 0 of 1 results fit
+- **Twain – O My Soul** (6:11)
+  - file: `Twain/Days of Effort and Ease (2020)/08 - O My Soul.mp3`
+  - why: search: 0 of 0 results fit
+- **Twain – Walking** (2:40)
+  - file: `Twain/Days of Effort and Ease (2020)/09 - Walking.mp3`
+  - why: search: 0 of 1 results fit
+- **Tyler The Creator,Roy Ayers,Syd,Kali Uchis – FIND YOUR WINGS (feat. Roy Ayers Sydney Bennett & Kali Uchis)** (2:59)
+  - file: `Tyler The Creator,Roy Ayers,Syd,Kali Uchis/Cherry Bomb/00 - FIND YOUR WINGS (feat. Roy Ayers Sydney Bennett & Kali Uchis).m4a`
+  - why: search: 0 of 0 results fit
+- **Tyler, The Creator Roy Ayers Syd Kali Uchis – FIND YOUR WINGS (feat. Roy Ayers, Sydney Bennett & Kali Uchis)** (2:59)
+  - file: `Tyler, The Creator/Cherry Bomb (2015)/05 - FIND YOUR WINGS (feat. Roy Ayers, Sydney Bennett & Kali Uchis).flac`
+  - why: ISRC USQX91500707: 0 of 1 recordings fit; search: 0 of 0 results fit; 1 recording(s) fit except the lead artist (credited 'Tyler, The Creator feat. Roy Ayers, Syd Bennett, Jameel Kirk Bruner, Samantha Nelson, Tiffany Palmer, Onitsha Shaw and Kali Uchis'): for review only
+  - candidates:
+    - [071f8f75](https://musicbrainz.org/recording/071f8f75-fcba-4cb5-9314-29fba99b4be5) · 2:59 · FIND YOUR WINGS · Tyler, The Creator feat. Roy Ayers, Syd Bennett, Jameel Kirk Bruner, Samantha Nelson, Tiffany Palmer, Onitsha Shaw and Kali Uchis
+- **Uncle Louie Walter Murphy – Full Tilt Boogie** (3:50)
+  - file: `Uncle Louie/Uncle Louie's Here (2013)/01 - Full Tilt Boogie.flac`
+  - why: ISRC USBEN1350301: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **MFSB John Morales – Love Is the Message - Philly Long Message Street Strutin' Mix** (15:21)
+  - file: `Various Artists/Philadelphia International Records_ The John Morales M+M Remixes (2021)/10 - Love Is the Message - Philly Long Message Street Strutin' Mix.flac`
+  - why: ISRC USSM11701254: 0 of 1 recordings fit; search: 0 of 0 results fit; 1 recording(s) fit except the lead artist (credited 'MFSB'): for review only
+  - candidates:
+    - [447a27a3](https://musicbrainz.org/recording/447a27a3-f875-49bd-bc03-100822deae59) · 15:20 · Love Is the Message (Philly Long Message Street Strutin’ mix) · MFSB
+- **The Fuzz – Search My Mind** (2:53)
+  - file: `Various Artists/Sisters of Soul; the Sweeter Voices of Soul (2012)/27 - Search My Mind.flac`
+  - why: ISRC TCABL1209109: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **Vinícius de Moraes – Catendé - Live** (5:02)
+  - file: `Vinícius de Moraes/La Fusa (Live) (1970)/11 - Catendé - Live.flac`
+  - why: ISRC ARA940600011: 0 of 0 recordings fit; search: 0 of 7 results fit
+- **Walter Wanderley – Taste Of Sadness** (2:54)
+  - file: `Walter Wanderley/Rain Forest (1966)/07 - Taste Of Sadness.flac`
+  - why: ISRC USPR36670180: 0 of 1 recordings fit; search: 0 of 4 results fit
+- **Wendell Harrison – Organic Dream - 01 - Ginseng Love** (4:06)
+  - file: `Wendell Harrison/1981-XX - Organic Dream (1981)/01 - Organic Dream - 01 - Ginseng Love.mp3`
+  - why: search: 0 of 0 results fit
+- **Wendell Harrison – Organic Dream - 02 - Winter** (6:40)
+  - file: `Wendell Harrison/1981-XX - Organic Dream (1981)/02 - Organic Dream - 02 - Winter.mp3`
+  - why: search: 0 of 0 results fit
+- **_/Singles/00 -.1.flac** (3:05)
+  - file: `_/Singles/00 -.1.flac`
+  - why: no artist or title to search for
+- **_/Singles/00 -.flac** (4:12)
+  - file: `_/Singles/00 -.flac`
+  - why: no artist or title to search for
+- **donald byrd & the blackbirds – places and spaces - 4B - 93,01** (6:21)
+  - file: `donald byrd & the blackbirds/Vol 95b/100 - places and spaces - 4B - 93,01.mp3`
+  - why: search: 0 of 0 results fit
+- **isaintjames – Sweets** (1:54)
+  - file: `isaintjames/Patchwork (2024)/04 - Sweets.flac`
+  - why: ISRC QZZ7Q2417360: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **稲垣次郎とソウル・メディア – ザ・ヴァンプ** (6:29)
+  - file: `稲垣次郎とソウル・メディア/ヘッド・ロック (1970)/01 - ザ・ヴァンプ.flac`
+  - why: ISRC JPCO07037950: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **稲垣次郎とソウル・メディア – ザ・グランド・フォー・ピース** (6:32)
+  - file: `稲垣次郎とソウル・メディア/ヘッド・ロック (1970)/06 - ザ・グランド・フォー・ピース.flac`
+  - why: ISRC JPCO07038000: 0 of 0 recordings fit; search: 0 of 0 results fit
+- **虹伝説 (Masayoshi Takanaka) – Brasilian Skies** (5:52)
+  - file: `虹伝説 (Masayoshi Takanaka)/All Of Me (1979)/08 - Brasilian Skies.mp3`
+  - why: search: 0 of 0 results fit
+
+## Copies of one version
+
+102 groups, 217 files: by `identity.same_version` over the files' current tags (same recording id and length ±4 s, or same lead artist, title, version label and length ±4 s), these are copies of one version. They are for M8 (keep the better copy) and need no action now. Files without an artist, title or length (or with a placeholder such as "Track 01") are left out.
+
+- **Al Kooper – Lookin' For a Home**
+  - `Al Kooper/Kooper Session (1969)/04 - Lookin' For a Home.mp3` (5:52)
+  - `Al Kooper/Kooper Session (1969)/04 - Lookin' for a Home.flac` (5:52)
+- **Angie Stone – Wish I Didn't Miss You**
+  - `Angie Stone/Mahogany Soul (2001)/06 - Wish I Didn't Miss You.flac` (4:31)
+  - `Angie Stone/Mahogany Soul (2001)/06 - Wish I Didn't Miss You.mp3` (4:31)
+- **Average White Band – Queen of My Soul**
+  - `Average White Band/Soul Searching (1976)/05 - Queen of My Soul.flac` (6:02)
+  - `Average White Band/Soul Searching (1976)/05 - Queen of My Soul.mp3` (6:05)
+- **Bahamadia – Rugged Ruff**
+  - `Bahamadia/Kollage/00 - Rugged Ruff.m4a` (3:11)
+  - `Bahamadia/Kollage (1996)/04 - Rugged Ruff.flac` (3:09)
+- **Bobbi Humphrey – Baby's Gone (Remastered 1999)**
+  - `Bobbi Humphrey/Blacks And Blues (1973)/06 - Baby's Gone (Remastered 1999).mp3` (8:49)
+  - `Bobbi Humphrey/Blacks And Blues (1973)/06 - Baby's Gone.flac` (8:49)
+- **Bruno Mars – Fly As Me**
+  - `Bruno Mars/An Evening With Silk Sonic (2021)/03 - Fly As Me.flac` (3:39)
+  - `Bruno Mars/An Evening With Silk Sonic (2021)/03 - Fly As Me.mp3` (3:39)
+- **Buckshot LeFonque – I Know Why The Caged Bird Sings**
+  - `Buckshot LeFonque/Buckshot LeFonque (1994)/03 - I Know Why The Caged Bird Sings.mp3` (8:06)
+  - `Buckshot LeFonque/Buckshot LeFonque (1994)/03 - I Know Why the Caged Bird Sings.mp3` (8:06)
+  - `Buckshot LeFonque/Buckshot Lefonque (1994)/03 - I Know Why the Caged Bird Sings.flac` (8:04)
+- **Cameo – Use It Or Lose It**
+  - `Cameo/Knights Of The Sound Table (1981)/04 - Use It Or Lose It.flac` (4:09)
+  - `Compilations/Intuition (1981)/04 - Use It Or Lose It.flac` (4:09)
+- **Chocolate Milk – Groove City**
+  - `Chocolate Milk/Ice Cold Funk_ The Greatest Grooves of Chocolate Milk (1998)/07 - Groove City.mp3` (3:31)
+  - `Chocolate Milk/Milky Way (1979)/06 - Groove City.flac` (3:29)
+- **Chocolate Milk – Doc**
+  - `Chocolate Milk/Milky Way (1979)/08 - Doc.flac` (2:46)
+  - `Chocolate Milk/We're All In This Together & Milky Way (2010)/18 - Doc.mp3` (2:46)
+- **Cleveland Francis – The Willow Tree**
+  - `Cleveland Francis/Beyond The Willow Tree (2022)/01 - The Willow Tree.mp3` (4:19)
+  - `Cleveland Francis/Beyond the Willow Tree (2022)/01 - The Willow Tree.flac` (4:19)
+- **Cleveland Francis – Early Morning Rain**
+  - `Cleveland Francis/Beyond The Willow Tree (2022)/03 - Early Morning Rain.mp3` (3:47)
+  - `Cleveland Francis/Beyond the Willow Tree (2022)/03 - Early Morning Rain.flac` (3:47)
+- **Common Saints – Summer Sun**
+  - `Common Saints/Idol Eyes EP (2020)/03 - Summer Sun.mp3` (4:49)
+  - `Common Saints/Summer Sun (2020)/01 - Summer Sun.flac` (4:49)
+- **TOTO – Georgy Porgy**
+  - `Compilations/Intuition (1981)/03 - Georgy Porgy.flac` (4:08)
+  - `TOTO/Toto (1978)/03 - Georgy Porgy.flac` (4:08)
+  - `Toto/Legend - The Best of (1996)/03 - Georgy Porgy.mp3` (4:10)
+- **Raphael Saadiq – Still Ray**
+  - `Compilations/Intuition (1981)/04 - Still Ray.flac` (3:03)
+  - `Raphael Saadiq/Instant Vintage (2002)/04 - Still Ray.flac` (3:03)
+- **Weldon Irvine – Don't You Worry 'Bout a Thing**
+  - `Compilations/Le Top De La Disco (1989)/02 - Don't You Worry 'Bout a Thing.mp3` (5:54)
+  - `Weldon Irvine/Sinbad (1976)/02 - Don't You Worry 'Bout a Thing.mp3` (5:55)
+- **Marvin Gaye – What's Going On**
+  - `Compilations/pure soul 96/01 - What's Going On.mp3` (3:53)
+  - `Marvin Gaye/Gold (2005)/01 - What’s Going On.flac` (3:53)
+  - `Marvin Gaye/What's Going On (1971)/01 - What's Going On.mp3` (3:53)
+- **Marvin Gaye – Inner City Blues (Make Me Wanna Holler)**
+  - `Compilations/pure soul 96/09 - Inner City Blues (Make Me Wanna Holler).mp3` (5:28)
+  - `Marvin Gaye/What's Going On (1971)/09 - Inner City Blues (Make Me Wanna Holler).mp3` (5:28)
+- **Cortex – Oh! Lord**
+  - `Cortex/Cortex, Vol. 2 (1977)/10 - Oh! Lord.flac` (6:23)
+  - `Cortex/Volume 2 (1977)/10 - Oh! Lord.mp3` (6:23)
+- **D'Angelo – Greatdayndamornin'/Booty**
+  - `D'Angelo/Voodoo (2000)/11 - Greatdayndamornin'_Booty.flac` (7:35)
+  - `D’Angelo/Voodoo (2015)/04 - Greatdayndamornin’ _ Booty.mp3` (7:36)
+- **Daft Punk – Voyager**
+  - `Daft Punk/Discovery (2001)/10 - Voyager.1.flac` (3:48)
+  - `Daft Punk/Discovery (2001)/10 - Voyager.flac` (3:48)
+- **Daft Punk – Touch**
+  - `Daft Punk/Random Access Memories (2013)/07 - Touch.mp3` (8:19)
+  - `Daft Punk/Random Access Memories (Japanese Edition) (2013)/07 - Touch (Feat. Paul Williams).mp3` (8:19)
+- **Dan Hartman – Countdown / This Is It**
+  - `Dan Hartman/Instant Replay (1978)/02 - Countdown _ This Is It.mp3` (14:11)
+  - `Dan Hartman/Instant Replay (Expanded Edition) (1978)/02 - Countdown _ This Is It.flac` (14:10)
+- **Dan Hartman – Love Is a Natural**
+  - `Dan Hartman/Instant Replay (1978)/05 - Love Is a Natural.mp3` (6:18)
+  - `Dan Hartman/Instant Replay (Expanded Edition) (1978)/05 - Love Is a Natural.flac` (6:20)
+- **Dawn Penn – Chilling**
+  - `Dawn Penn/Come Again (1996)/11 - Chilling.mp3` (4:34)
+  - `Dawn Penn/Vintage 2 (2012)/02 - Chilling.flac` (4:35)
+- **Deniece Williams – Free**
+  - `Deniece Williams/50 Years Anniversary Album (2020)/05 - Free.mp3` (5:59)
+  - `Deniece Williams/This Is Niecy (Expanded Edition) (1976)/05 - Free.flac` (5:57)
+- **Digable Planets – Where I'm From**
+  - `Digable Planets/Reachin' (A New Refutation Of Time And Space)/00 - Where I'm From.m4a` (4:35)
+  - `Digable Planets/Reachin' (A New Refutation Of Time And Space) (1993)/03 - Where I’m From.flac` (4:35)
+- **Diggs Duke – Something In My Soul**
+  - `Diggs Duke/Offering For Anxious (2014)/08 - Something In My Soul.flac` (1:44)
+  - `Diggs Duke/Offering for Anxious (2013)/08 - Something in My Soul.flac` (1:44)
+- **Don Carlos – Free**
+  - `Don Carlos/Mediterraneo (Club Favourites Collection '90_98) (2013)/02 - Free.flac` (4:52)
+  - `Don Carlos/Mediterraneo (Club Favourites Collection '90_98) (2013)/02 - Free.mp3` (4:52)
+- **Donald Byrd – Woman of the World**
+  - `Donald Byrd/1973 - Street Lady (1973)/06 - Woman of the World.mp3` (6:51)
+  - `Donald Byrd/Street Lady (1973)/06 - Woman of the World.mp3` (6:51)
+- **Donald Byrd – Dominoes**
+  - `Donald Byrd/Blue Break Beats Vol. 3 (1996)/10 - Dominoes.mp3` (4:32)
+  - `Donald Byrd/Places And Spaces (1975)/03 - Dominoes.flac` (4:33)
+- **Donald Byrd – The Weasil**
+  - `Donald Byrd/Early Byrd_ the Best of the Jazz Soul Years (1993)/07 - The Weasil.mp3` (8:59)
+  - `Donald Byrd/Fancy Free (1993)/04 - The Weasil.flac` (9:01)
+- **Donald Byrd – The Dude**
+  - `Donald Byrd/Early Byrd_ the Best of the Jazz Soul Years (1993)/08 - The Dude.mp3` (7:50)
+  - `Donald Byrd/Electric Byrd (1970)/04 - The Dude.mp3` (7:48)
+  - `donald byrd/electric byrd (2015)/04 - the dude.mp3` (7:49)
+- **Eagles – I Can't Tell You Why**
+  - `Eagles/The Long Run (2013 Remaster) (1979)/02 - I Can't Tell You Why.flac` (4:55)
+  - `Eagles/The Long Run (2013 Remaster) (1979)/02 - I Can't Tell You Why.mp3` (4:55)
+  - `Eagles/The Long Run (Hi-Res Version)/02 - I Can't Tell You Why  (2013 Remaster).mp3` (4:55)
+- **Earth, Wind & Fire – Devotion**
+  - `Earth, Wind & Fire/Open Our Eyes (1974)/02 - Devotion.flac` (4:50)
+  - `Earth, Wind & Fire/The Essential Earth, Wind & Fire (2002)/03 - Devotion.mp3` (4:49)
+- **Eddie Kendricks – Date With The Rain**
+  - `Eddie Kendricks/People... Hold On (1972)/07 - Date With The Rain.flac` (2:41)
+  - `Eddie Kendricks/People... Hold On (1972)/07 - Date With The Rain.mp3` (2:41)
+- **Electric Light Orchestra – Showdown**
+  - `Electric Light Orchestra/All Over The World_ The Very Best Of ELO (2005)/14 - Showdown.flac` (4:10)
+  - `Electric Light Orchestra/Now Yearbook Extra '73 (2023)/02 - Showdown.mp3` (4:10)
+- **George Benson – Give Me the Night**
+  - `George Benson/Give Me the Night (1980)/04 - Give Me the Night.flac` (5:01)
+  - `George Benson/The Best Of George Benson (1980)/00 - Give Me The Night.mp3` (5:00)
+- **George Benson – Everything Must Change**
+  - `George Benson/In Flight (1976)/06 - Everything Must Change.mp3` (8:10)
+  - `George Benson/In Flight (1977)/06 - Everything Must Change.flac` (8:07)
+- **George Benson – Shape of Things to Come**
+  - `George Benson/Shape of Things to Come (1969)/03 - Shape of Things to Come.mp3` (5:17)
+  - `George Benson/The Shape Of Things To Come (1968)/03 - Shape Of Things To Come.flac` (5:15)
+- **George Benson – Shape of Things That Are and Were**
+  - `George Benson/Shape of Things to Come (1969)/06 - Shape of Things That Are and Were.mp3` (5:49)
+  - `George Benson/The Shape Of Things To Come (1968)/06 - Shape Of Things That Are And Were.flac` (5:47)
+- **Gil Scott-Heron – Morning Thoughts**
+  - `Gil Scott-Heron/Reflections (1981)/04 - Morning Thoughts.flac` (4:41)
+  - `Gil Scott-Heron/Reflections (1981)/04 - Morning Thoughts.mp3` (4:41)
+- **Gino Soccio – So Lonely**
+  - `Gino Soccio/Outline/02 - So Lonely.flac` (2:04)
+  - `Gino Soccio/Outline/03 - So Lonely.mp3` (2:04)
+  - `Gino Soccio/Outline (1979)/02 - So Lonely.flac` (2:04)
+- **Gyedu-Blay Ambolley – Highlife**
+  - `Gyedu-Blay Ambolley/Ambolley (1982)/01 - Highlife.flac` (5:00)
+  - `Gyedu-Blay Ambolley/Mr Bongo Record Club Vol. 3 (2019)/11 - Highlife.mp3` (4:58)
+- **Gábor Szabó – Both Sides Now**
+  - `Gábor Szabó/1969 (1969)/03 - Both Sides Now.flac` (2:57)
+  - `Gábor Szabó/1969 (1969)/03 - Both Sides Now.mp3` (2:56)
+- **Herb Alpert – Aranjuez (Mon Amour)**
+  - `Herb Alpert/Rise (1979)/08 - Aranjuez (Mon Amour).flac` (6:43)
+  - `Herb Alpert/Rise (1979)/08 - Aranjuez (mon amour).mp3` (6:43)
+- **Herbie Hancock – Gentle Thoughts**
+  - `Herbie Hancock/Secrets (1976)/05 - Gentle Thoughts.flac` (7:02)
+  - `Herbie Hancock/Secrets (1976)/05 - Gentle Thoughts.mp3` (7:02)
+- **Jack McDuff – To Be Named Later**
+  - `Jack McDuff/Sophisticated Funk (1976)/03 - To Be Named Later.1.flac` (4:32)
+  - `Jack McDuff/Sophisticated Funk (1976)/03 - To Be Named Later.flac` (4:32)
+- **Janet Jackson – I Want You**
+  - `Janet Jackson/Damita Jo (2004)/12 - I Want You.flac` (4:13)
+  - `Janet Jackson/Damita Jo (2004)/12 - I Want You.mp3` (4:13)
+- **Jill Scott – Golden**
+  - `Jill Scott/Beautifully Human - Words And (2004)/03 - Golden.mp3` (3:52)
+  - `Jill Scott/Beautifully Human_ Words and Sounds, Volume 2 (2004)/03 - Golden.mp3` (3:52)
+- **Jimi Hendrix – Third Stone From The Sun**
+  - `Jimi Hendrix/Are You Experienced (1967)/09 - Third Stone From The Sun.flac` (6:44)
+  - `Jimi Hendrix/Are You Experienced_ (1967)/09 - Third Stone From The Sun.mp3` (6:44)
+- **Joe Henderson – Blue Bossa**
+  - `Joe Henderson/Page One (1963)/01 - Blue Bossa.flac` (8:02)
+  - `Joe Henderson/Page One (1963)/01 - Blue Bossa.mp3` (8:02)
+- **Julee Cruise – Rockin' Back Inside My Heart**
+  - `Julee Cruise/Floating Into The Night (1989)/04 - Rockin' Back Inside My Heart.flac` (5:49)
+  - `Julee Cruise/Floating Into The Night LP/04 - Rockin' Back Inside My Heart.mp3` (5:49)
+- **Julian Lage – Word For Word**
+  - `Julian Lage/View With A Room (2022)/02 - Word For Word.flac` (3:16)
+  - `Julian Lage/View With A Room (2022)/02 - Word for Word.flac` (3:16)
+- **Julius Rodriguez – In Heaven**
+  - `Julius Rodriguez/Let Sound Tell All/08 - In Heaven.mp3` (5:04)
+  - `Julius Rodriguez/Let Sound Tell All (2022)/08 - In Heaven.flac` (5:03)
+- **Justin Timberlake – Senorita**
+  - `Justin Timberlake/Justified/00 - Senorita.mp3` (4:57)
+  - `Justin Timberlake/Justified/01 - Señorita.flac` (4:58)
+- **Lani Hall – Love Song**
+  - `Lani Hall/Sun Down Lady (1972)/01 - Love Song.flac` (3:11)
+  - `Lani Hall/Sun Down Lady (1972)/01 - Love Song.mp3` (3:11)
+- **Linx – You're Lying (12' Mix)**
+  - `Linx/Intuition (1981)/11 - You're Lying (12' Mix).flac` (6:37)
+  - `Linx/Intuition (1981)/11 - You're Lying (12_ Mix).mp3` (6:37)
+- **Luiz Bonfá – Uma Prece (A Prayer)**
+  - `Luiz Bonfá/Solo in Rio 1959/06 - Uma Prece (A Prayer).mp3` (2:36)
+  - `Luiz Bonfá/Solo in Rio 1959 (2005)/06 - Uma Prece (A Prayer).flac` (2:36)
+- **Lynda Dawn – Arise**
+  - `Lynda Dawn/At First Light (2019)/03 - Arise.flac` (2:32)
+  - `Lynda Dawn/At First Light (2019)/03 - Arise.mp3` (2:33)
+- **MC Solaar – Nouveau Western**
+  - `MC Solaar/Prose combat/00 - Nouveau Western.m4a` (4:34)
+  - `MC Solaar/Prose combat (1994)/03 - Nouveau western.flac` (4:34)
+- **MFSB,John Morales – Love Is the Message - Philly Long Message Street Strutin' Mix**
+  - `MFSB,John Morales/Philadelphia International Records_ The John Morales M+M Remixes/00 - Love Is the Message - Philly Long Message Street Strutin' Mix.m4a` (15:21)
+  - `Various Artists/Philadelphia International Records_ The John Morales M+M Remixes (2021)/10 - Love Is the Message - Philly Long Message Street Strutin' Mix.flac` (15:21)
+- **Marcos Valle – Parabéns**
+  - `Marcos Valle/Contrasts (2004)/09 - Parabéns.flac` (8:34)
+  - `Marcos Valle/Contrasts (2004)/09 - Parabéns.mp3` (8:34)
+- **Marcos Valle – Estrelar**
+  - `Marcos Valle/Marcos Valle (1983)/01 - Estrelar.flac` (5:13)
+  - `Marcos Valle/Marcos Valle (1983)/01 - Estrelar.mp3` (5:13)
+- **Marvin Gaye – Falling In Love Again**
+  - `Marvin Gaye/Here My Dear/00 - Falling In Love Again.m4a` (4:39)
+  - `Marvin Gaye/Here, My Dear (1978)/13 - Falling In Love Again.flac` (4:39)
+  - `Piero Umiliani/Trudi's Songbook Vol. 2 (2017)/13 -  falling in love again.mp3` (4:39)
+- **Marvin Gaye – Sexual Healing**
+  - `Marvin Gaye/Midnight Love (1982)/02 - Sexual Healing.flac` (3:59)
+  - `Marvin Gaye/Midnight Love (2002)/02 - Sexual Healing.mp3` (4:00)
+- **Marvin Gaye – Save The Children**
+  - `Marvin Gaye/Singles/Save The Children.mp3` (4:03)
+  - `Marvin Gaye/What's Going On (1971)/04 - Save The Children.flac` (4:03)
+- **Mary J. Blige – Mary Jane (All Night Long)**
+  - `Mary J. Blige/Mary Jane (All Night Long) (1995)/01 - Mary Jane (All Night Long).mp3` (4:39)
+  - `Mary J. Blige/My Life/01 - Mary Jane (All Night Long).flac` (4:39)
+- **Masayoshi Takanaka – Breezin'**
+  - `Masayoshi Takanaka/On Guitar (1978)/01 - Breezin'.mp3` (5:50)
+  - `Masayoshi Takanaka/オン・ギター/01 - BREEZIN'.mp3` (5:50)
+  - `Masayoshi Takanaka/オン・ギター (1994)/01 - BREEZIN'.flac` (5:50)
+- **Masayoshi Takanaka – That's the Way of the World**
+  - `Masayoshi Takanaka/On Guitar (1978)/07 - That's the Way of the World.mp3` (6:15)
+  - `Masayoshi Takanaka/オン・ギター (1994)/07 - THAT'S THE WAY OF THE WORLD.1.flac` (6:15)
+- **Ms. Lauryn Hill – The Miseducation of Lauryn Hill**
+  - `Ms. Lauryn Hill/The Miseducation of Lauryn Hill (1998)/14 - The Miseducation of Lauryn Hill.flac` (3:55)
+  - `Ms. Lauryn Hill/The Miseducation of Lauryn Hill (1998)/14 - The Miseducation of Lauryn Hill.mp3` (3:55)
+- **O'Donel Levy – Freedom and Good Times**
+  - `O'Donel Levy/Windows (1976)/03 - Freedom and Good Times.flac` (5:35)
+  - `O'Donel Levy/Windows (1976)/13 - Freedom and Good Times.mp3` (5:35)
+- **Paul Desmond – Samba Cantina**
+  - `Paul Desmond/Bossa Antigua (1964)/04 - Samba Cantina.mp3` (5:42)
+  - `Paul Desmond/Bossa Antigua (1997)/04 - Samba Cantina.flac` (5:42)
+- **Pepe Link – Vem Menina**
+  - `Pepe Link/Balearic Biscuits, Vol. 4 (2024)/16 - Vem Menina.mp3` (6:07)
+  - `Pepe Link/Summer Sessions Monte-Carlo (2025)/04 - Vem Menina.mp3` (6:07)
+- **Piero Umiliani – Mahe'**
+  - `Piero Umiliani/La Ragazza Dalla Pelle di Luna OST (1971)/03 - Mahe'.mp3` (2:42)
+  - `Piero Umiliani/La ragazza dalla pelle di luna (1970)/02 - Mahè.flac` (2:42)
+  - `Piero Umiliani/Trudi's Songbook Vol. 2 (2017)/03 - Mahe'.mp3` (2:42)
+- **Ruby Rushton – Together at Last**
+  - `Piero Umiliani/Trudi's Songbook Vol. 2 (2017)/05 - Together at Last.flac` (1:41)
+  - `Piero Umiliani/Trudi's Songbook Vol. 2 (2017)/05 - Together at Last.mp3` (1:41)
+  - `Ruby Rushton/Trudi's Songbook _ Volume Two (2017)/05 - Together at Last.mp3` (1:41)
+  - `Ruby Rushton/Trudi's Songbook, Vol. 2 (2018)/05 - Together at Last.flac` (1:41)
+  - `Ruby Rushton/Trudi's Songbook_ Volume Two (2017)/05 - Together At Last.mp3` (1:41)
+- **Pilgrim Fathers Orchestra – Touch Me Don't Stop**
+  - `Pilgrim Fathers Orchestra/Under The Influence vol. 6 (2018)/03 - Touch Me Don't Stop.mp3` (7:23)
+  - `Pilgrim Fathers Orchestra/Under the Influence Vol.6 compiled by Faze Action (2018)/06 - Touch Me Don't Stop.flac` (7:23)
+- **Player – Givin' It All**
+  - `Player/A Room With A View (1980)/07 - Givin' It All.flac` (4:18)
+  - `Player/Baby Come Back_ The Best of Player (1998)/07 - Givin' It All.mp3` (4:16)
+- **Queen – Cool Cat**
+  - `Queen/Hot Space (1982)/10 - Cool Cat.mp3` (3:29)
+  - `Queen/Hot Space (Deluxe Remastered Version)/00 - Cool Cat.flac` (3:29)
+- **Rahsaan Patterson – Where You Are (Live)**
+  - `Rahsaan Patterson/Live At The Belasco (2021)/07 - Where You Are (Live).mp3` (7:59)
+  - `Rahsaan Patterson/Live at the Belasco (2014)/07 - Where You Are - Live.flac` (7:59)
+- **Raphael Saadiq – What's Life Like**
+  - `Raphael Saadiq/Instant Vintage (2002)/18 - What's Life Like.flac` (2:50)
+  - `Raphael Saadiq/Instant Vintage (Retail) (2002)/18 - What's Life Like.mp3` (2:50)
+- **Rasputin's Stash – Sweet Vibe**
+  - `Rasputin's Stash/Hidden Stash (2016)/07 - Sweet Vibe.flac` (3:26)
+  - `Rasputin's Stash/Hidden Stash (2016)/07 - Sweet Vibe.mp3` (3:26)
+- **Rick James – Mary Jane**
+  - `Rick James/Come Get It! (1978)/06 - Mary Jane.mp3` (4:58)
+  - `Rick James/Come Get It! (Expanded Edition) (1978)/06 - Mary Jane.flac` (4:57)
+- **Ronnie Foster – Let's Stay Together**
+  - `Ronnie Foster/Two Headed Freap (1972)/05 - Let's Stay Together.mp3` (4:54)
+  - `Ronnie Foster/Two-Headed Freap (1972)/05 - Let's Stay Together.mp3` (4:54)
+- **September – Ostavi Trag**
+  - `September/Singles/Ostavi Trag.mp3` (4:05)
+  - `September/Zadnja Avantura (1976)/06 - Ostavi Trag.mp3` (4:03)
+- **Sivuca – Ain't No Sunshine**
+  - `Sivuca/Sivuca  (1973)/08 - Ain't No Sunshine.mp3` (4:48)
+  - `Sivuca/Sivuca (1973)/06 - Ain't No Sunshine.flac` (4:49)
+- **Slum Village – Hustle**
+  - `Slum Village/Fantastic, Vol. 2.10 (2010)/18 - Hustle.flac` (3:29)
+  - `Slum Village/Fantastic, Volume 2.10 (2010)/18 - Hustle.mp3` (3:29)
+- **Soneros De Verdad – A Buena Vista**
+  - `Soneros De Verdad/A Buena Vista_ Barrio De La Habana (2004)/01 - A Buena Vista.flac` (3:14)
+  - `Soneros de Verdad/Putumayo Presents_ Cuba! Cuba! (2017)/01 - A Buena Vista.mp3` (3:13)
+- **Spargo – Head Up To The Sky**
+  - `Spargo/Good Time Spirit (1980)/06 - Head Up To The Sky.flac` (4:25)
+  - `Spargo/Singles/Head Up To The Sky.mp3` (4:25)
+- **Stevie Wonder – Isn't She Lovely**
+  - `Stevie Wonder/At the Close of a Century (1999)/05 - Isn't She Lovely.mp3` (6:37)
+  - `Stevie Wonder/Songs In The Key of Life (1976)/11 - Isn't She Lovely.flac` (6:35)
+- **Stevie Wonder – I Wish**
+  - `Stevie Wonder/Songs In The Key of Life (1976)/06 - I Wish.flac` (4:13)
+  - `Stevie Wonder/The Definitive Collection CD1/03 - I Wish.mp3` (4:15)
+- **Tania Maria – Sangria**
+  - `Tania Maria/Come with me (1983)/01 - Sangria.mp3` (3:56)
+  - `Tania Maria/The Concord Jazz Heritage Series (1983)/01 - Sangria.flac` (3:54)
+- **Tania Maria – Bom Bom Bom Tchi Tchi Tchi**
+  - `Tania Maria/Jazz Moods_ Twilight In Rio (2004)/03 - Bom Bom Bom Tchi Tchi Tchi.mp3` (4:56)
+  - `Tania Maria/The Concord Jazz Heritage Series (1983)/03 - Bom Bom Bom Tchi Tchi Tchi.flac` (4:53)
+- **Teena Marie – Portuguese Love**
+  - `Teena Marie/It Must Be Magic/00 - Portuguese Love.m4a` (7:49)
+  - `Teena Marie/It Must Be Magic (1981)/08 - Portuguese Love.flac` (7:52)
+- **The Blackbyrds – Walking In Rhythm**
+  - `The Blackbyrds/Billboard Year-End Hot 100 singles of 1975 (1975)/52 - Walking In Rhythm.mp3` (4:12)
+  - `The Blackbyrds/Flying Start/01 - Walking In Rhythm.flac` (4:12)
+- **The Crusaders – Street Life**
+  - `The Crusaders/Street Life/01 - Street Life.mp3` (11:17)
+  - `The Crusaders/Street Life (1979)/01 - Street Life.flac` (11:17)
+- **The Doobie Brothers – What a Fool Believes**
+  - `The Doobie Brothers/Minute by Minute (1978)/02 - What a Fool Believes.flac` (3:44)
+  - `The Doobie Brothers/Sounds Of The Seventies - 1979 (1979)/18 - What A Fool Believes.mp3` (3:43)
+- **Tom Browne – Funkin' for Jamaica**
+  - `Tom Browne/Funkin' For Jamaica/00 - Funkin' for Jamaica.m4a` (4:41)
+  - `Tom Browne/Funkin' For Jamaica (1997)/01 - Funkin' for Jamaica.flac` (4:41)
+- **Twain – The Magician**
+  - `Twain/Noon (2022)/06 - The Magician.flac` (5:53)
+  - `Twain/Noon (2022)/06 - The Magician.mp3` (5:53)
+- **Twain – Good Old Friend (For Charlie)**
+  - `Twain/Rare Feeling (2017)/09 - Good Old Friend (For Charlie).mp3` (4:18)
+  - `Twain/Rare Feeling (2017)/09 - Good Old Friend (for Charlie).mp3` (4:18)
+- **Tyler The Creator,Roy Ayers,Syd,Kali Uchis – FIND YOUR WINGS (feat. Roy Ayers Sydney Bennett & Kali Uchis)**
+  - `Tyler The Creator,Roy Ayers,Syd,Kali Uchis/Cherry Bomb/00 - FIND YOUR WINGS (feat. Roy Ayers Sydney Bennett & Kali Uchis).m4a` (2:59)
+  - `Tyler, The Creator/Cherry Bomb (2015)/05 - FIND YOUR WINGS (feat. Roy Ayers, Sydney Bennett & Kali Uchis).flac` (2:59)
+- **Wendell Harrison – Peace Of Mind**
+  - `Wendell Harrison/Organic Dream (1981)/04 - Peace Of Mind.mp3` (7:19)
+  - `Wendell Harrison/Organic Dream (1981)/04 - Peace of Mind.flac` (7:19)
+  - `Wendell Harrison/pure soul 96/04 - Peace Of Mind.mp3` (7:18)
+
+## Version labels identity reads
+
+84 of 831 titles carry a version label; 17 carry a copy marker (remaster, feat., album version) that does not change the version.
+
+- remix: 31
+- live: 20
+- extended: 14
+- alt: 8
+- edit: 5
+- demo: 4
+- original: 4
+- reedit: 4
+- club: 2
+- dub: 1
+
+Titles whose trailing parenthetical was **not** read as a label (35). A version word here means a gap in identity's vocabulary:
+
+- 11 Candy Man [1983]
+- Ain't Gwine to Whistle Dixie (Any Mo') - Live
+- Amor sem Adeus (Love without Goodbye)
+- Aranjuez (Mon Amour)
+- Aranjuez (mon amour)
+- Beijo (Interlude)
+- Caint Use My Phone (Suite)
+- Crickets Sing For Anamaria (Os Grillos)
+- December, 1963 (Oh What a Night!) (×2)
+- Everybody (Backsteet's Back)
+- Everyday (I Have the Blues)
+- Everyday (I Have the Blues) (live)
+- Father (Soul)
+- Feeling U, Feeling Me (Interlude)
+- Figures Can't Calculate (The Love I Have for You)
+- Good Old Friend (For Charlie)
+- Good Old Friend (for Charlie)
+- Groovin' (That's What We're Doin')
+- He Loves Me (Lyzel In E Flat) - Jill Scott
+- Hide & Seek (Ready or Not Here I Come)
+- Inner City Blues (Make Me Wanna Holler) (×2)
+- Mary Jane (All Night Long) (×2)
+- Mercy Mercy Me (The Ecology)
+- My Lovin' (You're Never Gonna Get It)
+- Next Lifetime (Interlude) - Live
+- P.Y.T. (Pretty Young Thing)
+- Perdido de Amor (Lost in Love) (1)
+- Sambolero [1]
+- Superwoman (Where Were You When I Needed You) (×2)
+- Thang (hips)
+- Tonight's the Night (Good Time) [12" Version] - Remix
+- Touch in Mine (fingers)
+- Uma Prece (A Prayer) (×2)
+- Variações em Violão (Variations on Guitar)
+- We Can Ride the Boogie (Rock With You)
