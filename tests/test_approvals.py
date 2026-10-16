@@ -1,5 +1,6 @@
 """M6 task 1: approval and preview records, POST /api/wanted/<id>/preview|approve, the Wanted tab's buttons."""
 import json
+import re
 import urllib.error
 import urllib.request
 
@@ -56,6 +57,11 @@ def test_preview_endpoint_returns_and_caches_the_pick(svc_slskd):
     s, pv = post(web.url + "/api/wanted/s4/preview", {})
     assert s == 200 and pv["pick"]["username"] == "vinylhead77" and "Good Times" in pv["explain"]
     assert srv.enqueued == []
+    # no peer is named: every ranked line's user column is a pN label (a plain word like "locked" may
+    # still appear in a rejection reason, so the usernames are checked in that column, not by substring)
+    heads = [ln.split()[1] for ln in pv["explain"].splitlines() if not ln.startswith(" " * 9)]
+    assert heads and all(re.fullmatch(r"p\d+", h) for h in heads) and heads[0] == "p1"
+    assert "vinylhead77" not in pv["explain"]
     _, _, w = get(web.url + "/api/wanted")
     row = next(t for t in w if t["song_id"] == "s4")
     assert row["preview"]["pick"]["basename"] == "03 - Good Times.flac" and row["approval"] is None

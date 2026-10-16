@@ -136,7 +136,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
     slskd.wait_search(sid, poll_s=poll_s, max_s=30)
     cands = rank(slskd.search_responses(sid), wanted, policy)
     slskd.delete_search(sid)
-    text = explain(cands)
+    text = explain(cands, peers=False)
     best = next((c for c in cands if not c.rejected), None)
     if best is None:
         return FetchResult("needs_source", "no acceptable candidate", None, explain=text)

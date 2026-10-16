@@ -254,10 +254,12 @@ def rank(responses: list[dict], wanted: Wanted, policy: QualityPolicy = DEFAULT_
     return sorted(cands, key=lambda c: (c.rejected is not None, -c.score))
 
 
-def explain(cands: list[Candidate], limit: int = 10) -> str:
+def explain(cands: list[Candidate], limit: int = 10, peers: bool = True) -> str:
+    """Ranked, one candidate per block. peers=False labels each p1, p2, ... in rank order instead of naming
+    the Soulseek user, for text that reaches events, logs or the web client."""
     lines = []
-    for c in cands[:limit]:
-        head = f"{c.score:6.1f}  {c.username:<18} {c.basename[:60]}"
+    for i, c in enumerate(cands[:limit], 1):
+        head = f"{c.score:6.1f}  {(c.username if peers else f'p{i}'):<18} {c.basename[:60]}"
         lines.append(head + (f"   ✗ {c.rejected}" if c.rejected else ""))
         if not c.rejected:
             lines.append("         " + "; ".join(c.reasons))
