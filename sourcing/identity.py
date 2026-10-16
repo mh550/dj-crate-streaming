@@ -266,12 +266,32 @@ def stands_in(got: Title, want: Title, accept) -> bool:
 
 _TRACKNO = re.compile(r"^\s*(?:[a-d]\d|\d{1,2})\s*[-._ ]+\s*", re.I)     # "03 - ", "03. ", "A1 " (vinyl side)
 _EXT = re.compile(r"\.[A-Za-z0-9]{2,5}$")
-# A trailing decoration that only describes the file: a bitrate, format, source, sample format or a bare year.
-# It ends the name, so it would stop the label peel ("Song (Extended Mix) [320]" would read as unlabelled).
-_FILE_JUNK = re.compile(
-    r"\s*[(\[]\s*(?:\d{2,4}\s*(?:k|kbps|kbit/?s)?|flac|mp3|aac|alac|wav|aiff|ogg|opus|web|web[- ]?dl|cd|cd ?rip"
-    r"|vinyl|vinyl ?rip|lossless|hi[- ]?res|v0|v2|\d{2}\s*bit|\d{2}\s*(?:bit)?\s*[-/ ]\s*\d{2,3}(?:[.,]\d)?\s*(?:k?hz)?)"
-    r"\s*[)\]]$", re.I)
+# A trailing decoration that only describes the file: every token in it is a format, source, bitrate, sample
+# format or a bare year ("[FLAC 24-96]", "(320 kbps)", "{WEB}", " - 320"). It ends the name, so it would stop the
+# label peel ("Song (Extended Mix) [320]" would read as unlabelled). One real word keeps the whole group.
+_JUNK_TOKEN = re.compile(
+    r"\d{2,4}k?(?:bps)?|kbps|kbit/?s|k|bit|k?hz|rip|dl"
+    r"|flac|mp3|aac|alac|wav|aiff|ogg|opus|m4a|web|web-?dl|cd|cd-?rip|vinyl|vinyl-?rip|lossless|hi-?res|v0|v2"
+    r"|\d{2}-?bit|\d{2,3}(?:[.,]\d)?k?hz|\d{2}(?:-?bit)?[-/]\d{2,3}(?:[.,]\d)?(?:k?hz)?", re.I)
+_TRAILING_GROUP = (re.compile(r"\s*[(\[{]([^()\[\]{}]*)[)\]}]$"), re.compile(r"\s+-\s+([^-]+)$"))
+
+
+def _peel_file_junk(t: str, artist: str | None) -> str | None:
+    """t without its last decoration when that is all file junk, else None. A " - X" tail is never the song
+    itself ("Prince - 1999") nor a lone year."""
+    bracket, dash = _TRAILING_GROUP
+    m = bracket.search(t) or dash.search(t)
+    if not m:
+        return None
+    inner, is_dash = m.group(1), m.re is dash
+    tokens = [x for x in re.split(r"[\s,_]+", inner.strip()) if x]
+    rest = t[:m.start()].rstrip()
+    if not tokens or not rest or not all(_JUNK_TOKEN.fullmatch(x) for x in tokens):
+        return None
+    if is_dash and (re.fullmatch(r"\d{4}", inner.strip()) or
+                                   (artist and loose(rest) == loose(lead_artist(artist)))):
+        return None
+    return rest
 
 
 def strip_trackno(s: str) -> str:
@@ -284,8 +304,8 @@ def parse_filename(basename: str, artist: str | None = None) -> Title:
     ("[320]", "[FLAC]", "(320 kbps)", "[WEB]", "(1979)") go first, so they cannot hide the label before them.
     The scorer and fetch both read candidates with this, so they agree on which version a file is."""
     t = strip_trackno(_EXT.sub("", basename or "").strip())
-    while (u := _FILE_JUNK.sub("", t)) != t and u.strip():
-        t = u.rstrip()
+    while (u := _peel_file_junk(t, artist)) is not None:
+        t = u
     return parse_title(t, artist)
 
 

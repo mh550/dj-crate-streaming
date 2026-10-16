@@ -465,3 +465,32 @@ def test_real_names_are_not_placeholders():
     for artist, title in [("Prince", "1999"), ("X", "Intro"), ("Vanessa", "Intro"), ("Various Cruelties", "Intro"),
                           ("X", "No Title Needed"), ("X", "Audio Tracks of My Life")]:
         assert not is_placeholder(artist, title), (artist, title)
+
+
+# ---- M7 fix round 2, ruling 3: a trailing group is file junk when every token in it is ----
+
+@pytest.mark.parametrize("name, base, kinds", [
+    ("Song (Extended Mix) [FLAC 24-96].flac", "Song", {"extended"}),
+    ("Song (Extended Mix) [MP3 320].mp3", "Song", {"extended"}),
+    ("Song (Extended Mix) [WEB FLAC].flac", "Song", {"extended"}),
+    ("Song (Extended Mix) {320}.mp3", "Song", {"extended"}),
+    ("Song (Extended Mix) - 320.mp3", "Song", {"extended"}),
+    ("Song (Extended Mix) [24bit-96kHz].flac", "Song", {"extended"}),
+    ("Song (Extended Mix) [320 kbps].mp3", "Song", {"extended"}),
+    ("Song (Dub) [16-44.1, CD Rip].flac", "Song", {"dub"}),
+    ("Song (Extended Mix) [FLAC Deluxe].flac", "Song (Extended Mix) [FLAC Deluxe]", set()),   # one real word: kept
+])
+def test_parse_filename_peels_groups_made_only_of_file_junk(name, base, kinds):
+    t = parse_filename(name)
+    assert (t.base, set(t.kinds)) == (base, kinds)
+
+
+def test_parse_filename_keeps_a_remaster_as_a_copy_marker_behind_junk():
+    t = parse_filename("Title (1979 Remaster) [FLAC 24-96].flac")
+    assert t.base == "Title" and not t.kinds and t.copy_note == "1979 Remaster"
+
+
+def test_parse_filename_never_peels_the_song_itself():
+    assert parse_filename("Prince - 1999.flac", "Prince").base == "1999"
+    assert parse_filename("1999.flac", "Prince").base == "1999"
+    assert parse_filename("Taylor Swift - 22.flac", "Taylor Swift").base == "22"
