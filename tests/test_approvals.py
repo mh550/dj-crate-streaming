@@ -126,3 +126,27 @@ def test_preview_and_approve_of_a_row_in_progress_is_409(svc_slskd, status):
         code, body = post(web.url + f"/api/wanted/s4/{action}", {})
         assert code == 409 and status in body["error"]
     assert app.store.approval("s4") is None and app.store.preview("s4") is None
+
+
+def test_approve_without_a_candidate_for_a_row_failed_after_filing(svc_slskd):
+    """"Navidrome never indexed <path>": Preview has nothing to pick, so the web client's Re-check posts an approve
+    with no candidate; the worker then re-checks the filed file and never downloads."""
+    from crates.store import never_indexed
+    fake, srv, app, web = svc_slskd
+    app.store.set_wanted_status("s4", "failed", never_indexed("Chic/Risqué (1979)/03 - Good Times.flac"))
+    _, _, w = get(web.url + "/api/wanted")
+    assert next(t for t in w if t["song_id"] == "s4")["filed"] is True
+    s, a = post(web.url + "/api/wanted/s4/approve", {})
+    assert s == 200 and a["candidate"] is None and a["used_at"] is None
+
+
+def test_wanted_rows_say_whether_they_are_filed(svc_slskd):
+    fake, srv, app, web = svc_slskd
+    _, _, w = get(web.url + "/api/wanted")
+    assert next(t for t in w if t["song_id"] == "s4")["filed"] is False
+
+
+def test_web_client_offers_recheck_for_a_filed_row(svc_slskd):
+    fake, srv, app, web = svc_slskd
+    _, _, js = get(web.url + "/app.js", raw=True)
+    assert "Re-check" in js.decode() and "t.filed" in js.decode()

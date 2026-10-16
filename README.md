@@ -56,8 +56,8 @@ python3 -m sourcing.cli seed-spotify https://open.spotify.com/playlist/...   # �
 python3 -m sourcing.cli import-playlist <spotify-url|report.txt|exportify.csv>... [--name N] [--dry-run]
     # D11: Spotify playlist → public Navidrome playlist (library matches, in order) + wanted rows with playlist/position
 python3 -m sourcing.cli fetch --wanted s4             # search + score, prints the pick, no download
-python3 -m sourcing.cli fetch --wanted s4 --approve [--wait]
-    # records Michael's approval; the worker daemon (the one beets writer) then downloads → verifies → files with
+cd /srv/docker && docker compose exec -T worker python -m sourcing.cli fetch --wanted s4 --approve [--wait]
+    # (container form only: needs the worker's CRATES_DB) records Michael's approval; the worker daemon (the one beets writer) then downloads → verifies → files with
     # beets → rescans → crate ok on its next tick; --wait prints its outcome (docs/worker.md)
 # normally: Preview + Approve in the web client, and the worker container downloads (docs/worker.md)
 ```

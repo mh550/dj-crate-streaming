@@ -44,13 +44,18 @@ Every download carries an approval record (D23): who approved, the candidate, th
 
 `sourcing.cli fetch --wanted <id> --approve` only records the approval, with the same rules as the Approve button
 (the previewed pick if there is one; refused for a row that is `sourcing` or `verify`), and prints "approved; the
-worker picks it up on its next tick". Add `--wait` to wait (up to 600 s) for the worker's outcome. It works from the
-host or the container alike: the worker daemon is the only process that downloads, files with beets, and holds the
-worker lock, so a manual run can never be a second beets writer or leave an approval `started`.
+worker picks it up on its next tick". Add `--wait` to wait (up to 600 s) for the worker's outcome. Run it in the
+worker container, which has the real `CRATES_DB`; the command refuses to run without `CRATES_DB` in its environment
+(its default path is relative to the working directory, so a host run would approve in a stray database). The worker
+daemon is the only process that downloads, files with beets, and holds the worker lock, so a manual run can never be
+a second beets writer or leave an approval `started`.
 
 ```
-python3 -m sourcing.cli fetch --wanted <id> --approve --wait
+cd /srv/docker && docker compose exec -T worker python -m sourcing.cli fetch --wanted <id> --approve [--wait]
 ```
+
+A row that failed as "Navidrome never indexed <path>" shows **Re-check** instead of Preview/Approve: it approves with
+no candidate, and the worker re-checks the filed file without downloading.
 
 A Preview of a row that is already filed (`verify`, or failed as "Navidrome never indexed …") searches nothing and
 changes nothing: it answers "already filed as <path>; the worker re-checks it". The web service answers 409 to

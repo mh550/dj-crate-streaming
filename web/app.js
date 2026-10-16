@@ -106,7 +106,15 @@ async function loadWanted() {
       const d = el("details"); d.append(el("summary", null, "why"), el("pre", "sub", t.preview.explain || "")); grow.append(d);
     } else if (t.preview && !pending) grow.append(el("div", "sub", "no acceptable candidate"));
     li.append(grow);
-    if (!pending && !busy) {
+    if (!pending && !busy && t.filed) {        // failed after filing ("never indexed"): nothing to preview or pick
+      const rc = el("button", null, "Re-check");
+      rc.onclick = async () => {
+        rc.disabled = true;
+        try { await api(`/api/wanted/${t.song_id}/approve`, {}); await loadWanted(); }
+        catch (e) { alert(e.message); rc.disabled = false; }
+      };
+      li.append(rc);
+    } else if (!pending && !busy) {
       const pv = el("button", null, "Preview");
       pv.onclick = async () => {
         pv.disabled = true; pv.textContent = "searching…";
