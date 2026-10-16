@@ -358,7 +358,7 @@ def _recording_check(path: Path, reference: Path, findings: list, m: dict, whole
         # whatever Navidrome resolves for the song later.
         try:
             st = reference.stat()
-            m["reference"] = {"path": str(reference), "size": st.st_size, "mtime_ns": st.st_mtime_ns}
+            m["reference"] = {"path": str(reference.resolve()), "size": st.st_size, "mtime_ns": st.st_mtime_ns}
         except OSError:
             m["reference"] = None
         mine, theirs = probe(path), probe(reference)

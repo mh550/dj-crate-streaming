@@ -318,3 +318,11 @@ def test_an_instrumental_row_offered_only_a_vocal_12_inch_downloads_nothing(worl
         assert r.status == "needs_source" and "no acceptable candidate" in r.reason
         assert srv.enqueued == []
     assert "not accepted at crate" in r.explain
+
+
+@needs_tools
+def test_the_recorded_reference_path_is_resolved(audio, tmp_path):
+    link = tmp_path / "link"
+    link.symlink_to(audio["true"].parent)
+    v = verify(audio["mp3"], 20, tier="low", reference=link / audio["true"].name, intent="copy")
+    assert v.measurements["reference"]["path"] == str(audio["true"].resolve())
