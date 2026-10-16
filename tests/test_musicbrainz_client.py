@@ -210,3 +210,24 @@ def test_search_escapes_quotes():
     q = urllib.parse.parse_qs(urllib.parse.urlparse(opener.requests[0].full_url).query)
     assert q["query"] == ['artist:"A \\"B\\"" AND recording:"T\\\\"']
     assert q["limit"] == ["100"]
+
+
+def test_two_instances_share_the_spacing():
+    t = Time()
+    a, _ = client(Script({"recordings": []}), t)
+    b, _ = client(Script({"recordings": []}), t)
+    a.isrc("A")
+    b.isrc("B")
+    assert t.sleeps == [pytest.approx(1.05)]
+
+
+def test_recording_length_waits_on_the_shared_limiter():
+    from sourcing.musicbrainz import recording_length
+    t = Time()
+    mb, _ = client(Script({"recordings": []}), t)
+    mb.isrc("A")
+    opener = Script({"length": 501000})
+    assert recording_length("rec-1", opener=opener, sleep=t.sleep, clock=t.clock) == 501.0
+    assert t.sleeps == [pytest.approx(1.05)]
+    mb.isrc("B")                                             # and the client waits behind the confirm request
+    assert t.sleeps == [pytest.approx(1.05), pytest.approx(1.05)]

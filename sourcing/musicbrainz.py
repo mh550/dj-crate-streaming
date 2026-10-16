@@ -16,7 +16,9 @@ confirm step above, and an interrupted ~35 minute run must never ask the same qu
 """
 from __future__ import annotations
 
+import contextlib
 import json
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -29,10 +31,50 @@ URL = "https://musicbrainz.org/ws/2/recording/{id}?fmt=json"
 USER_AGENT = "dj-crate-streaming/0.1 (https://github.com/mh550/dj-crate-streaming)"
 
 
-def recording_length(mb_trackid: str, *, timeout: float = 10, opener=urllib.request.urlopen) -> float | None:
-    """The recording's length in seconds, or None when MusicBrainz has none. Raises on HTTP/URL/JSON errors."""
+class _Limiter:
+    """The process-wide spacing: one request in flight, each at least `min_interval_s` after the last finished.
+
+    Module-level on purpose: the backfill client and the worker's confirm step (`recording_length`) are different
+    callers of one MusicBrainz IP allowance, so no instance owns the limit. The lock is held across the request,
+    so threads queue. `clock`/`sleep` are injectable per call for tests.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._last: float | None = None
+
+    def reset(self) -> None:
+        self._last = None
+
+    @contextlib.contextmanager
+    def slot(self, clock: Callable[[], float], sleep: Callable[[float], None], min_interval_s: float):
+        with self._lock:
+            if self._last is not None:
+                wait = min_interval_s - (clock() - self._last)
+                if wait > 0:
+                    sleep(wait)
+            try:
+                yield
+            finally:
+                self._last = clock()
+
+
+_SHARED = _Limiter()
+
+
+def reset_shared_limiter() -> None:
+    """Forget the last request time (tests: so order does not matter, and a fake clock never meets a real one)."""
+    _SHARED.reset()
+
+
+def recording_length(mb_trackid: str, *, timeout: float = 10, opener=urllib.request.urlopen,
+                     sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic,
+                     min_interval_s: float = 1.05) -> float | None:
+    """The recording's length in seconds, or None when MusicBrainz has none. Raises on HTTP/URL/JSON errors.
+
+    Goes through the shared limiter, so it waits its turn behind a running backfill instead of bursting."""
     req = urllib.request.Request(URL.format(id=mb_trackid), headers={"User-Agent": USER_AGENT})
-    with opener(req, timeout=timeout) as r:
+    with _SHARED.slot(clock, sleep, min_interval_s), opener(req, timeout=timeout) as r:
         length = json.loads(r.read().decode("utf-8", errors="replace")).get("length")
     return None if length is None else length / 1000
 
@@ -89,7 +131,7 @@ def _escape(s: str) -> str:
 
 
 class MusicBrainz:
-    """One shared limiter: use a single instance per process (and one cache file per run) and the spacing holds.
+    """Spacing is process-wide (`_SHARED`), not per instance; use one cache file per run.
 
     `opener`, `sleep` and `clock` are injectable so tests never touch the network or wait.
     """
@@ -99,7 +141,6 @@ class MusicBrainz:
                  timeout: float = 15, cache: Path | None = None):
         self._opener, self._sleep, self._clock = opener, sleep, clock
         self.min_interval_s, self.retries, self.timeout = min_interval_s, retries, timeout
-        self._last: float | None = None
         self._cache_path = Path(cache) if cache else None
         self._cache: dict[str, tuple[int, dict | None]] = {}
         if self._cache_path and self._cache_path.exists():
@@ -118,12 +159,6 @@ class MusicBrainz:
                 f.write(json.dumps({"url": url, "status": status, "body": body}, ensure_ascii=False) + "\n")
                 f.flush()
 
-    def _space(self) -> None:
-        if self._last is not None:
-            wait = self.min_interval_s - (self._clock() - self._last)
-            if wait > 0:
-                self._sleep(wait)
-
     def get(self, path: str, **query) -> dict | None:
         """The JSON at `path` (relative to /ws/2/), or None on 404. Cached answers cost no request and no wait."""
         url = BASE + path + "?" + urllib.parse.urlencode({"fmt": "json", **query})
@@ -131,13 +166,12 @@ class MusicBrainz:
             status, body = self._cache[url]
             return body if status == 200 else None
         for attempt in range(1, self.retries + 1):
-            self._space()
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
             try:
-                with self._opener(req, timeout=self.timeout) as r:
+                with _SHARED.slot(self._clock, self._sleep, self.min_interval_s), \
+                        self._opener(req, timeout=self.timeout) as r:
                     body = json.loads(r.read().decode("utf-8", errors="replace"))
             except urllib.error.HTTPError as e:
-                self._last = self._clock()
                 if e.code == 404:
                     self._remember(url, 404, None)
                     return None
@@ -152,9 +186,7 @@ class MusicBrainz:
                 self._sleep(delay)
                 continue
             except (urllib.error.URLError, OSError, ValueError) as e:
-                self._last = self._clock()
                 raise MusicBrainzError(f"MusicBrainz request failed ({type(e).__name__}): {path}") from None
-            self._last = self._clock()
             self._remember(url, 200, body)
             return body
         raise MusicBrainzError(f"MusicBrainz 503 after {self.retries} tries: {path}")   # retries == 0
