@@ -16,10 +16,21 @@ import os
 import sys
 from pathlib import Path
 
+from .filer import BeetsFiler
 from .scorer import Wanted, rank, explain
 from .policy import DEFAULT_TIER, IMPORT_TIER, TIERS
 from .spotify_csv import fetch_entity
 from .verify import full_band, verify
+
+DEFAULT_BEETS_CONFIG = Path(__file__).resolve().parent.parent / "deploy" / "beets.yaml"
+
+
+def _fetch_env() -> dict:
+    """Where an approved fetch downloads and files, from the environment: the library, slskd's downloads
+    folder (Task 7 gives slskd its own) and the beets config the filer imports with."""
+    return {"music_root": Path(os.environ.get("MUSIC_ROOT") or "/srv/music"),
+            "downloads_root": Path(os.environ.get("DOWNLOADS_ROOT") or "/srv/incoming/soulseek"),
+            "filer": BeetsFiler(Path(os.environ.get("BEETS_CONFIG", DEFAULT_BEETS_CONFIG)))}
 
 
 def describe_measurements(m: dict) -> list[str]:
@@ -166,8 +177,7 @@ def main(argv: list[str] | None = None) -> int:
             print("set SUBSONIC_USER / SUBSONIC_PASS (and SUBSONIC_URL)", file=sys.stderr); return 1
         app = CrateApp(cfg)                          # same store/client/reconciler wiring as the crate service
         r = fetch(a.wanted, store=app.store, slskd=SlskdClient(a.slskd, a.api_key), navidrome=app.api,
-                  reconciler=app.reconciler, tier=a.tier, music_root=Path(os.environ.get("MUSIC_ROOT", "/srv/music")),
-                  downloads_root=Path(os.environ.get("DOWNLOADS_ROOT", "/srv/incoming")), approve=a.approve)
+                  reconciler=app.reconciler, tier=a.tier, approve=a.approve, **_fetch_env())
         print(r.explain)
         if r.pick:
             print(f"pick: {r.pick.username}: {r.pick.basename}  (score {r.pick.score:.2f})")

@@ -17,7 +17,7 @@ web/        the client: stream + toggle crates from the same screen (vanilla JS,
 sourcing/   Phase 1: Soulseek sourcing — one wanted track from search to a file Navidrome serves
   policy.py  scorer.py  verify.py  slskd_client.py   rank + check (unchanged)
   fetch.py          the slice: search → score → (approved) download → verify → file → rescan → crate ok
-  organize.py       Artist/Album (Year)/NN - Title.ext from the wanted record, never overwrites
+  filer.py          beet import of each verified download (the only beets writer)
   fake_slskd.py     in-process slskd for tests/demos
   spotify_csv.py    public Spotify playlist → rows, no API credentials (embed page)
   cli.py            rank | verify | fetch --wanted <id> [--approve] | seed-spotify <url> | import-playlist <src>... [--name N]

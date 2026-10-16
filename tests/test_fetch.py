@@ -6,11 +6,12 @@ from crates.reconcile import Reconciler
 from crates.store import CrateStore
 from sourcing.fake_slskd import FakeSlskdServer
 from sourcing.fetch import fetch
+from sourcing.filer import BeetsFiler
 from sourcing.slskd_client import SlskdClient
 from sourcing.verify import verify
 from subsonic.client import SubsonicClient
 from subsonic.fake_server import FakeSubsonicServer
-from tests.helpers import load_responses, make_flac
+from tests.helpers import beets_items_db, fake_beet, load_responses, make_flac
 
 RESPONSES = load_responses()
 GOOD = RESPONSES[0]["files"][0]["filename"]      # Chic — Good Times FLAC, 501 s
@@ -43,7 +44,12 @@ def world(tmp_path):
         rec.set_crate("pl-2", True)
         wanted = [w for w in store.wanted() if w["song_id"] == "s4"]
         assert wanted and wanted[0]["status"] == "needs_source"
-        yield dict(nd=nd, store=store, client=client, rec=rec, music=tmp_path / "music", dl=tmp_path / "dl")
+        lib = beets_items_db(tmp_path / "library.db")
+        filer = BeetsFiler(tmp_path / "beets.yaml", library=lib,
+                           runner=fake_beet(tmp_path / "music", lib, "Chic/Risqué (1979)/03 - Good Times.flac",
+                                            artist="Chic", title="Good Times"),
+                           tagger=lambda path, names: [])
+        yield dict(nd=nd, store=store, client=client, rec=rec, music=tmp_path / "music", dl=tmp_path / "dl", filer=filer)
 
 
 def header_only(path, duration, tier=None, reference=None):
@@ -54,6 +60,7 @@ def header_only(path, duration, tier=None, reference=None):
 
 def run(world, srv, approve, wanted_id="s4", **kw):
     kw.setdefault("verifier", header_only)
+    kw.setdefault("filer", world["filer"])
     return fetch(wanted_id, store=world["store"], slskd=SlskdClient(srv.url, "k"), navidrome=world["client"],
                  reconciler=world["rec"], music_root=world["music"], downloads_root=world["dl"],
                  approve=approve, poll_s=0.01, download_timeout_s=kw.pop("download_timeout_s", 1),

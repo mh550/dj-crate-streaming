@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS external_wanted (
   reason      TEXT,
   playlist_id TEXT, position INTEGER,             -- import-playlist: where a later fetch inserts the track
   tier        TEXT NOT NULL DEFAULT 'crate',      -- quality tier it is sourced at (spec §1): low|medium|high|crate
+  asked_artist TEXT, asked_title TEXT,            -- the names first asked for (Spotify), kept once Navidrome's replace them
   created_at  REAL NOT NULL, updated_at REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS imported_entries (     -- every song import-playlist ever added to a playlist,
@@ -114,7 +115,8 @@ class CrateStore:
     def _migrate(self) -> None:
         """Add columns introduced after a DB was created (CREATE IF NOT EXISTS does not alter)."""
         have = {r[1] for r in self.db.execute("PRAGMA table_info(external_wanted)")}
-        for col, typ in (("playlist_id", "TEXT"), ("position", "INTEGER"), ("tier", "TEXT NOT NULL DEFAULT 'crate'")):
+        for col, typ in (("playlist_id", "TEXT"), ("position", "INTEGER"), ("tier", "TEXT NOT NULL DEFAULT 'crate'"),
+                         ("asked_artist", "TEXT"), ("asked_title", "TEXT")):
             if col not in have:
                 self.db.execute(f"ALTER TABLE external_wanted ADD COLUMN {col} {typ}")
         self.db.commit()
@@ -222,6 +224,26 @@ class CrateStore:
                 self.set_track_status(pl, song_id, status, reason)
         self.commit()
 
+    def set_wanted_names(self, wanted_id: str, artist: str, title: str) -> bool:
+        """Copy the names Navidrome shows for the filed song onto the wanted row; True when they changed.
+
+        An external row keeps the names it was first asked for in asked_artist/asked_title, so re-seeding the
+        same Spotify playlist still finds it (find_external). A crate row's names are that song's live rows."""
+        old = self.find_wanted(wanted_id)
+        if old is None or ((old.get("artist") or ""), old["title"]) == (artist, title):
+            return False
+        now = time.time()
+        if wanted_id.startswith("ext-"):
+            self.db.execute("UPDATE external_wanted SET asked_artist=COALESCE(asked_artist, artist), "
+                            "asked_title=COALESCE(asked_title, title), artist=?, title=?, updated_at=? WHERE id=?",
+                            (artist, title, now, _ext_pk(wanted_id)))
+        else:
+            self.db.execute("UPDATE crate_tracks SET artist=?, title=?, updated_at=? WHERE song_id=? AND status!='removed'",
+                            (artist, title, now, wanted_id))
+        self.log(None, wanted_id, "renamed", f"{old.get('artist') or ''} – {old['title']} → {artist} – {title}")
+        self.commit()
+        return True
+
     def set_verification(self, song_id: str, result: dict) -> None:
         """Keep the last download check for a wanted id (crate or external), replacing the previous one."""
         self.db.execute("INSERT INTO verifications(song_id, result, ts) VALUES(?,?,?) ON CONFLICT(song_id) DO UPDATE "
@@ -277,10 +299,12 @@ class CrateStore:
 
     # --- external wanted (not in Navidrome at all; seeded from Spotify etc.)
     def find_external(self, artist: str, title: str) -> dict | None:
-        """A live (not failed) external row for the same artist/title, ignoring case and punctuation."""
+        """A live (not failed) external row for the same artist/title, ignoring case and punctuation. A row
+        renamed from Navidrome (set_wanted_names) also matches the names it was first asked for."""
         key = _loose(artist) + "|" + _loose(title)
         for r in self.db.execute("SELECT * FROM external_wanted WHERE status!='failed'"):
-            if _loose(r["artist"]) + "|" + _loose(r["title"]) == key:
+            asked = _loose(r["asked_artist"]) + "|" + _loose(r["asked_title"]) if r["asked_title"] is not None else None
+            if key in (_loose(r["artist"]) + "|" + _loose(r["title"]), asked):
                 return self._ext_row(r)
         return None
 

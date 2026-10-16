@@ -1,10 +1,16 @@
-"""One wanted track, end to end: search → score → (approved) download → verify → file → rescan → ok.
+"""One wanted track, end to end: search → score → (approved) download → verify → beet import → rescan → ok.
 
-    needs_source ──search/score──▶ (print pick, stop)            without approve
-    needs_source ─▶ sourcing ─▶ verify ─▶ ok                      approve, all good
-                                 │          └─▶ verify + reason    filed, Navidrome hasn't indexed it yet
-                                 └─▶ failed                        bad file / download timed out / exception
+    needs_source ──search/score──▶ (print pick, stop)                       without approve
+    needs_source ─▶ sourcing ─▶ verify ─▶ beet import ─▶ rescan ─▶ ok         approve, all good
+                                 │          │                 └─▶ verify     filed, Navidrome hasn't indexed it yet
+                                 │          └─▶ failed                        beets imported nothing (file kept in staging)
+                                 └─▶ failed                                   bad file / download timed out / exception
     needs_source (unchanged) when no acceptable candidate — retried next time
+
+Filing is beets' job (D18): the verified download moves to its own `<downloads>/.staging/<id>-<ts>/`
+folder and BeetsFiler imports it from there, so beets never sees slskd's folders or the library's
+originals. Navidrome's names for the filed song then go back onto the wanted row (`renamed` event),
+because they are what the library now calls it. Soulseek peer names never reach a reason or an event.
 
 Re-running `fetch` on a `verify` row skips the download and just re-checks Navidrome for the
 filed path kept in the reason; a `sourcing` row older than the download timeout is treated as
@@ -19,6 +25,7 @@ just need the file in the library.
 from __future__ import annotations
 
 import re
+import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,7 +33,7 @@ from pathlib import Path
 from crates.reconcile import Reconciler
 from crates.store import CrateStore
 from subsonic.client import SubsonicClient
-from .organize import file_into
+from .filer import BeetsFiler
 from .policy import DEFAULT_TIER, TIERS, QualityPolicy, check_tier
 from .scorer import Candidate, Wanted, explain, rank
 from .slskd_client import SlskdClient, transfer_files
@@ -59,7 +66,7 @@ def _find_landed(downloads_root: Path, best: Candidate) -> Path | None:
 def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: SubsonicClient,
           reconciler: Reconciler, music_root: Path, downloads_root: Path, approve: bool,
           tier: str | None = None, policy: QualityPolicy | None = None, download_timeout_s: float = 600, poll_s: float = 1.0,
-          scan_timeout_s: float = 120, verifier=verify) -> FetchResult:
+          scan_timeout_s: float = 120, verifier=verify, filer: BeetsFiler | None = None) -> FetchResult:
     music_root, downloads_root = Path(music_root), Path(downloads_root)
     row = store.find_wanted(wanted_id)
     if row is None:
@@ -75,6 +82,8 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         if missing:
             return FetchResult("refused", f"not downloading: {', '.join(missing)} not here (run --approve where the "
                                "library and slskd's downloads are mounted)")
+        if filer is None:
+            return FetchResult("refused", "no beets filer configured (run --approve in the worker)")
     policy = policy or TIERS[row["tier"]]
 
     def set_status(status: str, reason: str | None = None) -> None:
@@ -86,23 +95,25 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
 
     wanted = Wanted(row.get("artist") or "", row["title"], row.get("album"), row.get("duration"), row.get("year"))
 
-    def locate_in_navidrome(filed: Path):
+    def locate_in_navidrome(filed: Path, query: str | None = None):
         navidrome.start_scan()
         t0 = time.time()
         while navidrome.scan_status().get("scanning") and time.time() - t0 < scan_timeout_s:
             time.sleep(poll_s)
         ext, size, rel = filed.suffix.lstrip(".").lower(), filed.stat().st_size, filed.relative_to(music_root).as_posix()
-        hits = [s for s in navidrome.search_songs(f"{wanted.artist} {wanted.title}".strip(), count=50)
+        query = query if query is not None else f"{wanted.artist} {wanted.title}"
+        hits = [s for s in navidrome.search_songs(query.strip(), count=50)
                 if (s.suffix or "").lower() == ext and s.size == size]   # size is the key: tags may differ, and
         # Navidrome's Subsonic `path` is synthesised from tags, so it only serves as a tie-break
         return next((s for s in hits if (s.path or "").endswith(rel)), hits[0] if hits else None)
 
-    def finish(filed: Path, best: Candidate | None, text: str) -> FetchResult:
-        new = locate_in_navidrome(filed)
+    def finish(filed: Path, best: Candidate | None, text: str, query: str | None = None) -> FetchResult:
+        new = locate_in_navidrome(filed, query)
         if new is None:
             why = f"filed as {filed.relative_to(music_root)} but Navidrome has not picked it up yet"
             set_status("verify", why)
             return FetchResult("verify", why, best, filed, explain=text)
+        store.set_wanted_names(wanted_id, new.artist or "", new.title)      # what the library calls it now
         if external:
             set_status("ok", f"filed as {filed.relative_to(music_root)}")
             return FetchResult("ok", "filed and visible in Navidrome", best, filed, new.id, text)
@@ -143,7 +154,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
     if not approve:
         return FetchResult("needs_source", "pick printed; re-run with --approve to download", best, explain=text)
 
-    set_status("sourcing", f"downloading from {best.username}")
+    set_status("sourcing", f"downloading {best.basename}")
     try:
         # forget earlier attempts at the same file so their final state can't be mistaken for this one
         for t in transfer_files(slskd.downloads(best.username)):
@@ -174,10 +185,24 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
             landed.unlink(missing_ok=True)                      # our own download, not library material
             return fail("; ".join(vd.problems), best, text)
 
-        track = row.get("track") if external else navidrome.song(wanted_id).track
-        filed = file_into(landed, music_root, artist=wanted.artist, title=wanted.title,
-                          album=wanted.album, year=wanted.year, track=track)
-        return finish(filed, best, text)
+        staging = downloads_root / ".staging" / f"{wanted_id}-{int(time.time())}"   # beets only ever sees this
+        staging.mkdir(parents=True)
+        shutil.move(landed, staging / landed.name)
+        log = staging.with_suffix(".log")
+        item = filer.file(staging, log, names={"artist": wanted.artist, "title": wanted.title})
+        if item is not None and item.filled:
+            store.log(None, wanted_id, "tagged", f"filled {', '.join(item.filled)} from the wanted row")
+        if item is None:                                         # e.g. a duplicate beets skipped: keep the file
+            return fail(f"beets did not import {landed.name}; it is still in {staging}", best, text)
+        store.log(None, wanted_id, "filed",
+                  f"beets {'matched' if item.matched else 'as-is'}: {item.path.relative_to(music_root)}")
+        store.commit()
+        log.unlink(missing_ok=True)
+        try:
+            staging.rmdir()
+        except OSError:                                          # beets left something behind: harmless, keep it
+            pass
+        return finish(item.path, best, text, query=f"{item.artist} {item.title}")
     except Exception as e:                                       # never leave a row stuck in sourcing/verify
         set_status("failed", f"{type(e).__name__}: {e}")
         raise
