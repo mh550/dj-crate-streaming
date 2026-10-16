@@ -76,7 +76,7 @@ def fake_beet(music: Path, library: Path, target_rel: str, *, artist="", title="
               matched=False, import_nothing=False, rc=0) -> Callable:
     """A subprocess.run stand-in for `beet`. Every cmd lands in `.calls`. On `import` it moves the single
     file in cmd[-1] to music/target_rel, adds an `items` row and writes this call's -l log the way beets
-    1.6.0 does: `asis <src>` for an as-is import, nothing for an applied match, `duplicate-skip <src>` (and
+    1.6.0 does (appending): `asis <src>` for an as-is import, nothing for an applied match, `duplicate-skip <src>` (and
     no move) with `import_nothing`."""
     def run(cmd, **kwargs):
         run.calls.append(list(cmd))
@@ -84,7 +84,8 @@ def fake_beet(music: Path, library: Path, target_rel: str, *, artist="", title="
             src = next(p for p in Path(cmd[-1]).iterdir() if p.is_file())
             log = Path(cmd[cmd.index("-l") + 1])
             if import_nothing:
-                log.write_text(f"duplicate-skip {src}\n")
+                with log.open("a") as fh:              # beets' FileHandler appends
+                    fh.write(f"duplicate-skip {src}\n")
             else:
                 dst = music / target_rel
                 dst.parent.mkdir(parents=True, exist_ok=True)
@@ -92,7 +93,8 @@ def fake_beet(music: Path, library: Path, target_rel: str, *, artist="", title="
                 with closing(sqlite3.connect(library)) as db, db:
                     db.execute("INSERT INTO items(path, mb_trackid, artist, title) VALUES (?, ?, ?, ?)",
                                (os.fsencode(dst.absolute()), mb_trackid, artist, title))
-                log.write_text("" if matched else f"asis {src}\n")
+                with log.open("a") as fh:
+                    fh.write("" if matched else f"asis {src}\n")
         return subprocess.CompletedProcess(cmd, rc, "", "boom" if rc else "")
     run.calls = []
     return run

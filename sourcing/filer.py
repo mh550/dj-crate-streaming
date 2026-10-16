@@ -15,7 +15,10 @@ ImportSession.log_choice writes `asis <path>` for an as-is choice and nothing fo
 duplicate adds `duplicate-keep <path>` after the `asis` line. So each call gets its own `-l` log, and
 "matched" means: a new `items` row and no line starting `asis `.
 
-The beets Python package is not imported here; `beet` is a subprocess and library.db is read read-only.
+This module drives `beet` as a subprocess and reads library.db read-only; it never imports beets itself.
+fill_missing_tags imports scripts.tag_cleanup.write_minimal (the one field-by-field tag writer) lazily,
+because scripts.tag_cleanup pulls in the beets package at import time; only the worker image, which
+installs beets 1.6.0, reaches that import.
 Only a folder under `.staging` is accepted, which keeps beets away from the originals and the library.
 """
 from __future__ import annotations
@@ -51,7 +54,9 @@ def fill_missing_tags(path: Path, names: dict[str, str]) -> list[str]:
 
     An untagged download would otherwise be filed as `_/Singles.flac` (measured). The file is our fresh
     download in staging, never a library file, and only the empty fields are written."""
-    from scripts.tag_cleanup import write_minimal       # lazily: it also sets up the sys.path for mediafile
+    # Lazily: scripts.tag_cleanup imports the beets package at its top (and sets up the sys.path for
+    # mediafile), so only a caller that actually fills tags (the worker, with beets 1.6.0) pays for it.
+    from scripts.tag_cleanup import write_minimal
     from mediafile import MediaFile
 
     current = MediaFile(str(path))
@@ -98,11 +103,11 @@ class BeetsFiler:
         folder, log = Path(folder), Path(log)
         if folder.resolve().parent.name != ".staging":        # resolved, so ".staging/.." or a symlink out fails
             raise ValueError(f"refusing to import {folder}: not a .staging folder")
-        filled: list[str] = []
-        if names:
-            for f in sorted(folder.iterdir()):
-                if f.is_file() and f.suffix.lower().lstrip(".") in AUDIO_EXT:
-                    filled = self.tagger(f, names)
+        audio = [f for f in folder.iterdir() if f.is_file() and f.suffix.lower().lstrip(".") in AUDIO_EXT]
+        if len(audio) != 1:                              # one download per folder, so one row to find afterwards
+            raise FilingError(f"expected one audio file in {folder}, found {len(audio)}")
+        filled = self.tagger(audio[0], names) if names else []
+        log.unlink(missing_ok=True)                      # beets appends: a stale "asis" line would hide a real match
         before = self._max_id()
         done = self._beet("import", "-q", "-s", "-m", "-W", "-l", str(log), str(folder))
         if done.returncode:

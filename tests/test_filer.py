@@ -212,6 +212,25 @@ def test_tagger_runs_only_when_names_are_given(fake):
     assert len(seen) == 1
 
 
+def test_a_stale_log_cannot_hide_a_real_match(fake):
+    fake["log"].write_text("asis x\n")                 # left over from an earlier attempt at this path
+    runner = fake_beet(fake["music"], fake["library"], "Chic/Singles/Good Times.flac", mb_trackid="rec-1",
+                       matched=True)
+    item = BeetsFiler(fake["cfg"], runner=runner).file(fake["staging"], fake["log"])
+    assert item.matched is True
+    assert runner.calls[1][3] == "write"
+
+
+def test_refuses_a_folder_without_exactly_one_audio_file(fake):
+    (fake["staging"] / "gt2.flac").write_bytes(b"fLaC")
+    runner = fake_beet(fake["music"], fake["library"], "Chic/Singles/Good Times.flac")
+    tagged = []
+    with pytest.raises(FilingError, match="expected one audio file .* found 2"):
+        BeetsFiler(fake["cfg"], runner=runner, tagger=lambda p, n: tagged.append(p) or []).file(
+            fake["staging"], fake["log"], names={"artist": "Chic"})
+    assert runner.calls == [] and tagged == []
+
+
 @pytest.mark.parametrize("where", ["library-import", "dl/.staging/.."])
 def test_refuses_a_folder_outside_staging(fake, tmp_path, where):
     runner = fake_beet(fake["music"], fake["library"], "Chic/Singles/Good Times.flac")
