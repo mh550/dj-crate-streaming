@@ -19,7 +19,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from difflib import SequenceMatcher
 
-from .identity import words
+from .identity import parse_title, words
 from .policy import QualityPolicy, DEFAULT_POLICY
 
 
@@ -37,6 +37,9 @@ class Wanted:
     album: str | None = None
     duration_s: float | None = None   # from Spotify/MusicBrainz metadata if known
     year: int | None = None
+    # True for a crate-row copy upgrade (M7): the owned version is being replaced by a better copy of the
+    # same version, so a candidate that is another version is rejected, not merely ranked lower.
+    copy: bool = False
 
 
 @dataclass
@@ -155,6 +158,17 @@ def score_candidate(c: Candidate, w: Wanted, policy: QualityPolicy = DEFAULT_POL
     s = 45 * nm
     c.reasons.append(f"name {nm:.2f} ({how})")
 
+    # --- version: which version the file is, read from its name (identity.parse_title)
+    want = parse_title(w.title, w.artist)
+    got = parse_title(strip_trackno(re.sub(r"\.[^.]+$", "", c.basename)), w.artist)
+    other = got.key != want.key
+    if w.copy and other:
+        # An upgrade replaces a copy Michael owns, so it must be that version: a radio edit is never
+        # "upgraded" to a 12".
+        c.rejected = (f"another version ({got.label or 'no label'}); a crate upgrade must be the same "
+                      f"version ({want.label or 'as titled'})")
+        c.score = 0; return c
+
     # --- format preference (0..20)
     fmt = max(0.0, 20 - 5 * rank)
     s += fmt
@@ -175,7 +189,10 @@ def score_candidate(c: Candidate, w: Wanted, policy: QualityPolicy = DEFAULT_POL
             s += 2; c.reasons.append("hi-res")
 
     # --- duration vs known length (−15..+15)
-    if w.duration_s and c.length_s:
+    if w.duration_s and c.length_s and other and got.kinds & set(policy.accept_versions):
+        # A 12" is not 3 minutes long; the tier accepts that version, so the wanted length says nothing.
+        c.reasons.append(f"another version ({got.label}): length not compared")
+    elif w.duration_s and c.length_s:
         d = abs(c.length_s - w.duration_s)
         if d <= policy.duration_tolerance_s:
             s += 15; c.reasons.append(f"duration match (Δ{d:.0f}s)")
@@ -185,6 +202,13 @@ def score_candidate(c: Candidate, w: Wanted, policy: QualityPolicy = DEFAULT_POL
             s -= 15; c.reasons.append(f"duration off (Δ{d:.0f}s) — probably a different version")
     elif w.duration_s and not c.length_s:
         c.reasons.append("no length reported")
+
+    # --- version preference (D16, deploy/policy.toml): the best-ranked kind the file has; one bonus only
+    for i, kind in enumerate(policy.prefer_versions):
+        if kind in got.kinds:
+            bonus = max(2, 6 - 2 * i)
+            s += bonus; c.reasons.append(f"prefers {kind} +{bonus}")
+            break
 
     # --- album / year hints (0..6)
     if w.album and norm(w.album) in norm(c.folder):
