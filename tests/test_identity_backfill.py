@@ -544,3 +544,401 @@ def test_the_report_reads_on_a_phone(tmp_path, template):
     assert "US disco band session" in amb
     row = json.loads((out / "identity-proposal.json").read_text())["proposals"][0]
     assert row["cls"] == "ambiguous" and sorted(row["candidates"]) == [RA, RB]
+
+
+# ── apply / revert (Task 9): the one path that writes library tags ────────────────────────────────────────────
+#
+# Rows are built from the files' own facts (what `propose` records), written as a proposal JSON. Every check that
+# matters reads the files independently with mutagen (`dump`), not through the code under test.
+
+W1 = "33333333-3333-3333-3333-333333333333"
+A1 = "44444444-4444-4444-4444-444444444444"
+OTHER = "55555555-5555-5555-5555-555555555555"
+
+
+def dump(p: Path) -> list:
+    """Every tag key and value in the file, as mutagen sees it (ID3 frames by HashKey, Vorbis pairs)."""
+    import mutagen
+    import mutagen.id3
+    tags = mutagen.File(str(p)).tags
+    if isinstance(tags, mutagen.id3.ID3):
+        return sorted((k, repr(fr)) for k, fr in tags.items())
+    return sorted((k.lower(), repr(v)) for k, v in tags.items())
+
+
+def row_for(music: Path, p: Path, cls="isrc", write=None, **extra) -> dict:
+    """A proposal row for p as `propose` would record it now."""
+    f = ib.read_facts(music, p)
+    pr = ib.Proposal(path=f.path, cls=cls, write=dict(write if write is not None else {"mb_trackid": R1}),
+                     accept=cls in ib.ACCEPT, size=f.size, mtime_ns=f.mtime_ns, file=f.tags())
+    return {**ib.asdict(pr), **extra}
+
+
+def proposal_file(tmp_path: Path, rows: list[dict]) -> Path:
+    path = tmp_path / "out" / "identity-proposal.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"created": "x", "music_root": "m", "proposals": rows}))
+    return path
+
+
+def apply(tmp_path, music, rows, **kw):
+    kw.setdefault("log", tmp_path / "out" / "apply.jsonl")
+    return ib.apply(proposal_file(tmp_path, rows), music, **kw)
+
+
+def rich(music, rel, tpl, **tags):
+    """A file with the fields beets damaged in M2: two GENREs, an ISRC, album; the id fields empty."""
+    return tagged(music, rel, tpl, artist="Kool & the Gang", title="Le Freak", album="C'est Chic",
+                  genres=["Disco", "Funk"], isrc="USAT29900609", **tags)
+
+
+def navidrome(tmp_path, music, rels):
+    """navidrome.db (the export test's schema + mbz_recording_id), a playlist of the files, and its .m3u8 export."""
+    import sqlite3
+    from scripts import export_playlists as ep
+    from tests.test_export_playlists import SCHEMA
+    db = tmp_path / "navidrome.db"
+    con = sqlite3.connect(db)
+    con.executescript(SCHEMA + "ALTER TABLE media_file ADD COLUMN mbz_recording_id varchar(255) default '';")
+    con.executemany("insert into media_file(id,path,title,artist,duration) values(?,?,?,?,?)",
+                    [(f"id{i}", rel, "Le Freak", "Kool & the Gang", 8.0) for i, rel in enumerate(rels)])
+    con.execute("insert into playlist(id,name) values('p1','set')")
+    con.executemany("insert into playlist_tracks(id,playlist_id,media_file_id) values(?,?,?)",
+                    [(i, "p1", f"id{i}") for i in range(len(rels))])
+    con.commit()
+    con.close()
+    ep.export(db, music, music / "_playlists")
+    return db
+
+
+class FakeNavidrome:
+    """start_scan reads each file's recording id with mediafile, as Navidrome would; `new_ids` re-keys rows."""
+
+    def __init__(self, db, music, new_ids=None, scanning=False):
+        self.db, self.music, self.new_ids, self.scanning, self.scans = db, music, new_ids or {}, scanning, 0
+
+    def start_scan(self):
+        import sqlite3
+        from mediafile import MediaFile
+        self.scans += 1
+        con = sqlite3.connect(self.db)
+        for mid, path in con.execute("select id, path from media_file").fetchall():
+            con.execute("update media_file set mbz_recording_id=? where id=?",
+                        (MediaFile(str(self.music / path)).mb_trackid or "", mid))
+            if path in self.new_ids:
+                con.execute("update media_file set id=? where id=?", (self.new_ids[path], mid))
+        con.commit()
+        con.close()
+        return {"scanning": True}
+
+    def scan_status(self):
+        return {"scanning": self.scanning}
+
+
+def test_apply_writes_only_the_id_fields(tmp_path, template, mp3_template):
+    music = tmp_path / "music"
+    fl = rich(music, "K/a.flac", template)
+    mp = rich(music, "K/b.mp3", mp3_template)
+    before = {p: dump(p) for p in (fl, mp)}
+    db = navidrome(tmp_path, music, ["K/a.flac", "K/b.mp3"])
+    nd = FakeNavidrome(db, music)
+    rows = [row_for(music, p, write={"mb_trackid": R1, "mb_workid": W1}) for p in (fl, mp)]
+    rep = apply(tmp_path, music, rows, navidrome=nd, navidrome_db=db, poll_s=0)
+    assert rep.problems == [] and sorted(rep.written) == ["K/a.flac", "K/b.mp3"] and nd.scans == 1
+
+    def changed(p):
+        a, b = dict(before[p]), dict(dump(p))
+        return {k for k in a.keys() | b.keys() if a.get(k) != b.get(k)}
+    assert changed(fl) == {"musicbrainz_trackid", "musicbrainz_workid"}
+    assert changed(mp) == {"UFID:http://musicbrainz.org", "TXXX:MusicBrainz Work Id"}
+    from mediafile import MediaFile
+    for p in (fl, mp):
+        m = MediaFile(str(p))
+        assert m.genres == ["Disco", "Funk"] and m.isrc == "USAT29900609"           # the M2 trap
+        assert ib.read_ids(p) == {"mb_trackid": [R1], "mb_workid": [W1], "acoustid_id": []}
+
+
+def test_apply_selects_by_accept_classes_and_skip(tmp_path, template):
+    music = tmp_path / "music"
+    a, b, c = (rich(music, f"K/{n}.flac", template) for n in "abc")
+    rows = [row_for(music, a, "isrc"), row_for(music, b, "search"), row_for(music, c, "isrc", skip=True)]
+    shas = sha(music)
+    rep = apply(tmp_path, music, rows, dry_run=True)
+    assert rep.written == ["K/a.flac"]
+    rep = apply(tmp_path, music, rows, classes={"isrc", "search"}, dry_run=True)
+    assert rep.written == ["K/a.flac", "K/b.flac"]
+    rep = apply(tmp_path, music, rows)
+    assert rep.written == ["K/a.flac"] and rep.problems == []
+    after = sha(music)
+    assert after[str(b)] == shas[str(b)] and after[str(c)] == shas[str(c)]          # untouched, byte for byte
+    assert after[str(a)] != shas[str(a)]
+
+
+def test_classes_outside_the_default_are_never_applied_by_default(tmp_path, template):
+    music = tmp_path / "music"
+    rows = []
+    for cls in ("search", "ambiguous", "none", "conflict", "error"):
+        p = rich(music, f"K/{cls}.flac", template)
+        rows.append(row_for(music, p, cls, accept=True))                         # even with a hand-set accept
+    shas = sha(music)
+    rep = apply(tmp_path, music, rows)
+    assert rep.written == [] and sha(music) == shas
+
+
+def test_apply_skips_changed_files_and_never_overwrites_an_id(tmp_path, template, mp3_template):
+    import os
+    music = tmp_path / "music"
+    touched = rich(music, "K/touched.flac", template)
+    gained = rich(music, "K/gained.flac", template)
+    retitled = rich(music, "K/retitled.flac", template)
+    txxx = rich(music, "K/txxx.mp3", mp3_template)
+    _id3_txxx(txxx, "MusicBrainz Track Id", OTHER)                     # only in TXXX: mediafile does not see it
+    rows = [row_for(music, p) for p in (touched, gained, retitled)]
+    t_row = row_for(music, txxx)
+    t_row["file"]["mb_trackid"] = ""                                   # as if propose had missed it
+    rows.append(t_row)
+
+    st = touched.stat()
+    os.utime(touched, ns=(st.st_atime_ns, st.st_mtime_ns + 5_000_000_000))
+    from scripts.tag_cleanup import write_minimal
+    for p, change in ((gained, {"mb_trackid": OTHER}), (retitled, {"title": "Le Freak (Live)"})):
+        write_minimal(p, change)
+        row = next(r for r in rows if r["path"] == p.relative_to(music).as_posix())
+        row["size"], row["mtime_ns"] = p.stat().st_size, p.stat().st_mtime_ns     # a tagger that kept size/mtime
+    shas = sha(music)
+    rep = apply(tmp_path, music, rows)
+    assert rep.written == [] and sha(music) == shas
+    why = dict(rep.skipped)
+    assert why["K/touched.flac"] == "changed since the proposal"
+    assert why["K/gained.flac"] == "already has mb_trackid"
+    assert why["K/txxx.mp3"] == "already has mb_trackid"
+    assert why["K/retitled.flac"].startswith("tags changed since the proposal") and "title" in why["K/retitled.flac"]
+    assert ib.read_ids(gained)["mb_trackid"] == [OTHER] and ib.read_ids(txxx)["mb_trackid"] == [OTHER]
+
+
+def test_a_length_change_within_half_a_second_is_not_a_change(tmp_path, template):
+    music = tmp_path / "music"
+    p = rich(music, "K/a.flac", template)
+    near, far = row_for(music, p), row_for(music, p)
+    near["file"]["length_s"] += 0.4
+    far["file"]["length_s"] += 0.6
+    assert apply(tmp_path, music, [near], dry_run=True).written == ["K/a.flac"]
+    rep = apply(tmp_path, music, [far], dry_run=True)
+    assert rep.written == [] and "length_s" in rep.skipped[0][1]
+
+
+def test_dry_run_writes_nothing(tmp_path, template):
+    music = tmp_path / "music"
+    p = rich(music, "K/a.flac", template)
+    shas = sha(music)
+    log = tmp_path / "out" / "apply.jsonl"
+    rep = apply(tmp_path, music, [row_for(music, p, write={"mb_trackid": R1, "mb_workid": W1})], dry_run=True, log=log)
+    assert rep.written == ["K/a.flac"] and rep.fields == {"K/a.flac": {"mb_trackid": R1, "mb_workid": W1}}
+    assert sha(music) == shas and not log.exists()
+
+
+def test_changed_navidrome_id_is_a_problem(tmp_path, template, capsys):
+    music = tmp_path / "music"
+    p = rich(music, "K/a.flac", template)
+    db = navidrome(tmp_path, music, ["K/a.flac"])
+    prop = proposal_file(tmp_path, [row_for(music, p)])
+    nd = FakeNavidrome(db, music, new_ids={"K/a.flac": "fresh"})
+    rc = ib.main(["apply", str(prop), "--music", str(music), "--navidrome-db", str(db), "--yes",
+                  "--log", str(tmp_path / "out" / "a.jsonl"), "--poll", "0"], navidrome=nd)
+    out = capsys.readouterr().out
+    assert rc == 1 and "id changed: K/a.flac id0 → fresh" in out and "1 written" in out
+
+
+def test_navidrome_without_the_recording_id_or_a_slow_scan_is_a_problem(tmp_path, template):
+    music = tmp_path / "music"
+    p = rich(music, "K/a.flac", template)
+    db = navidrome(tmp_path, music, ["K/a.flac"])
+
+    class Blind(FakeNavidrome):
+        def start_scan(self):
+            return {"scanning": True}
+    rep = apply(tmp_path, music, [row_for(music, p)], navidrome=Blind(db, music), navidrome_db=db, poll_s=0)
+    assert rep.problems == ["Navidrome does not show the recording id for K/a.flac"]
+
+    q = rich(music, "K/b.flac", template)
+    rep = apply(tmp_path, music, [row_for(music, q)], navidrome=FakeNavidrome(db, music, scanning=True),
+                navidrome_db=db, poll_s=0, scan_timeout_s=0)
+    assert any("scan" in x for x in rep.problems)
+
+
+def test_revert_restores_empty_fields_only_where_still_ours(tmp_path, template, mp3_template):
+    music = tmp_path / "music"
+    fl = rich(music, "K/a.flac", template)
+    mp = rich(music, "K/b.mp3", mp3_template)
+    hand = rich(music, "K/c.flac", template)
+    before = {p: (dump(p), ib.read_ids(p)) for p in (fl, mp, hand)}
+    log = tmp_path / "out" / "apply.jsonl"
+    rows = [row_for(music, p, write={"mb_trackid": R1, "mb_workid": W1, "acoustid_id": A1}) for p in (fl, mp, hand)]
+    rep = apply(tmp_path, music, rows, log=log)
+    assert len(rep.written) == 3 and rep.problems == []
+    from scripts.tag_cleanup import write_minimal
+    write_minimal(hand, {"mb_trackid": OTHER})                          # Michael fixed one by hand
+    assert ib.revert(log, music) == 3
+    for p in (fl, mp):
+        assert ib.read_ids(p) == before[p][1] and dump(p) == before[p][0]          # every tag as before
+    assert ib.read_ids(hand) == {"mb_trackid": [OTHER], "mb_workid": [], "acoustid_id": []}
+    assert ib.revert(log, music) == 0                                   # nothing of ours is left
+
+
+def test_revert_leaves_a_hand_edited_file_alone(tmp_path, template):
+    music = tmp_path / "music"
+    a, b = rich(music, "K/a.flac", template), rich(music, "K/b.flac", template)
+    log = tmp_path / "out" / "apply.jsonl"
+    apply(tmp_path, music, [row_for(music, a), row_for(music, b)], log=log)
+    from scripts.tag_cleanup import write_minimal
+    write_minimal(b, {"mb_trackid": OTHER})
+    shas = sha(music)
+    assert ib.revert(log, music) == 1
+    assert ib.read_ids(a)["mb_trackid"] == [] and ib.read_ids(b)["mb_trackid"] == [OTHER]
+    assert sha(music)[str(b)] == shas[str(b)]
+
+
+def test_the_log_is_written_before_the_write_and_a_failed_write_stops_the_run(tmp_path, template):
+    music = tmp_path / "music"
+    a, b = rich(music, "K/a.flac", template), rich(music, "K/b.flac", template)
+    log = tmp_path / "out" / "apply.jsonl"
+    seen = []
+
+    def writer(path, changes):
+        seen.append([json.loads(x) for x in log.read_text().splitlines()])
+        raise OSError("disk full")
+    rep = apply(tmp_path, music, [row_for(music, a), row_for(music, b)], log=log, writer=writer)
+    assert len(seen) == 1                                               # stopped after the first failure
+    intent = seen[0][-1]
+    assert intent["event"] == "write" and intent["path"] == "K/a.flac" and intent["written"] == {"mb_trackid": R1}
+    assert intent["prior"] == {"mb_trackid": []} and intent["size"] == a.stat().st_size
+    assert rep.written == [] and any("disk full" in x for x in rep.problems)
+
+
+def test_a_write_that_does_not_read_back_is_reported_and_stops(tmp_path, template):
+    music = tmp_path / "music"
+    a, b = rich(music, "K/a.flac", template), rich(music, "K/b.flac", template)
+    from scripts.tag_cleanup import write_minimal
+    calls = []
+
+    def wrong(path, changes):                                           # a writer that writes the wrong value
+        calls.append(path)
+        write_minimal(path, {k: OTHER for k in changes})
+    log = tmp_path / "out" / "apply.jsonl"
+    rep = apply(tmp_path, music, [row_for(music, a), row_for(music, b)], log=log, writer=wrong)
+    assert len(calls) == 1 and any("reads back" in x for x in rep.problems)
+    done = [json.loads(x) for x in log.read_text().splitlines()][-1]
+    assert done["event"] == "done" and done["ok"] is False and done["size"] == a.stat().st_size
+
+    def clobber(path, changes):                                         # writes the id but also drops a genre
+        write_minimal(path, {**changes, "genres": ["Disco"]})
+    rep = apply(tmp_path, music, [row_for(music, b)], writer=clobber)
+    assert any("other tags changed" in x for x in rep.problems)
+
+
+def test_choose_counts_only_a_listed_candidate(tmp_path, template):
+    music = tmp_path / "music"
+    a, b, c = (rich(music, f"K/{n}.flac", template) for n in "abc")
+    rows = [row_for(music, a, "ambiguous", write={}, candidates=[RA, RB], choose=RB),
+            row_for(music, b, "ambiguous", write={}, candidates=[RA, RB], choose=OTHER),
+            row_for(music, c, "ambiguous", write={}, candidates=[RA, RB], choose=RA, skip=True)]
+    rep = apply(tmp_path, music, rows)
+    assert rep.written == ["K/a.flac"] and ib.read_ids(a)["mb_trackid"] == [RB]
+    assert "not one of the row's candidates" in dict(rep.skipped)["K/b.flac"]
+    assert ib.read_ids(b)["mb_trackid"] == [] and ib.read_ids(c)["mb_trackid"] == []
+
+
+def test_a_chosen_row_gets_the_same_checks(tmp_path, template):
+    music = tmp_path / "music"
+    a = rich(music, "K/a.flac", template)
+    row = row_for(music, a, "ambiguous", write={}, candidates=[RA, RB], choose=RA)
+    from scripts.tag_cleanup import write_minimal
+    write_minimal(a, {"title": "Something Else"})
+    rep = apply(tmp_path, music, [row])
+    assert rep.written == [] and dict(rep.skipped)["K/a.flac"] == "changed since the proposal"
+
+
+def test_hand_edited_rows_cannot_write_other_fields_or_leave_the_library(tmp_path, template):
+    music = tmp_path / "music"
+    a = rich(music, "K/a.flac", template)
+    outside = tmp_path / "elsewhere" / "outside.flac"
+    outside.parent.mkdir()
+    shutil.copy2(a, outside)                                           # same size, mtime and tags: only the path differs
+    rows = [row_for(music, a, write={"title": "x"}), row_for(music, a, write={"mb_trackid": "not-an-id"})]
+    esc = row_for(music, a)
+    esc["path"] = "../elsewhere/outside.flac"
+    rows.append(esc)
+    shas = sha(music) | sha(outside.parent)
+    rep = apply(tmp_path, music, rows)
+    assert rep.written == [] and len(rep.skipped) == 3 and sha(music) | sha(outside.parent) == shas
+
+
+def test_limit_and_only_pick_a_small_subset(tmp_path, template):
+    music = tmp_path / "music"
+    paths = [rich(music, f"{d}/{n}.flac", template) for d in "KL" for n in "abc"]
+    rows = [row_for(music, p) for p in paths]
+    assert apply(tmp_path, music, rows, dry_run=True, limit=2).written == ["K/a.flac", "K/b.flac"]
+    assert apply(tmp_path, music, rows, dry_run=True, only=["L/*"]).written == ["L/a.flac", "L/b.flac", "L/c.flac"]
+    rep = apply(tmp_path, music, rows, only=["L/*"], limit=1)
+    assert rep.written == ["L/a.flac"]
+    rep = apply(tmp_path, music, rows, dry_run=True)                    # a second run: what is done says so
+    assert dict(rep.skipped)["L/a.flac"].startswith("already written")
+    assert len(rep.written) == 5
+
+
+def test_cli_needs_yes_prints_the_dry_run_and_keeps_the_log_out_of_the_library(tmp_path, template, capsys):
+    music = tmp_path / "music"
+    a = rich(music, "K/a.flac", template)
+    prop = proposal_file(tmp_path, [row_for(music, a, write={"mb_trackid": R1, "mb_workid": W1})])
+    shas = sha(music)
+    base = ["apply", str(prop), "--music", str(music), "--no-navidrome", "--log", str(tmp_path / "out" / "a.jsonl")]
+    assert ib.main(base) == 2 and "--yes" in capsys.readouterr().err
+    assert ib.main(base + ["--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert f"K/a.flac: mb_trackid={R1} mb_workid={W1}" in out and sha(music) == shas
+    inside = ["apply", str(prop), "--music", str(music), "--no-navidrome", "--yes", "--log", str(music / "a.jsonl")]
+    assert ib.main(inside) == 2 and "inside the library" in capsys.readouterr().err and sha(music) == shas
+    assert ib.main(base + ["--yes"]) == 0
+    assert "1 written, 0 skipped, 0 problems" in capsys.readouterr().out
+    assert ib.read_ids(a)["mb_trackid"] == [R1]
+    assert ib.main(["revert", str(tmp_path / "out" / "a.jsonl"), "--music", str(music)]) == 0
+    assert ib.read_ids(a)["mb_trackid"] == [] and "1 file" in capsys.readouterr().out
+
+
+def test_apply_and_revert_round_trip_an_m4a(tmp_path_factory, tmp_path):
+    tpl = make_audio(tmp_path_factory.mktemp("tpl4") / "t.m4a")
+    music = tmp_path / "music"
+    p = rich(music, "K/a.m4a", tpl)
+    before = dump(p), ib.read_ids(p)
+    log = tmp_path / "out" / "apply.jsonl"
+    rep = apply(tmp_path, music, [row_for(music, p, write={"mb_trackid": R1, "mb_workid": W1, "acoustid_id": A1})],
+                log=log)
+    assert rep.written == ["K/a.m4a"] and rep.problems == []
+    assert ib.read_ids(p) == {"mb_trackid": [R1], "mb_workid": [W1], "acoustid_id": [A1]}
+    assert ib.revert(log, music) == 1
+    assert (dump(p), ib.read_ids(p)) == before
+
+
+def test_the_scan_wait_does_not_mistake_a_scan_not_yet_begun_for_a_finished_one(tmp_path, template):
+    music = tmp_path / "music"
+    p = rich(music, "K/a.flac", template)
+    db = navidrome(tmp_path, music, ["K/a.flac"])
+
+    class Lagging(FakeNavidrome):
+        """Navidrome reports scanning=false until the scan goroutine starts; lastScan moves when it is done."""
+        polls = 0
+
+        def scan_status(self):
+            self.polls += 1
+            if self.scans and self.polls >= 4:
+                return {"scanning": False, "lastScan": "t1"}
+            return {"scanning": self.scans > 0 and self.polls == 3, "lastScan": "t0"}
+
+        def start_scan(self):
+            self.scans += 1
+            return {"scanning": False}
+
+    nd = Lagging(db, music)
+    rep = apply(tmp_path, music, [row_for(music, p)], navidrome=nd, navidrome_db=db, poll_s=0, scan_timeout_s=5)
+    assert nd.polls == 4
+    assert rep.problems == ["Navidrome does not show the recording id for K/a.flac"]   # this fake never scans
