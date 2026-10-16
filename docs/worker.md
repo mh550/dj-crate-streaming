@@ -174,6 +174,8 @@ docker compose exec -T worker python -m scripts.identity_backfill revert /data/i
 
 It removes the fields that apply wrote, newest first, and only where a file still holds exactly that value. A field
 you changed by hand is left alone, and the run says so. Running it twice is harmless.
+To apply again after an undo, run `propose` first: the undo changes each file's modification time, so `apply`
+skips those files as "changed since the proposal".
 
 ## Editing the policy
 
