@@ -7,12 +7,22 @@ asks `confirm_recording_length` before it writes: the match stands only when the
 with the file's.
 
 MusicBrainz requires a descriptive User-Agent and allows about one request per second; the worker makes at
-most one call per download.
+most one call per download. The identity backfill (M7) makes thousands, through the `MusicBrainz` client below.
+
+Measured live (2026-10-16): a request takes about 0.6 s, and even at 1.05 s spacing about 11% (8 of ~70) answer
+503 "server is currently busy". So the client spaces every request, retries a 503 with backoff (bounded), and
+keeps a resumable on-disk cache: breaking the policy gets the IP blocked, which would also break the worker's
+confirm step above, and an interrupted ~35 minute run must never ask the same question twice.
 """
 from __future__ import annotations
 
 import json
+import time
+import urllib.error
+import urllib.parse
 import urllib.request
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
 
 URL = "https://musicbrainz.org/ws/2/recording/{id}?fmt=json"
@@ -39,3 +49,124 @@ def confirm_recording_length(item, *, tol_s: float = 4.0,
     d = abs(mb - item.length)
     said = f"MusicBrainz length {mb:.0f} s vs file {item.length:.0f} s"
     return (True, said) if d <= tol_s else (False, f"{said} (Δ{d:.0f} s)")
+
+
+# ---- the rate-limited client (M7 identity backfill) -------------------------------------------------------------
+
+BASE = "https://musicbrainz.org/ws/2/"
+MAX_RETRY_AFTER_S = 60                                       # a hostile or confused header must not stall a run for an hour
+
+
+class MusicBrainzError(Exception):
+    """A request that cannot be answered: retries exhausted, an HTTP error other than 404, or no network."""
+
+
+@dataclass(frozen=True)
+class Recording:
+    id: str
+    title: str
+    length_s: float | None
+    artist: str                                              # artist-credit names joined with their joinphrases
+    work_ids: tuple[str, ...] = ()
+    isrcs: tuple[str, ...] = ()
+    releases: tuple[str, ...] = ()                           # release titles
+
+
+def parse_recording(d: dict) -> Recording:
+    """A `Recording` from MusicBrainz JSON: length ms -> s; works from `performance` relations, each once."""
+    length = d.get("length")
+    works = tuple(dict.fromkeys(r["work"]["id"] for r in d.get("relations") or []
+                                if r.get("type") == "performance" and (r.get("work") or {}).get("id")))
+    artist = "".join((c.get("name") or "") + (c.get("joinphrase") or "") for c in d.get("artist-credit") or [])
+    return Recording(id=d["id"], title=d.get("title") or "", length_s=None if length is None else length / 1000,
+                     artist=artist, work_ids=works, isrcs=tuple(d.get("isrcs") or ()),
+                     releases=tuple(r["title"] for r in d.get("releases") or [] if r.get("title")))
+
+
+def _escape(s: str) -> str:
+    """Lucene phrase escaping: a backslash or a quote inside "..." gets one more backslash."""
+    return s.replace("\\", "\\\\").replace('"', '\\"')
+
+
+class MusicBrainz:
+    """One shared limiter: use a single instance per process (and one cache file per run) and the spacing holds.
+
+    `opener`, `sleep` and `clock` are injectable so tests never touch the network or wait.
+    """
+
+    def __init__(self, *, opener=urllib.request.urlopen, sleep: Callable[[float], None] = time.sleep,
+                 clock: Callable[[], float] = time.monotonic, min_interval_s: float = 1.05, retries: int = 4,
+                 timeout: float = 15, cache: Path | None = None):
+        self._opener, self._sleep, self._clock = opener, sleep, clock
+        self.min_interval_s, self.retries, self.timeout = min_interval_s, retries, timeout
+        self._last: float | None = None
+        self._cache_path = Path(cache) if cache else None
+        self._cache: dict[str, tuple[int, dict | None]] = {}
+        if self._cache_path and self._cache_path.exists():
+            for line in self._cache_path.read_text(encoding="utf-8", errors="replace").splitlines():
+                try:
+                    row = json.loads(line)
+                    self._cache[row["url"]] = (row["status"], row.get("body"))
+                except (ValueError, KeyError, TypeError):
+                    continue                                 # a torn last line from a killed run: ask again
+
+    def _remember(self, url: str, status: int, body: dict | None) -> None:
+        self._cache[url] = (status, body)
+        if self._cache_path:
+            self._cache_path.parent.mkdir(parents=True, exist_ok=True)
+            with self._cache_path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps({"url": url, "status": status, "body": body}, ensure_ascii=False) + "\n")
+                f.flush()
+
+    def _space(self) -> None:
+        if self._last is not None:
+            wait = self.min_interval_s - (self._clock() - self._last)
+            if wait > 0:
+                self._sleep(wait)
+
+    def get(self, path: str, **query) -> dict | None:
+        """The JSON at `path` (relative to /ws/2/), or None on 404. Cached answers cost no request and no wait."""
+        url = BASE + path + "?" + urllib.parse.urlencode({"fmt": "json", **query})
+        if url in self._cache:
+            status, body = self._cache[url]
+            return body if status == 200 else None
+        for attempt in range(1, self.retries + 1):
+            self._space()
+            req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+            try:
+                with self._opener(req, timeout=self.timeout) as r:
+                    body = json.loads(r.read().decode("utf-8", errors="replace"))
+            except urllib.error.HTTPError as e:
+                self._last = self._clock()
+                if e.code == 404:
+                    self._remember(url, 404, None)
+                    return None
+                if e.code != 503:
+                    raise MusicBrainzError(f"MusicBrainz HTTP {e.code}: {path}") from None
+                if attempt == self.retries:
+                    raise MusicBrainzError(f"MusicBrainz 503 after {self.retries} tries: {path}") from None
+                try:
+                    delay = min(int(e.headers.get("Retry-After")), MAX_RETRY_AFTER_S)
+                except (TypeError, ValueError, AttributeError):
+                    delay = 2 * attempt
+                self._sleep(delay)
+                continue
+            except (urllib.error.URLError, OSError, ValueError) as e:
+                self._last = self._clock()
+                raise MusicBrainzError(f"MusicBrainz request failed ({type(e).__name__}): {path}") from None
+            self._last = self._clock()
+            self._remember(url, 200, body)
+            return body
+        raise MusicBrainzError(f"MusicBrainz 503 after {self.retries} tries: {path}")   # retries == 0
+
+    def recording(self, mbid: str) -> Recording | None:
+        d = self.get(f"recording/{mbid}", inc="work-rels isrcs")
+        return None if d is None else parse_recording(d)
+
+    def isrc(self, isrc: str) -> list[Recording]:
+        d = self.get(f"isrc/{isrc}", inc="work-rels")
+        return [] if d is None else [parse_recording(r) for r in d.get("recordings") or []]
+
+    def search(self, artist: str, title: str, limit: int = 100) -> list[Recording]:
+        d = self.get("recording", query=f'artist:"{_escape(artist)}" AND recording:"{_escape(title)}"', limit=limit)
+        return [] if d is None else [parse_recording(r) for r in d.get("recordings") or []]

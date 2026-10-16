@@ -28,13 +28,16 @@ def compressed_fingerprint(path: Path) -> tuple[int, str]:
 
 
 def parse(resp: dict) -> list[dict]:
-    """Every recording of every result as {"id", "title", "score"}: best score first, each id once."""
+    """Every recording of every result as {"id", "title", "score", "acoustid"}: best score first, each id once.
+
+    "acoustid" is the AcoustID track id of the result the recording came from (what `acoustid_id` stores)."""
     if resp.get("status") != "ok":
         raise ValueError(f"AcoustID status {resp.get('status')!r}: {(resp.get('error') or {}).get('message', 'no message')}")
     out: dict[str, dict] = {}
     for res in sorted(resp.get("results") or [], key=lambda r: r.get("score") or 0, reverse=True):
         for rec in res.get("recordings") or []:
-            out.setdefault(rec["id"], {"id": rec["id"], "title": rec.get("title"), "score": res.get("score")})
+            out.setdefault(rec["id"], {"id": rec["id"], "title": rec.get("title"), "score": res.get("score"),
+                                                  "acoustid": res.get("id")})
     return list(out.values())
 
 

@@ -99,3 +99,8 @@ def test_verify_without_a_tier_skips_the_lookup(audio):
         raise AssertionError("lookup must not run without a tier")
 
     assert verify(audio, lookup=boom).ok
+
+
+def test_parse_keeps_the_acoustid_track_id():
+    resp = json.loads((FIXTURES / "acoustid_lookup.docs-example.json").read_text())
+    assert acoustid.parse(resp)[0]["acoustid"] == resp["results"][0]["id"]
