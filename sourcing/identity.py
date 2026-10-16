@@ -210,6 +210,15 @@ def parse_title(title: str | None, artist: str | None = None, version_tag: str |
     notes: list[str] = []
     bys: list[str] = []
     kinds: set[str] = set()
+
+    def take(dec: str, c: tuple[str, frozenset[str], str]) -> None:       # prepend: the peel walks right to left
+        if c[0] == _COPY_NOTE:
+            notes.insert(0, dec)
+        else:
+            labels.insert(0, dec)
+            kinds.update(c[1])
+            bys.insert(0, c[2])
+
     while (p := _peel(t)) is not None:
         rest, dec = p
         c = _classify(dec) if rest else None
@@ -221,19 +230,9 @@ def parse_title(title: str | None, artist: str | None = None, version_tag: str |
         if feat_tail and tc is None:                     # "(feat. X - Acoustic)": an unknown tail stays in the base
             break
         if tc is not None:                               # "(feat. X - Dub Mix)": the credit, then the label
+            take(tail.strip(), tc)
             dec, c = head.strip(), (_COPY_NOTE, frozenset(), "")
-            if tc[0] == _COPY_NOTE:
-                notes.insert(0, tail.strip())
-            else:
-                labels.insert(0, tail.strip())
-                kinds |= tc[1]
-                bys.insert(0, tc[2])
-        if c[0] == _COPY_NOTE:
-            notes.insert(0, dec)
-        else:
-            labels.insert(0, dec)
-            kinds |= c[1]
-            bys.insert(0, c[2])
+        take(dec, c)
         t = rest
 
     tag = (version_tag or "").strip()
