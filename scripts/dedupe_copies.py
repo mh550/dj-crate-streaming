@@ -25,11 +25,13 @@ from contextlib import closing
 from pathlib import Path
 
 try:
-    from scripts.export_playlists import open_ro                         # python3 -m scripts.dedupe_copies
+    from crates.trash import free_path                                   # python3 -m scripts.dedupe_copies
+    from scripts.export_playlists import open_ro
     from scripts.library_map import _copy_rank, read_csv, write_csv
     from sourcing.identity import loose
 except ImportError:                                                      # python3 scripts/dedupe_copies.py
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from crates.trash import free_path
     from sourcing.identity import loose
     from export_playlists import open_ro
     from library_map import _copy_rank, read_csv, write_csv
@@ -50,16 +52,6 @@ def decoded_md5(path) -> str:
 
 
 _norm = loose                     # identity owns "is this the same text"
-
-
-def free_path(target: Path) -> Path:
-    """`target`, or "name (2).ext", "name (3).ext"…: trash never overwrites what it already holds."""
-    target, n = Path(target), 2
-    candidate = target
-    while candidate.exists():
-        candidate = target.with_name(f"{target.stem} ({n}){target.suffix}")
-        n += 1
-    return candidate
 
 
 def keep_rank(path: str, album_artist: str | None, year: int | None) -> tuple:

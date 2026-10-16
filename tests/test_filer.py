@@ -6,6 +6,7 @@ in the -c file: beets 1.6 configures MusicBrainz before it loads -c. BEETSDIR al
 The fake-runner tests cover what an offline beets cannot: an applied match.
 """
 import hashlib
+import os
 import re
 import shutil
 import sqlite3
@@ -365,3 +366,57 @@ def test_missing_library_db_or_table_counts_as_empty(tmp_path):
     with closing(sqlite3.connect(library)) as db:      # a library.db without an items table
         db.execute("CREATE TABLE other(x)")
     assert BeetsFiler(tmp_path / "beets.yaml", library=library)._max_id() == 0
+
+
+# --- forget (M8 Task 7): the worker tells beets a trashed file is gone ------------------------------------
+
+def _item_paths(library: Path) -> list[str]:
+    with closing(sqlite3.connect(library)) as db:
+        return sorted(os.fsdecode(p) for (p,) in db.execute("SELECT path FROM items"))
+
+
+@real_beet
+def test_forget_removes_the_item_but_not_the_file(tmp_path, beets_home):
+    config, music, library = real_config(tmp_path)
+    filer = BeetsFiler(config)
+    a, b = staging_dir(tmp_path, "a"), staging_dir(tmp_path, "b")
+    good_times(a, seed=1)
+    tag(make_audio(b / "o.flac", seconds=3, seed=2), "ARTIST=Chic", "TITLE=Le Freak")
+    old = filer.file(a, tmp_path / "a.log").path
+    other = filer.file(b, tmp_path / "b.log").path
+    assert _item_paths(library) == sorted([str(old), str(other)])
+    trashed = tmp_path / "trash" / old.name
+    trashed.parent.mkdir()
+    shutil.move(old, trashed)
+    assert filer.forget(old) is True
+    assert _item_paths(library) == [str(other)]
+    assert trashed.is_file() and other.is_file()                    # no -d: beets never touched a file
+
+
+def test_forget_refuses_a_file_still_on_disk(fake):
+    present = fake["music"] / "Chic" / "Good Times.flac"
+    present.parent.mkdir(parents=True)
+    present.write_bytes(b"fLaC")
+    runner = fake_beet(fake["music"], fake["library"], "x.flac")
+    with pytest.raises(FilingError, match="still on disk"):
+        BeetsFiler(fake["cfg"], runner=runner).forget(present)
+    assert runner.calls == []                                       # `beet remove -f` is never given a live file
+
+
+def test_forget_runs_with_stdin_devnull_and_no_delete_flag(fake):
+    seen = []
+
+    def runner(cmd, **kwargs):
+        seen.append((list(cmd), kwargs))
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+    gone = fake["music"] / "Chic" / "Good Times.flac"
+    assert BeetsFiler(fake["cfg"], runner=runner).forget(gone) is True
+    cmd, kw = seen[0]
+    assert cmd == ["beet", "-c", str(fake["cfg"]), "remove", "-f", f"path:{gone}"]
+    assert "-d" not in cmd and kw["stdin"] is subprocess.DEVNULL
+    assert kw["encoding"] == "utf-8" and kw["errors"] == "replace"
+
+
+def test_forget_reports_a_beets_failure_as_false(fake):
+    runner = fake_beet(fake["music"], fake["library"], "x.flac", rc=1)
+    assert BeetsFiler(fake["cfg"], runner=runner).forget(fake["music"] / "gone.flac") is False

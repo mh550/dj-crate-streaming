@@ -128,7 +128,8 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
           reconciler: Reconciler, music_root: Path, downloads_root: Path, approve: bool,
           tier: str | None = None, policy: QualityPolicy | None = None, download_timeout_s: float = 600, poll_s: float = 1.0,
           scan_timeout_s: float = 120, verifier=verify, filer: BeetsFiler | None = None,
-          navidrome_db: Path | None = None, lookup=None, prefer: dict | None = None) -> FetchResult:
+          navidrome_db: Path | None = None, lookup=None, prefer: dict | None = None,
+          trash_root: Path | None = None) -> FetchResult:           # trash_root: for the copy replacement (Task 8)
     music_root, downloads_root = Path(music_root), Path(downloads_root)
     row = store.find_wanted(wanted_id)
     if row is None:

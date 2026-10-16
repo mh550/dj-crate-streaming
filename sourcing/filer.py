@@ -164,3 +164,15 @@ class BeetsFiler:
         done = self._beet("write", f"path:{item.path}")
         if done.returncode:
             raise FilingError(f"beet write failed ({done.returncode}): {_tail(done.stderr)}", item)
+
+    def forget(self, path: Path) -> bool:
+        """Drop a trashed file from beets' index: `beet remove -f path:<abs>` (no `-d`, so beets never touches a
+        file). True when beets exited 0, which includes "nothing matched": the index is a disposable cache, so
+        a stale row is the only thing to avoid (it would skew `duplicate_action` and later imports).
+
+        The file must already be gone: handing beets a live path is refused, so a bug elsewhere cannot make
+        beets look at, let alone delete, a library file. Only the worker (the one beets writer) calls this."""
+        path = Path(path)
+        if path.exists():
+            raise FilingError(f"refusing to forget {path}: still on disk")
+        return self._beet("remove", "-f", f"path:{path}").returncode == 0
