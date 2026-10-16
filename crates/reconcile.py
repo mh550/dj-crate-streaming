@@ -15,7 +15,7 @@ from sourcing.policy import QualityPolicy, DEFAULT_POLICY
 from sourcing.scorer import Wanted
 from subsonic.client import Playlist, Song, SubsonicClient
 from . import attrs
-from .store import CrateStore
+from .store import CrateStore, filed_path
 
 # Name markers, for clients that can rename a playlist but not edit its comment
 # (most phone apps). "Disco Edits [crate]" or "🎛 Disco Edits" both count.
@@ -154,8 +154,11 @@ class Reconciler:
             seen.add(s.id)
             status, reason = judge(s, self.policy)
             old = prev.get(s.id)
-            # Don't clobber an in-flight sourcing job with a fresh "needs_source" verdict.
-            if old and old["status"] in ("sourcing", "verify") and status == "needs_source":
+            # Don't clobber an in-flight sourcing job with a fresh "needs_source" verdict; nor a failed
+            # never-indexed row, whose file is already in the library (it is re-checked, never downloaded twice).
+            if old and status == "needs_source" and (
+                    old["status"] in ("sourcing", "verify")
+                    or (old["status"] == "failed" and filed_path(old["reason"]))):
                 status, reason = old["status"], old["reason"]
             self.store.upsert_track(pl.id, s.id, pos, song_facts(s), status, reason)
             if not old or old["status"] != status:

@@ -81,6 +81,26 @@ def test_in_flight_sourcing_is_not_clobbered(env):
     assert store.track_status_map("pl-2")["s4"]["status"] == "sourcing"
 
 
+def test_failed_never_indexed_row_is_not_reset_for_a_second_download(env):
+    """M6: a failed never-indexed row is re-checked, never re-downloaded, so reconcile keeps it as it is."""
+    from crates.store import never_indexed
+    srv, client, store, rec = env
+    rec.set_crate("pl-2", True)
+    reason = never_indexed("Artist/Album/04 t.flac")
+    store.set_track_status("pl-2", "s4", "failed", reason)
+    rec.run()
+    row = store.track_status_map("pl-2")["s4"]
+    assert (row["status"], row["reason"]) == ("failed", reason)
+
+
+def test_plain_failed_row_still_becomes_needs_source(env):
+    srv, client, store, rec = env
+    rec.set_crate("pl-2", True)
+    store.set_track_status("pl-2", "s4", "failed", "no acceptable result")
+    rec.run()
+    assert store.track_status_map("pl-2")["s4"]["status"] == "needs_source"
+
+
 def test_wanted_is_deduped_across_crates(env):
     srv, client, store, rec = env
     rec.run(); rec.set_crate("pl-1", True)
