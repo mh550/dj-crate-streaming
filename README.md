@@ -30,7 +30,7 @@ scripts/    one-off library tooling: library_map.py (folder + audio-hash map), f
             identity_backfill.py (M7: propose / apply / revert MusicBrainz ids, reviewed — docs/worker.md)
 deploy/     compose.yml (+ .env.example), beets.yaml, policy.toml (tiers + version preferences) — /srv/docker/compose.yml symlinks here
 fixtures/   slskd-shaped search responses covering the failure modes
-tests/      612 tests, no network, ~170 s
+tests/      702 tests, no network, ~180 s
 ```
 
 ## Try it now (no server needed)
@@ -73,8 +73,8 @@ filed path in the reason. `MUSIC_ROOT` (default `/srv/music`) and `DOWNLOADS_ROO
 fetch before any transfer when neither they nor their parent folders exist.
 
 **Quality tiers** (spec §1): `low | medium | high | crate`. `rank`, `fetch`, `seed-spotify` and
-`import-playlist` take `--tier`; wanted rows remember theirs (default `crate`; crate tracks are always
-`crate`), and `fetch` scores with the row's tier. Listening tiers trade quality for estimated arrival,
+`import-playlist` take `--tier`; wanted rows remember theirs (new rows from `import-playlist` and `seed-spotify` default to
+`medium`; crate tracks are always `crate`), and `fetch` scores with the row's tier. Listening tiers trade quality for estimated arrival,
 assuming our own download speed is 1 MB/s (`deploy/policy.toml`). `rank --slskd … --save r.json` keeps
 the raw responses so `rank --fixture r.json --tier <other>` compares tiers on one search.
 
@@ -148,7 +148,8 @@ phone browser ──/api/*──▶ crates.service ──Subsonic──▶ Navid
   per-request signed Navidrome URL under its own client name (`dj-crates-web`), so
   Navidrome gives it its own Player and you set its transcoding profile in
   Navidrome → Settings → Players like any other device. The web client's quality menu is
-  the same four tiers (opus 64k / 96k / 160k / original), saved server-side
+  five options: `server` (default: no format sent, so Navidrome's player profile decides), `low`, `medium`, `high`
+  (opus 64k / 96k / 160k) and `crate` (original), saved server-side
   (`GET/POST /api/stream-tier`) and sent as `/api/stream/<id>?tier=…`.
 
 ## On the phone

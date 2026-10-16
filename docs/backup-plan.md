@@ -30,10 +30,10 @@ is **done**, and `/srv/music` + `/srv/docker` are in it.
    to grow to 3 GB (`ND_TRANSCODINGCACHESIZE`). If it isn't already in `/etc/restic/excludes`, add
    `/srv/docker/navidrome/cache` and `/srv/docker/slskd/logs`. (Can't read the excludes file without root.)
 4. **Live SQLite files are in the set.** `navidrome.db` (WAL) and `crates.db` are copied while the services
-   run. Fine in practice — Navidrome's DB is rebuildable from the files + playlists, crates.db is tiny —
-   but a consistent copy costs one line: `sqlite3 /srv/docker/crates/crates.db ".backup /srv/docker/crates/crates.db.bak"`
-   before the backup, or stop `crates` for the few seconds the snapshot takes. Not worth doing until
-   crates.db holds something Michael would miss.
+   run. Fine in practice for Navidrome's DB (rebuildable from the files + playlists), but crates.db
+   now holds approvals (not rebuildable) and runs in WAL mode, so a plain file copy can miss recent writes:
+   snapshot it before restic. A consistent copy costs one line: `sqlite3 /srv/docker/crates/crates.db ".backup /srv/docker/crates/crates.db.bak"`
+   before the backup, or stop `crates` for the few seconds the snapshot takes.
 5. **`.env` secrets are in the set.** `/srv/docker/.env` is inside the (encrypted) repo. That's desirable
    for recovery; just remember the repo password is the key to everything.
 6. **Off-site is the remaining hole.** The HDD sits next to the NVMe. The cheapest step is a second

@@ -21,7 +21,7 @@ services:
       ND_ENABLESHARING: "false"
       ND_AUTOIMPORTPLAYLISTS: "false"        # /srv/music/_playlists/*.m3u8 are *exports* (scripts/export_playlists.py);
                                              # auto-import would re-create every playlist as a duplicate on each scan.
-                                             # To restore from the files: scripts/export_playlists.py restore (see its --help).
+                                             # scripts/export_playlists.py has only `export` and `check`; to restore from the files, set this to "true" for one scan.
     volumes:
       - /srv/docker/navidrome:/data
       - /srv/music:/music:ro

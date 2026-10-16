@@ -414,17 +414,17 @@ Each: what, **impact**, *mitigation*.
 ### 10b. Doc vs code discrepancies
 
 - `docs/download-validation.md` says `fetch` passes no reference and downloads are verified/filed on the host: since
-  M6 the worker passes the library copy and does everything.
-- `deploy/compose.yml:24` mentions `scripts/export_playlists.py restore`: there is no such command (`export`, `check`).
+  M6 the worker passes the library copy and does everything. (fixed 2026-10-16)
+- `deploy/compose.yml:24` mentions `scripts/export_playlists.py restore`: there is no such command (`export`, `check`). (fixed 2026-10-16)
 - `README.md`: wanted rows "default `crate`" (imports default `medium`); the quality menu is "four tiers" (five,
-  with `server`); "612 tests" (623).
+  with `server`); "612 tests" (702). (fixed 2026-10-16)
 - `sourcing/import_playlist.py:245` docstring: ambiguous rows "parked as `verify`"; the code sets `review`.
-- Spec §0 D22 says `deploy/policy.yaml`; it is `deploy/policy.toml`.
+- Spec §0 D22 says `deploy/policy.yaml`; it is `deploy/policy.toml`. (fixed 2026-10-16)
 - Spec fact 5 says exports are rewritten after each change, and fact 4 that a playlist check runs after every
-  scan: neither is automated (only identity `apply` runs the check).
+  scan: neither is automated (only identity `apply` runs the check). (Spec now says "planned", fixed 2026-10-16)
 - Spec fact 2 says Navidrome builds its song id from the recording id; measured, the id is not the PID: the PID
   uses it, which is what keeps the id across a move.
-- `docs/backup-plan.md` item 4 ("crates.db is tiny, not worth it") predates approvals.
+- `docs/backup-plan.md` item 4 ("crates.db is tiny, not worth it") predates approvals. (fixed 2026-10-16)
 - The M7 rulings (a–c) and the M8 listening-tier default were to go to `TODO-MICHAEL.md`; they are not there yet.
 
 ## 11. Outstanding questions for you

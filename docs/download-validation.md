@@ -4,9 +4,11 @@ A file on Soulseek is whatever someone says it is. The file name says "FLAC", "2
 inside may be a 128 kbps mp3 re-encoded as FLAC, a CD padded out to 24 bits, a rip cut off halfway, or a
 different recording that shares the title. Careful downloaders check every file by hand before it goes into
 their library. `sourcing/verify.py` does the same checks by code, and every download `fetch` makes goes
-through it at the wanted row's tier. One exception: `fetch` doesn't yet pass the library copy as a reference, so
-the right-recording check only runs from the CLI with `--reference` (it needs the real library path, which M6's
-beets filing provides).
+through it at the wanted row's tier. For a copy upgrade (a crate row), `fetch` passes the old library file as the
+reference, so the right-recording check runs there too; it finds that file in navidrome.db, opened read-only, and
+verifies without a reference (and logs why) when the file can't be found. A new version of an external row has
+no reference. After verification the worker container files the download with beets; the host CLI only runs
+`verify` by hand, with `--reference`.
 
 ## What people do by hand
 
