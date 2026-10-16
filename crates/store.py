@@ -207,6 +207,15 @@ class CrateStore:
             row["approval"] = self.approval(row["song_id"])
         return rows
 
+    def verify_ids(self) -> list[str]:
+        """Wanted ids (crate songs in enabled crates, then `ext-N`) whose file is filed but not yet seen by
+        Navidrome: the worker re-checks these without downloading again."""
+        crate = [r[0] for r in self.db.execute(
+            "SELECT DISTINCT t.song_id FROM crate_tracks t JOIN crates c USING(playlist_id) "
+            "WHERE c.enabled=1 AND t.status='verify' ORDER BY t.song_id")]
+        ext = [f"ext-{r[0]}" for r in self.db.execute("SELECT id FROM external_wanted WHERE status='verify' ORDER BY id")]
+        return crate + ext
+
     def find_wanted(self, song_id: str) -> dict | None:
         """One wanted-shaped row for this id whatever its status."""
         if song_id.startswith("ext-"):

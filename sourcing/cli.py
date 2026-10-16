@@ -4,6 +4,7 @@ r"""CLI: rank candidates for a wanted track, from a fixture file or a live slskd
   python -m sourcing.cli rank --slskd http://server:5030 --api-key $SLSKD_KEY --artist Chic --title "Good Times" [--download]
   python -m sourcing.cli verify /srv/incoming/03\ -\ Good\ Times.flac --duration 501 [--tier crate] [--reference old.flac] [--json]
   python -m sourcing.cli fetch --wanted s4 [--approve] [--tier T]   # one wanted track, end to end (see fetch.py); tier: the row's
+  python -m sourcing.cli worker [--once]   # D18: spend approvals (download, verify, file with beets), re-check `verify` rows; WORKER_POLL_S (30)
   python -m sourcing.cli seed-spotify https://open.spotify.com/playlist/...   # queue tracks not in Navidrome
   python -m sourcing.cli import-playlist <spotify-url|report.txt|exportify.csv>... [--name N] [--dry-run]   # D11: Spotify playlists → public Navidrome playlist + wanted rows
   python -m sourcing.cli retier --from crate --to medium [--dry-run]   # move external wanted rows between tiers (D15 backfill)
@@ -91,6 +92,10 @@ def main(argv: list[str] | None = None) -> int:
     add_slskd_args(f)
     add_tier_arg(f, None, "change the wanted row's tier, then fetch (external rows only; crate rows are crate)")
 
+    w = sub.add_parser("worker", help="the container's loop: fetch every approved row, re-check filed-but-unseen rows")
+    w.add_argument("--once", action="store_true", help="one tick, then exit (the live check reads '0 approvals')")
+    add_slskd_args(w)
+
     s = sub.add_parser("seed-spotify", help="add every track of a public Spotify playlist/album to the wanted queue")
     s.add_argument("url")
     add_tier_arg(s, None, f"tier for new queued rows (default {IMPORT_TIER}, D15); given on a re-seed, it changes existing rows too")
@@ -169,21 +174,45 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{added} added, {total - added} already queued ({a.url})")
         return 0
 
-    if a.cmd == "fetch":
+    if a.cmd in ("fetch", "worker"):
         if not (a.slskd and a.api_key):
             print("need --slskd/$SLSKD_URL and --api-key/$SLSKD_API_KEY", file=sys.stderr); return 1
         from crates.service import Config, CrateApp
-        from .fetch import fetch
         from .slskd_client import SlskdClient
         cfg = Config.from_env()
         if not cfg.username:
             print("set SUBSONIC_USER / SUBSONIC_PASS (and SUBSONIC_URL)", file=sys.stderr); return 1
         app = CrateApp(cfg)                          # same store/client/reconciler wiring as the crate service
-        r = fetch(a.wanted, store=app.store, slskd=SlskdClient(a.slskd, a.api_key), navidrome=app.api,
-                  reconciler=app.reconciler, tier=a.tier, approve=a.approve, **_fetch_env())
+
+    if a.cmd == "worker":
+        from .worker import Worker
+        wk = Worker(store=app.store, slskd=SlskdClient(a.slskd, a.api_key), navidrome=app.api, reconciler=app.reconciler,
+                    fetch_kwargs=_fetch_env(), log=lambda line: print(line, flush=True))
+        if a.once:
+            wk.tick()
+        else:
+            wk.run(float(os.environ.get("WORKER_POLL_S", "30")))
+        return 0
+
+    if a.cmd == "fetch":
+        from .fetch import fetch
+        row, aid = app.store.find_wanted(a.wanted), None
+        if a.approve and row is not None:            # D23: every download carries an approval, here Michael's own command
+            tier = a.tier if a.tier and row.get("external") else row["tier"]
+            aid = app.store.approve(a.wanted, "michael", None, tier)
+            app.store.mark_approval_used(aid, "started"); app.store.commit()      # so a running worker never spends it too
+        try:
+            r = fetch(a.wanted, store=app.store, slskd=SlskdClient(a.slskd, a.api_key), navidrome=app.api,
+                      reconciler=app.reconciler, tier=a.tier, approve=a.approve, **_fetch_env())
+        except Exception as e:
+            if aid is not None:
+                app.store.mark_approval_used(aid, f"error: {type(e).__name__}: {e}"); app.store.commit()
+            raise
+        if aid is not None:
+            app.store.mark_approval_used(aid, f"{r.status}: {r.reason}"); app.store.commit()
         print(r.explain)
         if r.pick:
-            print(f"pick: {r.pick.username}: {r.pick.basename}  (score {r.pick.score:.2f})")
+            print(f"pick: {r.pick.basename}  (score {r.pick.score:.2f})")      # the peer stays in `search`, not in logs
         print(f"{r.status}: {r.reason}" + (f"  → {r.filed}" if r.filed else ""))
         return 0 if r.status in ("ok", "needs_source", "sourcing") else 2
 

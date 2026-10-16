@@ -12,6 +12,9 @@ folder and BeetsFiler imports it from there, so beets never sees slskd's folders
 originals. Navidrome's names for the filed song then go back onto the wanted row (`renamed` event),
 because they are what the library now calls it. Soulseek peer names never reach a reason or an event.
 
+`prefer` (an approval's candidate, D18) makes the download that exact file while it is still offered and
+unrejected; otherwise the top-ranked one is used, and a `pick` event says which of the two happened.
+
 Re-running `fetch` on a `verify` row skips the download and just re-checks Navidrome for the
 filed path kept in the reason; a `sourcing` row older than the download timeout is treated as
 abandoned and retried; a fresh one is reported as in flight. Any exception after the row enters
@@ -90,7 +93,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
           reconciler: Reconciler, music_root: Path, downloads_root: Path, approve: bool,
           tier: str | None = None, policy: QualityPolicy | None = None, download_timeout_s: float = 600, poll_s: float = 1.0,
           scan_timeout_s: float = 120, verifier=verify, filer: BeetsFiler | None = None,
-          navidrome_db: Path | None = None, lookup=None) -> FetchResult:
+          navidrome_db: Path | None = None, lookup=None, prefer: dict | None = None) -> FetchResult:
     music_root, downloads_root = Path(music_root), Path(downloads_root)
     row = store.find_wanted(wanted_id)
     if row is None:
@@ -177,6 +180,13 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         return FetchResult("needs_source", "no acceptable candidate", None, explain=text)
     if not approve:
         return FetchResult("needs_source", "pick printed; re-run with --approve to download", best, explain=text)
+    if prefer:       # the candidate Michael approved (D18): honoured while the peer still offers that file
+        same = next((c for c in cands if not c.rejected and c.username == prefer.get("username")
+                     and c.filename == prefer.get("filename")), None)
+        if same is not None:
+            best = same
+        store.log(None, wanted_id, "pick", f"approved candidate still offered: {best.basename}" if same is not None
+                  else f"approved candidate no longer offered; using the top-ranked {best.basename}")
 
     set_status("sourcing", f"downloading {best.basename}")
     try:

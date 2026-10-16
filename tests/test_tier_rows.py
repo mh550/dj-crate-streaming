@@ -116,7 +116,7 @@ def test_fetch_cli_tier_overrides_external_and_is_refused_on_crate_rows(tmp_path
         st = CrateStore(tmp_path / "c.db")
         ext = st.add_external_wanted("Chic", "Good Times", duration_s=501); st.commit()
         assert cli.main(["fetch", "--wanted", ext, "--tier", "low"]) == 0
-        assert "pick: fastpeer" in capsys.readouterr().out
+        assert "pick: 03 - Good Times.mp3" in capsys.readouterr().out   # the basename, never the peer (Task 6)
         from crates.cli import main as crates_main
         assert crates_main(["toggle", "pl-2", "on"]) == 0
         capsys.readouterr()

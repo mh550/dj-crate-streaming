@@ -20,7 +20,7 @@ def test_fetch_without_approve_prints_pick(tmp_path, monkeypatch, capsys):
         assert crates_main(["toggle", "pl-2", "on"]) == 0
         rc = cli.main(["fetch", "--wanted", "s4"])
     out = capsys.readouterr().out
-    assert rc == 0 and "vinylhead77" in out and "--approve" in out and sl.enqueued == []
+    assert rc == 0 and "pick: 03 - Good Times.flac" in out and "vinylhead77" not in out and "--approve" in out and sl.enqueued == []
 
 
 def test_seed_spotify_adds_external_rows(tmp_path, monkeypatch, capsys):

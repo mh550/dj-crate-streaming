@@ -1,0 +1,69 @@
+"""The worker (D18, D23): downloads only what has been approved, and re-checks what was filed but not yet indexed.
+
+Each tick:
+  1. every `verify` row is fetched again with approve=True; that path downloads nothing, it only asks
+     Navidrome whether the filed song has appeared;
+  2. every unused approval is spent first (marked `started`, so a crash or a second worker can never
+     download it twice), then fetched, preferring the candidate Michael saw while that file is still offered,
+     and finally marked with the outcome.
+
+One bad row never stops the tick, and one bad tick (slskd or Navidrome down, DB locked) never stops `run`.
+Log lines name wanted ids and file basenames only: stdout is the container log and must not carry Soulseek peers.
+"""
+from __future__ import annotations
+
+import time
+from dataclasses import dataclass, field
+
+from .fetch import fetch
+
+
+@dataclass
+class TickReport:
+    approvals: int
+    rechecked: int
+    results: list[str] = field(default_factory=list)       # "<wanted_id>: <status>: <reason>"
+
+
+class Worker:
+    def __init__(self, *, store, slskd, navidrome, reconciler, fetch_kwargs: dict, fetcher=fetch, log=print):
+        self.store, self.fetcher, self.log = store, fetcher, log
+        self.common = dict(store=store, slskd=slskd, navidrome=navidrome, reconciler=reconciler, **fetch_kwargs)
+
+    def tick(self) -> TickReport:
+        """No `tier` is passed: the row's current tier rules, and an approval's tier only records what was approved."""
+        results, rechecked = [], 0
+        for wanted_id in self.store.verify_ids():
+            try:
+                r = self.fetcher(wanted_id, approve=True, **self.common)
+                results.append(f"{wanted_id}: {r.status}: {r.reason}")
+            except Exception as e:                         # the row is left as fetch left it; the next tick retries
+                results.append(f"{wanted_id}: error: {type(e).__name__}: {e}")
+                self.log(f"recheck {wanted_id} failed: {type(e).__name__}: {e}")
+            rechecked += 1
+        approvals = self.store.pending_approvals()
+        for a in approvals:
+            self.store.mark_approval_used(a["id"], "started")
+            self.store.commit()
+            try:
+                r = self.fetcher(a["wanted_id"], approve=True, prefer=a["candidate"], **self.common)
+                outcome = f"{r.status}: {r.reason}"
+            except Exception as e:
+                outcome = f"error: {type(e).__name__}: {e}"
+                self.log(f"fetch {a['wanted_id']} failed: {outcome}")
+            self.store.mark_approval_used(a["id"], outcome)
+            self.store.commit()
+            results.append(f"{a['wanted_id']}: {outcome}")
+            self.log(f"{a['wanted_id']}: {outcome}")
+        self.log(f"tick: {len(approvals)} approvals, {rechecked} rechecked")
+        return TickReport(len(approvals), rechecked, results)
+
+    def run(self, poll_s: float, *, ticks: int | None = None) -> None:
+        n = 0
+        while ticks is None or n < ticks:
+            try:
+                self.tick()
+            except Exception as e:
+                self.log(f"tick failed: {type(e).__name__}: {e}")
+            n += 1
+            time.sleep(poll_s)
