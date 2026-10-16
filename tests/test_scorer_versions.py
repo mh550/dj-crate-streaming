@@ -79,7 +79,8 @@ def test_a_12_inch_dub_is_not_an_accepted_extended_version():
     cands = rank([dub, club], Wanted("Chic", "Good Times", duration_s=210), TIERS["crate"])
     d, c = by_user(cands, "dub"), by_user(cands, "club")
     assert not any(r.startswith("prefers") or "fits another version" in r for r in d.reasons)
-    assert any(r.startswith("duration off") for r in d.reasons)
+    # fix round 2 ruling 4: was ranked down ("duration off"); a version the tier does not accept is rejected
+    assert d.rejected and "another version (12\" Dub), not accepted at crate" in d.rejected
     assert "prefers extended +6" in c.reasons and any("fits another version" in r for r in c.reasons)
 
 
@@ -98,7 +99,8 @@ def test_a_vocal_12_inch_earns_nothing_for_an_instrumental_a_cappella_live_or_du
             twelve = response("t", rf"music\Bill Withers\Menagerie\03 - Bill Withers - Lovely Day ({label}).flac", 40_000_000, "flac", length=380)
             [c] = rank([twelve], Wanted("Bill Withers", title, duration_s=250), TIERS["crate"])
             assert not any("fits another version" in r or r.startswith("prefers") for r in c.reasons), (title, c.reasons)
-            assert any(r.startswith("duration off") for r in c.reasons), (title, c.reasons)
+            # fix round 2 ruling 4: was ranked down ("duration off"); a version the tier does not accept is rejected
+            assert c.rejected and "not accepted at crate" in c.rejected, (title, c.rejected)
 
 
 def test_a_12_inch_instrumental_stands_in_for_an_instrumental_row_at_crate():
@@ -121,3 +123,22 @@ def test_a_labelled_file_with_trailing_junk_is_still_another_version_for_a_crate
     plain = response("p", r"music\Chic\Risque\03 - Good Times (1979) [FLAC].flac", 35_000_000, "flac", length=501)
     [c] = rank([plain], Wanted("Chic", "Good Times", duration_s=501, copy=True), TIERS["crate"])
     assert c.rejected is None
+
+
+# ---- M7 fix round 2, ruling 4: a labelled version the tier does not accept is rejected, not ranked ----
+
+def test_a_version_the_tier_does_not_accept_is_rejected():
+    for title, name in [("Lovely Day - Instrumental", 'Lovely Day (12" Version)'),
+                        ("Lovely Day", "Lovely Day (Live)"), ("Lovely Day", "Lovely Day (Dub)"),
+                        ("Lovely Day - Radio Edit", "Lovely Day (Extended Remix)")]:
+        f = response("x", rf"music\Bill Withers\Menagerie\03 - Bill Withers - {name}.flac", 40_000_000, "flac", length=380)
+        for dur in (250, None):
+            [c] = rank([f], Wanted("Bill Withers", title, duration_s=dur), TIERS["crate"])
+            assert c.rejected and "not accepted at crate" in c.rejected, (title, name, dur)
+
+
+def test_an_unlabelled_or_edit_candidate_for_a_labelled_ask_is_only_ranked_down():
+    for name in ("Lovely Day", "Lovely Day (Radio Edit)"):
+        f = response("x", rf"music\Bill Withers\Menagerie\03 - Bill Withers - {name}.flac", 40_000_000, "flac", length=250)
+        [c] = rank([f], Wanted("Bill Withers", "Lovely Day (Extended Version)", duration_s=380), TIERS["crate"])
+        assert c.rejected is None, name

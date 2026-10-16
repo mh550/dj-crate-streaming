@@ -301,3 +301,20 @@ def test_external_row_getting_its_own_label_behind_file_junk_keeps_its_length(wo
         r = run(world, srv, approve=True, wanted_id=ext, verifier=spy_verifier(seen))
     assert r.pick is not None and "Extended Mix" in r.pick.basename
     assert seen["kw"]["intent"] is None and seen["duration"] == 501
+
+
+# ---- M7 fix round 2, ruling 4: a version the tier does not accept is never downloaded ----
+
+def test_an_instrumental_row_offered_only_a_vocal_12_inch_downloads_nothing(world, tmp_path):
+    ext = world["store"].add_external_wanted("Chic", "Good Times - Instrumental", album="Risqué", duration_s=210,
+                                             year=1979, tier="crate")
+    name = '@@music\\Chic\\Risqué (1979) [FLAC]\\Chic - Good Times (12" Version).flac'
+    peer = copy.deepcopy(RESPONSES[0])
+    peer["files"] = [dict(peer["files"][0], filename=name)]                    # the only file offered
+    flac = good_flac_bytes(tmp_path)
+    with FakeSlskdServer([peer], world["dl"], files={name: flac}) as srv:
+        prefer = {"username": peer["username"], "filename": name}               # even when it was approved earlier
+        r = run(world, srv, approve=True, wanted_id=ext, prefer=prefer)
+        assert r.status == "needs_source" and "no acceptable candidate" in r.reason
+        assert srv.enqueued == []
+    assert "not accepted at crate" in r.explain

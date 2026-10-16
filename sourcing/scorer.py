@@ -162,6 +162,12 @@ def score_candidate(c: Candidate, w: Wanted, policy: QualityPolicy = DEFAULT_POL
         c.rejected = (f"another version ({got.label or 'no label'}); a crate upgrade must be the same "
                       f"version ({want.label or 'as titled'})")
         c.score = 0; return c
+    if other and not stand_in and got.kinds - want.kinds - NEUTRAL - {"edit"}:
+        # It names a version the row did not ask for and the tier does not let stand in (a vocal 12" for an
+        # instrumental row, a dub for the plain song): the wrong record, so never downloaded, not merely ranked
+        # lower. A candidate that only lacks the asked label (or is an edit of it) stays ranked.
+        c.rejected = f"another version ({got.label}), not accepted at {policy.name}"
+        c.score = 0; return c
 
     # --- format preference (0..20)
     fmt = max(0.0, 20 - 5 * rank)
