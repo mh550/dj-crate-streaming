@@ -43,7 +43,7 @@ def test_lead_artist():
     ("Dreamin' (Original 12 Inch Club Mix)", "X", "Dreamin'", {"original", "extended", "club"}, ""),
     ("Glide - Original Mix", "X", "Glide", {"original"}, ""),
     ("Star Love - Disco Version", "X", "Star Love", {"alt"}, "disco"),
-    ("Downstairs - Alternate Take 21", "X", "Downstairs", {"alt"}, ""),
+    ("Downstairs - Alternate Take 21", "X", "Downstairs", {"alt"}, "21"),        # review ruling 1: the take number is the credit
     ("Je Suis Music - Armand Van Helden Remix Edit", "X", "Je Suis Music", {"remix", "edit"}, "armandvanhelden"),
     ("Sugar - Delfonic Rework", "X", "Sugar", {"remix"}, "delfonic"),
     ("Mothership Reconnection (feat. Parliament/Funkadelic) - (Daft Punk Remix)", "Scott Grooves",
@@ -134,8 +134,10 @@ def test_same_version():
     assert not same_version(_c("A", 300, recording_id="r1"), _c("A", 300, recording_id="r2"))
     assert not same_version(_c("A", None), _c("A", 300))
     assert not same_version(_c("A", 300, work_id="w1"), _c("A", 300, work_id="w2"))
-    assert same_version(_c("Feeling U, Feeling Me (Interlude)", 200, work_id="w1"),
-                        _c("Feeling U, Feeling Me", 200, work_id="w1"))
+    # review ruling 3: a shared work id makes one *song*; the version still needs the same base and label
+    assert not same_version(_c("Feeling U, Feeling Me (Interlude)", 200, work_id="w1"),
+                            _c("Feeling U, Feeling Me", 200, work_id="w1"))
+    assert same_version(_c("Feeling U, Feeling Me", 200, work_id="w1"), _c("Feeling U, Feeling Me", 201, work_id="w1"))
     assert same_version(_c("Where You Are (Live)", 479.0), _c("Where You Are - Live", 479.4))
 
 
@@ -191,3 +193,84 @@ def test_the_beets_trap_is_two_versions():
 def test_a_track_number_prefix_needs_a_title_after_it():
     assert parse_title("1-2-3").base == "1-2-3"
     assert parse_title("04 - 122 - Wendell Harrison - Peace Of Mind.mp3.mp3", "Wendell Harrison").base == "Peace Of Mind"
+
+
+# ── review fix round: pairs that must never be one version (M8 deletes a copy on "same") ──
+
+@pytest.mark.parametrize("a, b", [
+    ("Downstairs - Alternate Take 21", "Downstairs - Alternate Take 22"),
+    ("Downstairs (Take 1)", "Downstairs (Take 2)"),
+    ("We Got By - Live 1977 Version", "We Got By (Live 1979)"),
+    ("Tutu (Live at Montreux 1979)", "Tutu (Live at Montreux 1982)"),
+    ("Tutu - 2009 Mix", "Tutu - 2017 Mix"),
+    ("Tutu (Remix 1987)", "Tutu (Remix 1995)"),
+    ("Tutu (Single Mix)", "Tutu (Album Mix)"),
+    ("Tutu (Remastered Mono)", "Tutu (Remastered Stereo)"),
+    ("Tutu (With Strings)", "Tutu"),
+    ("Tutu (feat. X - Dub Mix)", "Tutu (feat. X)"),
+    ("Tutu [The Reflex Revision]", "Tutu"),
+    ("Tutu (Sonias 2 Euro Bootleg)", "Tutu"),
+    ("Tutu (Joey Negro Refix)", "Tutu"),
+    ("Tutu (12’ Mix)", "Tutu"),
+    ("Tutu (12-Inch Mix)", "Tutu"),
+])
+def test_review_pairs_are_different_versions(a, b):
+    assert not same_version(_c(a, 300), _c(b, 300))
+
+
+def test_a_remaster_beside_a_label_is_still_the_same_version():
+    assert same_version(_c("Rock With You (Live - 2011 Remaster)", 300), _c("Rock With You (Live)", 300))
+    assert same_version(_c("Rock With You - 2011 Remaster", 300), _c("Rock With You", 300))
+    assert same_version(_c("Rock With You (Remastered Version)", 300), _c("Rock With You", 300))
+
+
+def test_only_the_remaster_phrase_is_a_copy_marker():
+    assert parse_title("Tutu (Remastered Mono)").kinds == {"alt"}
+    assert parse_title("Tutu (Remastered Mono)").by == "mono"
+    assert parse_title("Tutu - Remastered 2001/Rudy Van Gelder Edition").copy_note == "Remastered 2001/Rudy Van Gelder Edition"
+
+
+def test_a_label_named_like_the_artist_is_not_stripped_as_glue():
+    t = parse_title("Song - Live", "Live")
+    assert t.base == "Song" and t.kinds == {"live"}
+
+
+def test_feat_decoration_with_a_label_tail():
+    t = parse_title("Tutu (feat. X - Dub Mix)")
+    assert t.base == "Tutu" and t.kinds == {"dub"} and t.copy_note == "feat. X" and t.label == "Dub Mix"
+    assert parse_title("Tutu (With Strings)").base == "Tutu (With Strings)"
+
+
+def test_version_tag_repeating_the_title_label_adds_no_credit():
+    t = parse_title("Voyager (Tom Moulton Mix)", version_tag="Tom Moulton Mix")
+    assert t.by == "tommoulton" and t.label == "Tom Moulton Mix"
+    t = parse_title("Voyager (Tom Moulton Mix)", version_tag="Dub")
+    assert t.by == "tommoulton" and t.kinds == {"remix", "dub"}
+    t = parse_title("Voyager (Tom Moulton Mix) [Larry Levan Edit]")
+    assert t.by == "tommoulton|larrylevan"
+
+
+@pytest.mark.parametrize("title", ["Tutu (12’ Mix)", "Tutu (12‘ Mix)", "Tutu (12“ Mix)", "Tutu (12-Inch Mix)",
+                                   "Tutu (12 Inch Mix)", "Tutu (12inch Mix)"])
+def test_twelve_inch_spellings(title):
+    assert parse_title(title).kinds == {"extended"} and parse_title(title).by == ""
+
+
+@pytest.mark.parametrize("title, kinds, by", [
+    ("Tutu [The Reflex Revision]", {"reedit"}, "thereflex"),
+    ("Tutu (Sonias 2 Euro Bootleg)", {"remix"}, "sonias2euro"),
+    ("Tutu (Joey Negro Refix)", {"remix"}, "joeynegro"),
+    ("Tutu - Delfonic Rework", {"remix"}, "delfonic"),
+])
+def test_remix_family_words(title, kinds, by):
+    t = parse_title(title)
+    assert (t.base, t.kinds, t.by) == ("Tutu", frozenset(kinds), by)
+
+
+def test_version_groups_never_disagree_with_same_version():
+    copies = [_c("A", 300, recording_id="r1"), _c("A (Live)", 280, recording_id="r1"),
+              _c("A", 300, work_id="w1"), _c("A", 301, work_id="w2"), _c("A", 302), _c("A", 302.5)]
+    groups = version_groups(copies)
+    for g in groups:
+        assert all(same_version(copies[i], copies[j]) for i in g for j in g if i != j)
+    assert [0, 1] in groups                              # one recording id is one version, whatever the titles
