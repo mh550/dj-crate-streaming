@@ -204,7 +204,9 @@ class MusicBrainz:
         return None if d is None else parse_recording(d)
 
     def isrc(self, isrc: str) -> list[Recording]:
-        d = self.get(f"isrc/{isrc}", inc="work-rels")
+        """The ISRC's recordings with their artist credits (without `artist-credits` the endpoint sends none,
+        measured 2026-10-16) and works."""
+        d = self.get(f"isrc/{isrc}", inc="artist-credits work-rels")
         return [] if d is None else [parse_recording(r) for r in d.get("recordings") or []]
 
     def search(self, artist: str, title: str, limit: int = 100) -> list[Recording]:

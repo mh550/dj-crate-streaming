@@ -141,16 +141,14 @@ def _len(s: float | None) -> str:
     return f"{s // 60}:{s % 60:02d}"
 
 
-def _fits(f: FileFacts, t, r: Recording, *, isrc_vouches: bool = False) -> bool:
+def _fits(f: FileFacts, t, r: Recording) -> bool:
     """The recording is this file's version: length ±4 s (known on both sides), the lead artist among its credited
-    words, the same base title and the same version key. The isrc endpoint returns no artist credit: then the
-    file's own ISRC vouches for the artist, and title, label and length still have to agree."""
+    words, the same base title and the same version key. A recording without a credit never fits."""
     if r.length_s is None or not f.length_s or abs(r.length_s - f.length_s) > TOL_S:
         return False
-    if r.artist or not isrc_vouches:
-        lead = words(lead_artist(f.artist))
-        if not lead or f" {lead} " not in f" {words(r.artist)} ":
-            return False
+    lead = words(lead_artist(f.artist))
+    if not lead or f" {lead} " not in f" {words(r.artist)} ":
+        return False
     rt = parse_title(r.title, r.artist)
     return bool(loose(t.base)) and loose(rt.base) == loose(t.base) and rt.key == t.key
 
@@ -264,7 +262,7 @@ def _classify(f: FileFacts, mb, lookup, p: Proposal) -> None:
         notes.append(f"ISRC {f.isrc!r} is not one; not looked up")
     if isrc:                                                 # step 2
         recs = mb.isrc(isrc)
-        fit = [r for r in recs if _fits(f, t, r, isrc_vouches=True)]
+        fit = [r for r in recs if _fits(f, t, r)]
         r, how = _tie_break(fit, [("album", _same_album(f))])
         if r is not None:
             p.cls = "isrc"

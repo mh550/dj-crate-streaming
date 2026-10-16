@@ -76,6 +76,16 @@ def test_parse_isrc_fixture():
     assert recs[0].id.startswith("470a364c") and recs[0].length_s == 228.213
     assert recs[0].work_ids == ("769c5c09-7179-310f-b092-77af2ed3462b",)
     assert recs[0].title == "Virtual Insanity"
+    assert recs[0].artist == "Jamiroquai"                    # the fixture was captured with inc=artist-credits
+
+
+def test_isrc_asks_for_artist_credits_and_works():
+    opener = Script(fixture("musicbrainz_isrc.sample.json"))
+    mb, _ = client(opener)
+    mb.isrc("GBARL0601475")
+    q = urllib.parse.urlparse(opener.requests[0].full_url)
+    assert q.path == "/ws/2/isrc/GBARL0601475"
+    assert urllib.parse.parse_qs(q.query) == {"fmt": ["json"], "inc": ["artist-credits work-rels"]}
 
 
 def test_parse_recording_fixture():

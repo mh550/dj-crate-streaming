@@ -119,9 +119,8 @@ def test_existing_id_without_a_length_or_with_another_label_is_never_confirmed(t
 def test_isrc_with_one_fitting_recording(tmp_path, template):
     music = tmp_path / "music"
     p = tagged(music, "a.flac", template, artist="Jamiroquai", title="Virtual Insanity", isrc="GBARL0601475")
-    # the live isrc endpoint carries no artist credit (fixtures/musicbrainz_isrc.sample.json): the ISRC vouches for it
-    mb = FakeMB(isrcs={"GBARL0601475": [rec(RA, "Virtual Insanity", 8.0, artist="", works=["w1"]),
-                                        rec(RB, "Virtual Insanity", 30.0, artist="", works=["w2"])]})
+    mb = FakeMB(isrcs={"GBARL0601475": [rec(RA, "Virtual Insanity", 8.0, artist="Jamiroquai", works=["w1"]),
+                                        rec(RB, "Virtual Insanity", 30.0, artist="Jamiroquai", works=["w2"])]})
     pr = ib.classify(facts(music, p), mb)
     assert pr.cls == "isrc" and pr.write == {"mb_trackid": RA, "mb_workid": "w1"} and pr.accept is True
     assert not [c for c in mb.calls if c[0] == "search"]
@@ -131,7 +130,8 @@ def test_isrc_with_another_artist_or_label_does_not_fit(tmp_path, template):
     music = tmp_path / "music"
     p = tagged(music, "a.flac", template, artist="Jamiroquai", title="Virtual Insanity", isrc="GBARL0601475")
     mb = FakeMB(isrcs={"GBARL0601475": [rec(RA, "Virtual Insanity", 8.0, artist="Someone Else"),
-                                        rec(RB, "Virtual Insanity (Radio Edit)", 8.0, artist="")]})
+                                        rec(RB, "Virtual Insanity (Radio Edit)", 8.0, artist="Jamiroquai"),
+                                        rec(R1, "Virtual Insanity", 8.0, artist="")]})     # no credit: never fits
     pr = ib.classify(facts(music, p), mb)
     assert pr.cls == "none" and pr.write == {}
     assert ("search", "Jamiroquai", "Virtual Insanity") in mb.calls
