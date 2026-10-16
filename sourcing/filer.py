@@ -100,10 +100,17 @@ class BeetsFiler:
             return db.execute(sql, args).fetchall()
 
     def _max_id(self) -> int:
+        """The highest items id before an import. Only "no library.db yet" or "no items table yet" mean 0: a
+        locked or hot-journalled DB read as 0 would make every existing row look like this import's, so it fails
+        here, before beets runs."""
+        if not self.library.exists():
+            return 0
         try:
             return self._rows("SELECT max(id) FROM items")[0][0] or 0
-        except sqlite3.OperationalError:                 # no library.db yet, or no items table
-            return 0
+        except sqlite3.OperationalError as e:
+            if "no such table" in str(e):
+                return 0
+            raise FilingError(f"library.db unreadable: {e}") from e
 
     def _beet(self, *args: str) -> subprocess.CompletedProcess:
         cmd = [self.beet, "-c", str(self.config), *args]

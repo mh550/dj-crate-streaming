@@ -1,6 +1,7 @@
 # beets config. Since M6 the worker container is the ONLY process that runs beets: it imports each verified
 # download with `beet import -q -s -m -W` from its own <downloads>/.staging/<id>-<ts>/ folder (sourcing/filer.py)
-# and runs `beet write` on that new file only after a MusicBrainz match. Do not run beet on the host.
+# and runs `beet write` on that new file only after a *confirmed* MusicBrainz match (recording length agrees with
+# the file). Do not run beet on the host.
 # State (library.db, import log) lives in /srv/docker/beets, outside the repo.
 # beets 1.6 sets up MusicBrainz BEFORE it reads the -c file, so any `musicbrainz:` settings (host, rate limit)
 # belong in $BEETSDIR/config.yaml (BEETSDIR=/srv/docker/beets), not here. The worker needs none today.
@@ -15,15 +16,17 @@ library: /srv/docker/beets/library.db
 statefile: /srv/docker/beets/state.pickle   # incremental history + resume state
 
 import:
-  copy: yes            # never move: /srv/incoming/library-import stays untouched
-  move: no
-  write: yes           # tags are written to the *copy* in /srv/music
+  # Only the worker's filer imports, always `beet import -q -s -m -W -l <log> <downloads>/.staging/<id>-<ts>/`
+  # (sourcing/filer.py): -m moves the verified download out of its own staging folder (it overrides copy: below),
+  # -W keeps the import itself from writing tags. Nothing is imported from /srv/incoming/library-import.
+  copy: yes            # overridden by the filer's -m
+  move: no             # overridden by the filer's -m
+  write: no            # defence in depth: `beet modify`/`mbsync` then never write files by default; the filer's explicit `beet write` is unaffected
   log: /srv/docker/beets/import.log
-  quiet_fallback: asis # unmatched albums go in on their existing tags (-q runs)
+  quiet_fallback: asis # an unmatched download goes in on its existing tags (-q runs)
   duplicate_action: keep   # copies and versions of one song coexist (spec Part 2); skip would drop every copy upgrade
   resume: yes          # never prompt: these runs are unattended
-  incremental: yes     # re-running skips directories already seen — including skipped ones,
-                       # so new files must land in a fresh /srv/incoming/<batch>/ dir (or use -I)
+  incremental: yes     # skips folders already seen; every download has a fresh .staging/<id>-<ts>/ folder, so none is
 
 paths:
   # Artist/Album (Year)/NN - Title; %if drops "(0000)" when the year is unknown and files no-album tracks under Singles/

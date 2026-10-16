@@ -143,6 +143,28 @@ def test_real_beet_tests_are_offline(tmp_path, beets_home):
     assert "Connection refused" in out and "Found 0 candidates." in out, out[-2000:]
 
 
+@real_beet
+def test_real_beet_write_touches_only_the_file_it_names(tmp_path, beets_home):
+    """`beet write path:<file>` (the filer's write step) writes that one file and no other, even when library.db
+    disagrees with both, and an explicit write still writes with `import: write: no` in deploy/beets.yaml."""
+    config, music, library = real_config(tmp_path)
+    section = re.search(r"^import:\n((?:[ #].*\n|\n)*)", config.read_text(), re.M).group(1)
+    assert re.search(r"^  write: no\b", section, re.M), section
+    filer = BeetsFiler(config)
+    first, second = staging_dir(tmp_path, "ext-1-1"), staging_dir(tmp_path, "ext-1-2")
+    good_times(first, 42)
+    a = filer.file(first, first.with_suffix(".log"))
+    good_times(second, 7)
+    b = filer.file(second, second.with_suffix(".log"))
+    assert (a.path, b.path) == (music / "Chic" / "Singles" / "Good Times.flac", music / "Chic" / "Singles" / "Good Times.1.flac")
+    with closing(sqlite3.connect(library)) as db, db:
+        assert db.execute("UPDATE items SET title = 'Good Times (written)'").rowcount == 2
+    untouched = sha256(b.path)
+    filer._write(a)
+    assert [t for t in tags_of(a.path) if t.startswith("TITLE=")] == ["TITLE=Good Times (written)"]
+    assert sha256(b.path) == untouched
+
+
 def test_tagger_fills_only_empty_fields(tmp_path):
     path = tag(make_audio(tmp_path / "lf.flac", seconds=1), "TITLE=Le Freak")
     assert fill_missing_tags(path, {"artist": "Chic", "title": "Good Times"}) == ["artist"]
@@ -310,3 +332,36 @@ def test_refuses_a_folder_outside_staging(fake, tmp_path, where):
 
 def test_library_path_comes_from_the_config():
     assert BeetsFiler(REPO / "deploy" / "beets.yaml").library == Path("/srv/docker/beets/library.db")
+
+
+def test_unreadable_library_db_fails_before_the_import(fake):
+    """Only a missing library.db or a missing items table means "no items yet"; a locked one (a beet process mid-write)
+    must not count as 0, or every existing row would look new after the import."""
+    runner = fake_beet(fake["music"], fake["library"], "Chic/Singles/Good Times.flac")
+    lock = sqlite3.connect(fake["library"], isolation_level=None)
+    lock.execute("BEGIN EXCLUSIVE")
+    try:
+        with pytest.raises(FilingError, match="library.db unreadable"):
+            BeetsFiler(fake["cfg"], runner=runner).file(fake["staging"], fake["log"])
+    finally:
+        lock.execute("ROLLBACK"); lock.close()
+    assert runner.calls == []
+
+
+def test_missing_library_db_or_table_counts_as_empty(tmp_path):
+    staging = staging_dir(tmp_path)
+    (staging / "gt.flac").write_bytes(b"fLaC")
+    library = tmp_path / "beets" / "library.db"
+    runner_calls = []
+
+    def runner(cmd, **kw):                             # beets creates library.db and its table on the first import
+        runner_calls.append(cmd)
+        beets_items_db(library)
+        return fake_beet(tmp_path / "music", library, "Chic/Singles/Good Times.flac")(cmd, **kw)
+
+    item = BeetsFiler(tmp_path / "beets.yaml", library=library, runner=runner).file(staging, staging.with_suffix(".log"))
+    assert item.path == tmp_path / "music" / "Chic" / "Singles" / "Good Times.flac"
+    library.unlink()
+    with closing(sqlite3.connect(library)) as db:      # a library.db without an items table
+        db.execute("CREATE TABLE other(x)")
+    assert BeetsFiler(tmp_path / "beets.yaml", library=library)._max_id() == 0
