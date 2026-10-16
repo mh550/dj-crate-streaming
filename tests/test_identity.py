@@ -13,6 +13,20 @@ def test_words_and_loose():
     assert words(None) == "" and loose(None) == ""
 
 
+def test_folding_drops_latin_style_accents_only():
+    assert loose("Catendé") == loose("Catende") == "catende"
+    assert words("Beyoncé") == "beyonce" and words("Motörhead") == "motorhead" and words("Ñ") == "n"
+    assert words("Ά") == "α"                      # Greek tonos is a combining mark in U+0300-036F: folds
+    assert words("й") == "и"                      # й is и + U+0306: folds to и, accepted (same range)
+
+
+def test_folding_keeps_japanese_voiced_marks():
+    assert loose("ガ") != loose("カ") and words("ガ") != words("カ")
+    assert loose("パ") != loose("ハ") != loose("バ")
+    assert words("ガ") == "ガ"                    # recomposed (NFC), not left as カ + U+3099
+    assert loose("ｶﾞ") == loose("ガ")             # half-width kana folds to the same key as full-width
+
+
 def test_words_noise_drops_copy_and_credit_words():
     assert words("Le Freak - 2006 Remaster", noise=True) == "le freak"
     assert words("Virgin (Album Version) [Explicit] HQ", noise=True) == "virgin"

@@ -31,6 +31,11 @@ NEUTRAL = frozenset({"original"})          # counts for preferences, not for the
 _NOISE = re.compile(r"\b(?:\d{4} remaster(?:ed)?|remaster(?:ed)?|album version|feat|ft|featuring|explicit|clean|hq|hd)\b")
 
 
+# Only Latin-style accents fold away (Catendé = Catende). Other combining marks carry meaning: Japanese dakuten
+# U+3099/U+309A make ガ ≠ カ, so they stay and NFC recomposes them. й (и + U+0306) does fold to и.
+_ACCENTS = re.compile("[\u0300-\u036f\u1ab0-\u1aff\u1dc0-\u1dff\u20d0-\u20ff\ufe20-\ufe2f]")
+
+
 def words(s: str | None, *, noise: bool = False) -> str:
     """Accent-, case- and punctuation-free words; "&" is "and" on both sides alike.
 
@@ -38,7 +43,7 @@ def words(s: str | None, *, noise: bool = False) -> str:
     hd): it is the scorer's name test, not a version test. Versions come from `parse_title`, where clean/explicit
     are labels. "original mix" is a version label (D16), so it stays."""
     s = unicodedata.normalize("NFKD", s or "")
-    s = "".join(c for c in s if not unicodedata.combining(c)).casefold().replace("&", " and ")
+    s = unicodedata.normalize("NFC", _ACCENTS.sub("", s)).casefold().replace("&", " and ")
     s = "".join(c if c.isalnum() else " " for c in s)          # letters of any script stay; "_" goes
     if noise:
         s = _NOISE.sub(" ", s)
