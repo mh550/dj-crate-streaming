@@ -215,3 +215,61 @@ def test_the_search_is_deleted_even_when_ranking_raises(world, monkeypatch):
         with pytest.raises(RuntimeError):
             run(world, srv, approve=False)
     assert len(deleted) == 1
+
+
+# ---- M7 final fixes I1: replaceable needs the decoded length, measured ----
+
+def _truncated(audio, tmp_path):
+    """80% of a FLAC's bytes: STREAMINFO still says 20 s, only ~16 s decodes, and the prefix fingerprints clean."""
+    good = convert(audio["true"], tmp_path / "new.flac", "-compression_level", "8")
+    data = good.read_bytes()
+    t = tmp_path / "trunc.flac"
+    t.write_bytes(data[: len(data) * 8 // 10])
+    return t
+
+
+@needs_tools
+def test_truncated_copy_is_not_replaceable_when_the_decode_timed_out(audio, tmp_path, monkeypatch):
+    import subprocess
+    import sourcing.verify as V
+
+    def timeout(*a, **k):
+        raise subprocess.TimeoutExpired("ffmpeg", 600)
+    monkeypatch.setattr(V, "analyse", timeout)
+    v = verify(_truncated(audio, tmp_path), 20, tier="crate", reference=audio["true"], intent="copy")
+    assert v.measurements["fingerprint_ber"] <= 0.2 and v.measurements["replaceable"] is False
+    assert any("not replaceable" in w and "decoded length" in w for w in v.warnings)
+
+
+@needs_tools
+def test_truncated_copy_is_not_replaceable_without_ffmpeg(audio, tmp_path, monkeypatch):
+    import sourcing.verify as V
+    real = shutil.which
+    trunc = _truncated(audio, tmp_path)
+    monkeypatch.setattr(V.shutil, "which", lambda n: None if n == "ffmpeg" else real(n))
+    v = verify(trunc, 20, tier="crate", reference=audio["true"], intent="copy")
+    assert v.measurements["replaceable"] is False
+    assert any("not replaceable" in w and "decoded length" in w for w in v.warnings)
+
+
+@needs_tools
+def test_replaceable_compares_the_decoded_length_not_the_header(audio, monkeypatch):
+    """A VBR MP3 without a Xing header: its header length is an estimate (not exact), so no `truncated` finding
+    fires; only the decoded length shows that half the audio is missing."""
+    import dataclasses
+    import sourcing.verify as V
+    real_probe, real_analyse = V.probe, V.analyse
+
+    def estimate(path):
+        info = real_probe(path)
+        return dataclasses.replace(info, duration_exact=False) if path == audio["mp3"] else info
+
+    def half(path, sr, d=None):
+        a = real_analyse(path, sr, d)
+        if path == audio["mp3"]:
+            a["samples"] = int(a["samples"] * 0.5)          # the header says 20 s; the decode finds 10 s
+        return a
+    monkeypatch.setattr(V, "probe", estimate)
+    monkeypatch.setattr(V, "analyse", half)
+    v = verify(audio["mp3"], tier="low", reference=audio["true"], intent="copy")
+    assert v.measurements["decoded_s"] < 15 and v.measurements["replaceable"] is False

@@ -259,12 +259,17 @@ def verify(path: Path, expected_duration_s: float | None = None, tier: str | Non
         if intent == "copy":
             # M8 deletes the old copy when this is True, so it implies ok: the fingerprint matched over the overlap
             # (a truncated prefix matches perfectly, hence the length test against the reference), the reference is
-            # a different file, and nothing else is wrong with the download.
-            ref_s = m.get("reference_duration_s")
+            # a different file, and nothing else is wrong with the download. The length compared is the *decoded*
+            # one: a truncated FLAC keeps its STREAMINFO length and a VBR MP3's header length is an estimate, so a
+            # skipped decode (no ffmpeg, a timeout) can never prove the download whole.
+            ref_s, decoded_s = m.get("reference_duration_s"), m.get("decoded_s")
             m["replaceable"] = bool(
                 not problems and m.get("reference_compared") and m.get("fingerprint_ber", 1.0) <= MAX_SAME_BER
-                and ref_s and info and info.duration_s and abs(info.duration_s - ref_s) <= tolerance_s
+                and ref_s and decoded_s and abs(decoded_s - ref_s) <= tolerance_s
                 and reference is not None and not _same_file(path, reference))
+            if not problems and m.get("reference_compared") and not decoded_s:
+                warnings.append("not replaceable: the decoded length was not measured (decoded checks skipped), "
+                                "so the download may be a truncated prefix of the reference")
         return Verdict(not problems, problems, info, warnings, finite(m))
 
     if not path.exists():
