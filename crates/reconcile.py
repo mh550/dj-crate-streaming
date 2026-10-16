@@ -33,6 +33,17 @@ class CommentNotKept(Exception):
     or Navidrome stored it differently). The cache is left alone."""
 
 
+def write_comment(client: SubsonicClient, pl: Playlist, new: str) -> Playlist:
+    """The one comment writer: send ``new``, read the playlist back, raise CommentNotKept unless it holds exactly
+    ``new``. Returns the playlist as read back. An update_playlist error propagates. Also used by the migration."""
+    client.update_playlist(pl.id, comment=new)
+    back = client.playlist(pl.id)
+    if (back.comment or "") != new:
+        raise CommentNotKept(f"{pl.name}: wrote comment {new!r} but Navidrome now has {back.comment or ''!r}; "
+                             "nothing changed here, try again")
+    return back
+
+
 def has_crate_tag(comment: str | None) -> bool:
     return attrs.parse(comment).crate
 
@@ -123,12 +134,7 @@ class Reconciler:
     def _write_attrs(self, pl: Playlist, **change) -> dict:
         new = attrs.write(pl.comment, **change)
         if new != (pl.comment or ""):
-            self.client.update_playlist(pl.id, comment=new)      # an exception propagates: the cache is untouched
-            back = self.client.playlist(pl.id)
-            if (back.comment or "") != new:
-                raise CommentNotKept(f"{pl.name}: wrote comment {new!r} but Navidrome now has {back.comment or ''!r}; "
-                                     "nothing changed here, try again")
-            pl = back
+            pl = write_comment(self.client, pl, new)             # an exception propagates: the cache is untouched
         self.refresh_cache(pl)
         # Until derived tiers (M8 Task 5): today's per-playlist reconcile of the crate's tracks.
         if (c := self.store.get(pl.id)) and c.enabled:

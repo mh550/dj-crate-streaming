@@ -4,6 +4,7 @@
   python -m crates.cli playlists                 # every Navidrome playlist, crate flag + provisioning summary
   python -m crates.cli toggle <playlist-id> on|off   # writes #crate into the playlist comment (which owns it)
   python -m crates.cli tier <playlist-id> low|medium|high|crate|none   # writes #tier:<t> (none clears it)
+  python -m crates.cli attrs migrate [--apply] [--out PATH]   # one-time: crates.db flags/import tiers into comments (dry run by default)
   python -m crates.cli reconcile                 # sync crate state from Navidrome, re-judge every track
   python -m crates.cli wanted                    # the sourcing queue (feeds `sourcing.cli rank`)
   python -m crates.cli rename <playlist-id> <new-name>
@@ -20,6 +21,7 @@ import argparse
 import json
 import sys
 import threading
+from pathlib import Path
 
 from sourcing.policy import TIERS
 from .reconcile import CommentNotKept, NameMarked
@@ -39,6 +41,9 @@ def main(argv: list[str] | None = None) -> int:
     t = sub.add_parser("toggle"); t.add_argument("playlist_id"); t.add_argument("state", choices=["on", "off"])
     tr = sub.add_parser("tier"); tr.add_argument("playlist_id"); tr.add_argument("tier", choices=[*TIERS, "none"])
     sub.add_parser("reconcile")
+    at = sub.add_parser("attrs", help="playlist comment attributes").add_subparsers(dest="attrs_cmd", required=True)
+    mg = at.add_parser("migrate", help="add #crate / #tier: to comments for what only crates.db knows (dry run unless --apply)")
+    mg.add_argument("--apply", action="store_true"); mg.add_argument("--out", help="also write the report to this file")
     w = sub.add_parser("wanted"); w.add_argument("--json", action="store_true")
     p = sub.add_parser("publish", help="make playlists visible to every Navidrome user (public)"); p.add_argument("names", nargs="*", help="playlist names (default: all)")
     r = sub.add_parser("rename"); r.add_argument("playlist_id"); r.add_argument("name")
@@ -85,6 +90,23 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{a.cmd}: {e}", file=sys.stderr)
             return 1
         print(json.dumps(v, indent=2))
+    elif a.cmd == "attrs":
+        from . import migrate_attrs
+        changes = migrate_attrs.plan(app.api, app.store)
+        text = migrate_attrs.report(changes, app.api, app.store)
+        if not a.apply:
+            text += ("\n\nDry run: nothing was written to Navidrome. Run again with --apply to write these comments."
+                     if changes else "")
+        if a.out:
+            Path(a.out).write_text(text + "\n", encoding="utf-8")
+        print(text)
+        if a.apply and changes:
+            written, refused = migrate_attrs.apply(app.api, changes)
+            print(f"\nWritten ({len(written)}): {', '.join(written) or 'none'}")
+            print("Run `crates.cli reconcile` to refresh the crates.db cache from the new comments.")
+            for r in refused:
+                print(f"refused: {r}", file=sys.stderr)
+            return 1 if refused else 0
     elif a.cmd == "reconcile":
         print(json.dumps(app.reconcile(), indent=2))
     elif a.cmd == "wanted":
