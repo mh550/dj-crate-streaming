@@ -18,8 +18,8 @@ unrejected; otherwise the top-ranked one is used, and a `pick` event says which 
 Re-running `fetch` on a `verify` row skips the download and just re-checks Navidrome for the
 filed path kept in the reason, searching by the filed file's own artist/title tags (what Navidrome indexed);
 each miss is counted in the reason as `(check N)`, and the RECHECK_LIMIT-th fails the row with "Navidrome
-never indexed <path>; file is in the library", so it does not wait unseen forever. A `sourcing` row older than the download timeout is treated as
-abandoned and retried; a fresh one is reported as in flight. Any exception after the row enters
+never indexed <path>; file is in the library", so it does not wait unseen forever. A `sourcing` row older
+than the download timeout is treated as abandoned and retried; a fresh one is reported as in flight. Any exception after the row enters
 `sourcing` marks it `failed` with the exception text before propagating, so nothing is ever stuck, except
 once beets has filed the file: from then on the row is `verify` with the filed path in its reason (set right
 after filing, and again with the exception text), because the library file is the one copy of that version
