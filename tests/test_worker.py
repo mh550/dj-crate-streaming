@@ -171,3 +171,48 @@ def test_cli_fetch_approve_records_an_approval(tmp_path, monkeypatch, capsys):
     peers = [r["username"] for r in RESPONSES if r["username"] != "locked"]     # "locked" is also the word in "rejected: locked"
     assert len(peers) == 7 and not [p for p in peers if p in out]                # no Soulseek peer name on stdout
     assert code in (0, 2)
+
+
+def test_claim_approval_is_conditional_on_unused():
+    store = CrateStore()
+    first = store.approve("s4", "michael", None, "crate")
+    assert store.claim_approval(first) is True and store.approval("s4")["result"] == "started"
+    assert store.claim_approval(first) is False                         # already used
+    second = store.approve("s4", "michael", None, "crate")
+    third = store.approve("s4", "michael", None, "crate")               # supersedes #second
+    assert store.claim_approval(second) is False and store.approval("s4")["id"] == third
+    assert store.db.execute("SELECT result FROM approvals WHERE id=?", (second,)).fetchone()[0] == f"superseded by #{third}"
+    assert store.claim_approval(999) is False
+
+
+def test_stale_snapshot_does_not_revive_a_superseded_approval(world):
+    store, lines, fetched = world["store"], [], []
+    ext = store.add_external_wanted("Chic", "Everybody Dance")
+    store.approve("s4", "michael", None, "crate")
+    a1 = store.approve(ext, "michael", {"username": "x", "filename": "old.flac"}, "crate")     # in this tick's snapshot
+
+    def fetcher(wanted_id, **kw):
+        fetched.append((wanted_id, kw["prefer"]))
+        if wanted_id == "s4":                                           # slow fetch: Michael re-approves ext-1 meanwhile
+            fetcher.a2 = store.approve(ext, "michael", {"username": "y", "filename": "new.flac"}, "crate")
+        return FetchResult("ok", "fine")
+
+    with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
+        w = worker(world, srv, lines, fetcher=fetcher)
+        first = w.tick()
+        assert [f[0] for f in fetched] == ["s4"] and first.approvals == 1       # the old approval was not fetched
+        assert f"skipped {ext}: approval #{a1} already used" in lines
+        assert store.db.execute("SELECT result FROM approvals WHERE id=?", (a1,)).fetchone()[0] == f"superseded by #{fetcher.a2}"
+        second = w.tick()
+    assert second.approvals == 1 and fetched[1] == (ext, {"username": "y", "filename": "new.flac"})
+    assert len(fetched) == 2 and store.pending_approvals() == []
+
+
+def test_same_filename_from_another_peer_is_not_the_preferred_candidate(world, tmp_path):
+    flac = good_flac_bytes(tmp_path)
+    world["store"].approve("s4", "michael", {"username": "someone-else", "filename": GOOD}, "crate")
+    with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: flac}) as srv:
+        new_song(world["nd"], len(flac))
+        worker(world, srv).tick()
+    assert srv.enqueued[0][0] == "vinylhead77"
+    assert pick_events(world) == ["approved candidate no longer offered; using the top-ranked 03 - Good Times.flac"]

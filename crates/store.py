@@ -297,6 +297,14 @@ class CrateStore:
     def pending_approvals(self) -> list[dict]:
         return [self._approval_row(r) for r in self.db.execute("SELECT * FROM approvals WHERE used_at IS NULL ORDER BY id")]
 
+    def claim_approval(self, approval_id: int) -> bool:
+        """Take an approval for download: True only for the caller that finds it still unused (the conditional
+        UPDATE is the claim, so a stale snapshot, a superseded approval or a second worker gets False)."""
+        cur = self.db.execute("UPDATE approvals SET used_at=?, result='started' WHERE id=? AND used_at IS NULL",
+                              (time.time(), approval_id))
+        self.db.commit()
+        return cur.rowcount == 1
+
     def mark_approval_used(self, approval_id: int, result: str) -> None:
         self.db.execute("UPDATE approvals SET used_at=?, result=? WHERE id=?", (time.time(), result, approval_id))
         self.db.commit()

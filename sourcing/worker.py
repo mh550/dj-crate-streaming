@@ -3,8 +3,9 @@
 Each tick:
   1. every `verify` row is fetched again with approve=True; that path downloads nothing, it only asks
      Navidrome whether the filed song has appeared;
-  2. every unused approval is spent first (marked `started`, so a crash or a second worker can never
-     download it twice), then fetched, preferring the candidate Michael saw while that file is still offered,
+  2. every unused approval is claimed first (a conditional UPDATE to `started`: a crash, a second worker, or
+     an approval Michael superseded after this tick read its list cannot download it twice; a lost claim is
+     skipped), then fetched, preferring the candidate Michael saw while that file is still offered,
      and finally marked with the outcome.
 
 One bad row never stops the tick, and one bad tick (slskd or Navidrome down, DB locked) never stops `run`.
@@ -41,10 +42,12 @@ class Worker:
                 results.append(f"{wanted_id}: error: {type(e).__name__}: {e}")
                 self.log(f"recheck {wanted_id} failed: {type(e).__name__}: {e}")
             rechecked += 1
-        approvals = self.store.pending_approvals()
-        for a in approvals:
-            self.store.mark_approval_used(a["id"], "started")
-            self.store.commit()
+        claimed = 0
+        for a in self.store.pending_approvals():
+            if not self.store.claim_approval(a["id"]):         # superseded or taken since this list was read
+                self.log(f"skipped {a['wanted_id']}: approval #{a['id']} already used")
+                continue
+            claimed += 1
             try:
                 r = self.fetcher(a["wanted_id"], approve=True, prefer=a["candidate"], **self.common)
                 outcome = f"{r.status}: {r.reason}"
@@ -55,8 +58,8 @@ class Worker:
             self.store.commit()
             results.append(f"{a['wanted_id']}: {outcome}")
             self.log(f"{a['wanted_id']}: {outcome}")
-        self.log(f"tick: {len(approvals)} approvals, {rechecked} rechecked")
-        return TickReport(len(approvals), rechecked, results)
+        self.log(f"tick: {claimed} approvals, {rechecked} rechecked")
+        return TickReport(claimed, rechecked, results)
 
     def run(self, poll_s: float, *, ticks: int | None = None) -> None:
         n = 0

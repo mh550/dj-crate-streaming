@@ -200,7 +200,8 @@ def main(argv: list[str] | None = None) -> int:
         if a.approve and row is not None:            # D23: every download carries an approval, here Michael's own command
             tier = a.tier if a.tier and row.get("external") else row["tier"]
             aid = app.store.approve(a.wanted, "michael", None, tier)
-            app.store.mark_approval_used(aid, "started"); app.store.commit()      # so a running worker never spends it too
+            if not app.store.claim_approval(aid):         # a running worker took it first: it is fetching this row
+                print(f"{a.wanted}: the worker already took this approval", file=sys.stderr); return 1
         try:
             r = fetch(a.wanted, store=app.store, slskd=SlskdClient(a.slskd, a.api_key), navidrome=app.api,
                       reconciler=app.reconciler, tier=a.tier, approve=a.approve, **_fetch_env())
