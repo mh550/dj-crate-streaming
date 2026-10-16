@@ -1,10 +1,13 @@
 """fetch files a verified download through beets (D18, D22) and copies Navidrome's names back onto the row."""
+import sqlite3
 from pathlib import Path
 
 import pytest
 
 from sourcing.fake_slskd import FakeSlskdServer
 from sourcing.filer import BeetsFiler, FilingError
+from sourcing.verify import verify
+from tests.test_export_playlists import SCHEMA
 from tests.helpers import beets_items_db, fake_beet, make_flac
 from tests.test_fetch import GOOD, RESPONSES, good_flac_bytes, new_song, run, world  # noqa: F401  (world: fixture)
 
@@ -150,3 +153,87 @@ def test_fetch_passes_the_wanted_names_to_the_filer(world, tmp_path):
     assert seen == [{"artist": "Chic", "title": "Good Times"}]
     tagged = kinds(world, "tagged")
     assert len(tagged) == 1 and "title" in tagged[0]["detail"]
+
+
+def spy_verifier(seen):
+    def spy(path, duration, tier=None, reference=None, **kw):
+        seen.update(path=path, duration=duration, tier=tier, reference=reference, kw=kw)
+        return verify(path, duration)
+    return spy
+
+
+def navidrome_db(path, rows):
+    con = sqlite3.connect(path)
+    con.executescript(SCHEMA)
+    con.executemany("insert into media_file(id,path,title,artist,duration) values(?,?,?,?,?)", rows)
+    con.commit(); con.close()
+    return path
+
+
+def fetched(world, tmp_path, **kw):
+    flac = good_flac_bytes(tmp_path)
+    seen = {}
+    with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: flac}) as srv:
+        new_song(world["nd"], len(flac))
+        r = run(world, srv, approve=True, verifier=spy_verifier(seen), **kw)
+    assert r.status == "ok", r.reason
+    return seen
+
+
+def test_crate_row_upgrade_passes_the_old_file_as_reference(world, tmp_path):
+    old = world["music"] / "Old/s4.mp3"
+    old.parent.mkdir(parents=True); old.write_bytes(b"x")
+    db = navidrome_db(tmp_path / "navidrome.db", [("s4", "Old/s4.mp3", "Good Times", "Chic", 501.0)])
+    seen = fetched(world, tmp_path, navidrome_db=db)
+    assert seen["reference"] == old and seen["tier"] == "crate"
+    assert kinds(world, "reference") == []
+
+
+def test_missing_navidrome_db_skips_the_reference_with_a_logged_reason(world, tmp_path):
+    seen = fetched(world, tmp_path, navidrome_db=tmp_path / "nope.db")
+    assert seen["reference"] is None
+    ev = kinds(world, "reference")
+    assert len(ev) == 1 and "no reference: navidrome.db not at" in ev[0]["detail"]
+    assert not (tmp_path / "nope.db").exists()          # read-only open must not create it
+
+
+def test_reference_skipped_when_id_or_file_is_missing(world, tmp_path):
+    db = navidrome_db(tmp_path / "navidrome.db", [("other", "Old/o.mp3", "T", "A", 1.0)])
+    assert fetched(world, tmp_path, navidrome_db=db)["reference"] is None
+    assert "s4 not in navidrome.db" in kinds(world, "reference")[0]["detail"]
+
+
+def test_reference_skipped_when_the_old_file_is_gone(world, tmp_path):
+    db = navidrome_db(tmp_path / "navidrome.db", [("s4", "Old/s4.mp3", "T", "A", 1.0)])
+    assert fetched(world, tmp_path, navidrome_db=db)["reference"] is None
+    assert "Old/s4.mp3 missing on disk" in kinds(world, "reference")[0]["detail"]
+
+
+def test_lookup_and_recording_id_reach_verify_only_when_a_lookup_is_configured(world, tmp_path):
+    assert fetched(world, tmp_path)["kw"] == {}
+
+
+def test_lookup_is_passed_to_verify_with_no_recording_id_when_navidrome_has_none(world, tmp_path):
+    f = lambda p: []
+    kw = fetched(world, tmp_path, lookup=f)["kw"]
+    assert kw["lookup"] is f and kw["recording_id"] is None
+
+
+def test_navidromes_musicbrainz_recording_id_reaches_verify(world, tmp_path):
+    world["nd"].state.songs["s4"]["musicBrainzId"] = "rec-9"
+    assert fetched(world, tmp_path, lookup=lambda p: [])["kw"]["recording_id"] == "rec-9"
+
+
+def test_external_row_has_no_reference_and_no_recording_id(world, tmp_path):
+    ext = world["store"].add_external_wanted("Chic", "Good Times", album="Risqué", duration_s=501, year=1979)
+    f = lambda p: []
+    seen = fetched(world, tmp_path, wanted_id=ext, lookup=f, navidrome_db=tmp_path / "nope.db")
+    assert seen["reference"] is None and seen["kw"] == {"recording_id": None, "lookup": f}
+    assert kinds(world, "reference") == []
+
+
+def test_unreadable_navidrome_db_skips_the_reference(world, tmp_path):
+    bad = tmp_path / "navidrome.db"
+    bad.write_bytes(b"not a database" * 100)
+    assert fetched(world, tmp_path, navidrome_db=bad)["reference"] is None
+    assert "unreadable" in kinds(world, "reference")[0]["detail"]

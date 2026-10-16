@@ -26,12 +26,14 @@ from __future__ import annotations
 
 import re
 import shutil
+import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
 from crates.reconcile import Reconciler
 from crates.store import CrateStore
+from scripts.export_playlists import open_ro
 from subsonic.client import SubsonicClient
 from .filer import BeetsFiler
 from .policy import DEFAULT_TIER, TIERS, QualityPolicy, check_tier
@@ -63,10 +65,32 @@ def _find_landed(downloads_root: Path, best: Candidate) -> Path | None:
     return None
 
 
+def _library_file(navidrome_db: Path | None, song_id: str, music_root: Path) -> tuple[Path | None, str]:
+    """The file Navidrome has for `song_id` (Navidrome 0.64 stores library-relative paths), read from its
+    database read-only, and why there is none when there isn't."""
+    if navidrome_db is None or not Path(navidrome_db).is_file():
+        return None, f"no reference: navidrome.db not at {navidrome_db}"
+    try:
+        con = open_ro(navidrome_db)
+        try:
+            row = con.execute("SELECT path FROM media_file WHERE id = ?", (song_id,)).fetchone()
+        finally:
+            con.close()
+    except sqlite3.Error as e:                 # locked, not a database, schema changed: verify without a reference
+        return None, f"no reference: navidrome.db unreadable ({type(e).__name__})"
+    if row is None:
+        return None, f"no reference: {song_id} not in navidrome.db"
+    ref = music_root / row[0]
+    if not ref.is_file():
+        return None, f"no reference: {row[0]} missing on disk"
+    return ref, ""
+
+
 def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: SubsonicClient,
           reconciler: Reconciler, music_root: Path, downloads_root: Path, approve: bool,
           tier: str | None = None, policy: QualityPolicy | None = None, download_timeout_s: float = 600, poll_s: float = 1.0,
-          scan_timeout_s: float = 120, verifier=verify, filer: BeetsFiler | None = None) -> FetchResult:
+          scan_timeout_s: float = 120, verifier=verify, filer: BeetsFiler | None = None,
+          navidrome_db: Path | None = None, lookup=None) -> FetchResult:
     music_root, downloads_root = Path(music_root), Path(downloads_root)
     row = store.find_wanted(wanted_id)
     if row is None:
@@ -179,7 +203,14 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
                 continue
             return fail(why, best, text)
 
-        vd = verifier(landed, wanted.duration_s, tier=row["tier"])          # still `sourcing`: not ours yet
+        ref, rid = None, None
+        if not external:                      # a crate upgrade: the old copy is the recording we must match
+            ref, reason = _library_file(navidrome_db, wanted_id, music_root)
+            if ref is None:
+                store.log(None, wanted_id, "reference", reason)
+            rid = navidrome.song(wanted_id).music_brainz_id or None
+        extra = {"recording_id": rid, "lookup": lookup} if lookup is not None else {}    # see header_only in tests
+        vd = verifier(landed, wanted.duration_s, tier=row["tier"], reference=ref, **extra)   # still `sourcing`: not ours yet
         store.set_verification(wanted_id, vd.as_dict(row["tier"]) | {"file": landed.name})
         if not vd.ok:
             landed.unlink(missing_ok=True)                      # our own download, not library material

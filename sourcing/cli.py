@@ -16,6 +16,7 @@ import os
 import sys
 from pathlib import Path
 
+from .acoustid import make_lookup
 from .filer import BeetsFiler
 from .scorer import Wanted, rank, explain
 from .policy import DEFAULT_TIER, IMPORT_TIER, TIERS
@@ -30,7 +31,9 @@ def _fetch_env() -> dict:
     folder (Task 7 gives slskd its own) and the beets config the filer imports with."""
     return {"music_root": Path(os.environ.get("MUSIC_ROOT") or "/srv/music"),
             "downloads_root": Path(os.environ.get("DOWNLOADS_ROOT") or "/srv/incoming/soulseek"),
-            "filer": BeetsFiler(Path(os.environ.get("BEETS_CONFIG") or DEFAULT_BEETS_CONFIG))}
+            "filer": BeetsFiler(Path(os.environ.get("BEETS_CONFIG") or DEFAULT_BEETS_CONFIG)),
+            "navidrome_db": Path(os.environ.get("NAVIDROME_DB", "/srv/docker/navidrome/navidrome.db")),
+            "lookup": make_lookup(k) if (k := os.environ.get("ACOUSTID_KEY")) else None}
 
 
 def describe_measurements(m: dict) -> list[str]:

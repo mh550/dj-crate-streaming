@@ -22,6 +22,7 @@ import struct
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 from .policy import DEFAULT_TIER, TIERS, check_tier
 
@@ -225,9 +226,11 @@ HARD_WHEN_STRICT = {"transcode", "fake_24bit", "fake_hires", "implied_kbps", "sa
 
 
 def verify(path: Path, expected_duration_s: float | None = None, tier: str | None = None, reference: Path | None = None,
-           tolerance_s: float | None = None, min_lossless_kbps: int | None = None) -> Verdict:
+           tolerance_s: float | None = None, min_lossless_kbps: int | None = None, recording_id: str | None = None,
+           lookup: Callable[[Path], list[dict]] | None = None) -> Verdict:
     """Header checks always; with a `tier`, the decoded checks too (module docstring). The tier's policy sets the
-    thresholds and how strict it is. Without a tier: header checks only, judged like crate (pre-M5 behaviour)."""
+    thresholds and how strict it is. Without a tier: header checks only, judged like crate (pre-M5 behaviour).
+    With a tier and a `lookup` (AcoustID), the file's recording is looked up and compared with `recording_id`."""
     policy = TIERS[check_tier(tier or DEFAULT_TIER)]
     tolerance_s = policy.duration_tolerance_s if tolerance_s is None else tolerance_s
     min_lossless_kbps = policy.min_lossless_kbps if min_lossless_kbps is None else min_lossless_kbps
@@ -282,6 +285,8 @@ def verify(path: Path, expected_duration_s: float | None = None, tier: str | Non
         check_length(m.get("decoded_s") or info.duration_s)
     if reference is not None:
         _recording_check(path, reference, findings, m)
+    if lookup is not None:
+        _acoustid_check(path, lookup, recording_id, findings, m)
     return verdict(info)
 
 
@@ -307,6 +312,26 @@ def _recording_check(path: Path, reference: Path, findings: list, m: dict) -> No
     if ber > 0.20:
         findings.append(("recording", f"different recording from {reference.name} "
                                       f"(fingerprint bit-error rate {ber:.2f}; same audio is under 0.20)"))
+
+
+def _acoustid_check(path: Path, lookup: Callable[[Path], list[dict]], recording_id: str | None,
+                    findings: list, m: dict) -> None:
+    """A failed lookup (no network, bad key, no fpcalc) is only a warning; a *disagreement* with the recording
+    Navidrome knows is the hard `recording` finding. Nothing known (no recording_id) or nothing found never fails."""
+    try:
+        recs = lookup(path)
+    except Exception as e:
+        m["acoustid"] = {"error": f"{type(e).__name__}: {e}"}
+        findings.append(("acoustid", f"AcoustID lookup failed: {type(e).__name__}: {e}"))
+        return
+    top = recs[0] if recs else {}
+    m["acoustid"] = {"recording_id": top.get("id"), "title": top.get("title"), "score": top.get("score"),
+                     "ids": [r["id"] for r in recs]}
+    if not recs:
+        findings.append(("acoustid", "fingerprint not in AcoustID"))
+    elif recording_id is not None and recording_id not in m["acoustid"]["ids"]:
+        findings.append(("recording", f"AcoustID says this is {top.get('title')} ({top['id']}), "
+                                      f"not recording {recording_id}"))
 
 
 def _decoded_checks(info: AudioInfo, a: dict, findings: list, m: dict) -> None:
