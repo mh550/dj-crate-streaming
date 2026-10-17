@@ -5,3 +5,4 @@
 - 2026-10-17 04:32 · N1-04 · claude-opus-5-5 · passes=true · 4/19 passing
 - 2026-10-17 04:57 · N1-05 · claude-opus-5-5 · passes=true · 5/19 passing
 - 2026-10-17 05:07 · N1 verified and tagged run/dj-2026-10-17/N1 · PR https://github.com/mh550/dj-crate-streaming/pull/3
+- 2026-10-17 05:13 · N2-01 · claude-opus-5-5 · passes=false · 5/19 passing
