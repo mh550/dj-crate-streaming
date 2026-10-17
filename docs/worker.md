@@ -366,9 +366,9 @@ Only the worker image mounts `/srv/music`. The worker exports only every 300 s, 
 a check without a fresh export reports "stale".
 
 **1. Before.** Deploy the image with `scripts/deploy.sh` and note the previous image tag for a rollback. Then take the
-snapshots: `scripts/snapshot-crates-db.sh` and
-`sqlite3 /srv/docker/navidrome/navidrome.db ".backup /srv/docker/navidrome/navidrome.db.pre-n1.snap"`. Note when
-restic last ran. **check** must be green.
+snapshots: `scripts/snapshot-crates-db.sh --suffix pre-<run>` writes `crates.db.pre-<run>.snap` and
+`navidrome.db.pre-<run>.snap` beside the databases (each checked with `pragma integrity_check`), which the nightly
+`.snap` copies never overwrite. Note when restic last ran. **check** must be green.
 
 **2. Plan (read-only).**
 
