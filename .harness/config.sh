@@ -21,5 +21,5 @@ SESSION_BUDGET_USD=20
 
 PR_POLICY=milestone
 MAIN_BRANCH=main
-AGENT_SETTINGS=.claude/settings.json
+AGENT_SETTINGS=.harness/agent-settings.json   # harness sessions only; interactive sessions (which deploy) keep their own
 NOTIFY_CMD=""
