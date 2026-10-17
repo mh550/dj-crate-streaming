@@ -84,6 +84,47 @@
       "passes": true
     },
     {
+      "id": "N1F-01",
+      "milestone": "N1F",
+      "kind": "build",
+      "model": "opus",
+      "description": "duplicate_cleanup trash refuses to start unless a Navidrome scan finished after the newest repoint log (review I1), and refuses any extra whose file on disk is no longer the planned file (size on disk ≠ media_file.size; review I2).",
+      "steps": [
+        "A test with the fake's lastScan older than the newest repoint-*.jsonl: `trash` exits 1 with a refusal naming the scan, and moves nothing",
+        "A test with lastScan newer than the newest repoint log: `trash` proceeds as before (existing trash tests unchanged and green)",
+        "A test where one planned extra's size on disk differs from its media_file.size: that extra is refused with its path and both sizes in the report; the other extras move",
+        "docs/worker.md's trash section states both refusals",
+        "`.harness/check.sh` is green"
+      ],
+      "passes": false
+    },
+    {
+      "id": "N1F-02",
+      "milestone": "N1F",
+      "kind": "build",
+      "model": "opus",
+      "description": "A scan that starts mid-trash no longer strands moved files (review I3), and `repoint --dry-run` previews the playlists the real run would refuse (review I4).",
+      "steps": [
+        "A test where a scan starts after the first move: trash waits for the scan, triggers and waits for one more, re-reads references for every file it moved, and puts back any that a playlist now holds (a put-back line in trash-<time>.jsonl and a `cleanup` event)",
+        "A test where `repoint --dry-run` meets a smart playlist, another user's playlist and a hidden row: each is listed as 'would refuse' with the reason, using the read-only checked_entries path, and nothing is written",
+        "`.harness/check.sh` is green"
+      ],
+      "passes": false
+    },
+    {
+      "id": "N1F-03",
+      "milestone": "N1F",
+      "kind": "review",
+      "model": "opus",
+      "description": "N1F is reviewed and simplified: an Opus reviewer reads the N1F diff from a file; Critical/Important findings are fixed test-first; docs/worker.md's duplicate-cleanup runbook matches the code.",
+      "steps": [
+        "The review's findings and their fixes are listed in the progress entry (or 'no Critical/Important')",
+        "docs/worker.md's duplicate-cleanup section names every refusal trash can now give",
+        "`.harness/check.sh` is green"
+      ],
+      "passes": false
+    },
+    {
       "id": "N2-01",
       "milestone": "N2",
       "model": "opus",
