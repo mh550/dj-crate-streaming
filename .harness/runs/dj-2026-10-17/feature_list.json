@@ -152,7 +152,7 @@
         "`healthcheck.py crates` exits 0 against the test server's /api/status and 1 against a closed port, within 6 s",
         "`.harness/check.sh` is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "H1-03",
