@@ -65,7 +65,7 @@
         "Commit `N1-04: duplicate_cleanup trash`.",
         ".harness/check.sh is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "N1-05",

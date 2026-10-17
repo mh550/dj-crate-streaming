@@ -449,3 +449,372 @@ def test_main_repoint_dry_run_then_limit_then_all_exit_0(lib, tmp_path, monkeypa
     assert said.count("repointed 2 playlists") == 1 and "(scan): done" in said and "reverse log:" in said
     assert dc.main(args) == 0
     assert srv.state.playlists["pl-2"]["songs"] == ["s9", "s8", "s5"]
+
+
+# ── trash (N1-04) ────────────────────────────────────────────────────────────────────────────────────────────
+
+import datetime
+import os
+import shlex
+import shutil
+
+from crates.store import CrateStore
+from crates.trash import move_to_trash, restore
+from sourcing.worker import hold_lock
+
+S3 = "Marshall Jefferson/The House Music Anthem/01 - Move Your Body.mp3"
+
+
+@pytest.fixture
+def tr(lib, tmp_path):
+    """lib after plan and repoint: s3 is in no playlist, its file and s9's are on disk. Yields a namespace whose
+    `run(**kw)` calls trash with a recording forget and `forgot` lists what it was called with."""
+    srv, db, music = lib
+    plan = dc.build_plan(db, music)
+    assert dc.repoint(plan, _client(srv), db, tmp_path / "repoint.jsonl", poll_s=0)["s3"] == "repointed 2 playlists"
+    assert srv.state.songs["s3"]["path"] == S3
+    ns = type("T", (), {})()
+    ns.srv, ns.db, ns.music, ns.plan = srv, db, music, plan
+    ns.trash_root, ns.lock = tmp_path / "trash", tmp_path / "worker.lock"
+    ns.trash_root.mkdir()
+    ns.log = tmp_path / "cleanup" / "trash-1.jsonl"
+    ns.log.parent.mkdir()
+    ns.forgot = []
+
+    def forget(path):
+        ns.forgot.append(path)
+        return True
+
+    def run(plan=None, **kw):
+        kw.setdefault("forget", forget)
+        return dc.trash(plan or ns.plan, _client(srv), db, music, ns.trash_root, ns.lock, log_path=ns.log, poll_s=0,
+                        **kw)
+    ns.run = run
+    srv.state.requests.clear()
+    return ns
+
+
+def today():
+    return datetime.date.today().isoformat()
+
+
+def test_trash_moves_the_extra_logs_the_reverse_forgets_it_and_waits_for_a_scan(tr):
+    out = tr.run()
+    dst = tr.trash_root / today() / S3
+    assert out == {"s3": f"moved to {dst}", "(scan)": "done"}
+    assert dst.read_bytes() == b"audio " + S3.encode() and not (tr.music / S3).exists()
+    assert (tr.trash_root / today() / "MOVES.txt").read_text() == \
+        f"mv {shlex.quote(str(dst))} {shlex.quote(str(tr.music / S3))}\n"
+    assert tr.forgot == [tr.music / S3]
+    assert (tr.music / S9["path"]).read_bytes() == b"audio " + S9["path"].encode()     # the keeper is untouched
+    [line] = log_lines(tr.log)
+    assert (line["extra"], line["path"], line["keeper"], line["trash_path"]) == ("s3", S3, "s9", str(dst))
+    assert line["ts"] and not dc.failed(out)
+    assert len(scans(tr.srv)) == 1 and tr.srv.state.requests[-1][0] == "getScanStatus"
+
+
+def test_before_repoint_the_extra_is_refused_and_nothing_moves(lib, tmp_path):
+    srv, db, music = lib
+    plan = dc.build_plan(db, music)
+    forgot = []
+    (tmp_path / "trash").mkdir()
+    out = dc.trash(plan, _client(srv), db, music, tmp_path / "trash", tmp_path / "worker.lock", forgot.append,
+                   tmp_path / "t.jsonl", poll_s=0)
+    assert out == {"s3": "refused: still in 2 playlist entries"} and dc.failed(out)
+    assert (music / S3).is_file() and not any((tmp_path / "trash").iterdir()) and forgot == []
+    assert not (tmp_path / "t.jsonl").exists() and scans(srv) == []
+
+
+def test_another_users_playlist_alone_blocks_the_move(tr):
+    """Another user's playlist (not ours to see) still counts: navidrome.db playlist_tracks decides."""
+    tr.srv.state.playlists["pl-9"] = {"id": "pl-9", "name": "Theirs", "comment": "", "owner": "other",
+                                      "public": False, "songs": ["s1", "s3"]}
+    tr.srv.state.missing.add("s1")                                      # a hidden row beside it changes nothing
+    tr.srv.state.sync()
+    assert tr.run() == {"s3": "refused: still in 1 playlist entry"}
+    assert (tr.music / S3).is_file() and tr.forgot == [] and not tr.log.exists()
+
+
+def test_a_running_scan_refuses_before_anything(tr):
+    tr.srv.state.scanning = True
+    with pytest.raises(dc.CleanupRefused, match="scan"):
+        tr.run()
+    assert (tr.music / S3).is_file() and not any(tr.trash_root.iterdir()) and not tr.log.exists() and tr.forgot == []
+
+
+def test_a_scan_that_starts_mid_run_stops_before_the_next_move(tr):
+    second_group(tr.srv, tr.music)
+    plan = dc.build_plan(tr.db, tr.music)                    # s3/s9 repointed already; s4/s8 still in pl-2
+    assert dc.repoint(plan, _client(tr.srv), tr.db, tr.log.parent / "r.jsonl", poll_s=0)["s4"] == "repointed 1 playlist"
+
+    def forget(path):
+        tr.forgot.append(path)
+        tr.srv.state.scanning = True                          # the hourly scan starts after the first move
+        return True
+    with pytest.raises(dc.CleanupRefused, match="scan") as e:
+        tr.run(plan, forget=forget)
+    assert len(tr.forgot) == 1 and len(log_lines(tr.log)) == 1        # the first move is done and logged
+    assert sum(v.startswith("moved to ") for v in e.value.results.values()) == 1
+    moved = log_lines(tr.log)[0]["extra"]
+    other = {"s3": "s4", "s4": "s3"}[moved]
+    assert (tr.music / tr.srv.state.songs[other]["path"]).is_file()
+
+
+def test_a_held_worker_lock_refuses(tr):
+    fd = hold_lock(tr.lock)
+    try:
+        with pytest.raises(dc.CleanupRefused, match="stop the worker first"):
+            tr.run()
+    finally:
+        os.close(fd)
+    assert (tr.music / S3).is_file() and tr.srv.state.requests == []
+    assert tr.run()["s3"].startswith("moved to ")                        # released by the run: free again
+
+
+def test_dry_run_moves_nothing_and_writes_nothing(tr):
+    assert tr.run(dry_run=True) == {"s3": "dry run: would move"}
+    assert (tr.music / S3).is_file() and not any(tr.trash_root.iterdir()) and not tr.log.exists() and tr.forgot == []
+    assert scans(tr.srv) == []
+
+
+def test_a_second_run_is_already_gone_and_does_not_forget_again(tr):
+    tr.run()
+    tr.srv.state.missing.add("s3")                                      # what the scan does in Navidrome
+    tr.srv.state.sync()
+    tr.srv.state.requests.clear()
+    assert tr.run() == {"s3": "already gone"}
+    assert len(tr.forgot) == 1 and scans(tr.srv) == [] and len(log_lines(tr.log)) == 1
+
+
+def test_already_gone_before_the_scan_too(tr):
+    tr.run()
+    assert tr.run() == {"s3": "already gone"} and len(tr.forgot) == 1
+
+
+def test_a_crash_between_move_and_forget_heals_on_the_next_run(tr):
+    move_to_trash(S3, tr.music, tr.trash_root)                          # moved, then the process died
+    assert tr.run() == {"s3": "already gone"}
+    assert tr.forgot == [tr.music / S3]
+    assert tr.run() == {"s3": "already gone"} and len(tr.forgot) == 1  # a trash line names it now
+
+
+@pytest.mark.parametrize("which", ["library", "trash"])
+def test_an_unmounted_library_or_trash_refuses_before_anything(tr, tmp_path, which):
+    """An empty library would make every extra look already gone; a missing trash mount would put files inside
+    the container, gone with `run --rm`."""
+    empty = tmp_path / "unmounted"
+    empty.mkdir()
+    music, trash_root = (empty, tr.trash_root) if which == "library" else (tr.music, tmp_path / "nope")
+    with pytest.raises(dc.CleanupRefused, match="not mounted"):
+        dc.trash(tr.plan, _client(tr.srv), tr.db, music, trash_root, tr.lock, tr.forgot.append, tr.log, poll_s=0)
+    assert tr.forgot == [] and not tr.log.exists() and not (tmp_path / "nope").exists()
+
+
+def test_a_keeper_absent_from_a_mounted_library_is_not_already_gone(tr):
+    (tr.music / S9["path"]).unlink()
+    (tr.music / S3).unlink()
+    assert tr.run() == {"s3": "skipped: keeper missing"} and tr.forgot == [] and not tr.log.exists()
+
+
+def test_already_gone_but_still_in_a_playlist_needs_michael(tr):
+    """A hidden row on the trashed song (a put-back that failed, or a row added after a refused run): never success."""
+    move_to_trash(S3, tr.music, tr.trash_root)
+    tr.srv.state.missing.add("s3")
+    tr.srv.state.playlists["pl-1"]["songs"].append("s3")                 # hidden in pl-1
+    tr.srv.state.sync()
+    out = tr.run()
+    assert out == {"s3": "failed: gone from the library but still in 1 playlist entry"} and dc.failed(out)
+    assert tr.forgot == [] and not tr.log.exists()
+
+
+def test_a_refused_run_still_puts_back_a_moved_file_a_playlist_took(tr):
+    second_group(tr.srv, tr.music)
+    plan = dc.build_plan(tr.db, tr.music)
+    dc.repoint(plan, _client(tr.srv), tr.db, tr.log.parent / "r.jsonl", poll_s=0)
+
+    def forget(path):
+        moved = next(sid for sid in ("s3", "s4") if tr.srv.state.songs[sid]["path"] in str(path))
+        tr.srv.state.playlists["pl-2"]["songs"].append(moved)         # Amperfy adds it after the move check
+        tr.srv.state.sync()
+        tr.srv.state.scanning = True                                    # and a scan starts
+        return True
+    with pytest.raises(dc.CleanupRefused) as e:
+        tr.run(plan, forget=forget)
+    [(sid, v)] = [(k, v) for k, v in e.value.results.items() if k in ("s3", "s4")]
+    assert v.startswith("refused: added to 1 playlist entry after the move; put back")
+    assert (tr.music / tr.srv.state.songs[sid]["path"]).is_file()
+
+
+def test_trash_never_overwrites(tr):
+    """A copy put back while the first stays in the trash goes to a "(2)" name; `restore` itself empties the slot."""
+    first = tr.run()["s3"].removeprefix("moved to ")
+    shutil.copy2(first, tr.music / S3)
+    second = tr.run()["s3"].removeprefix("moved to ")
+    assert second == str(tr.trash_root / today() / S3.replace(".mp3", " (2).mp3"))
+    assert os.path.isfile(first) and os.path.isfile(second)
+    restore(second, S3, tr.music)
+    assert tr.run()["s3"] == f"moved to {second}"                         # restored: its trash name is free again
+
+
+def test_a_row_added_during_the_move_puts_the_file_back(tr, monkeypatch):
+    real = dc.move_to_trash
+
+    def racing(rel, music_root, trash_root, before=None):
+        def hook(dst):
+            assert (trash_root / today() / "MOVES.txt").read_text().startswith("mv ")   # the reverse is written
+            tr.srv.state.playlists["pl-1"]["songs"].append("s3")                     # Amperfy adds it meanwhile
+            tr.srv.state.sync()
+        return real(rel, music_root, trash_root, before=hook)
+    monkeypatch.setattr(dc, "move_to_trash", racing)
+    out = tr.run()
+    assert out == {"s3": "refused: added to 1 playlist entry during the move; put back"} and dc.failed(out)
+    assert (tr.music / S3).read_bytes() == b"audio " + S3.encode()
+    assert tr.forgot == [] and not tr.log.exists() and scans(tr.srv) == []
+
+
+def test_a_row_added_before_the_scan_ends_puts_the_file_back(tr, monkeypatch):
+    def scan(client, timeout_s, poll_s):
+        tr.srv.state.playlists["pl-2"]["songs"].append("s3")
+        tr.srv.state.sync()
+        return ""
+    monkeypatch.setattr(dc, "scan_and_wait", scan)
+    out = tr.run()
+    assert out["s3"].startswith("refused: added to 1 playlist entry after the move; put back") and dc.failed(out)
+    assert "beets no longer lists it" in out["s3"]
+    assert out["(scan)"] == "done" and (tr.music / S3).is_file()
+    assert [x.get("restored") for x in log_lines(tr.log)] == [None, True]
+    monkeypatch.undo()
+    tr.srv.state.playlists["pl-2"]["songs"].remove("s3")
+    tr.srv.state.sync()
+    move_to_trash(S3, tr.music, tr.trash_root)                          # trashed again, then the run died
+    assert tr.run()["s3"] == "already gone" and len(tr.forgot) == 2     # the restored line does not count as done
+
+
+def test_a_failed_forget_is_retried_by_the_next_run(tr):
+    tr.run(forget=lambda path: False)
+    assert tr.run() == {"s3": "already gone"} and tr.forgot == [tr.music / S3]
+    assert tr.run() == {"s3": "already gone"} and len(tr.forgot) == 1
+
+
+def test_the_keeper_and_the_extra_must_be_different_files(tr):
+    (tr.music / S3).unlink()
+    os.link(tr.music / S9["path"], tr.music / S3)
+    assert tr.run() == {"s3": "refused: the same file as the keeper s9"}
+    assert (tr.music / S3).is_file() and (tr.music / S9["path"]).is_file() and not any(tr.trash_root.iterdir())
+
+
+@pytest.mark.parametrize("gone", ["deleted", "missing", "off disk"])
+def test_a_keeper_gone_since_the_plan_is_skipped_by_trash(tr, gone):
+    if gone == "off disk":
+        (tr.music / S9["path"]).unlink()
+    else:
+        (tr.srv.state.songs.pop("s9") if gone == "deleted" else tr.srv.state.missing.add("s9"))
+        tr.srv.state.sync()
+    assert tr.run() == {"s3": "skipped: keeper missing"}
+    assert (tr.music / S3).is_file() and tr.forgot == []
+
+
+def test_a_pair_no_longer_one_group_is_not_trashed(tr):
+    tr.srv.state.songs["s3"]["title"] = "Move Your Body (Dub)"
+    tr.srv.state.sync()
+    assert tr.run() == {"s3": "skipped: no longer a duplicate of s9"} and (tr.music / S3).is_file()
+
+
+def test_an_extra_moved_since_the_plan_is_skipped(tr):
+    tr.srv.state.songs["s3"]["path"] = "Elsewhere/01 - Move Your Body.mp3"
+    tr.srv.state.sync()
+    assert tr.run() == {"s3": "skipped: moved since the plan (now Elsewhere/01 - Move Your Body.mp3)"}
+    assert (tr.music / S3).is_file() and tr.forgot == []
+
+
+def test_a_held_group_is_never_trashed(tr):
+    plan = json.loads(json.dumps(tr.plan))
+    plan["groups"][0]["hold"] = "both lossless"
+    assert tr.run(plan) == {"s3": "skipped: held (both lossless)"} and (tr.music / S3).is_file()
+
+
+def test_limit_trashes_the_first_groups_only(tr):
+    second_group(tr.srv, tr.music)
+    plan = dc.build_plan(tr.db, tr.music)
+    dc.repoint(plan, _client(tr.srv), tr.db, tr.log.parent / "r.jsonl", poll_s=0)
+    out = tr.run(plan, limit=1)
+    assert sum(v.startswith("moved to ") for v in out.values()) == 1 and len(tr.forgot) == 1
+
+
+def test_a_forget_that_fails_is_noted_not_fatal(tr):
+    def broken(path):
+        raise RuntimeError("beet exploded")
+    out = tr.run(forget=broken)
+    assert out["s3"].startswith("moved to ") and "beets still lists it" in out["s3"] and not dc.failed(out)
+    assert log_lines(tr.log)[0]["forgotten"] is False
+
+
+@pytest.mark.parametrize("busy", ["external", "approval", "replacement"])
+def test_an_extra_in_use_by_crates_db_is_refused(tr, busy, tmp_path):
+    store = CrateStore(tmp_path / "crates.db")
+    if busy == "external":
+        ext = store.add_external_wanted("Marshall Jefferson", "Move Your Body")
+        store.set_library_song(ext, "s3")
+        store.set_external_status(ext, "verify", "filed")
+        want = ext
+    elif busy == "approval":
+        store.approve("s3", "michael", None, "high")
+        want = "approval of s3"
+    else:
+        job = store.add_replacement(wanted_id="s3", old_song_id="s3", new_song_id="s9", old_path=S3,
+                                    new_path=S9["path"], reference=None)
+        want = f"replacement #{job}"
+    store.commit()
+    assert tr.run(crates_db=tmp_path / "crates.db") == {"s3": f"refused: in use by {want}"}
+    assert (tr.music / S3).is_file()
+
+
+def test_a_finished_external_row_does_not_block(tr, tmp_path):
+    store = CrateStore(tmp_path / "crates.db")
+    ext = store.add_external_wanted("Marshall Jefferson", "Move Your Body")
+    store.set_library_song(ext, "s3")
+    store.set_external_status(ext, "ok")
+    store.commit()
+    assert tr.run(crates_db=tmp_path / "crates.db")["s3"].startswith("moved to ")
+
+
+def test_crates_db_is_opened_only_under_the_worker_lock(tr, tmp_path, monkeypatch):
+    opened = []
+    monkeypatch.setattr(dc, "CrateStore", lambda path: opened.append(path))
+    fd = hold_lock(tr.lock)
+    try:
+        with pytest.raises(dc.CleanupRefused):
+            tr.run(crates_db=tmp_path / "crates.db")
+    finally:
+        os.close(fd)
+    assert opened == []
+
+
+def test_main_trash_dry_run_then_all(tr, monkeypatch, capsys):
+    out = tr.log.parent
+    dc.write_plan(tr.plan, out)
+    _env(monkeypatch, tr.srv)
+    monkeypatch.setenv("CLEANUP_DIR", str(out))
+    monkeypatch.setenv("CRATES_DB", str(tr.lock.parent / "nowhere.db"))
+    monkeypatch.delenv("DJ_WORKER", raising=False)
+    args = ["trash", "--navidrome-db", str(tr.db), "--music-root", str(tr.music), "--trash-root", str(tr.trash_root),
+            "--poll-s", "0"]
+    assert dc.main(args + ["--dry-run"]) == 2                            # never a stray crates.db
+    assert "CRATES_DB" in capsys.readouterr().err and not (tr.lock.parent / "nowhere.db").exists()
+    CrateStore(tr.lock.parent / "crates.db").db.close()
+    monkeypatch.setenv("CRATES_DB", str(tr.lock.parent / "crates.db"))
+    assert dc.main(args + ["--dry-run"]) == 0
+    assert "s3: dry run: would move" in capsys.readouterr().out and (tr.music / S3).is_file()
+    fd = hold_lock(tr.lock.parent / "worker.lock")
+    try:
+        assert dc.main(args) == 1
+        assert "stop the worker first" in capsys.readouterr().out
+    finally:
+        os.close(fd)
+    tr.srv.state.scanning = True
+    assert dc.main(args) == 1 and "refused: a Navidrome scan is running" in capsys.readouterr().out
+    tr.srv.state.scanning = False
+    assert dc.main(args) == 0
+    said = capsys.readouterr().out
+    assert "s3: moved to " in said and "(scan): done" in said and "trash log:" in said
+    assert not (tr.music / S3).exists() and len(list(out.glob("trash-*.jsonl"))) == 1

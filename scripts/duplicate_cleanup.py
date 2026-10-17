@@ -26,7 +26,23 @@ replays as PlaylistChanged, which changes nothing. Every run that is not a dry r
 with one waited scan (the scan between repoint and trash), so a re-run after a timed-out scan scans again. Exit 1
 when any playlist was refused or failed or the scan did not finish: the runbook stops there.
 
-trash follows (docs/plans/2026-10-17-n1-duplicate-cleanup.md).
+    docker compose stop worker
+    docker compose run --rm worker python3 -m scripts.duplicate_cleanup trash [--plan P] [--limit N] [--dry-run]
+
+`trash` (D36: only with the worker stopped; it holds <dirname(CRATES_DB)>/worker.lock for the whole run, and refuses
+while a Navidrome scan runs, checked again before every move) moves each unheld extra to the trash with
+crates.trash.move_to_trash, whose reverse `mv` line is in <trash>/<day>/MOVES.txt before the move. Per extra, right
+before acting: the keeper is a present row and a file on disk (an unmounted library is never "already gone"), the
+extra has not moved since the plan, the pair is still one duplicate group, keeper and extra are different files,
+crates.playlist_edit.references(db, extra) is empty (hidden rows and other users' playlists included) and no
+crates.db row is still working with it (CrateStore.song_in_use). references() is read again right after the move and
+after the closing scan; a row added meanwhile puts the file back (crates.trash.restore). Then beets forgets the old
+path (a failure is noted, not fatal) and one line {ts, extra, path, keeper, trash_path, forgotten} goes to
+trash-<UTC ts>.jsonl beside the plan. A file already gone is `already gone` (`failed` while a playlist row, hidden
+or not, still names it); beets forgets it unless the trash log says it did (a crash between the move and forget, or a
+forget that failed, heals on the next run). The library and the trash must be mounted. One waited scan after a run
+that moved a file. Exit 1 when anything was refused or failed; a refusal mid-run still re-checks the files it moved
+(docs/plans/2026-10-17-n1-duplicate-cleanup.md §trash).
 """
 from __future__ import annotations
 
@@ -43,18 +59,22 @@ from pathlib import Path
 
 try:
     from crates.playlist_edit import references, repoint_everywhere
-    from crates.trash import free_path
+    from crates.store import CrateStore
+    from crates.trash import free_path, move_to_trash, restore
     from scripts.dedupe_copies import remap
     from scripts.duplicate_report import DEFAULT_DB, LOSSLESS, duplicate_groups, load
     from scripts.export_playlists import open_ro
+    from sourcing.worker import WorkerRunning, hold_lock
     from subsonic.client import SubsonicClient, scan_and_wait
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from crates.playlist_edit import references, repoint_everywhere
-    from crates.trash import free_path
+    from crates.store import CrateStore
+    from crates.trash import free_path, move_to_trash, restore
     from scripts.dedupe_copies import remap
     from scripts.duplicate_report import DEFAULT_DB, LOSSLESS, duplicate_groups, load
     from scripts.export_playlists import open_ro
+    from sourcing.worker import WorkerRunning, hold_lock
     from subsonic.client import SubsonicClient, scan_and_wait
 
 DEFAULT_OUT = Path("/data/duplicate-cleanup")
@@ -198,17 +218,22 @@ def _summary(results: dict[str, str]) -> str:
     return f"{kind}: {'; '.join(parts)}; repointed {_n(done, 'playlist')}"
 
 
-def _reverse(log_path: Path, extra: str, keeper: str, pid: str, name: str, before: list, after: list) -> None:
-    """repoint_everywhere's before_write: the reverse line, on disk before the playlist's write."""
+def _append(log_path: Path, line: dict) -> None:
+    """One JSON line, fsynced, stamped with ts."""
     with open(log_path, "a", encoding="utf-8") as f:
-        f.write(json.dumps({"ts": _now(), "playlist_id": pid, "name": name, "extra": extra, "keeper": keeper,
-                            "before": before, "after": after}, ensure_ascii=False) + "\n")
+        f.write(json.dumps(dict(ts=_now(), **line), ensure_ascii=False) + "\n")
         f.flush()
         os.fsync(f.fileno())
 
 
+def _reverse(log_path: Path, extra: str, keeper: str, pid: str, name: str, before: list, after: list) -> None:
+    """repoint_everywhere's before_write: the reverse line, on disk before the playlist's write."""
+    _append(log_path, {"playlist_id": pid, "name": name, "extra": extra, "keeper": keeper, "before": before,
+                       "after": after})
+
+
 def failed(out: dict[str, str]) -> bool:
-    """True when a repoint value needs Michael: a playlist refused or failed, or the scan did not finish."""
+    """True when a value needs Michael: a playlist or a move refused or failed, or the scan did not finish."""
     return any(v.startswith(("refused:", "failed:")) for v in out.values())
 
 
@@ -252,6 +277,179 @@ def repoint(plan: dict, client, navidrome_db: Path, log_path: Path, limit: int |
     return out
 
 
+class CleanupRefused(Exception):
+    """trash must not run, or go on, now (the worker holds its lock, a Navidrome scan is running, the library or the
+    trash is not mounted). Nothing more moves; `results` holds what happened so far (also in MOVES.txt and the trash
+    log), and a re-run finds the moved files `already gone`."""
+
+    def __init__(self, why: str, results: dict | None = None):
+        super().__init__(why)
+        self.results = results or {}
+
+
+def _entries(n: int) -> str:
+    return f"{n} playlist entr{'y' if n == 1 else 'ies'}"
+
+
+def _no_scan(client) -> None:
+    if client.scan_status().get("scanning"):
+        raise CleanupRefused("a Navidrome scan is running: navidrome.db is mid-update; run trash again when it is over")
+
+
+def _forgotten(log_dir: Path, extra: str, rel: str) -> bool:
+    """The trash-*.jsonl lines in log_dir (oldest first) say beets forgot this extra at this path, and the file was
+    not put back since: a failed or skipped forget, or a put-back, leaves it to the next run."""
+    done = False
+    for f in sorted(log_dir.glob("trash-*.jsonl")):
+        for text in f.read_text(encoding="utf-8").splitlines():
+            try:
+                x = json.loads(text)
+            except ValueError:
+                continue
+            if x.get("extra") == extra and x.get("path") == rel:
+                done = not x.get("restored") and x.get("forgotten") is True
+    return done
+
+
+def _forget(forget, path: Path) -> bool | None:
+    """beets drops the trashed path; True, False on a failure (beets' index is a cache: noted, not fatal), None
+    without beets here."""
+    if forget is None:
+        return None
+    try:
+        return bool(forget(path))
+    except Exception:
+        return False
+
+
+def _put_back(navidrome_db: Path, extra: str, rel: str, dst: Path, music_root: Path, when: str) -> str | None:
+    """The value for an extra a playlist took again after its file moved, having put the file back; None when no
+    playlist holds it."""
+    left = references(navidrome_db, extra)
+    if not left:
+        return None
+    try:
+        restore(dst, rel, music_root)
+    except Exception as ex:
+        return f"failed: added to {_entries(len(left))} {when}, not put back ({ex!r}); the file is at {dst}"
+    return f"refused: added to {_entries(len(left))} {when}; put back"
+
+
+def trash(plan: dict, client, navidrome_db: Path, music_root: Path, trash_root: Path, lock_path: Path, forget,
+          log_path: Path, limit: int | None = None, dry_run: bool = False, crates_db: Path | None = None,
+          scan_timeout_s: float = 600, poll_s: float = 2) -> dict[str, str]:
+    """{extra id: "moved to <trash path>" | "already gone" | "skipped: held (<why>)" | "skipped: moved since the plan
+    (now <path>)" | "skipped: keeper missing" | "skipped: no longer a duplicate of <keeper>" | "refused: …" | "failed:
+    …" | "dry run: would move"}, plus "(scan)" when a file moved. Raises CleanupRefused while the worker holds
+    lock_path, a scan runs, or the library or the trash is not mounted. `forget(abs path)` is BeetsFiler.forget (None:
+    no beets here); crates.db (opened only under the lock) keeps the songs its in-flight rows use (None: not checked)."""
+    try:
+        fd = hold_lock(Path(lock_path))
+    except WorkerRunning:
+        raise CleanupRefused(f"stop the worker first (docker compose stop worker): it holds {lock_path}") from None
+    store = None
+    try:
+        music_root, trash_root = Path(music_root).absolute(), Path(trash_root)
+        if not music_root.is_dir() or not any(music_root.iterdir()):     # every extra would look already gone
+            raise CleanupRefused(f"the library is not mounted: {music_root} is empty or absent")
+        if not trash_root.is_dir():                         # move_to_trash would make it inside the container
+            raise CleanupRefused(f"the trash is not mounted: {trash_root} is absent")
+        store = CrateStore(crates_db) if crates_db is not None else None
+        return _trash(plan, client, Path(navidrome_db), music_root, trash_root, forget, Path(log_path), limit,
+                      dry_run, store, scan_timeout_s, poll_s)
+    finally:
+        if store is not None:
+            store.db.close()
+        os.close(fd)
+
+
+def _trash(plan, client, navidrome_db, music_root, trash_root, forget, log_path, limit, dry_run, store,
+           scan_timeout_s, poll_s) -> dict[str, str]:
+    _no_scan(client)
+    rows, _ = load(navidrome_db)
+    group_of = {r["id"]: i for i, grp in enumerate(duplicate_groups(rows)) for r in grp}
+    path_of = {r["id"]: r["path"] for r in rows}
+    out: dict[str, str] = {}
+    moved: dict[str, tuple[str, Path]] = {}
+
+    def one(keeper: str, extra: str, rel: str) -> str:
+        now = path_of.get(extra)
+        if now is not None and now != rel:
+            return f"skipped: moved since the plan (now {now})"
+        keep_file = music_root / path_of[keeper] if keeper in path_of else None
+        if keep_file is None or not keep_file.is_file():
+            return "skipped: keeper missing"
+        src = music_root / rel
+        if not src.exists():
+            left = references(navidrome_db, extra)
+            if left:                                         # a hidden row on a trashed song: never a success
+                return f"failed: gone from the library but still in {_entries(len(left))}"
+            if not dry_run and forget is not None and not _forgotten(log_path.parent, extra, rel):
+                _append(log_path, {"extra": extra, "path": rel, "keeper": keeper, "trash_path": None,
+                                   "forgotten": _forget(forget, src)})   # moved, then the run died before forget
+            return "already gone"
+        why = _recheck(rows, group_of, keeper, extra)
+        if why:
+            return why
+        if os.path.samefile(src, keep_file):
+            return f"refused: the same file as the keeper {keeper}"
+        if not dry_run:
+            _no_scan(client)
+        left = references(navidrome_db, extra)
+        if left:
+            return f"refused: still in {_entries(len(left))}"
+        busy = store.song_in_use(extra) if store is not None else None
+        if busy:
+            return f"refused: in use by {busy}"
+        if dry_run:
+            return "dry run: would move"
+        dst = move_to_trash(rel, music_root, trash_root)
+        moved[extra] = (rel, dst)
+        back = _put_back(navidrome_db, extra, rel, dst, music_root, "during the move")
+        if back:
+            del moved[extra]
+            return back
+        forgotten = _forget(forget, src)
+        _append(log_path, {"extra": extra, "path": rel, "keeper": keeper, "trash_path": str(dst),
+                           "forgotten": forgotten})
+        return f"moved to {dst}" + (" (beets still lists it)" if forgotten is False else "")
+
+    def recheck_moved() -> None:
+        """A row added between a move and now (the scan, or a refusal) puts the file back."""
+        for extra, (rel, dst) in moved.items():
+            try:
+                back = _put_back(navidrome_db, extra, rel, dst, music_root, "after the move")
+            except Exception as ex:
+                back = f"failed: re-checking its playlists after the move: {ex!r}"
+            if back:
+                if back.startswith("refused"):
+                    _append(log_path, {"extra": extra, "path": rel, "keeper": None, "trash_path": str(dst),
+                                       "restored": True})
+                    back += "; beets no longer lists it; Navidrome lists it again after the next scan"
+                out[extra] = back
+
+    try:
+        for g in _in_scope(plan, limit):
+            for e in g["extras"]:
+                if g["hold"] is not None:
+                    out[e["id"]] = f"skipped: held ({g['hold']})"
+                    continue
+                try:
+                    out[e["id"]] = one(g["keep"]["id"], e["id"], e["path"])
+                except CleanupRefused:
+                    raise
+                except Exception as ex:                      # recorded; the other groups and the scan still run
+                    out[e["id"]] = f"failed: {ex!r}"
+    except CleanupRefused as e:
+        recheck_moved()
+        raise CleanupRefused(str(e), out) from None
+    if moved:
+        problem = scan_and_wait(client, scan_timeout_s, poll_s)
+        out["(scan)"] = f"failed: {problem}" if problem else "done"
+        recheck_moved()
+    return out
+
+
 def _count(text: str) -> int:
     n = int(text)
     if n < 0:
@@ -273,6 +471,14 @@ def main(argv=None) -> int:
     r.add_argument("--limit", type=_count, default=None, help="act on the first N groups to act on")
     r.add_argument("--dry-run", action="store_true", help="say what would be repointed; write nothing")
     r.add_argument("--poll-s", type=float, default=2.0, help=argparse.SUPPRESS)
+    t = sub.add_parser("trash", help="with the worker stopped: move each extra no playlist holds to the trash, then scan")
+    t.add_argument("--plan", type=Path, default=Path(os.environ.get("CLEANUP_DIR") or DEFAULT_OUT) / "plan.json")
+    t.add_argument("--navidrome-db", type=Path, default=Path(os.environ.get("NAVIDROME_DB") or DEFAULT_DB))
+    t.add_argument("--music-root", type=Path, default=Path(os.environ.get("MUSIC_ROOT") or "/srv/music"))
+    t.add_argument("--trash-root", type=Path, default=Path(os.environ.get("TRASH_ROOT") or "/srv/_trash"))
+    t.add_argument("--limit", type=_count, default=None, help="act on the first N groups to act on")
+    t.add_argument("--dry-run", action="store_true", help="say what would move; move and write nothing")
+    t.add_argument("--poll-s", type=float, default=2.0, help=argparse.SUPPRESS)
     a = ap.parse_args(argv)
     if a.cmd == "plan":
         plan = build_plan(a.navidrome_db, a.music_root, a.limit)
@@ -280,13 +486,35 @@ def main(argv=None) -> int:
         return 0
     client = SubsonicClient(os.environ.get("SUBSONIC_URL", "http://127.0.0.1:4533"), os.environ.get("SUBSONIC_USER", ""),
                             os.environ.get("SUBSONIC_PASS", ""))
-    log = a.plan.parent / f"repoint-{datetime.datetime.now(datetime.timezone.utc):%Y%m%dT%H%M%SZ}.jsonl"
-    out = repoint(json.loads(a.plan.read_text(encoding="utf-8")), client, a.navidrome_db, log, a.limit, a.dry_run,
-                  poll_s=a.poll_s)
+    stamp = f"{datetime.datetime.now(datetime.timezone.utc):%Y%m%dT%H%M%SZ}"
+    plan = json.loads(a.plan.read_text(encoding="utf-8"))
+    if a.cmd == "repoint":
+        log = a.plan.parent / f"repoint-{stamp}.jsonl"
+        out = repoint(plan, client, a.navidrome_db, log, a.limit, a.dry_run, poll_s=a.poll_s)
+    else:
+        crates_db = Path(os.environ.get("CRATES_DB") or "")
+        if not crates_db.is_file():                         # its folder holds worker.lock; never make a stray one
+            print("set CRATES_DB to the crate service's database (its folder holds worker.lock)", file=sys.stderr)
+            return 2
+        from sourcing.cli import DEFAULT_BEETS_CONFIG
+        from sourcing.filer import BeetsFiler
+        forget = (BeetsFiler(Path(os.environ.get("BEETS_CONFIG") or DEFAULT_BEETS_CONFIG)).forget
+                  if os.environ.get("DJ_WORKER") == "1" else None)       # beets lives in the worker image only
+        if forget is None:
+            print("no beets here (DJ_WORKER is not 1): beets keeps rows for the trashed paths", file=sys.stderr)
+        log = a.plan.parent / f"trash-{stamp}.jsonl"
+        try:
+            out = trash(plan, client, a.navidrome_db, a.music_root, a.trash_root, crates_db.parent / "worker.lock",
+                        forget, log, a.limit, a.dry_run, crates_db, poll_s=a.poll_s)
+        except CleanupRefused as e:
+            for k, v in e.results.items():
+                print(f"{k}: {v}")
+            print(f"refused: {e}" + (f" (trash log: {log})" if log.exists() else ""))
+            return 1
     for k, v in out.items():
         print(f"{k}: {v}")
     if log.exists():
-        print(f"reverse log: {log}")
+        print(f"{'reverse' if a.cmd == 'repoint' else 'trash'} log: {log}")
     return 1 if failed(out) else 0
 
 

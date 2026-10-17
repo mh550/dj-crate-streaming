@@ -781,6 +781,19 @@ class CrateStore:
             f"SELECT * FROM replacements WHERE state IN ({','.join('?' * len(REPLACEMENT_OPEN))}) ORDER BY id",
             REPLACEMENT_OPEN)]
 
+    def song_in_use(self, song_id: str) -> str | None:
+        """What still works with this library song, so its file must stay (the duplicate cleanup's trash asks): an
+        external row filed as it that is not finished or holds an approval in progress, an approval in progress
+        of the song's own wanted row, or an open replacement naming it. None when nothing does."""
+        for (pk, status) in self.db.execute("SELECT id, status FROM external_wanted WHERE library_song_id=? ORDER BY id",
+                                            (song_id,)).fetchall():
+            if status not in ("ok", "removed") or self.approval_in_progress(f"ext-{pk}") is not None:
+                return f"ext-{pk}"
+        if self.approval_in_progress(song_id) is not None:
+            return f"approval of {song_id}"
+        job = next((j for j in self.open_replacements() if song_id in (j["old_song_id"], j["new_song_id"])), None)
+        return f"replacement #{job['id']}" if job else None
+
     def set_replacement(self, job_id: int, state: str, detail: str | None = None, **cols) -> None:
         """Move a replacement to `state` (also `trash_path`, the one other column a step sets) and commit. A
         `replace` event is logged when the state or the detail changes, so a waiting step is logged once, not
