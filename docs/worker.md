@@ -396,6 +396,11 @@ docker compose exec -T crates python3 -m crates.cli reconcile
 - Before each write, one reverse line goes to `repoint-<time>.jsonl`. Each written playlist is also a `cleanup`
   event in crates.db.
 - Each run ends with a Navidrome scan and waits for it (the scan between repoint and trash).
+- `--dry-run` runs the same checks without writing and names every playlist the real run would refuse, with why:
+  "dry run: would refuse Chicago 86: skipped: smart playlist; Theirs: owned by other; would repoint Disco
+  Edits". It
+  exits 1 then, like the real run. A hidden row reads "'<name>': position N holds <id>, a song whose file is
+  missing…".
 - Exit 1 means a playlist was refused or failed, or the scan did not finish. Read it before going on.
 - `--limit N` counts groups in plan order. A re-run does not write the done ones again.
 
@@ -430,6 +435,15 @@ docker compose up -d worker
 - Each move goes through `crates.trash.move_to_trash`, so its `mv` back is in `/srv/_trash/<day>/MOVES.txt` before
   the file moves. Then there is a line in `trash-<time>.jsonl` and a `cleanup` event.
 - If a playlist takes the song during the move, or before the closing scan ends, the file is put back.
+- A scan that starts mid-run (Navidrome's hourly one) stops the run before the next move: "refused: a Navidrome
+  scan is running", exit 1. If files had moved, it first waits for that scan to end, starts one more and waits for
+  it, then puts back any moved file a playlist took meanwhile (a `restored` line in `trash-<time>.jsonl`, a
+  `cleanup` event). Run trash again for the rest. Each wait lasts up to 10 minutes, so such a run can hold the
+  live lock for about 30: start trash well before the 03:15 backup window.
+- When no scan of ours finished (it timed out or failed), Navidrome still lists a trashed song, and Amperfy can add
+  it. The next run then puts the file back from the trash log ("refused: still in 1 playlist entry; put back from
+  <day>/<path>", a `restored` line, a `cleanup` event) and scans, so the row shows again. Without a trash log line
+  for it, that is "failed: gone from the library but still in …": put it back with its `MOVES.txt` line, then scan.
 - A re-run reports the moved files as `already gone`.
 - Exit 1 means something was refused or failed. Read every refusal before the next stage.
 

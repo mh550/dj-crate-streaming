@@ -89,7 +89,9 @@ Per unheld extra (in plan order, `--limit N` groups): recompute; then `playlist_
 extra, keeper)`, which reads each playlist's **current** entries (so a playlist Michael edited after the plan is still
 repointed correctly) and refuses on skew (a hidden row), smart playlists, other owners and concurrent edits.
 Result per extra: `repointed N playlists` | `skipped: …` | `refused: <playlist>: <why>` | `dry run: would repoint
-<names>`. Any value from `repoint_everywhere` other than `repointed` is reported and makes the exit code 1; the other
+<names>` (since N1F-02, review I4: `dry run: would refuse <playlist>: <why>; …; would repoint <names>`, from
+`repoint_everywhere(dry_run=True)`, the same read-only `checked_entries` checks; exit 1 as the real run would). Any
+value from `repoint_everywhere` other than `repointed` is reported and makes the exit code 1; the other
 groups still run. After the loop, if anything was repointed (and not `--dry-run`), **one scan, waited for**: the
 scan between repoint and trash. Reuse `scripts/identity_backfill._scan` (start, then poll `getScanStatus` until
 `scanning` is false *and* `lastScan` has moved; a timeout or error is reported and exits 1) — lift it to a shared
@@ -117,6 +119,9 @@ Preconditions for the whole run, each raising `CleanupRefused` before anything m
 - **no scan running**: `client.scan_status()["scanning"]` is false (a scan in progress makes navidrome.db's view of
   `missing` and `playlist_tracks` momentary). Checked again before every move, not only once: `ND_SCANSCHEDULE: 1h`
   can start one mid-run; a scan found mid-run stops the run (`CleanupRefused`, the files moved so far stay logged).
+  Since N1F-02 (review I3), when files had moved, it first waits for that scan to end, starts one more and waits
+  (the running one may have begun before a move), then re-reads `references()` for every moved file and puts back
+  any a playlist now holds (a `restored` trash line, a `cleanup` event; one more scan after a put-back).
 
 Per unheld extra: recompute (above); **`playlist_edit.references(db, extra)` must be empty** — hidden rows, smart
 playlists and other users' playlists included — else `refused: still in <n> playlist entries` and the file stays;
@@ -176,7 +181,7 @@ is noted on stderr and never fails the action. `CRATES_DB` must be set and name 
 | Rule | Task | Test |
 |---|---|---|
 | Never trash while `references(db, extra)` is non-empty, hidden rows included | N1-04 | before repoint → `refused: still in 2 playlist entries`, nothing moved; a hidden missing row in a third playlist alone blocks the move |
-| Refuse while a scan is running | N1-04 | `state.scanning = True` → `CleanupRefused` before any move or log line; a scan that starts after the first move stops the run before the second |
+| Refuse while a scan is running | N1-04, N1F-02 | `state.scanning = True` → `CleanupRefused` before any move or log line; a scan that starts after the first move stops the run before the second, is waited for, one more scan follows, and a moved file a playlist took meanwhile is put back |
 | Scan between repoint and trash | N1-03 | `repoint` waits until `lastScan` moves (the fake's `getScanStatus` gains `lastScan`, set by `startScan`); a scan that never finishes → exit 1; `trash` refuses to start unless `lastScan` is after the newest `repoint-*.jsonl`'s mtime (N1F-01) |
 | The file on disk is the planned file | N1F-01 | a file of another size at the extra's path than `media_file.size` or the plan's `size` (plans record it since N1F-01) → `refused: <path> is N bytes on disk, navidrome.db says M, the plan says P: not the planned file`, the other extras move |
 | A row added during the move puts the file back | N1-04 | the `before=` hook adds the extra to a playlist in the fake → file restored at its path, `refused`, no `forget`, no trash line |

@@ -98,9 +98,15 @@ class FakeState:
         self.scanning = False
         self.scans = 0                                   # startScan count
         self.last_scan: datetime.datetime | None = None  # when the last scan ended (here: at startScan); lastScan
+        self.scan_polls: int | None = None               # a running scan ends after this many more getScanStatus
         self.requests: list[tuple[str, dict]] = []       # (method, params) log for tests
         self.lock = threading.Lock()
         self.sync()
+
+    def end_scan(self) -> None:
+        """lastScan moves to now (always forward)."""
+        now = datetime.datetime.now(datetime.timezone.utc)
+        self.last_scan = max(now, self.last_scan + datetime.timedelta(microseconds=1)) if self.last_scan else now
 
     def sync(self) -> None:
         """Rewrite the navidrome.db mirror from the in-memory state (no-op without db_path). One transaction on a
@@ -213,14 +219,20 @@ def make_handler(state: FakeState):
                                                           {"name": "songLyrics", "versions": [1]}]}))
 
         def m_getScanStatus(self, q, m):
+            if state.scanning and state.scan_polls is not None:     # a scan a test started that ends by itself
+                if state.scan_polls > 0:
+                    state.scan_polls -= 1
+                else:
+                    state.scanning, state.scan_polls = False, None
+                    state.sync()            # as startScan: the scan is when navidrome.db learns of songs
+                    state.end_scan()
             self._send(_resp({"scanStatus": {"scanning": state.scanning, "count": len(state.songs),
                                              "lastScan": _go_time(state.last_scan)}}))
 
         def m_startScan(self, q, m):
             state.sync()            # a scan is when navidrome.db learns of songs (a test adds them to state.songs)
             state.scans += 1        # and is over at once, unless a test sets state.scanning
-            now = datetime.datetime.now(datetime.timezone.utc)
-            state.last_scan = max(now, state.last_scan + datetime.timedelta(microseconds=1)) if state.last_scan else now
+            state.end_scan()
             self._send(_resp({"scanStatus": {"scanning": True, "count": len(state.songs)}}))
 
         def m_getPlaylists(self, q, m):

@@ -24,7 +24,9 @@ repoint-<UTC ts>.jsonl beside the plan (fsynced); `before` is exactly what the w
 newest first with playlist_edit.rewrite(client, db, id, after, before) undoes it; a line whose write then failed
 replays as PlaylistChanged, which changes nothing. Every run that is not a dry run and reached a playlist check ends
 with one waited scan (the scan between repoint and trash), so a re-run after a timed-out scan scans again. Exit 1
-when any playlist was refused or failed or the scan did not finish: the runbook stops there. Each playlist written is
+when any playlist was refused or failed or the scan did not finish: the runbook stops there. `--dry-run` runs the
+same checks read-only (repoint_everywhere(dry_run=True)) and names each playlist the real run would refuse, with
+why ("dry run: would refuse <playlist>: <why>; …; would repoint <names>"), and exits 1 then too. Each playlist written is
 a crates.db event (kind `cleanup`, song_id = the extra, "repointed <playlist> to <keeper>"); a dry run opens no
 crates.db.
 
@@ -42,13 +44,16 @@ crates.playlist_edit.references(db, extra) is empty (hidden rows and other users
 crates.db row is still working with it (CrateStore.song_in_use). references() is read again right after the move and
 after the closing scan; a row added meanwhile puts the file back (crates.trash.restore). Then beets forgets the old
 path (a failure is noted, not fatal) and one line {ts, extra, path, keeper, trash_path, forgotten} goes to
-trash-<UTC ts>.jsonl beside the plan. A file already gone is `already gone` (`failed` while a playlist row, hidden
-or not, still names it); beets forgets it unless the trash log says it did (a crash between the move and forget, or a
+trash-<UTC ts>.jsonl beside the plan. A file already gone is `already gone`; while a playlist row, hidden or not,
+still names it, the file goes back from the trash log's trash_path (an earlier run's scan did not finish, so Amperfy
+could add it; "refused: … put back", then a scan), or it is `failed` without one; beets forgets it unless the trash log says it did (a crash between the move and forget, or a
 forget that failed, heals on the next run). The library and the trash must be mounted. One waited scan after a run
 that moved a file, and one more when a file was put back after it (that scan marked it missing). Each move and put-back
 is a crates.db event (kind `cleanup`, "trashed to <day>/<path>", "put back from <day>/<path>: …", trash-relative: the
 absolute paths are in MOVES.txt). Exit 1 when anything was refused or failed; a refusal mid-run still re-checks the
-files it moved (docs/plans/2026-10-17-n1-duplicate-cleanup.md §trash).
+files it moved (docs/plans/2026-10-17-n1-duplicate-cleanup.md §trash). A scan that starts mid-run, with files moved,
+is waited for, then one more scan sees every move, and the moved files are re-read and put back as after the
+closing scan (review I3): until a scan marks it missing, Navidrome lists a trashed song and Amperfy can add it.
 
 repoint and trash read SUBSONIC_* through crates.service.Config.from_env and need CRATES_DB set to an existing
 crates.db (exit 2 otherwise; never a stray one, never from_env's ./data default). Events are a copy of the jsonl logs:
@@ -77,7 +82,7 @@ try:
     from scripts.duplicate_report import DEFAULT_DB, LOSSLESS, duplicate_groups, load
     from scripts.export_playlists import open_ro
     from sourcing.worker import WorkerRunning, hold_lock
-    from subsonic.client import SubsonicClient, scan_and_wait
+    from subsonic.client import SubsonicClient, scan_and_wait, wait_for_scan
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from crates.playlist_edit import references, repoint_everywhere
@@ -88,7 +93,7 @@ except ImportError:
     from scripts.duplicate_report import DEFAULT_DB, LOSSLESS, duplicate_groups, load
     from scripts.export_playlists import open_ro
     from sourcing.worker import WorkerRunning, hold_lock
-    from subsonic.client import SubsonicClient, scan_and_wait
+    from subsonic.client import SubsonicClient, scan_and_wait, wait_for_scan
 
 DEFAULT_OUT = Path("/data/duplicate-cleanup")
 
@@ -231,6 +236,14 @@ def _summary(results: dict[str, str]) -> str:
     return f"{kind}: {'; '.join(parts)}; repointed {_n(done, 'playlist')}"
 
 
+def _preview(results: dict[str, str]) -> str:
+    """One value for an extra from a dry-run repoint_everywhere: what the real run would refuse first, with why."""
+    ok = [k for k, v in results.items() if v == "would repoint"]
+    bad = [f"{k}: {v.removeprefix('refused: ')}" for k, v in results.items() if v != "would repoint"]
+    would = f"would repoint {', '.join(ok) or 'nothing'}"
+    return f"dry run: would refuse {'; '.join(bad)}; {would}" if bad else f"dry run: {would}"
+
+
 def _append(log_path: Path, line: dict) -> None:
     """One JSON line, fsynced, stamped with ts."""
     with open(log_path, "a", encoding="utf-8") as f:
@@ -246,8 +259,9 @@ def _reverse(log_path: Path, extra: str, keeper: str, pid: str, name: str, befor
 
 
 def failed(out: dict[str, str]) -> bool:
-    """True when a value needs Michael: a playlist or a move refused or failed, or the scan did not finish."""
-    return any(v.startswith(("refused:", "failed:")) for v in out.values())
+    """True when a value needs Michael: a playlist or a move refused or failed (or, in a dry run, would be), or the
+    scan did not finish."""
+    return any(v.startswith(("refused:", "failed:", "dry run: would refuse")) for v in out.values())
 
 
 def _event(store, playlist_id: str | None, song_id: str, detail: str) -> None:
@@ -267,7 +281,7 @@ def repoint(plan: dict, client, navidrome_db: Path, log_path: Path, limit: int |
             scan_timeout_s: float = 600, poll_s: float = 2, store=None) -> dict[str, str]:
     """{extra id: "repointed N playlists" | "skipped: held (<why>)" | "skipped: no longer a duplicate of <keeper>" |
     "skipped: keeper missing" | "refused: <playlist>: <why>; …" | "failed: <playlist>: <why>; …" | "dry run: would
-    repoint <names>" | "failed: <error>"}, plus "(scan)": "done" | "failed: <problem>" when an extra reached
+    repoint <names>" | "dry run: would refuse <playlist>: <why>; …; would repoint <names>" | "failed: <error>"}, plus "(scan)": "done" | "failed: <problem>" when an extra reached
     repoint_everywhere (not on a dry run). `limit` counts the groups to act on (plan order). Each playlist written
     is an event in `store` (crates.db)."""
     rows, _ = load(navidrome_db)
@@ -286,12 +300,8 @@ def repoint(plan: dict, client, navidrome_db: Path, log_path: Path, limit: int |
                 out[extra] = why
                 continue
             try:
-                if dry_run:
-                    pids = dict.fromkeys(pid for pid, _ in references(navidrome_db, extra))
-                    with closing(open_ro(navidrome_db)) as con:
-                        names = [(con.execute("SELECT name FROM playlist WHERE id = ?", (pid,)).fetchone()
-                                  or [None])[0] or pid for pid in pids]
-                    out[extra] = f"dry run: would repoint {', '.join(names) or 'nothing'}"
+                if dry_run:                                  # the real run's checks, read-only (review I4)
+                    out[extra] = _preview(repoint_everywhere(client, navidrome_db, extra, keeper, dry_run=True))
                     continue
                 scan = True
                 out[extra] = _summary(repoint_everywhere(
@@ -354,10 +364,8 @@ def _scanned_since_repoint(status: dict, log_dir: Path) -> None:
                              f"and run trash when it is over")
 
 
-def _forgotten(log_dir: Path, extra: str, rel: str) -> bool:
-    """The trash-*.jsonl lines in log_dir (oldest first) say beets forgot this extra at this path, and the file was
-    not put back since: a failed or skipped forget, or a put-back, leaves it to the next run."""
-    done = False
+def _trash_lines(log_dir: Path, extra: str, rel: str):
+    """The trash-*.jsonl lines in log_dir for this extra at this path, oldest first."""
     for f in sorted(log_dir.glob("trash-*.jsonl")):
         for text in f.read_text(encoding="utf-8").splitlines():
             try:
@@ -365,8 +373,24 @@ def _forgotten(log_dir: Path, extra: str, rel: str) -> bool:
             except ValueError:
                 continue
             if x.get("extra") == extra and x.get("path") == rel:
-                done = not x.get("restored") and x.get("forgotten") is True
+                yield x
+
+
+def _forgotten(log_dir: Path, extra: str, rel: str) -> bool:
+    """The trash logs say beets forgot this extra at this path, and the file was not put back since: a failed or
+    skipped forget, or a put-back, leaves it to the next run."""
+    done = False
+    for x in _trash_lines(log_dir, extra, rel):
+        done = not x.get("restored") and x.get("forgotten") is True
     return done
+
+
+def _trashed_to(log_dir: Path, extra: str, rel: str) -> Path | None:
+    """Where the trash logs say an earlier run moved this extra (and nothing put it back since), or None."""
+    at = None
+    for x in _trash_lines(log_dir, extra, rel):
+        at = None if x.get("restored") else Path(x["trash_path"]) if x.get("trash_path") else at
+    return at
 
 
 def _forget(forget, path: Path) -> bool | None:
@@ -438,6 +462,7 @@ def _trash(plan, client, navidrome_db, music_root, trash_root, forget, log_path,
     size_of = {r["id"]: r["size"] for r in rows}
     out: dict[str, str] = {}
     moved: dict[str, tuple[str, Path]] = {}
+    earlier: list[str] = []                              # put back from an earlier run's trash: a scan lists them
 
     def one(keeper: str, extra: str, rel: str, planned_size: int | None) -> str:
         now = path_of.get(extra)
@@ -449,8 +474,19 @@ def _trash(plan, client, navidrome_db, music_root, trash_root, forget, log_path,
         src = music_root / rel
         if not src.exists():
             left = references(navidrome_db, extra)
-            if left:                                         # a hidden row on a trashed song: never a success
-                return f"failed: gone from the library but still in {_entries(len(left))}"
+            if left:                                         # a row on a trashed song: never a success
+                dst = _trashed_to(log_path.parent, extra, rel)
+                if dst is None or not dst.is_file():
+                    return f"failed: gone from the library but still in {_entries(len(left))}"
+                at = _in_trash(dst, trash_root)          # an earlier run could not scan, and a playlist took it
+                if dry_run:
+                    return f"refused: still in {_entries(len(left))}; would put back from {at}"
+                restore(dst, rel, music_root)
+                _append(log_path, {"extra": extra, "path": rel, "keeper": None, "trash_path": str(dst),
+                                   "restored": True})
+                _event(store, None, extra, f"put back from {at}: in {_entries(len(left))} after an earlier run")
+                earlier.append(extra)
+                return f"refused: still in {_entries(len(left))}; put back from {at}; beets no longer lists it"
             if not dry_run and forget is not None and not _forgotten(log_path.parent, extra, rel):
                 _append(log_path, {"extra": extra, "path": rel, "keeper": keeper, "trash_path": None,
                                    "forgotten": _forget(forget, src)})   # moved, then the run died before forget
@@ -492,7 +528,7 @@ def _trash(plan, client, navidrome_db, music_root, trash_root, forget, log_path,
     def recheck_moved() -> bool:
         """A row added between a move and now (the scan, or a refusal) puts the file back; True when one did."""
         put = False
-        for extra, (rel, dst) in moved.items():
+        for extra, (rel, dst) in list(moved.items()):
             try:
                 back = _put_back(navidrome_db, extra, rel, dst, music_root, trash_root, "after the move", store)
             except Exception as ex:
@@ -503,8 +539,18 @@ def _trash(plan, client, navidrome_db, music_root, trash_root, forget, log_path,
                                        "restored": True})
                     back += "; beets no longer lists it; Navidrome lists it again after the next scan"
                     put = True
+                    del moved[extra]
                 out[extra] = back
         return put
+
+    def closing_scan(problem: str = "") -> None:
+        """A scan that sees every move (unless `problem` already stopped it), then the re-read of each moved file; a
+        put-back gets one more scan, because that scan marked it missing: hidden until the next one."""
+        if not problem:
+            problem = scan_and_wait(client, scan_timeout_s, poll_s)
+        if recheck_moved() and not problem:
+            problem = scan_and_wait(client, scan_timeout_s, poll_s)
+        out["(scan)"] = f"failed: {problem}" if problem else "done"
 
     try:
         for g in _in_scope(plan, limit):
@@ -519,13 +565,11 @@ def _trash(plan, client, navidrome_db, music_root, trash_root, forget, log_path,
                 except Exception as ex:                      # recorded; the other groups and the scan still run
                     out[e["id"]] = f"failed: {ex!r}"
     except CleanupRefused as e:
-        recheck_moved()
+        if moved or earlier:   # a scan started mid-run, maybe before a move (review I3): wait for it, then one more
+            closing_scan(wait_for_scan(client, scan_timeout_s, poll_s))
         raise CleanupRefused(str(e), out) from None
-    if moved:
-        problem = scan_and_wait(client, scan_timeout_s, poll_s)
-        if recheck_moved() and not problem:              # that scan marked it missing: hidden until the next one
-            problem = scan_and_wait(client, scan_timeout_s, poll_s)
-        out["(scan)"] = f"failed: {problem}" if problem else "done"
+    if moved or earlier:
+        closing_scan()
     return out
 
 

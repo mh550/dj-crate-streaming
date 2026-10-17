@@ -109,7 +109,7 @@
         "A test where `repoint --dry-run` meets a smart playlist, another user's playlist and a hidden row: each is listed as 'would refuse' with the reason, using the read-only checked_entries path, and nothing is written",
         "`.harness/check.sh` is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "N1F-03",

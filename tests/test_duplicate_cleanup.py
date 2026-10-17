@@ -6,6 +6,7 @@ from contextlib import closing
 
 import pytest
 
+from crates import playlist_edit
 from crates.playlist_edit import rewrite
 from scripts import duplicate_cleanup as dc
 from subsonic.client import SubsonicClient
@@ -559,10 +560,12 @@ def test_a_scan_that_starts_mid_run_stops_before_the_next_move(tr):
         tr.forgot.append(path)
         tr.srv.state.scanning = True                          # the hourly scan starts after the first move
         return True
+    tr.srv.state.requests.clear()
     with pytest.raises(dc.CleanupRefused, match="scan") as e:
-        tr.run(plan, forget=forget)
+        tr.run(plan, forget=forget, scan_timeout_s=0)          # a scan that does not end: waited for, in vain
     assert len(tr.forgot) == 1 and len(log_lines(tr.log)) == 1        # the first move is done and logged
     assert sum(v.startswith("moved to ") for v in e.value.results.values()) == 1
+    assert e.value.results["(scan)"].startswith("failed: Navidrome scan still running") and scans(tr.srv) == []
     moved = log_lines(tr.log)[0]["extra"]
     other = {"s3": "s4", "s4": "s3"}[moved]
     assert (tr.music / tr.srv.state.songs[other]["path"]).is_file()
@@ -647,7 +650,7 @@ def test_a_refused_run_still_puts_back_a_moved_file_a_playlist_took(tr):
         tr.srv.state.scanning = True                                    # and a scan starts
         return True
     with pytest.raises(dc.CleanupRefused) as e:
-        tr.run(plan, forget=forget)
+        tr.run(plan, forget=forget, scan_timeout_s=0)
     [(sid, v)] = [(k, v) for k, v in e.value.results.items() if k in ("s3", "s4")]
     assert v.startswith("refused: added to 1 playlist entry after the move; put back")
     assert (tr.music / tr.srv.state.songs[sid]["path"]).is_file()
@@ -1108,3 +1111,139 @@ def test_a_plan_without_sizes_checks_navidrome_db_only(tr):
         for f in [g["keep"], *g["extras"]]:
             del f["size"]
     assert tr.run(plan)["s3"].startswith("moved to ")
+
+
+# ── N1F-02: a scan that starts mid-trash (review I3), the repoint dry run previews refusals (review I4) ─────────
+
+def test_a_scan_that_starts_mid_trash_is_waited_for_then_one_more_and_a_file_a_playlist_took_goes_back(
+        tr, tmp_path, monkeypatch):
+    """The hourly scan starts after the first move and may not see it: Navidrome still lists the song, so Amperfy can
+    add it meanwhile. trash waits for that scan, starts one that sees every move, then re-reads each moved file."""
+    second_group(tr.srv, tr.music)
+    plan = dc.build_plan(tr.db, tr.music)
+    dc.repoint(plan, _client(tr.srv), tr.db, tr.log.parent / "repoint-1.jsonl", poll_s=0)
+    CrateStore(tmp_path / "crates.db").db.close()
+
+    def forget(path):
+        tr.forgot.append(path)
+        tr.srv.state.scanning, tr.srv.state.scan_polls = True, 2          # starts now, over after two more polls
+        return True
+    real, seen = dc.scan_and_wait, []
+
+    def scan(client, timeout_s, poll_s):
+        seen.append(tr.srv.state.scanning)                              # ours starts only once that one is over
+        if len(seen) == 1:                                              # Amperfy added the moved song meanwhile
+            moved = log_lines(tr.log)[0]["extra"]
+            tr.srv.state.playlists["pl-2"]["songs"].append(moved)
+            tr.srv.state.sync()
+        return real(client, timeout_s, poll_s)
+    monkeypatch.setattr(dc, "scan_and_wait", scan)
+    tr.srv.state.requests.clear()
+    with pytest.raises(dc.CleanupRefused, match="scan is running") as e:
+        tr.run(plan, forget=forget, crates_db=tmp_path / "crates.db")
+    [first, back] = log_lines(tr.log)
+    sid, rel = first["extra"], first["path"]
+    other = {"s3": "s4", "s4": "s3"}[sid]
+    assert seen == [False, False] and len(scans(tr.srv)) == 2          # one that sees the moves, one for the put-back
+    assert e.value.results[sid].startswith("refused: added to 1 playlist entry after the move; put back")
+    assert e.value.results["(scan)"] == "done" and other not in e.value.results
+    assert (tr.music / rel).is_file() and (tr.music / tr.srv.state.songs[other]["path"]).is_file()
+    assert (back["extra"], back["path"], back["restored"]) == (sid, rel, True)
+    assert cleanup_events(tmp_path / "crates.db") == [
+        (None, sid, f"trashed to {today()}/{rel}"),
+        (None, sid, f"put back from {today()}/{rel}: in 1 playlist entry after the move")]
+
+
+def test_a_scan_that_starts_mid_trash_with_no_playlist_taking_the_file_leaves_it_trashed(tr, monkeypatch):
+    second_group(tr.srv, tr.music)
+    plan = dc.build_plan(tr.db, tr.music)
+    dc.repoint(plan, _client(tr.srv), tr.db, tr.log.parent / "repoint-1.jsonl", poll_s=0)
+
+    def forget(path):
+        tr.forgot.append(path)
+        tr.srv.state.scanning, tr.srv.state.scan_polls = True, 1
+        return True
+    tr.srv.state.requests.clear()
+    with pytest.raises(dc.CleanupRefused) as e:
+        tr.run(plan, forget=forget)
+    [line] = log_lines(tr.log)
+    assert e.value.results[line["extra"]].startswith("moved to ") and e.value.results["(scan)"] == "done"
+    assert len(scans(tr.srv)) == 1 and not (tr.music / line["path"]).exists()
+
+
+def test_a_dry_run_repoint_previews_every_playlist_the_real_run_would_refuse(lib, tmp_path, monkeypatch, capsys):
+    srv, db, music = lib
+    srv.state.smart.add("pl-2")                                         # Chicago 86: a smart playlist
+    srv.state.missing.add("s2")                                         # Disco Edits: a hidden row
+    srv.state.playlists["pl-9"] = {"id": "pl-9", "name": "Theirs", "comment": "", "owner": "other", "public": False,
+                                   "songs": ["s3"]}
+    srv.state.playlists["pl-8"] = {"id": "pl-8", "name": "Fine", "comment": "", "owner": "demo", "public": False,
+                                   "songs": ["s3", "s4"]}
+    srv.state.sync()
+    plan = dc.build_plan(db, music)
+    checked = []
+    real = playlist_edit.checked_entries
+
+    def spy(client, db_, pid):
+        checked.append(pid)
+        return real(client, db_, pid)
+    monkeypatch.setattr(playlist_edit, "checked_entries", spy)
+    before = {pid: list(p["songs"]) for pid, p in srv.state.playlists.items()}
+    db_bytes = db.read_bytes()
+    srv.state.requests.clear()
+    out = run(srv, db, plan, tmp_path / "r.jsonl", dry_run=True)
+    v = out["s3"]
+    assert v.startswith("dry run: would refuse ") and v.endswith("; would repoint Fine")
+    assert "Disco Edits: 'Disco Edits': position 2 holds s2, a song whose file is missing" in v
+    assert "Chicago 86: skipped: smart playlist" in v and "Theirs: owned by other" in v
+    assert sorted(checked) == ["pl-1", "pl-2", "pl-8", "pl-9"] and dc.failed(out)
+    assert updates(srv) == [] and scans(srv) == [] and not (tmp_path / "r.jsonl").exists()
+    assert {pid: p["songs"] for pid, p in srv.state.playlists.items()} == before and db.read_bytes() == db_bytes
+
+    cleanup = tmp_path / "cleanup"                                      # the CLI exits 1, like the real run would
+    dc.write_plan(plan, cleanup)
+    _env(monkeypatch, srv, tmp_path / "crates.db")
+    assert dc.main(["repoint", "--plan", str(cleanup / "plan.json"), "--navidrome-db", str(db), "--dry-run",
+                    "--poll-s", "0"]) == 1
+    assert "s3: dry run: would refuse " in capsys.readouterr().out and updates(srv) == []
+
+
+def test_a_file_a_playlist_took_after_a_run_that_could_not_scan_is_put_back_by_the_next_run(tr, tmp_path, monkeypatch):
+    """No scan of ours finished (it timed out), so Navidrome still lists the trashed song and Amperfy adds it: the
+    next run puts the file back from the trash log, not only reports it (review I3, when the waits fail)."""
+    CrateStore(tmp_path / "crates.db").db.close()
+    monkeypatch.setattr(dc, "scan_and_wait", lambda client, timeout_s, poll_s: "Navidrome scan still running after 0 s")
+    first = tr.run(crates_db=tmp_path / "crates.db")
+    assert first["s3"].startswith("moved to ") and first["(scan)"].startswith("failed: ")
+    monkeypatch.undo()
+    tr.srv.state.playlists["pl-1"]["songs"].append("s3")
+    tr.srv.state.sync()
+    rel = f"{today()}/{S3}"
+    tr.srv.state.requests.clear()
+    assert tr.run(dry_run=True) == {"s3": f"refused: still in 1 playlist entry; would put back from {rel}"}
+    assert not (tr.music / S3).exists() and scans(tr.srv) == []
+    out = tr.run(crates_db=tmp_path / "crates.db")
+    assert out == {"s3": f"refused: still in 1 playlist entry; put back from {rel}; beets no longer lists it",
+                   "(scan)": "done"} and dc.failed(out)
+    assert (tr.music / S3).read_bytes() == b"audio " + S3.encode() and not (tr.trash_root / rel).exists()
+    assert len(scans(tr.srv)) == 1 and len(tr.forgot) == 1             # the scan lists it again
+    assert [(x["extra"], x.get("restored")) for x in log_lines(tr.log)] == [("s3", None), ("s3", True)]
+    assert cleanup_events(tmp_path / "crates.db")[-1] == (None, "s3", f"put back from {rel}: in 1 playlist entry "
+                                                                       "after an earlier run")
+
+
+def test_wait_for_scan_reports_an_error_or_a_scan_that_does_not_end():
+    from subsonic.client import wait_for_scan
+
+    class Nav:
+        def __init__(self, statuses):
+            self.statuses = statuses
+
+        def scan_status(self):
+            x = self.statuses.pop(0)
+            if isinstance(x, Exception):
+                raise x
+            return {"scanning": x}
+    assert wait_for_scan(Nav([True, True, False]), 60, 0) == ""
+    assert wait_for_scan(Nav([OSError("down")]), 60, 0) == "Navidrome scan failed (OSError: down)"
+    assert wait_for_scan(Nav([True, True]), 0, 0) == "Navidrome scan still running after 0 s"

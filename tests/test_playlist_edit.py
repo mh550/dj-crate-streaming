@@ -357,3 +357,16 @@ def test_another_users_playlist_is_never_edited(srv, db):
     assert _updates(srv, "pl-1") == []
     assert pe.references(db, "s3") == [("pl-1", 3)]                          # stays referenced: never trashed
     assert issubclass(pe.NotOwned, pe.EditRefused)
+
+
+def test_a_dry_run_repoint_checks_each_playlist_and_writes_nothing(srv, db):
+    """dry_run: the same checks, no before_write, no write, no after_write."""
+    c = _client(srv)
+    srv.state.smart.add("pl-2")
+    srv.state.sync()
+    hooks = []
+    out = pe.repoint_everywhere(c, db, "s3", "s9", before_write=lambda *a: hooks.append(a),
+                                after_write=lambda *a: hooks.append(a), dry_run=True)
+    assert out == {"Disco Edits": "would repoint", "Chicago 86": "skipped: smart playlist"}
+    assert hooks == [] and [m for m, _ in srv.state.requests if m == "updatePlaylist"] == []
+    assert srv.state.playlists["pl-1"]["songs"] == ["s1", "s2", "s3"]
