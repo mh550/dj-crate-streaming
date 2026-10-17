@@ -20,7 +20,7 @@ Docker Compose, vanilla JS.
 
 **Spec:** `docs/specs/2026-10-16-ownership-and-identity.md` (Part 1 "Who may write what" and "Where beets fits",
 Part 3 approvals and streaming, the M6 row). The runbook queue is `~/projects/OVERNIGHT-2.md` § M6.
-Beets traps: `~/projects/HANDOFF-M6.md` "Hard-won facts".
+Beets traps: `docs/hard-won-facts.md`.
 
 ## Global Constraints
 

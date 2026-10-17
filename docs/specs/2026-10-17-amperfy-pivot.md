@@ -23,12 +23,21 @@ listed below for the later custom client.
 | D28 | **Version labels follow the Soulseek habit**: the label stays in the title, in parentheses, as a trailing group: `Title (Extended Mix)`, `Title (Club Mix)`, `Title (Dub)`, `Title (Radio Edit)`, `Title (Live)`. `parse_title` already reads these and the ` - Extended Mix` and `[Dub]` spellings. The version field (`VERSION`/`TIT3`) is filled later, as its own reviewed proposal. | design default (3) |
 | D29 | **beets writes full tags on a fresh download only with a confident MusicBrainz match**, and anything doubtful is raised to Michael as a review row. | design default (2) |
 | D30 | **Play-now approves one download.** It is the same DJ-quality download, taken at once. With one quality there is no "provisional low copy" to upgrade later, so the old two-step disappears in practice. | D20 (kept; the provisional step is moot) |
+| D31 | **Navidrome cleanup: keep the flac, repoint the playlists, trash the rest.** For each group of files that are one recording (`docs/duplicates-report.md`), the lossless copy is kept (ties: the properly filed path), every playlist is repointed to it, and the other files go to `/srv/_trash` with a reverse log. Nothing is trashed while a playlist still holds it. | D10 ("keep one best file"), made concrete; M9 item 3 |
+| D32 | **Playlist clutter rules (executed 2026-10-17).** Playlists with a `/` in the name (folders from the original music tree), playlists with fewer than 5 songs, `uncat-2` and `uncategorized` were deleted: 35 playlists, 10 kept. "I'd rather remove clutter and sparse playlists than keep them; I can always reimport." Michael authorised this for the shared playlists too. Restore: `/srv/music/_playlists/*.m3u8` (exports are never deleted), `/srv/docker/navidrome/navidrome.db.pre-cleanup.snap`, list in `/srv/docker/crates/playlists-deleted-2026-10-17.txt`. | |
+| D33 | **The `#imported` marker moves into crates.db.** Playlist comments are left empty by this system. | the "comment keeps only `#imported`" part of D27 |
+| D34 | **Future, low priority: Spotify ↔ Navidrome playlist sync.** A playlist stays in step with its Spotify source. Michael floated a marker in the Navidrome playlist title for it; that would reverse "no hashtags in names", so ask before building. Exploration only. | |
 
-## What Michael still owes (defaults in place)
 
-- 7 "A": unclear which choice this answers. Default kept: the id backfill applies the `confirmed`, `isrc` and `acoustid`
-  classes only.
-- 12 "pin it": not applied; see the report.
+## Recorded settings and answers (2026-10-17)
+
+- `dj-crates-web` in Navidrome is set to opus at 128 kbps (done by Michael).
+- Amperfy offers: streaming format **mp3 (default) / Raw (original) / Server chooses codec**, a **Wi-Fi** and a
+  **cellular** bitrate limit, and a cache format for transcoding. There is no per-network format, only per-network limits.
+- Id backfill: Michael asked for the explanation first (`docs/how-ids-work.md`) and approved running a fresh `propose` with
+  the AcoustID key (the `search` class stays out of `apply` until reviewed). The version tag (`VERSION`/`TIT3`) comes later.
+- "Pin it" meant pinning Navidrome: done, `deluan/navidrome:0.64.2` (same image as `latest`).
+- Build order: [`../next-todos.md`](../next-todos.md).
 
 ## Consequences in the code (what was done)
 
