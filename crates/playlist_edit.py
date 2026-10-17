@@ -147,7 +147,8 @@ def _remap(entries: list[str], old: str, new: str) -> list[str]:
     return out
 
 
-def repoint_everywhere(client, db: Path, old: str, new: str, before_write=None, after_write=None) -> dict[str, str]:
+def repoint_everywhere(client, db: Path, old: str, new: str, before_write=None, after_write=None,
+                       dry_run: bool = False) -> dict[str, str]:
     """Every playlist that holds `old` (navidrome.db, so not only crates and not only tiered playlists): old→new in
     place. Returns {playlist name: "repointed" | "skipped: smart playlist" | "refused: <why>" | "failed: <why>"};
     "refused" wrote nothing (another user's playlist reads "refused: owned by <owner>"); "failed" is any other error,
@@ -157,7 +158,8 @@ def repoint_everywhere(client, db: Path, old: str, new: str, before_write=None, 
     called once a playlist passed its checks and right before its write, with the entries the write replaces (the
     caller's reverse log); if it raises, that playlist is "failed" and not written. `after_write(playlist_id, name)`
     is called once the write was read back as `after` (the caller's event); if it raises, that playlist is "failed"
-    although it was written."""
+    although it was written. `dry_run` runs the same checks (read-only) and writes nothing: a playlist that passes
+    them is "would repoint"."""
     if old == new:
         raise ValueError(f"repoint {old} to itself")
     out: dict[str, str] = {}
@@ -170,6 +172,9 @@ def repoint_everywhere(client, db: Path, old: str, new: str, before_write=None, 
             key = name if name not in out else f"{name} ({pid})"
             before = checked_entries(client, db, pid)
             after = _remap(before, old, new)
+            if dry_run:
+                out[key] = "would repoint"
+                continue
             if before_write is not None:
                 before_write(pid, name, before, after)
             rewrite(client, db, pid, before, after)

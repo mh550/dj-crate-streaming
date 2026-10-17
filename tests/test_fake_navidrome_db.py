@@ -122,3 +122,12 @@ def test_start_scan_moves_last_scan(srv):
     assert second["scanning"] is False and second["lastScan"] != first
     c.start_scan()
     assert c.scan_status()["lastScan"] != second["lastScan"]
+
+
+def test_a_running_scan_can_end_after_some_polls(srv):
+    """state.scan_polls: the getScanStatus calls that still report a running scan; the next ends it, moving lastScan."""
+    c = _client(srv)
+    first = c.scan_status()["lastScan"]
+    srv.state.scanning, srv.state.scan_polls = True, 2
+    assert [c.scan_status()["scanning"] for _ in range(3)] == [True, True, False]
+    assert c.scan_status()["lastScan"] != first and srv.state.scan_polls is None

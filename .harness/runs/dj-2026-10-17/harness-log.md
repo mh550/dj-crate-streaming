@@ -4,3 +4,42 @@
 - 2026-10-17 03:57 · N1-03 · claude-opus-5-5 · passes=true · 3/19 passing
 - 2026-10-17 04:32 · N1-04 · claude-opus-5-5 · passes=true · 4/19 passing
 - 2026-10-17 04:57 · N1-05 · claude-opus-5-5 · passes=true · 5/19 passing
+- 2026-10-17 05:07 · N1 verified and tagged run/dj-2026-10-17/N1 · PR https://github.com/mh550/dj-crate-streaming/pull/3
+- 2026-10-17 05:13 · N2-01 · claude-opus-5-5 · passes=false · 5/19 passing
+- 2026-10-17 05:21 · N2-01 · claude-opus-5-5 · passes=false · 5/19 passing
+- 2026-10-17 05:21 · N2-02 · claude-opus-5-5 · passes=false · 5/19 passing
+- 2026-10-17 05:21 · N2-02 · claude-opus-5-5 · passes=false · 5/19 passing
+- 2026-10-17 05:21 · N2-03 · claude-opus-5-5 · passes=false · 5/19 passing
+- 2026-10-17 05:21 · N2-03 · claude-opus-5-5 · passes=false · 5/19 passing
+- 2026-10-17 05:21 · N2-04 · claude-opus-5-5 · passes=false · 5/19 passing
+- 2026-10-17 05:21 · N2-04 · claude-opus-5-5 · passes=false · 5/19 passing
+- 2026-10-17 05:21 · N3-01 · claude-opus-5-5 · passes=false · 5/19 passing
+- 2026-10-17 05:21 · N3-01 · claude-opus-5-5 · passes=false · 5/19 passing
+- 2026-10-17 05:21 · N3-02 · claude-opus-5-5 · passes=false · 5/19 passing
+- 2026-10-17 05:22 · N3-02 · claude-opus-5-5 · passes=false · 5/19 passing
+- 2026-10-17 05:22 · N3-03 · claude-opus-5-5 · passes=false · 5/19 passing
+- 2026-10-17 05:22 · N3-03 · claude-opus-5-5 · passes=false · 5/19 passing
+- 2026-10-17 05:22 · N4-01 · claude-opus-5-5 · passes=false · 5/19 passing
+- 2026-10-17 05:22 · N4-01 · claude-opus-5-5 · passes=false · 5/19 passing
+- 2026-10-17 05:22 · N4-02 · claude-opus-5-5 · passes=false · 5/19 passing
+- 2026-10-17 05:22 · N4-02 · claude-opus-5-5 · passes=false · 5/19 passing
+- 2026-10-17 05:22 · N4-03 · claude-opus-5-5 · passes=false · 5/19 passing
+- 2026-10-17 05:22 · N4-03 · claude-opus-5-5 · passes=false · 5/19 passing
+- 2026-10-17 05:22 · N4-04 · claude-opus-5-5 · passes=false · 5/19 passing
+- 2026-10-17 05:22 · N4-04 · claude-opus-5-5 · passes=false · 5/19 passing
+- 2026-10-17 05:22 · N4-05 · claude-opus-5-5 · passes=false · 5/19 passing
+- 2026-10-17 05:23 · N4-05 · claude-opus-5-5 · passes=false · 5/19 passing
+- 2026-10-17 05:23 · N5-01 · claude-sonnet-5-5 · passes=false · 5/19 passing
+- 2026-10-17 05:23 · N5-01 · claude-sonnet-5-5 · passes=false · 5/19 passing
+- 2026-10-17 05:23 · N5-02 · claude-opus-5-5 · passes=false · 5/19 passing
+- 2026-10-17 05:23 · N5-02 · claude-opus-5-5 · passes=false · 5/19 passing
+- 2026-10-17 05:23 · no feature left to try: 5/19 passing
+- 2026-10-17 05:23 · run ended: 5/19 passing · 35 sessions · 5 features passed · $22.56 · 1.9 h · by kind: init 1 ($6.25), coding 33 ($16.16), verify 1 ($0.15) · by model: claude-fable-5-1 1 ($6.25), claude-opus-5-5 31 ($16.16), claude-sonnet-5-5 3 ($0.15)
+- 2026-10-17 05:23 · final verified and tagged run/dj-2026-10-17/final · PR https://github.com/mh550/dj-crate-streaming/pull/3
+- 2026-10-17 12:57 · N1 merged into main · https://github.com/mh550/dj-crate-streaming/pull/5
+- 2026-10-17 12:57 · closed the whole-run PR for harness/dj-2026-10-17 (milestones merge through their own PRs now)
+- 2026-10-17 16:17 · merged main into harness/dj-2026-10-17
+- 2026-10-17 16:17 · configuration reloaded after merging main: policy live-staged · suite .harness/check.sh · spec docs/next-todos.md docs/specs/2026-10-17-amperfy-pivot.md docs/specs/2026-10-17-m9-remaining-ownership.md docs/specs/2026-10-17-backup-lock-and-monitoring.md docs/hard-won-facts.md docs/architecture.md
+- 2026-10-17 16:48 · N1F-01 · claude-opus-5-5 · passes=true · 22 min · 6/33 passing
+- 2026-10-17 17:08 · N1F-02 · claude-opus-5-5 · passes=true · 20 min · 7/33 passing
+- 2026-10-17 17:42 · N1F-03 · claude-opus-5-5 · passes=true · 33 min · 8/33 passing

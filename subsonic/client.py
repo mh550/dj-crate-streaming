@@ -236,6 +236,19 @@ class SubsonicClient:
         return self._get_bytes("download", id=song_id, format="raw")[0]
 
 
+def wait_for_scan(navidrome, timeout_s: float, poll_s: float) -> str:
+    """Wait for a running Navidrome scan to end, starting none; "" when none runs (any more), else the problem."""
+    try:
+        deadline = time.monotonic() + timeout_s
+        while navidrome.scan_status().get("scanning"):
+            if time.monotonic() >= deadline:
+                return f"Navidrome scan still running after {timeout_s:.0f} s"
+            time.sleep(poll_s)
+        return ""
+    except Exception as e:
+        return f"Navidrome scan failed ({type(e).__name__}: {e})"
+
+
 def scan_and_wait(navidrome, timeout_s: float, poll_s: float) -> str:
     """Start a Navidrome scan and wait for it; "" when done, else the problem. A scan that has not begun yet also
     reports scanning=false, so when the status carries `lastScan`, the wait also needs it to move."""

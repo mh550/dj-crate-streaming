@@ -396,6 +396,11 @@ docker compose exec -T crates python3 -m crates.cli reconcile
 - Before each write, one reverse line goes to `repoint-<time>.jsonl`. Each written playlist is also a `cleanup`
   event in crates.db.
 - Each run ends with a Navidrome scan and waits for it (the scan between repoint and trash).
+- `--dry-run` runs the same checks without writing and names every playlist the real run would refuse, with why:
+  "dry run: would refuse Chicago 86: skipped: smart playlist; Theirs: owned by other; would repoint Disco
+  Edits". It
+  exits 1 then, like the real run. A hidden row reads "'<name>': position N holds <id>, a song whose file is
+  missing…".
 - Exit 1 means a playlist was refused or failed, or the scan did not finish. Read it before going on.
 - `--limit N` counts groups in plan order. A re-run does not write the done ones again.
 
@@ -414,15 +419,66 @@ docker compose up -d worker
   path, and `/srv/music` and `/srv/_trash` mounted.
 - It refuses to start while the worker holds `/data/worker.lock`, while a Navidrome scan runs (checked again before
   every move), or when the library or the trash is not mounted.
+- It also refuses to start unless a Navidrome scan *finished* after the newest `repoint-<time>.jsonl` was last
+  written (Navidrome's `lastScan` against the log's modification time): "no Navidrome scan finished after the newest
+  repoint log …". That happens when repoint's scan timed out or failed, or repoint ran again after the last scan.
+  Start a scan in Navidrome, wait for it to end, then run trash again. Without any repoint log there is nothing to
+  wait for. `--dry-run` refuses the same way, so the dry run shows it first.
 - Per file, it moves nothing unless all of these hold:
   - no playlist row names the extra in navidrome.db (hidden rows and other users' playlists included);
   - nothing in crates.db is still working with it;
-  - the keeper is on disk and still one recording with it.
+  - the keeper is on disk and still one recording with it;
+  - the file on disk is still the planned file: its size equals navidrome.db's `media_file.size` and the size in
+    `plan.json`. A file filed at that path since the plan is refused with its path and the sizes that differ
+    ("refused: <path> is N bytes on disk, navidrome.db says M, the plan says P: not the planned file"); the other
+    extras still move. Look at that file before anything else; a new `plan` then treats it as a new copy.
 - Each move goes through `crates.trash.move_to_trash`, so its `mv` back is in `/srv/_trash/<day>/MOVES.txt` before
   the file moves. Then there is a line in `trash-<time>.jsonl` and a `cleanup` event.
 - If a playlist takes the song during the move, or before the closing scan ends, the file is put back.
+- The closing scan, and the one after a put-back, first wait out a scan that is already running (Navidrome's hourly
+  one may start during the last move and not see it), then start their own and wait for it.
+- A scan that starts mid-run stops the run before the next move: "refused: a Navidrome scan is running", exit 1.
+  If files had moved, it first waits for that scan to end, starts one more and waits for it, then puts back any
+  moved file a playlist took meanwhile (a `restored` line in `trash-<time>.jsonl`, a `cleanup` event). Run trash
+  again for the rest. Each wait lasts up to 10 minutes, so such a run can hold the live lock for about 30: start
+  trash well before the 03:15 backup window.
+- When no scan of ours finished (it timed out or failed), Navidrome still lists a trashed song, and Amperfy can add
+  it. The next run then puts the file back from the trash log ("refused: still in 1 playlist entry; put back from
+  <day>/<path>", a `restored` line, a `cleanup` event) and scans, so the row shows again. Without a trash log line
+  for it, that is "failed: gone from the library but still in …": put it back with its `MOVES.txt` line, then scan.
 - A re-run reports the moved files as `already gone`.
 - Exit 1 means something was refused or failed. Read every refusal before the next stage.
+
+Every line trash can print, and what to do (N is "1 playlist entry" or "N playlist entries"):
+
+| Line | Meaning, and what to do |
+|---|---|
+| `refused: stop the worker first (docker compose stop worker): it holds …/worker.lock` | Nothing ran. Stop the worker. |
+| `refused: a Navidrome scan is running: …` | At the start: nothing ran; wait for the scan. Mid-run: see above. |
+| `refused: the library is not mounted: …` / `refused: the trash is not mounted: …` | Nothing ran. Fix the mount. |
+| `refused: no Navidrome scan finished after the newest repoint log …` | Nothing ran. Scan, wait, run again. |
+| `set CRATES_DB to the crate service's database …` (exit 2) | Nothing ran. Use `run --rm worker`. |
+| `moved to <trash path>` | Done. `(beets still lists it)` after it: beets' forget failed; the next run retries it. |
+| `dry run: would move` | The real run would move it. |
+| `already gone` | An earlier run moved it, or it is gone otherwise; no playlist holds it. |
+| `skipped: held (<why>)` | The plan holds the group (D35). |
+| `skipped: moved since the plan (now <path>)` | navidrome.db lists the extra elsewhere now. Re-run `plan`. |
+| `skipped: keeper missing` | The keeper is not a present row or not a file on disk. Leave it; re-run `plan`. |
+| `skipped: no longer a duplicate of <keeper>` | A retag since the plan. Re-run `plan`. |
+| `refused: the same file as the keeper <keeper>` | A hard link (or one file listed twice): moving it would lose the keeper. Leave it. |
+| `refused: <path> is N bytes on disk, … says M: not the planned file` | A new file at that path. Look at it first. |
+| `refused: still in N` | A playlist (any user's, hidden rows included) holds it: repoint again, or leave it. |
+| `refused: in use by <ext-N \| approval of <id> \| replacement #N>` | crates.db is still working with it. Run again when that is done. |
+| `refused: added to N during the move; put back` / `… after the move; put back; …` | A playlist took it; the file is back. |
+| `refused: still in N; put back from <day>/<path>; …` (dry run: `would put back from`) | An earlier run's scan did not finish and a playlist took it; the file is back. |
+| `failed: added to N during/after the move, not put back (<error>); the file is at <trash path>` | A playlist holds it and it is in the trash. `FileExistsError`: a new file is at its library path, so neither `mv -n` nor a re-run puts it back: compare the two files first. Any other error: run its `MOVES.txt` line with `mv -n` and scan, or run trash again (it puts it back from the trash log). |
+| `failed: gone from the library but still in N` | No trash log line to put it back from: find it in `MOVES.txt`, `mv -n` it back, scan. |
+| `failed: re-checking its playlists after the move: <error>` | navidrome.db could not be read; run trash again (it re-checks from the trash log). |
+| `failed: <error>` | That extra failed; the others went on. Its file is moved only if `MOVES.txt` and the trash log say so. |
+| `(scan): done` / `(scan): failed: Navidrome scan still running after 600 s` / `failed: Navidrome scan failed (…)` | The closing scan. On a failure, scan in Navidrome and run trash again (see the bullet on an unfinished scan). |
+| `trash log: <path>`, or ` (trash log: <path>)` after a closing `refused:` line | Where this run's `trash-<time>.jsonl` is. |
+| `no beets here (DJ_WORKER is not 1): …` (stderr) | Not run in `run --rm worker`: beets keeps rows for the trashed paths. |
+| `event not logged (…): …` (stderr) | crates.db was busy; the jsonl logs stay the record. |
 
 Expected end state: 730 songs listed if the 9 "both lossless" groups stay held, 0 playlist rows on a missing file,
 **check** green. Do not purge missing files in Navidrome until you are sure: the purge is what makes a restored file
