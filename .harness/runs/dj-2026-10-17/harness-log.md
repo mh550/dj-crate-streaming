@@ -29,3 +29,4 @@
 - 2026-10-17 05:22 · N4-04 · claude-opus-5-5 · passes=false · 5/19 passing
 - 2026-10-17 05:22 · N4-05 · claude-opus-5-5 · passes=false · 5/19 passing
 - 2026-10-17 05:23 · N4-05 · claude-opus-5-5 · passes=false · 5/19 passing
+- 2026-10-17 05:23 · N5-01 · claude-sonnet-5-5 · passes=false · 5/19 passing
