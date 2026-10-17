@@ -167,7 +167,7 @@
         "docs/worker.md's deploy section says what healthy means and how to read it",
         "`.harness/check.sh` is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "H1-04",
