@@ -167,3 +167,23 @@ def test_a_missing_navidrome_db_snapshots_crates_db_only_with_a_one_line_note(tm
     notes = [line for line in out.stderr.splitlines() if str(missing) in line]
     assert len(notes) == 1 and "skipped" in notes[0]
     assert sorted(p.name for p in tmp_path.iterdir() if ".snap" in p.name) == ["crates.db.snap"]
+
+
+def test_a_source_locked_for_a_moment_is_waited_for(tmp_path):
+    """H1-04 review: .backup fails at the first SQLITE_BUSY unless the shell has a busy timeout."""
+    import threading
+    import time
+    db = tmp_path / "crates.db"
+    conn = sqlite3.connect(db, isolation_level=None, check_same_thread=False)
+    conn.execute("create table t (x text)")
+    conn.execute("insert into t values ('a')")
+    conn.execute("begin exclusive")                    # rollback-journal mode: readers are locked out too
+    unlock = threading.Timer(1.5, lambda: conn.execute("commit"))
+    unlock.start()
+    t0 = time.monotonic()
+    p = _run(tmp_path)
+    unlock.join()
+    conn.close()
+    assert p.returncode == 0, p.stderr
+    assert time.monotonic() - t0 >= 1.0
+    assert _rows(tmp_path / "crates.db.snap") == ["a"]

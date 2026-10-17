@@ -14,8 +14,8 @@
 #
 # CRATES_DB and NAVIDROME_DB name the databases (defaults: the live ones under /srv/docker). A missing navidrome.db is
 # skipped with a note on stderr. The suffix is letters, digits, '.', '_' and '-'. Each snapshot is one self-contained file (journal_mode=delete) written beside its database as
-# <snapshot>.new; both are renamed into place only once both pass SQLite's integrity check, so a failure replaces no
-# snapshot. It prints one line per database; exit 1 if a copy fails, 2 on bad arguments.
+# <snapshot>.new; both are renamed into place only once both pass SQLite's integrity check, so a failed copy replaces
+# no snapshot. A source that is locked (a checkpoint, another writer) is waited for up to 10 s. It prints one line per database; exit 1 if a copy fails, 2 on bad arguments.
 set -euo pipefail
 usage() { echo "usage: snapshot-crates-db.sh [--suffix <name>]" >&2; exit 2; }
 fail() { echo "snapshot-crates-db: $1" >&2; exit 1; }
@@ -45,7 +45,7 @@ for db in "${dbs[@]}"; do
     tmp="$db$end.new"
     tmps+=("$tmp")
     rm -f "$tmp"
-    err="$(sqlite3 "$db" ".backup '$tmp'" 2>&1)" || fail "$db: .backup failed: $err"
+    err="$(sqlite3 -cmd '.timeout 10000' "$db" ".backup '$tmp'" 2>&1)" || fail "$db: .backup failed: $err"
     err="$(sqlite3 "$tmp" 'pragma journal_mode=delete' 2>&1)" || fail "$db: the copy does not open: $err"
     check="$(sqlite3 "$tmp" 'pragma integrity_check' 2>&1)" || true
     [ "$check" = ok ] || fail "$db: integrity_check said: ${check//$'\n'/; }"

@@ -12,6 +12,7 @@ Stdlib only, no imports from this repo, so it runs as a plain file.
 """
 from __future__ import annotations
 
+import http.client
 import os
 import sys
 import time
@@ -31,7 +32,7 @@ def crates() -> tuple[bool, str]:
             return r.status == 200, f"{url}: {r.status}"
     except urllib.error.HTTPError as e:
         return False, f"{url}: {e.code}"
-    except (OSError, ValueError) as e:                     # refused, timed out (socket.timeout is an OSError)
+    except (OSError, ValueError, http.client.HTTPException) as e:   # refused, timed out, a garbage reply
         return False, f"{url}: {getattr(e, 'reason', None) or e}"
 
 

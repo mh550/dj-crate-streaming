@@ -127,3 +127,24 @@ def test_crates_that_never_answers_is_unhealthy_within_6_s():
         for conn, _ in held:
             conn.close()
     assert code == 1 and took < 6 and "timed out" in out
+
+
+def test_crates_garbage_reply_is_one_line_not_a_traceback():
+    """H1-04 review: an HTTPException that is not an OSError (BadStatusLine) still prints the one line."""
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+
+    def answer():
+        c, _ = srv.accept()
+        c.recv(1024)
+        c.sendall(b"garbage\r\n\r\n")
+        c.close()
+
+    threading.Thread(target=answer, daemon=True).start()
+    try:
+        code, out, _ = check("crates", CRATES_PORT=str(srv.getsockname()[1]))
+    finally:
+        srv.close()
+    assert code == 1 and "Traceback" not in out
+    assert out.startswith("crates: unhealthy: http://127.0.0.1:") and len(out.strip().splitlines()) == 1

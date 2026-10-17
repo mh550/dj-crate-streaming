@@ -263,7 +263,8 @@ queued, downloading, checking, filed, playing.
 
 ## Settings the worker reads
 
-All set in `deploy/compose.yml` (the worker service); change them there and `docker compose up -d worker`.
+All set in `deploy/compose.yml` (the worker service); change them there, commit, push and run `scripts/deploy.sh worker`
+from that clean checkout (see "Deploying, and what healthy means"; not `docker compose up` from `/srv/docker`).
 
 | Variable | Default | What it does |
 |---|---|---|
@@ -499,13 +500,14 @@ weight) and the version preferences. The worker and the crates service read it o
 (`Dockerfile` copies it). To change it:
 
 ```
-cd /srv/docker
-$EDITOR /home/mh550/projects/dj-crate-streaming/deploy/policy.toml
-docker compose up -d --build crates worker
+$EDITOR deploy/policy.toml            # in a checkout of the branch you deploy; commit and push it
+scripts/deploy.sh                     # from that clean checkout: builds and recreates crates + worker
+cd /srv/docker && docker compose logs --tail 5 worker
 ```
 
 A typo (an unknown key, a version word that does not exist, a wrong type) stops the start with a message naming the
-key, so check `docker compose logs --tail 5 worker` afterwards.
+key, so check the log afterwards. `scripts/deploy.sh`, not `docker compose up` from `/srv/docker`: see "Deploying, and
+what healthy means".
 
 The tier numbers are the same as before M7. D17 (raising the medium and high bitrate floors) is still open, and it is
 one number per tier in this file.
@@ -585,7 +587,7 @@ docker inspect --format '{{json .State.Health}}' dj-worker-1 | python3 -m json.t
 
 After a deploy, all three should read `(healthy)` within 2 minutes; then run the Check (`CLAUDE.md`). Docker only
 labels a container: it neither restarts nor alerts on unhealthy. A worker inside one long step that does not beat
-(a reconcile, a beets import, a hanging Navidrome) can read unhealthy for a while and still be working: read its log.
+(a reconcile, a Soulseek search, a beets import, a hanging Navidrome) can read unhealthy for a while and still be working: read its log.
 An image built before H1-03 (`dj-crates:b2df730b1d` and older) has no `scripts/healthcheck.py`, so a rollback to it
 reads `(unhealthy)` for good while it works normally. `/srv/docker/compose.yml` is a symlink to
 `~/projects/dj-crate-streaming/deploy/compose.yml`. Compose recreates a running dependency whose settings differ from
