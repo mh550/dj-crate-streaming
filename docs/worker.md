@@ -566,6 +566,29 @@ docker compose exec crates python scripts/healthcheck.py crates   # /api/status 
 container runs means the loop is stuck, every tick fails (`tick failed:`), or the file cannot be written
 (`heartbeat failed:`).
 
+**Deploying, and what healthy means.** `scripts/deploy.sh` (from a clean checkout of the commit to run; its header has
+the rollback) builds `crates` + `worker`, tags `dj-crates:<10-char sha>` and recreates both. Note the running tag
+from `docker compose ps` first: it is the rollback. Compose starts `crates` and `worker` only once Navidrome is
+healthy. The healthchecks in `deploy/compose.yml` run every 30 s with a 10 s timeout. Three failures in a row make a
+container unhealthy. During its start period a container is checked every 5 s, and its first pass makes it healthy.
+
+| Container | Healthy means | Start period |
+|---|---|---|
+| navidrome | `/ping` answers (the busybox `wget` in its image) | 60 s |
+| crates | `scripts/healthcheck.py crates`: `/api/status` answers 200 within 5 s (not while Navidrome is down) | 30 s |
+| worker | `scripts/healthcheck.py worker`: the heartbeat is younger than max(90 s, 3 × `WORKER_POLL_S`) | 120 s |
+
+```
+docker compose ps                                          # STATUS "Up 2 minutes (healthy)", "(health: starting)", "(unhealthy)"
+docker inspect --format '{{json .State.Health}}' dj-worker-1 | python3 -m json.tool   # the last 5 checks and the line each printed
+```
+
+After a deploy, all three should read `(healthy)` within 2 minutes; then run the Check (`CLAUDE.md`). Docker only
+labels a container: it neither restarts nor alerts on unhealthy. `/srv/docker/compose.yml` is a symlink to
+`~/projects/dj-crate-streaming/deploy/compose.yml`. Compose recreates a running dependency whose settings differ from
+the file it reads. So while that checkout's file has no healthchecks, any `docker compose up` or `run` there that
+reaches Navidrome recreates it without one. Add `--no-deps` to a `run`.
+
 The worker mounts `/srv/music`, `/srv/docker/beets` and `/srv/incoming/soulseek` at the same paths as on the host,
 because beets stores absolute paths in `library.db`. It also mounts `/srv/_trash` read-write at the same path
 (copy replacement moves old files there). Navidrome's database is mounted read-only, in the worker and in the crates

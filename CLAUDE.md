@@ -33,8 +33,9 @@ Navidrome, slskd and beets. It runs live on this box (compose project `dj`, from
 Live: Navidrome, the `crates` and `worker` containers, `/srv/music`, `/srv/_trash`. Run `docker compose` from `/srv/docker`.
 
 ### Check
-`docker compose run --rm worker sh -c 'python3 -m scripts.export_playlists export && python3 -m scripts.export_playlists check'`
-Pass: exit 0 and "ok: every playlist file matches Navidrome…". Export first: the worker exports only every 300 s
+`docker compose run --rm --no-deps worker sh -c 'python3 -m scripts.export_playlists export && python3 -m scripts.export_playlists check'`
+Pass: exit 0 and "ok: every playlist file matches Navidrome…". `--no-deps`: `/srv/docker/compose.yml` follows
+`~/projects/dj-crate-streaming`, and a `run` with dependencies recreates Navidrome whenever that file differs from what runs. Export first: the worker exports only every 300 s
 (never while stopped), so a bare `check` reports "stale".
 
 ### Snapshots
