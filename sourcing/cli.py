@@ -64,7 +64,7 @@ def approve_cmd(a) -> int:
     row = app.store.find_wanted(a.wanted)
     try:
         if row is not None:
-            app._not_in_progress(a.wanted)             # first: a refused approve must change nothing (not even the tier)
+            app.approvable(a.wanted)                   # first: a refused approve must change nothing (not even the tier)
         if row is not None and a.tier and a.tier != row["tier"]:
             if not row.get("external"):
                 print(f"{a.wanted}: its tier comes from its playlists ({row['tier']})", file=sys.stderr)

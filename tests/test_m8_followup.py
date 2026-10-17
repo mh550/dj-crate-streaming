@@ -135,3 +135,33 @@ def test_summary_counts_review_rows(world):  # noqa: F811
     assert s["review"] == 1 and s["total"] == before["total"]
     assert s["needs_source"] == before["needs_source"] - 1
     assert sum(v for k, v in s.items() if k != "total") == s["total"]
+
+
+# --- 3. POST approve on a review row that is not retryable is a 409 and records nothing
+@pytest.mark.parametrize("reason", ["ambiguous (2 library versions): a, b", "keep both?", None])
+def test_approve_endpoint_refuses_a_non_retryable_review_row(svc, reason):  # noqa: F811
+    fake, app, srv = svc
+    ext = app.store.add_external_wanted("Twain", "The Magician")
+    app.store.set_external_status(ext, "review", reason); app.store.commit()
+    code, body = post(srv.url + f"/api/wanted/{ext}/approve", {})
+    assert code == 409 and "needs a pick first" in body["error"]
+    assert app.store.approval(ext) is None
+
+
+def test_approve_endpoint_refuses_a_non_retryable_crate_review_row(svc):  # noqa: F811
+    fake, app, srv = svc
+    post(srv.url + "/api/playlists/pl-2/crate", {"enabled": True})
+    app.store.set_track_status("pl-2", "s4", "review", "ambiguous (3 library versions): a, b, c"); app.store.commit()
+    code, body = post(srv.url + "/api/wanted/s4/approve", {})
+    assert code == 409 and "ambiguous" in body["error"]
+    assert app.store.approval("s4") is None
+
+
+@pytest.mark.parametrize("reason", RETRYABLE)
+def test_approve_endpoint_accepts_a_retryable_review_row(svc, reason):  # noqa: F811
+    fake, app, srv = svc
+    post(srv.url + "/api/playlists/pl-2/crate", {"enabled": True})
+    app.store.set_track_status("pl-2", "s4", "review", reason); app.store.commit()
+    code, body = post(srv.url + "/api/wanted/s4/approve", {})
+    assert code == 200, body
+    assert app.store.approval("s4") is not None

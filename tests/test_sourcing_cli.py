@@ -97,3 +97,17 @@ def test_import_playlist_name_collision_needs_merge(tmp_path, monkeypatch, capsy
         assert "--merge" in capsys.readouterr().err
         assert cli.main(["import-playlist", "--merge", str(report)]) == 0
         assert "updated existing playlist" in capsys.readouterr().out
+
+
+def test_approve_of_a_non_retryable_review_row_is_refused_and_changes_nothing(tmp_path, monkeypatch, capsys):
+    db = tmp_path / "crates.db"; monkeypatch.setenv("CRATES_DB", str(db))
+    store = CrateStore(db)
+    ext = store.add_external_wanted("Twain", "The Magician")
+    store.set_external_status(ext, "review", "ambiguous (2 library versions): a, b"); store.commit()
+    tier = store.external(ext)["tier"]
+    store.db.close()
+    rc = cli.main(["fetch", "--wanted", ext, "--approve", "--tier", "high" if tier != "high" else "low"])
+    err = capsys.readouterr().err
+    store = CrateStore(db)
+    assert rc == 1 and "needs a pick first" in err
+    assert store.approval(ext) is None and store.external(ext)["tier"] == tier

@@ -32,7 +32,7 @@ from sourcing.slskd_client import SlskdClient
 from subsonic.client import SubsonicClient, SubsonicError
 from .reconcile import CommentNotKept, NameMarked, ReconcileBusy, Reconciler
 from . import proposals, trash
-from .store import CrateStore, PlayNowRefused, filed_path, held_by, pick_token, public
+from .store import CrateStore, PlayNowRefused, filed_path, held_by, pick_token, public, retryable_review
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 mimetypes.add_type("application/manifest+json", ".webmanifest")
@@ -180,6 +180,15 @@ class CrateApp:
             raise ApiError(409, f"{wanted_id}: {what} is in progress (approval #{a['id']}); the worker finishes it")
         return row
 
+    def approvable(self, wanted_id: str) -> dict:
+        """The row, unless approving it is refused (404, 409): see _not_in_progress, and a `review` row that is not
+        retryable waits for a pick between library versions (or holds on an upgrade): a download would not answer
+        it and fetch would refuse the approval, so nothing is recorded. The CLI asks this before changing a tier."""
+        row = self._not_in_progress(wanted_id)
+        if row["status"] == "review" and not retryable_review(row.get("reason")):
+            raise ApiError(409, f"{wanted_id} needs a pick first ({public(row.get('reason') or 'review')})")
+        return row
+
     def preview(self, wanted_id: str) -> dict:
         if self.slskd is None:
             raise ApiError(503, "slskd is not configured")
@@ -203,7 +212,7 @@ class CrateApp:
         and no peer name: the full candidate is the stored preview's pick with that token (409 when the preview
         changed since: preview again). A candidate naming its peer (`username` + `filename`) is taken as it is."""
         with self._lock:
-            row = self._not_in_progress(wanted_id)
+            row = self.approvable(wanted_id)
             if candidate is None:
                 candidate = (self.store.preview(wanted_id) or {}).get("pick")
             elif isinstance(candidate, dict) and "token" in candidate and "username" not in candidate:
