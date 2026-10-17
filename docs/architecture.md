@@ -12,10 +12,10 @@ Legend: **built** = in the code; **live** = also running on the box; **planned**
 | Milestone | State |
 |---|---|
 | M6 worker, approvals, beets filing, stream "server" | built, **live** (images built 10:16) |
-| M7 identity (Tasks 1–10) | built and committed, **not live**: the running image predates it |
+| M7 identity (Tasks 1–10) | built, **live** since 2026-10-17 (image `dj-crates:328eca5f2f`) |
 | M7 review (Task 11) | running now |
 | M7 live proposal (Task 12), gated apply (Task 13) | not done; Task 13 waits for you |
-| M8 lifecycle (Parts A–D: ownership, replacement, proposals, play-now) | **built** and committed, **not live**: the running images predate it; deploy order and gates in §9 (`docs/plans/2026-10-16-m8-lifecycle.md`) |
+| M8 lifecycle (Parts A–D: replacement, proposals, play-now; ownership changed by the pivot) | **built, live** since 2026-10-17; the trash-move probe in §9 has not been run (it needs the first real replacement) |
 | M9 | draft spec, nothing built: [`docs/specs/2026-10-17-m9-remaining-ownership.md`](specs/2026-10-17-m9-remaining-ownership.md) |
 
 Checked live (read-only) when this was written: the worker image has no `deploy/policy.toml` and no
