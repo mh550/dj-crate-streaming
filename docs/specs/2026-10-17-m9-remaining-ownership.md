@@ -20,6 +20,9 @@ owner's intent once (a placement, a reviewed tag write, a reviewed trash) and ch
 - Version labels (item 4) and tiers: the pivot made tiers one rule (D24) and removed the 12" preference (D26); read
   "tier" and "D16" below in that light. Item 8's "pinning" is done for Navidrome (`0.64.2`).
 - Order: 3 (cleanup) → 1 (placement) → 4 (VERSION tag, approved "later") → 5 (pickers) → the rest.
+- **Approved 2026-10-17:** item 3 as "keep the flac, repoint the playlists, trash the rest" (D31); the `#imported` marker
+  moves into `crates.db` (D33); Spotify↔Navidrome sync is a low-priority idea (D34). The build list for the next agent is
+  [`../next-todos.md`](../next-todos.md).
 
 | # | Item | Size | Michael decides |
 |---|---|---|---|

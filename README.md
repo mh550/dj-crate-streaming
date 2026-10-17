@@ -101,6 +101,8 @@ with real titles from the library. What it changed:
 - **verify** knows a copy upgrade from a new version. A copy upgrade reports `replaceable` (full-length fingerprint
   against the old file, bit-error rate 0.20 or less, durations agree, verdict `ok`). M8 trashes the old copy only
   when it is true.
+- **Where to start:** `docs/specs/2026-10-17-amperfy-pivot.md` (current decisions), `docs/next-todos.md` (what to build
+  next), `docs/hard-won-facts.md`, `docs/how-ids-work.md`, `docs/architecture.md`.
 - **`deploy/policy.toml`** holds the one download-quality rule (lossless, or lossy at 256 kbps or more; D24) in four
   identical tier entries, and no version preferences (D26: the exact track is sourced), editable without code: `docs/worker.md` "Editing the policy".
 - **The id backfill** (`scripts/identity_backfill.py`) proposes MusicBrainz recording, work and AcoustID ids for the

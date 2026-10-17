@@ -89,6 +89,7 @@ derived or a mirror.
 | Where a file lives | `deploy/beets.yaml` paths | beets in the worker | one convention |
 | Which songs exist, their ids | Navidrome (`navidrome.db`) | Navidrome's scan | every client asks it |
 | Playlist membership + order | Navidrome | you in any client; our logged commands | you edit in Amperfy |
+| Made by import-playlist | the `#imported` comment marker today; `crates.db` (D33, planned) | import | D33 |
 | Is a crate | `crates.db` (`crates.enabled`, source `app`); no comment or name is read | you, in the crates web client (`crates.cli toggle`) | D27 (was D21) |
 | Quality a file must reach | one rule: lossless or lossy ≥ 256 kbps | `deploy/policy.toml` | D24 |
 | Version preferences | none: the exact track is sourced | `deploy/policy.toml` (no `[versions.*]`) | D26 (was D16) |
@@ -125,7 +126,8 @@ Other stores:
 - **beets `library.db`**: a disposable index of the library. Rebuild with `beet update -M` (file → DB, no
   moves). Nothing reads a fact from it in preference to the file. The filer reads it read-only to find what an
   import just added (`filer.py:238-254`).
-- **Playlist comment**: since the pivot it carries only `#imported` (import-playlist's marker); under the retired
+- **Playlist comment**: since the pivot it carries only `#imported` (import-playlist's marker; D33 moves that into
+  `crates.db` too, so comments end up empty); under the retired
   `CRATES_OWNER=comment` it owned the playlist's attributes (M8): `#crate`, `#tier:<t>`, plus `#imported`. Whitespace-delimited tokens, any case; `#crates` or `x#crate` are not tokens. Name markers `[crate]` / `🎛`
   also flag a crate. Only `crates/attrs.py` writes our tokens; the rest of your comment is never touched.
 - **Trash**: `/srv/_trash/<date>/<path>` with `MOVES.txt` of reverse `mv`s. Never emptied by code.
