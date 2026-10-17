@@ -4,9 +4,9 @@
 # Both databases run in SQLite WAL mode: recent writes (approvals, the wanted queue, playlists) sit in <db>-wal and the
 # main file can be a few KB. Copying the files at different moments gives a database that may not open or may miss
 # writes. `.backup` takes a consistent snapshot while the services keep running. Run it just before restic, as the owner
-# of the files (mh550), e.g. as the first line of /usr/local/sbin/restic-backup:
+# of the files (mh550). The nightly backup (deploy/restic-backup) runs the installed copy, under the live lock:
 #
-#     sudo -u mh550 /home/mh550/projects/dj-crate-streaming/scripts/snapshot-crates-db.sh
+#     sudo -u mh550 /usr/local/lib/dj-crates/snapshot-crates-db.sh
 #
 #   snapshot-crates-db.sh                   crates.db.snap and navidrome.db.snap (the nightly backup's call)
 #   snapshot-crates-db.sh --suffix pre-x    crates.db.pre-x.snap and navidrome.db.pre-x.snap, a restore point that

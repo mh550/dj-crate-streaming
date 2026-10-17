@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Nightly restic backup to the HDD. Config in /etc/restic/.
+#
+# The source of truth for /usr/local/sbin/restic-backup (run as root by restic-backup.service). Michael installs it
+# with `sudo deploy/install-backup.sh` from main; agents write and test it, never install it.
+#
+#   1. take the live-writer lock (the one agent sessions wrap live writes in), waiting up to 30 min; past that, back
+#      up anyway: a missed backup is worse than one taken between two stages of a live run
+#   2. snapshot crates.db and navidrome.db with the installed snapshot script; a failure warns, the backup goes on,
+#      and the run exits 1 at the end without a heartbeat (stale .snap files must not read as a good night)
+#   3. no mounted HDD: exit 1 (a skipped backup must not look like a success)
+#   4. restic backup, then release the lock; forget --prune and check only touch the repository
+#   5. on success, if GATUS_BACKUP_URL and GATUS_BACKUP_TOKEN are set in the env file, push the "backup ran" heartbeat
+#      to Gatus' external endpoint GATUS_BACKUP_KEY (default `_backup`: endpoint `backup`, no group)
+#
+# For tests: RESTIC_ENV_FILE, LIVE_LOCK, LIVE_LOCK_WAIT_S, SNAPSHOT_SCRIPT and BACKUP_USER override the defaults.
+set -euo pipefail
+set -a; . "${RESTIC_ENV_FILE:-/etc/restic/env}"; set +a
+
+lock="${LIVE_LOCK:-/srv/docker/crates/live.lock}"
+wait_s="${LIVE_LOCK_WAIT_S:-1800}"
+user="${BACKUP_USER:-mh550}"
+snapshot="${SNAPSHOT_SCRIPT:-/usr/local/lib/dj-crates/snapshot-crates-db.sh}"
+
+# Agent sessions (uid 1000) open the same file, so the backup user creates it. The directory is that user's too, so
+# root never creates anything there and opens only a plain file, read-only (enough for flock): a FIFO would block the
+# open forever, and a symlink could point anywhere.
+[ -e "$lock" ] || [ -L "$lock" ] || sudo -u "$user" install -m 0664 /dev/null "$lock" \
+    || echo "WARNING: could not create $lock as $user"
+if [ -f "$lock" ] && [ ! -L "$lock" ] && exec 9<"$lock"; then
+    if ! flock -n 9; then
+        echo "waiting for $lock (a live run holds it), up to $wait_s s"
+        (( wait_s >= 60 )) && held="$((wait_s / 60)) min" || held="$wait_s s"
+        flock -w "$wait_s" 9 || echo "live.lock held for $held; backing up anyway"
+    fi
+else
+    echo "WARNING: $lock is not a plain file I can open; backing up without the lock"
+fi
+
+snapshot_ok=1
+sudo -u "$user" "$snapshot" \
+    || { echo "WARNING: DB snapshot failed (exit $?); backing up without fresh .snap files"; snapshot_ok=0; }
+
+# With `nofail`, a missing HDD leaves /mnt/backup as an empty dir on the NVMe.
+mountpoint -q /mnt/backup || { echo "/mnt/backup not mounted; skipping."; exit 1; }
+
+restic backup \
+  --files-from /etc/restic/includes \
+  --exclude-file /etc/restic/excludes \
+  --exclude-caches --tag nightly
+exec 9<&-
+
+restic forget --prune --keep-daily 7 --keep-weekly 4 --keep-monthly 6
+restic check --read-data-subset=5%
+
+if [ "$snapshot_ok" = 0 ]; then
+    echo "backup saved with the previous .snap files (DB snapshot failed): exit 1, no heartbeat"
+    exit 1
+fi
+if [ -n "${GATUS_BACKUP_URL:-}" ] && [ -n "${GATUS_BACKUP_TOKEN:-}" ]; then
+    # The token goes in on stdin, so `ps` never shows it.
+    printf 'Authorization: Bearer %s\n' "$GATUS_BACKUP_TOKEN" \
+        | curl -fsS -m 10 -o /dev/null -X POST -H @- \
+            "${GATUS_BACKUP_URL%/}/api/v1/endpoints/${GATUS_BACKUP_KEY:-_backup}/external?success=true" \
+        || echo "WARNING: heartbeat to Gatus failed; the backup itself succeeded"
+fi
