@@ -21,6 +21,7 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -233,3 +234,21 @@ class SubsonicClient:
 
     def download(self, song_id: str) -> bytes:
         return self._get_bytes("download", id=song_id, format="raw")[0]
+
+
+def scan_and_wait(navidrome, timeout_s: float, poll_s: float) -> str:
+    """Start a Navidrome scan and wait for it; "" when done, else the problem. A scan that has not begun yet also
+    reports scanning=false, so when the status carries `lastScan`, the wait also needs it to move."""
+    try:
+        last = navidrome.scan_status().get("lastScan")
+        navidrome.start_scan()
+        deadline = time.monotonic() + timeout_s
+        while True:
+            st = navidrome.scan_status()
+            if not st.get("scanning") and (last is None or st.get("lastScan") != last):
+                return ""
+            if time.monotonic() >= deadline:
+                return f"Navidrome scan still running after {timeout_s:.0f} s"
+            time.sleep(poll_s)
+    except Exception as e:
+        return f"Navidrome scan failed ({type(e).__name__}: {e})"

@@ -27,6 +27,8 @@ listed below for the later custom client.
 | D32 | **Playlist clutter rules (executed 2026-10-17).** Playlists with a `/` in the name (folders from the original music tree), playlists with fewer than 5 songs, `uncat-2` and `uncategorized` were deleted: 35 playlists, 10 kept. "I'd rather remove clutter and sparse playlists than keep them; I can always reimport." Michael authorised this for the shared playlists too. Restore: `/srv/music/_playlists/*.m3u8` (exports are never deleted), `/srv/docker/navidrome/navidrome.db.pre-cleanup.snap`, list in `/srv/docker/crates/playlists-deleted-2026-10-17.txt`. | |
 | D33 | **The `#imported` marker moves into crates.db.** Playlist comments are left empty by this system. | the "comment keeps only `#imported`" part of D27 |
 | D34 | **Future, low priority: Spotify ↔ Navidrome playlist sync.** A playlist stays in step with its Spotify source. Michael floated a marker in the Navidrome playlist title for it; that would reverse "no hashtags in names", so ask before building. Exploration only. | |
+| D35 *default* | **Two lossless copies are held.** A duplicate group with a lossless extra beside a lossless keeper (often two masters) is listed in the cleanup plan, never repointed or trashed, until Michael sets its `hold` to `null` in `plan.json` (`docs/plans/2026-10-17-n1-duplicate-cleanup.md`). | refines D31 ("ties: the properly filed path") |
+| D36 *default* | **The cleanup's trash step runs only with the worker stopped**, holding `<dirname(CRATES_DB)>/worker.lock`, so beets has one writer (`plan` and `repoint` run beside the daemon). | refines D18 (one beets writer) for D31; instead of M9 §3's worker replacement jobs |
 
 
 ## Recorded settings and answers (2026-10-17)

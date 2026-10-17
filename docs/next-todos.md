@@ -17,6 +17,8 @@ Anything that trashes files or writes tags needs a reviewed plan file and a reve
 ## In order
 
 1. **Navidrome duplicate cleanup: keep the flac, repoint the playlists, trash the rest (D31; M9 item 3).**
+   **Built (N1), not run live:** `scripts/duplicate_cleanup.py plan | repoint | trash`; the staged runbook and the undo
+   are in `docs/worker.md` "Duplicate cleanup", the design in `docs/plans/2026-10-17-n1-duplicate-cleanup.md`.
    Input: `docs/duplicates-report.md` (regenerate: `python3 -m scripts.duplicate_report`; 102 groups, 115 extra files).
    Keeper rule is `keep_rank` in `scripts/duplicate_report.py` (lossless first, then bit rate, then the properly filed path).
    Build a plan → repoint → trash flow like `scripts/dedupe_copies.py`, using `crates/playlist_edit.py` (guarded index

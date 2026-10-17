@@ -1,0 +1,291 @@
+{
+  "run": "dj-2026-10-17",
+  "branch": "harness/dj-2026-10-17",
+  "features": [
+    {
+      "id": "N1-01",
+      "milestone": "N1",
+      "model": "opus",
+      "description": "A reviewed plan file exists for the Navidrome duplicate cleanup (D31): plan -> repoint -> trash as scripts/duplicate_cleanup.py, with the plan JSON schema, the hold rules, the reverse logs and the staged live runbook.",
+      "steps": [
+        "Read docs/next-todos.md item 1, pivot spec D31, M9 spec section 3, docs/hard-won-facts.md, scripts/dedupe_copies.py, scripts/duplicate_report.py, crates/playlist_edit.py, crates/trash.py, sourcing/replace.py, and .harness/runs/dj-2026-10-17/progress.md (the initializer's entry fixes the defaults).",
+        "Write docs/plans/2026-10-17-n1-duplicate-cleanup.md in the style of docs/plans/2026-10-15-m3-dedupe.md: goal, facts (102 groups, 115 extra files, 59 extras in a playlist, 9 extras that are lossless beside a lossless keeper), design of `python -m scripts.duplicate_cleanup plan|repoint|trash`, the plan JSON schema ({\"made_at\", \"groups\": [{\"keep\": {id, path, suffix, bit_rate}, \"extras\": [{id, path, suffix, bit_rate, held_by: [playlist names]}], \"hold\": null | \"both lossless\" | \"keeper missing on disk\" | \"keeper missing in Navidrome\"}], \"playlists\": [{id, name, before, after}]}), the reverse logs (repoint-<ts>.jsonl with before/after per playlist, MOVES.txt for files), the lock rule (trash takes <dirname(CRATES_DB)>/worker.lock, so the worker must be stopped), the recompute-before-acting rule, and the task list N1-02..N1-05.",
+        "The plan names the safety tests each task must have: never trash while playlist_edit.references(db, extra) is non-empty (hidden rows included); refuse while a scan is running; a pair no longer in one duplicate_groups group is skipped; the keeper must exist on disk and not be missing in navidrome.db; every move has its MOVES.txt line before it happens.",
+        "Record the new defaults in docs/specs/2026-10-17-amperfy-pivot.md as new ledger rows `D35 *default*` (groups with two lossless copies are held, listed only, until Michael clears the hold in the plan JSON) and `D36 *default*` (the trash step runs only with the worker stopped, holding worker.lock, so beets has one writer), each in one sentence with what it replaces or refines.",
+        "Append a short entry to .harness/runs/dj-2026-10-17/progress.md (newest first) naming the plan file and the two defaults as direct questions for Michael.",
+        "Commit `N1-01: plan for the duplicate cleanup`.",
+        ".harness/check.sh is green"
+      ],
+      "passes": true
+    },
+    {
+      "id": "N1-02",
+      "milestone": "N1",
+      "model": "opus",
+      "description": "`python -m scripts.duplicate_cleanup plan` reads navidrome.db read-only, recomputes the duplicate groups, picks the keeper with scripts.duplicate_report.keep_rank, marks holds, lists which playlists (hidden rows included) hold each extra, and writes plan.json plus a markdown report without touching anything.",
+      "steps": [
+        "Test-first in tests/test_duplicate_cleanup.py against FakeSubsonicServer(db_path=...): add a `bit_rate` column to subsonic/fake_server.py NAVIDROME_SCHEMA and its media_file INSERT (from the song's `bitRate`), then a flac copy s9 of s3 'Move Your Body' (suffix flac, bitRate 900, duration 383, path 'Marshall Jefferson/The House Music Anthem/01 - Move Your Body.flac'); tests/test_fake_navidrome_db.py still passes.",
+        "scripts/duplicate_cleanup.py: `build_plan(navidrome_db, music_root) -> dict` uses scripts.duplicate_report.load + duplicate_groups (so the groups are recomputed from the live DB every time, never from docs/duplicates-report.md); keeper = group[0]; each extra lists `held_by` from crates.playlist_edit.references (hidden rows included) resolved to playlist names; `hold` is set to 'both lossless' when any extra's suffix is in duplicate_report.LOSSLESS beside a lossless keeper (D35), 'keeper missing on disk' when music_root/keep.path is not a file, 'keeper missing in Navidrome' when media_file.missing is set.",
+        "`playlists` in the plan: for every playlist holding an extra of an unheld group, before = navidrome.db playlist_tracks order, after = scripts.dedupe_copies.remap(before, {extra: keeper}) (an extra becomes the keeper in place; dropped when the keeper is already there).",
+        "`write_plan(plan, out_dir)` writes out_dir/plan.json and out_dir/report.md (sections: groups to act on with keeper and extras, held groups with the reason, playlists repointed before -> after counts); `--limit N` keeps the first N unheld groups; `--out` defaults to $CLEANUP_DIR or /data/duplicate-cleanup; the command prints the counts line.",
+        "Tests: s3+s9 form one group with keeper s9 and extra s3 held by 'Disco Edits' and 'Chicago 86'; pl-1 after == ['s1','s2','s9'] and pl-2 after == ['s9','s4','s5']; a hidden missing song in pl-1 still appears in held_by; two flac copies of one recording are held 'both lossless' and produce no playlists entry; a keeper whose file is absent under music_root is held; `--limit 1` with two unheld groups plans one; running plan twice writes identical JSON apart from made_at; nothing in navidrome.db, the fake's playlists or music_root changed (compare before/after).",
+        "Run .harness/check.sh tests/test_duplicate_cleanup.py tests/test_fake_navidrome_db.py tests/test_playlist_edit.py tests/test_duplicate_report.py while iterating; commit `N1-02: duplicate_cleanup plan`.",
+        ".harness/check.sh is green"
+      ],
+      "passes": true
+    },
+    {
+      "id": "N1-03",
+      "milestone": "N1",
+      "model": "opus",
+      "description": "`python -m scripts.duplicate_cleanup repoint --plan plan.json` repoints every playlist from each extra to its keeper through crates.playlist_edit.repoint_everywhere, after recomputing the groups, writing a reverse log line per edit, and starts a scan when done.",
+      "steps": [
+        "Test-first in tests/test_duplicate_cleanup.py with the N1-02 fixture: `repoint(plan, client, navidrome_db, log_path, limit=None, dry_run=False) -> dict[str, str]` keyed by extra song id with values 'repointed N playlists', 'skipped: held (<why>)', 'skipped: no longer a duplicate of <keeper>', 'skipped: keeper missing', 'refused: <playlist>: <why>', 'dry run: would repoint <names>'.",
+        "Before acting on a group, recompute: duplicate_groups over the current navidrome.db must still put extra and keeper in one group and the keeper must not be missing; otherwise skip with the reason (the plan is advice, the live DB decides).",
+        "For each unheld extra call crates.playlist_edit.repoint_everywhere(client, db, extra, keeper); every value that is not 'repointed' (refused: owned by another user, PlaylistSkew on a hidden row, PlaylistChanged, failed) is reported and the command exits 1 at the end, but the other groups are still done. Smart playlists are 'skipped: smart playlist' as repoint_everywhere reports them.",
+        "Reverse log: before each repoint_everywhere call append one JSON line per affected playlist to log_path (repoint-<UTC timestamp>.jsonl beside the plan) with {ts, playlist_id, name, extra, keeper, before, after}; the after list is the one read back. `--dry-run` writes no log and sends no updatePlaylist (assert on srv.state.requests).",
+        "After the loop, when at least one playlist was repointed and not dry_run, call client.start_scan() once (the scan between repoint and trash).",
+        "Tests: the happy path repoints pl-1 and pl-2 to s9 and the log has two lines whose before equals the fixture order; a hidden missing song in pl-1 makes that playlist 'refused' with nothing written to pl-1 and pl-2 still repointed, exit code 1; a playlist edited after the plan is still repointed correctly because repoint_everywhere reads the current entries (the plan's before/after are advice only); a keeper deleted from the fake before repoint is 'skipped: keeper missing'; running repoint twice sends no second updatePlaylist; `--limit 1` acts on one group; a group held in the plan is never touched.",
+        "Commit `N1-03: duplicate_cleanup repoint`.",
+        ".harness/check.sh is green"
+      ],
+      "passes": true
+    },
+    {
+      "id": "N1-04",
+      "milestone": "N1",
+      "model": "opus",
+      "description": "`python -m scripts.duplicate_cleanup trash --plan plan.json` moves each extra to the trash with crates.trash.move_to_trash only when no playlist entry (hidden included) holds it, the keeper is on disk and listed, no scan is running and the worker lock is free; beets forgets it; everything is logged.",
+      "steps": [
+        "Test-first: `trash(plan, client, navidrome_db, music_root, trash_root, lock_path, forget, log_path, limit=None, dry_run=False) -> dict[str, str]` with values 'moved to <trash path>', 'already gone', 'skipped: held (<why>)', 'skipped: no longer a duplicate of <keeper>', 'skipped: keeper missing', 'refused: still in <n> playlist entries', 'dry run: would move'.",
+        "Preconditions, each a test: raises WorkerRunning-style `CleanupRefused('stop the worker first')` when lock_path (<dirname(CRATES_DB)>/worker.lock) is held by another process (reuse sourcing.worker.hold_lock); raises CleanupRefused when client.scan_status()['scanning'] is true; an extra with any row in crates.playlist_edit.references(db, extra) is 'refused' and its file stays (a hidden missing row counts); the keeper must be a file under music_root and not missing in navidrome.db; the group is recomputed as in N1-03.",
+        "The move: crates.trash.move_to_trash(extra.path, music_root, trash_root) (its MOVES.txt line is written before the move; the test reads it back as `mv <quoted trash path> <quoted library path>`); then `forget(music_root / extra.path)` (sourcing.filer.BeetsFiler.forget in the worker; a failure is logged, not fatal); then one JSON line {ts, extra, path, keeper, trash_path} to trash-<UTC timestamp>.jsonl.",
+        "After the loop, when a file moved and not dry_run, client.start_scan() once. Exit 1 when anything was refused.",
+        "Tests (files under tmp_path/music created with real bytes): the happy path after N1-03's repoint moves s3's file to trash_root/<today>/<path>, MOVES.txt holds the reverse line, forget was called with the old absolute path, the plan's keeper file is untouched; before repoint the same call refuses with 'still in 2 playlist entries' and moves nothing; a hidden missing row in a third playlist alone blocks the move; a running scan refuses before any move; a held worker.lock refuses; `--dry-run` moves nothing and writes no log; a second run reports 'already gone' and does not call forget again; trash never overwrites (two runs on a restored file give a '(2)' name via free_path).",
+        "Commit `N1-04: duplicate_cleanup trash`.",
+        ".harness/check.sh is green"
+      ],
+      "passes": true
+    },
+    {
+      "id": "N1-05",
+      "milestone": "N1",
+      "model": "opus",
+      "description": "N1 review and simplify: an Opus reviewer reads the N1 diff from a file, Critical/Important findings are fixed test-first, the CLI, events and the live runbook are complete, and the docs touched by N1 are updated.",
+      "steps": [
+        "Write the milestone diff to $HARNESS_SCRATCH/n1.diff (`git diff <commit before N1-01>..HEAD -- scripts/duplicate_cleanup.py tests/test_duplicate_cleanup.py subsonic/fake_server.py docs`) and review it against the safety invariants in .harness/project.md and the plan file; list findings as Critical / Important / Minor in the progress entry.",
+        "Fix every Critical and Important finding RED -> GREEN with a test; apply simplifications (dead branches, duplicated checks, anything dedupe_copies or playlist_edit already does).",
+        "Complete `main()` in scripts/duplicate_cleanup.py: subcommands plan|repoint|trash, defaults from the worker's environment (NAVIDROME_DB, MUSIC_ROOT, TRASH_ROOT, CRATES_DB for worker.lock and events, SUBSONIC_URL/USER/PASS via crates.service.Config.from_env, CLEANUP_DIR default /data/duplicate-cleanup), `--plan`, `--limit`, `--dry-run`; every repoint and move is also a crates.db event (kind `cleanup`, song_id = the extra, detail names the playlist or trash path, no absolute library path beyond what MOVES.txt already holds); tests/test_sourcing_cli.py-style test of main([...]) on the fake.",
+        "One end-to-end test: plan -> repoint -> (fake marks nothing missing) -> trash on the fake with files on disk, then scripts.export_playlists.export + check on the result report no problems.",
+        "docs/worker.md gets a section 'Duplicate cleanup' with the staged runbook: snapshots (scripts/snapshot-crates-db.sh, sqlite3 .backup of navidrome.db), `export_playlists check` green, `plan` (read-only, report to read), `repoint --dry-run`, `repoint --limit 5`, check, `--limit 50`, check, all, scan, `docker compose stop worker`, `trash --dry-run`, `trash --limit 5`, check, ..., `up -d worker`, and the undo (MOVES.txt lines, the repoint log's before lists); docs/architecture.md section 7 table gets the cleanup row; docs/next-todos.md item 1 says 'built (N1), not run live'.",
+        "Commit `N1-05: review and simplify the duplicate cleanup`.",
+        ".harness/check.sh is green"
+      ],
+      "passes": true
+    },
+    {
+      "id": "N2-01",
+      "milestone": "N2",
+      "model": "opus",
+      "description": "A plan file exists for moving the `#imported` marker into crates.db (D33): the table, every reader that switches, the migration command and the tests that change.",
+      "steps": [
+        "Read docs/next-todos.md item 2, pivot spec D27/D33, sourcing/import_playlist.py (MARKER, is_imported, NameCollision, _rerun_comment, _write_comment_and_cache), crates/store.py (imported_entries, schema, _migrate), crates/reconcile.py write_comment, crates/migrate_attrs.py, tests/test_import_playlist.py lines 112-140 and 298-340, tests/test_app_owner.py test_import_leaves_no_tier_in_the_comment.",
+        "Write docs/plans/2026-10-17-n2-imported-marker.md: new table `imported_playlists(playlist_id TEXT PRIMARY KEY, name TEXT, source TEXT, imported_at REAL)` in crates/store.py with `mark_playlist_imported`, `is_playlist_imported`, `imported_playlists()` and `forget_playlist` hooks; import_playlist uses the store for `ours`, writes no comment under owner app (the created playlist's comment stays empty) and `#tier:<t>` alone under owner comment; `--merge` records the row instead of appending the token; `is_imported(comment)` stays as the legacy reader used only by the migration and crates/migrate_attrs.py; the migration command `python -m crates.cli imported migrate [--apply]` (dry run by default: record the row, then strip the token from the comment with crates.reconcile.write_comment); `crates.cli imported list`; the test edits by name.",
+        "Record `D37 *default*` in the pivot spec: the import flag lives in a new crates.db table, the comment is stripped only after the row is recorded, and the legacy reader survives for the migration.",
+        "Append a progress entry with the one question for Michael: run `imported migrate --apply` for 'Tea tent' and 'shakori (Spotify)' in the morning (a live comment write, not done tonight).",
+        "Commit `N2-01: plan for the imported marker in crates.db`.",
+        ".harness/check.sh is green"
+      ],
+      "passes": false
+    },
+    {
+      "id": "N2-02",
+      "milestone": "N2",
+      "model": "opus",
+      "description": "import-playlist records 'made by import-playlist' in crates.db (`imported_playlists`), decides NameCollision and re-runs from that table, and writes no `#imported` to any comment; a created playlist under CRATES_OWNER=app has an empty comment.",
+      "steps": [
+        "Test-first in tests/test_crates.py (store) and tests/test_import_playlist.py: `CrateStore.mark_playlist_imported(playlist_id, name, source)`, `is_playlist_imported(playlist_id) -> bool`, `imported_playlists() -> list[dict]`; the table is created by SCHEMA and survives reopening (tmp_path DB).",
+        "sourcing/import_playlist.py: `ours = existing is not None and store.is_playlist_imported(existing.id)`; a new playlist is created, made public, and `mark_playlist_imported` is called in the same run; `merge=True` on a foreign playlist records the row and leaves the comment byte for byte; under owner app no comment is written at all (no update_playlist with a comment param: assert on srv.state.requests); under owner comment the created playlist's comment is attrs.write('', tier=tier or IMPORT_TIER) and _rerun_comment no longer appends MARKER; NameCollision's message says 'not recorded as imported in crates.db (re-run with --merge to adopt it)'.",
+        "Rewrite the marker tests: test_import_marks_its_playlists_so_reruns_need_no_merge_flag asserts on the store row, not the comment; test_marker_is_a_token_not_a_substring and test_a_lookalike_marker_is_a_foreign_playlist_for_import move to the legacy reader (is_imported) only, since a playlist with '#imported' in its comment but no store row is foreign to import now; test_app_owner.test_import_leaves_no_tier_in_the_comment asserts comment == '' on creation and after a re-run; test_a_comment_write_error_after_the_add_still_records_our_facts_and_reports is kept for owner comment (the tier write) only.",
+        "crates/migrate_attrs.py keeps importing is_imported (legacy comments) and its tests stay green; grep shows no other reader of MARKER outside import_playlist, migrate_attrs and the N2-03 migration.",
+        "Run .harness/check.sh tests/test_import_playlist.py tests/test_app_owner.py tests/test_crates.py tests/test_migrate_attrs.py tests/test_sourcing_cli.py; commit `N2-02: import-playlist records its playlists in crates.db`.",
+        ".harness/check.sh is green"
+      ],
+      "passes": false
+    },
+    {
+      "id": "N2-03",
+      "milestone": "N2",
+      "model": "opus",
+      "description": "`python -m crates.cli imported migrate [--apply]` records every playlist whose comment still carries `#imported` in crates.db and strips the token from the comment; `imported list` shows the table.",
+      "steps": [
+        "Test-first in tests/test_playlist_admin.py (or a new tests/test_imported_migrate.py) on the fake: a playlist with comment 'Tea #imported notes' owned by our user -> dry run prints 'would record + strip' and writes nothing (no updatePlaylist, no store row); `--apply` records the row (name, source 'migrated'), then writes the comment 'Tea notes' through crates.reconcile.write_comment (read back; CommentNotKept leaves the row recorded and exits 1 naming the playlist), and logs an event kind `imported` detail 'migrated from comment'; a second `--apply` is a no-op; a playlist owned by another user is listed as 'skipped: owned by <owner>' and never written; a comment that is exactly '#imported' becomes '' (empty string, not None).",
+        "Token stripping reuses the boundary rule of sourcing.import_playlist._MARKER_TOKEN (whole token only; 'x#imported' is untouched) and collapses the doubled space it leaves.",
+        "`imported list` prints playlist id, name, source and imported_at per row; crates/cli.py wires both subcommands under `imported`.",
+        "docs/worker.md 'Where things are' or docs/architecture.md section 8 table gets the row 'Record a hand-made import / strip old markers: crates.cli imported migrate --apply'.",
+        "Commit `N2-03: imported migrate and list`.",
+        ".harness/check.sh is green"
+      ],
+      "passes": false
+    },
+    {
+      "id": "N2-04",
+      "milestone": "N2",
+      "model": "opus",
+      "description": "N2 review and simplify: the N2 diff is reviewed from a file, Critical/Important findings fixed test-first, dead marker code removed, and the docs that describe the marker are updated.",
+      "steps": [
+        "Write the diff since the commit before N2-01 to $HARNESS_SCRATCH/n2.diff and review it: every path that decides 'ours' reads the store; no code path writes '#imported'; the legacy reader is used only by the migration and migrate_attrs; a playlist deleted and re-created in Navidrome (new id) is foreign until re-imported or migrated.",
+        "Fix Critical/Important findings RED -> GREEN; simplify (_rerun_comment and _write_comment_and_cache may shrink to the owner-comment tier write only; remove what no test or caller reaches).",
+        "Docs: docs/architecture.md section 3 owner table row 'Made by import-playlist' -> crates.db `imported_playlists` (D33, built); the 'Playlist comment' bullet says comments are left empty by this system; section 4(a) step 3; docs/next-todos.md item 2 'built (N2); live migration pending'; pivot spec 'Consequences in the code' bullet for import_playlist updated.",
+        "Commit `N2-04: review and simplify the imported marker move`.",
+        ".harness/check.sh is green"
+      ],
+      "passes": false
+    },
+    {
+      "id": "N3-01",
+      "milestone": "N3",
+      "model": "opus",
+      "description": "A short plan file exists for reconcile dropping the rows of a playlist that vanished from Navidrome, naming which tables lose rows, what stays while in flight, and the event.",
+      "steps": [
+        "Read docs/next-todos.md item 3, crates/reconcile.py Reconciler._run (the 'playlist no longer exists in Navidrome' error branch) and _untier, crates/store.py (crate_tracks, crates, imported_entries, in_flight), tests/test_crates.py and tests/test_app_owner.py env fixtures.",
+        "Write docs/plans/2026-10-17-n3-vanished-playlist.md: `CrateStore.forget_playlist(playlist_id) -> int` deletes crate_tracks rows that are not in_flight, and when none remain deletes the crates row, imported_entries rows, the N2 imported_playlists row and (once N4 exists) import_order rows; external_wanted rows keep their playlist_id and position (history for a re-import); _run calls it for every known playlist not in getPlaylists, logs one event kind `playlist_gone` '<name>: playlist no longer exists in Navidrome; <n> rows dropped', counts into rep.tracks_removed, and no longer appends to rep.errors; a playlist with in-flight rows is reported each run until they finish.",
+        "Record `D38 *default*` in the pivot spec in one sentence (rows of a vanished playlist are deleted, in-flight rows wait, wanted rows keep their history).",
+        "Commit `N3-01: plan for dropping a vanished playlist's rows`.",
+        ".harness/check.sh is green"
+      ],
+      "passes": false
+    },
+    {
+      "id": "N3-02",
+      "milestone": "N3",
+      "model": "opus",
+      "description": "Reconcile removes the crate_tracks, crates and imported rows of a playlist that no longer exists in Navidrome, logs one `playlist_gone` event, and stops reporting it as an error.",
+      "steps": [
+        "Test-first in tests/test_app_owner.py (owner app) and tests/test_crates.py (owner comment): enable pl-2 as a crate, reconcile, then `del srv.state.playlists['pl-2']; srv.state.sync()`, reconcile again -> store.get('pl-2') is None, store.tracks('pl-2', include_removed=True) == [], store.imported('pl-2') == set(), rep.errors == [], exactly one event kind `playlist_gone` naming 'Chicago 86' and 3 rows; a third reconcile logs nothing new.",
+        "In-flight: set one pl-2 row to status 'sourcing' before deleting the playlist -> that row stays, the others go, the crates row stays, the event says '2 rows dropped, 1 in flight kept'; after set_track_status(... 'failed', 'no file') the next run drops the rest and the crates row.",
+        "Implement `CrateStore.forget_playlist` and the _run branch as the plan says; `crates.cli status` / the web playlists view do not 500 for a store row whose playlist is gone (test via CrateApp or the existing service tests).",
+        "Run .harness/check.sh tests/test_crates.py tests/test_app_owner.py tests/test_service.py tests/test_worker.py; commit `N3-02: reconcile drops a vanished playlist's rows`.",
+        ".harness/check.sh is green"
+      ],
+      "passes": false
+    },
+    {
+      "id": "N3-03",
+      "milestone": "N3",
+      "model": "opus",
+      "description": "N3 review and simplify: the N3 diff is reviewed from a file, findings fixed test-first, and the docs that mention the 'playlist no longer exists' error are updated.",
+      "steps": [
+        "Write the diff since the commit before N3-01 to $HARNESS_SCRATCH/n3.diff and review it: a playlist Navidrome failed to list because getPlaylists errored must not be forgotten (only a successful listing without the id counts; check the exception path in _run), hidden rows of a still-existing playlist are untouched, the event appears once.",
+        "Fix Critical/Important findings RED -> GREEN; simplify.",
+        "Docs: docs/architecture.md section 4 or 9 note that a deleted playlist's rows are dropped by the next reconcile; docs/next-todos.md item 3 'built (N3)'.",
+        "Commit `N3-03: review and simplify the vanished-playlist cleanup`.",
+        ".harness/check.sh is green"
+      ],
+      "passes": false
+    },
+    {
+      "id": "N4-01",
+      "milestone": "N4",
+      "model": "opus",
+      "description": "A plan file exists for placing a downloaded track at its Spotify position (M9 item 1): the import_order table, the pure insertion rule, the placements table, the worker step, play-now, and the safety rules.",
+      "steps": [
+        "Read docs/next-todos.md item 4, M9 spec section 1 and Q1/Q2 (defaults: insert after the nearest earlier neighbour still present, else before the nearest later one, else append; tracks appended earlier are never moved), pivot D30, sourcing/import_playlist.py (import_playlist's `matches`, `pending`, mark_imported), sourcing/fetch.py finish (the two 'external row -> ok' sites and the provisional branch), sourcing/replace.py _settle, sourcing/worker.py tick, crates/playlist_edit.py rewrite/checked_entries, tests/test_fetch.py world, tests/test_worker.py worker, tests/test_play_now.py.",
+        "Write docs/plans/2026-10-17-n4-placement.md: table `import_order(playlist_id TEXT, position INTEGER, song_id TEXT, wanted_id TEXT, PRIMARY KEY(playlist_id, position))` rewritten per real import run; crates/placement.py with the pure `insert_index(order: list[tuple[int, str|None]], entries: list[str], position: int) -> tuple[int, str]` and `place(store, client, db, playlist_id, wanted_id, song_id) -> str`; table `placements(wanted_id, playlist_id, song_id, state open|done|given_up, attempts, detail, updated_at, PRIMARY KEY(wanted_id, playlist_id))`; `due(store)` derives open work from state (external rows `ok` with library_song_id and provisional=0, import_order rows naming the wanted id, no imported_entries row, no done/given_up placement); the worker advances due placements each tick after replacements, retrying a refusal at most every recheck_s and giving up after 12 attempts with an event; the hook is state-driven so fetch.finish, replace._settle and play-now (under the live one-quality policy a play-now copy ends `ok`) need no new calls; safety rules (imported playlists only via N2's table, owner = our user via NotOwned, insert only, one placement per (wanted, playlist), every edit through playlist_edit.rewrite).",
+        "Record `D39 *default*` in the pivot spec (placement is a worker step driven by state, 12 attempts, insert-only, imported playlists only) and reference M9 Q1/Q2 as answered by default.",
+        "Append a progress entry with the question for Michael: Q1/Q2 defaults applied; existing playlists get an import_order only on their next re-run of import-playlist.",
+        "Commit `N4-01: plan for placing downloads at their Spotify position`.",
+        ".harness/check.sh is green"
+      ],
+      "passes": false
+    },
+    {
+      "id": "N4-02",
+      "milestone": "N4",
+      "model": "opus",
+      "description": "Every real import-playlist run records the playlist's full Spotify order in crates.db `import_order` (song id for matched rows, wanted id for missing and review rows), replacing the previous record for that playlist.",
+      "steps": [
+        "Test-first in tests/test_crates.py: `CrateStore.record_import_order(playlist_id, rows: list[tuple[int, str|None, str|None]])` deletes the playlist's old rows and inserts the new ones in one transaction; `import_order(playlist_id) -> list[dict]` ordered by position; `import_order_for(wanted_id) -> list[dict]` across playlists; the table is in SCHEMA.",
+        "sourcing/import_playlist.py: after the external rows are queued (so every wanted id is known), build [(m.row.position, m.song_id if matched else None, ext id for pending rows)] and call record_import_order on real runs only; a dry run records nothing.",
+        "Tests in tests/test_import_playlist.py: an import of 3 rows (matched, missing, matched) records positions 1..3 with song ids for the matched rows and 'ext-N' for the missing one; a re-run with one more row replaces the record (4 rows, no duplicates); `dry_run=True` leaves the table empty; a track wanted by two playlists has an import_order row in each playlist (the many-to-many M9 section 1 asks for).",
+        "Run .harness/check.sh tests/test_import_playlist.py tests/test_crates.py tests/test_app_owner.py; commit `N4-02: import_order records the Spotify order`.",
+        ".harness/check.sh is green"
+      ],
+      "passes": false
+    },
+    {
+      "id": "N4-03",
+      "milestone": "N4",
+      "model": "opus",
+      "description": "crates/placement.py: the pure insertion rule and `place()`, which inserts a filed song into one imported playlist at its Spotify position through playlist_edit.rewrite, insert-only, with events.",
+      "steps": [
+        "Test-first in tests/test_placement.py, pure rule first: `insert_index(order, entries, position)` where order is [(position, song_id or None)]: nearest earlier order row whose song is in entries -> index after that song's last occurrence; none -> before the nearest later row's song's first occurrence; none -> len(entries) (append); a neighbour Michael removed is skipped and the next one used; an order row with song None (still wanted) is skipped; returns (index, how) with how in 'after <song>', 'before <song>', 'append'.",
+        "`place(store, client, db, playlist_id, wanted_id, song_id) -> str` on the fake: returns 'placed at <index> (<how>)', 'skipped: already in playlist', 'skipped: added before (removed stays removed)' when imported_entries has it, 'skipped: not an imported playlist' unless store.is_playlist_imported, 'skipped: playlist gone' when getPlaylist 404s; refusals from playlist_edit (PlaylistSkew, PlaylistChanged, NotOwned, NotEditable) propagate as EditRefused for the caller to retry; on success mark_imported(playlist_id, [song_id]) and an event kind `placed` '<playlist name>: <artist> – <title> at <index+1> (<how>)'.",
+        "Tests: with pl-1 = [s1, s2, s3] and import_order positions 1:s1, 2:ext-7, 3:s2, 4:s3, placing ext-7's song s9 gives [s1, s9, s2, s3]; with s1 removed from the playlist it goes before s2; with only s9's row present it appends; a hidden missing row in the playlist raises PlaylistSkew and writes nothing; the song already present is skipped and no updatePlaylist is sent; the edit is one updatePlaylist (remove from index k to end, add tail) as rewrite does; a second place() for the same pair is 'skipped: added before'.",
+        "Commit `N4-03: placement rule and place()`.",
+        ".harness/check.sh is green"
+      ],
+      "passes": false
+    },
+    {
+      "id": "N4-04",
+      "milestone": "N4",
+      "model": "opus",
+      "description": "The worker places filed external rows into their imported playlists each tick: `placements` rows are derived from state, refusals retry at most every recheck_s, and after 12 attempts a `not_placed` event says why and how to append by re-running the import.",
+      "steps": [
+        "Test-first in tests/test_crates.py and tests/test_placement.py: `placements` table in SCHEMA; `CrateStore.due_placements() -> list[dict]` returns (wanted_id, playlist_id, song_id) for external rows with status 'ok', library_song_id set, provisional = 0, an import_order row naming the wanted id, no imported_entries row for (playlist, song) and no placements row in state done or given_up; `note_placement(wanted_id, playlist_id, state, detail)` upserts attempts += 1.",
+        "`crates.placement.advance_all(store, client, db, recheck_s, now) -> list[str]`: for each due pair whose placements row is absent or open and older than recheck_s, call place(); success -> done; EditRefused -> open with the reason, or given_up after 12 attempts with event kind `not_placed` '<playlist>: not placed after 12 tries: <why>; re-run the import to append it'; any other exception is logged and the pair stays open.",
+        "sourcing/worker.py: after advance_replacements and before export_due, `for line in placement.advance_all(...)` appended to results and logged; sourcing/worker.py docstring step list updated; the common kwargs already carry navidrome_db.",
+        "Tests with tests/test_worker.worker and tests/test_fetch.world: import_order for pl-1 names ext row 'ext-1' at position 2 and pl-1 is recorded imported; after a fetch files ext-1 as s-new (as test_fetch does) one tick places it at index 1 of pl-1 and a `placed` event exists; a provisional (play-now, legacy low policy) copy is not due; a hidden missing row in pl-1 keeps the pair open with attempts 1, a second tick inside recheck_s does not retry, after 12 attempts the pair is given_up with the `not_placed` event and the playlist untouched; a pair already in imported_entries is never due; the tick count line and other worker tests still pass.",
+        "Run .harness/check.sh tests/test_worker.py tests/test_placement.py tests/test_play_now.py tests/test_replace.py tests/test_fetch.py; commit `N4-04: worker places filed tracks at their Spotify position`.",
+        ".harness/check.sh is green"
+      ],
+      "passes": false
+    },
+    {
+      "id": "N4-05",
+      "milestone": "N4",
+      "model": "opus",
+      "description": "N4 review and simplify: the N4 diff is reviewed from a file, Critical/Important findings fixed test-first, and architecture, worker and M9 docs describe placement as built.",
+      "steps": [
+        "Write the diff since the commit before N4-01 to $HARNESS_SCRATCH/n4.diff and review it against M9 section 1 safety rules: imported playlists only, owner check, insert only (no existing entry moves or is removed: assert the before list is a subsequence of after in a test), one placement per (wanted, playlist), every edit via rewrite, a track appended by an earlier re-run stays, a playlist deleted mid-way (N3) leaves no dangling due pair.",
+        "Fix Critical/Important findings RED -> GREEN; simplify (e.g. fold any duplicated 'is this playlist ours' check into one store method shared with N2).",
+        "Docs: docs/architecture.md section 4(a) step 5 and (b) step 7 describe placement; quirk 18 in section 10 is closed; section 3 table lists import_order and placements; docs/worker.md 'What it does each tick' gets the placement step and an 'Placement' section with the events and the re-run-to-append fallback; docs/specs/2026-10-17-m9-remaining-ownership.md item 1 marked built with the defaults; docs/next-todos.md item 4 'built (N4)'.",
+        "Commit `N4-05: review and simplify placement`.",
+        ".harness/check.sh is green"
+      ],
+      "passes": false
+    },
+    {
+      "id": "N5-01",
+      "milestone": "N5",
+      "model": "sonnet",
+      "description": "Docs wrap-up: next-todos, architecture, hard-won facts, the pivot ledger and README agree with the code built tonight, and a morning checklist for Michael exists.",
+      "steps": [
+        "docs/next-todos.md: 'State at hand-off' gains a dated paragraph for this run (branch harness/dj-2026-10-17, what is built and not run live: duplicate cleanup, imported marker move + pending `imported migrate --apply`, vanished-playlist cleanup, placement); items 1-4 each say built with the milestone id; item 5 notes that re-runs will now record import_order.",
+        "docs/architecture.md: the milestone table gets an N1-N4 row ('built, not live'); section 7 safety table rows for cleanup and placement; section 10 quirks 16 and 18 updated; the test count in section 8 and README.md updated to the current `.harness/check.sh` total.",
+        "docs/hard-won-facts.md: add what this run learned (at least: the fake navidrome.db mirror must carry every column a script SELECTs; the trash step needs the worker stopped because of the beets index; placement is state-driven so a restart loses nothing).",
+        "docs/specs/2026-10-17-amperfy-pivot.md: the D35-D39 *default* rows are present, numbered without gaps, each one sentence; `grep -c '\\*default\\*'` shows them.",
+        "Write docs/plans/2026-10-17-morning-checklist.md: the live steps for Michael in order (deploy with scripts/deploy.sh noting the previous image, `imported migrate` dry run then --apply, the cleanup stages from docs/worker.md with the checks after each, then `crates.cli reconcile`, then re-run the imports as item 5), each with its undo.",
+        "Commit `N5-01: docs for the dj-2026-10-17 run`.",
+        ".harness/check.sh is green"
+      ],
+      "passes": false
+    },
+    {
+      "id": "N5-02",
+      "milestone": "N5",
+      "model": "opus",
+      "description": "Whole-run review and simplify: an Opus reviewer reads the full run diff from a file, checks the four safety invariants across N1 and N4 end to end, fixes Critical/Important findings test-first, and leaves the branch mergeable.",
+      "steps": [
+        "Write `git diff main...HEAD -- . ':!.harness/runs'` to $HARNESS_SCRATCH/run.diff and review it as a whole: (1) no code path trashes while playlist_edit.references is non-empty; (2) a scan is started between repoint and trash and trash refuses during a scan; (3) groups and placements are recomputed from current state right before acting; (4) every destructive step has a logged reverse (MOVES.txt, repoint-*.jsonl, imported-migrate's old comment in the event).",
+        "Check the suite hygiene: no test writes outside tmp_path or $HARNESS_SCRATCH (grep new tests for '/srv', 'docs/'); no new module imports the beets package; no peer name or absolute library path lands in an event detail that the web client shows (store.public).",
+        "Fix Critical/Important findings RED -> GREEN; apply simplification passes across the new modules (scripts/duplicate_cleanup.py, crates/placement.py, the store additions); update docs/plans files whose task lists drifted from what was built.",
+        "Final progress entry: what is built, what is not run live, the open questions in one list, and the first command of the morning checklist.",
+        "Commit `N5-02: whole-run review and simplify`.",
+        ".harness/check.sh is green"
+      ],
+      "passes": false
+    }
+  ]
+}
