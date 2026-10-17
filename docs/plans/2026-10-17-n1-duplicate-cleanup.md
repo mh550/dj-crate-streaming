@@ -122,6 +122,9 @@ Preconditions for the whole run, each raising `CleanupRefused` before anything m
   Since N1F-02 (review I3), when files had moved, it first waits for that scan to end, starts one more and waits
   (the running one may have begun before a move), then re-reads `references()` for every moved file and puts back
   any a playlist now holds (a `restored` trash line, a `cleanup` event; one more scan after a put-back).
+  Since N1F-03, the closing scan of every run, and the scan after a put-back, wait out a running scan first (one
+  that starts during the last move is found by no later check), and every file that stays moved has its trash line,
+  also when putting it back failed, so a later run can put it back from the log.
 
 Per unheld extra: recompute (above); **`playlist_edit.references(db, extra)` must be empty** — hidden rows, smart
 playlists and other users' playlists included — else `refused: still in <n> playlist entries` and the file stays;

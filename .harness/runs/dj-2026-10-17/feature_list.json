@@ -122,7 +122,7 @@
         "docs/worker.md's duplicate-cleanup section names every refusal trash can now give",
         "`.harness/check.sh` is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "H1-01",

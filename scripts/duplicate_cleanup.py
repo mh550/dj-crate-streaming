@@ -53,7 +53,9 @@ is a crates.db event (kind `cleanup`, "trashed to <day>/<path>", "put back from 
 absolute paths are in MOVES.txt). Exit 1 when anything was refused or failed; a refusal mid-run still re-checks the
 files it moved (docs/plans/2026-10-17-n1-duplicate-cleanup.md §trash). A scan that starts mid-run, with files moved,
 is waited for, then one more scan sees every move, and the moved files are re-read and put back as after the
-closing scan (review I3): until a scan marks it missing, Navidrome lists a trashed song and Amperfy can add it.
+closing scan (review I3): until a scan marks it missing, Navidrome lists a trashed song and Amperfy can add it. The
+closing scan waits out a running scan before it starts its own, and a file that stays moved always gets its trash
+line, even when its put-back failed, so a later run puts it back from there.
 
 repoint and trash read SUBSONIC_* through crates.service.Config.from_env and need CRATES_DB set to an existing
 crates.db (exit 2 otherwise; never a stray one, never from_env's ./data default). Events are a copy of the jsonl logs:
@@ -393,6 +395,11 @@ def _trashed_to(log_dir: Path, extra: str, rel: str) -> Path | None:
     return at
 
 
+def _beets(forgotten: bool | None) -> str:
+    """What a put-back says of beets: a forgotten path is gone from its index, else beets still lists it."""
+    return "beets no longer lists it" if forgotten is True else "beets still lists it"
+
+
 def _forget(forget, path: Path) -> bool | None:
     """beets drops the trashed path; True, False on a failure (beets' index is a cache: noted, not fatal), None
     without beets here."""
@@ -461,7 +468,7 @@ def _trash(plan, client, navidrome_db, music_root, trash_root, forget, log_path,
     path_of = {r["id"]: r["path"] for r in rows}
     size_of = {r["id"]: r["size"] for r in rows}
     out: dict[str, str] = {}
-    moved: dict[str, tuple[str, Path]] = {}
+    moved: dict[str, tuple[str, Path, bool | None]] = {}    # extra → (path, trash path, forgotten)
     earlier: list[str] = []                              # put back from an earlier run's trash: a scan lists them
 
     def one(keeper: str, extra: str, rel: str, planned_size: int | None) -> str:
@@ -481,12 +488,13 @@ def _trash(plan, client, navidrome_db, music_root, trash_root, forget, log_path,
                 at = _in_trash(dst, trash_root)          # an earlier run could not scan, and a playlist took it
                 if dry_run:
                     return f"refused: still in {_entries(len(left))}; would put back from {at}"
+                forgot = _forgotten(log_path.parent, extra, rel)
                 restore(dst, rel, music_root)
                 _append(log_path, {"extra": extra, "path": rel, "keeper": None, "trash_path": str(dst),
                                    "restored": True})
                 _event(store, None, extra, f"put back from {at}: in {_entries(len(left))} after an earlier run")
                 earlier.append(extra)
-                return f"refused: still in {_entries(len(left))}; put back from {at}; beets no longer lists it"
+                return f"refused: still in {_entries(len(left))}; put back from {at}; {_beets(forgot)}"
             if not dry_run and forget is not None and not _forgotten(log_path.parent, extra, rel):
                 _append(log_path, {"extra": extra, "path": rel, "keeper": keeper, "trash_path": None,
                                    "forgotten": _forget(forget, src)})   # moved, then the run died before forget
@@ -514,21 +522,26 @@ def _trash(plan, client, navidrome_db, music_root, trash_root, forget, log_path,
         if dry_run:
             return "dry run: would move"
         dst = move_to_trash(rel, music_root, trash_root)
-        moved[extra] = (rel, dst)
-        back = _put_back(navidrome_db, extra, rel, dst, music_root, trash_root, "during the move", store)
-        if back:
-            del moved[extra]
-            return back
-        forgotten = _forget(forget, src)
-        _append(log_path, {"extra": extra, "path": rel, "keeper": keeper, "trash_path": str(dst),
-                           "forgotten": forgotten})
+        moved[extra] = (rel, dst, None)
+        try:                         # every file that stays moved gets its trash line, so a later run can put it back
+            back = _put_back(navidrome_db, extra, rel, dst, music_root, trash_root, "during the move", store)
+            if back and back.startswith("refused"):          # it is back in the library: nothing to log
+                del moved[extra]
+            if back:                                         # not put back: re-tried after the closing scan
+                return back
+            moved[extra] = (rel, dst, _forget(forget, src))
+        finally:
+            if extra in moved:
+                _append(log_path, {"extra": extra, "path": rel, "keeper": keeper, "trash_path": str(dst),
+                                   "forgotten": moved[extra][2]})
+        forgotten = moved[extra][2]
         _event(store, None, extra, f"trashed to {_in_trash(dst, trash_root)}")
         return f"moved to {dst}" + (" (beets still lists it)" if forgotten is False else "")
 
     def recheck_moved() -> bool:
         """A row added between a move and now (the scan, or a refusal) puts the file back; True when one did."""
         put = False
-        for extra, (rel, dst) in list(moved.items()):
+        for extra, (rel, dst, forgotten) in list(moved.items()):
             try:
                 back = _put_back(navidrome_db, extra, rel, dst, music_root, trash_root, "after the move", store)
             except Exception as ex:
@@ -537,19 +550,23 @@ def _trash(plan, client, navidrome_db, music_root, trash_root, forget, log_path,
                 if back.startswith("refused"):
                     _append(log_path, {"extra": extra, "path": rel, "keeper": None, "trash_path": str(dst),
                                        "restored": True})
-                    back += "; beets no longer lists it; Navidrome lists it again after the next scan"
+                    back += f"; {_beets(forgotten)}; Navidrome lists it again after the next scan"
                     put = True
                     del moved[extra]
                 out[extra] = back
         return put
 
-    def closing_scan(problem: str = "") -> None:
-        """A scan that sees every move (unless `problem` already stopped it), then the re-read of each moved file; a
-        put-back gets one more scan, because that scan marked it missing: hidden until the next one."""
-        if not problem:
-            problem = scan_and_wait(client, scan_timeout_s, poll_s)
+    def fresh_scan() -> str:
+        """A scan that starts after now: one already running (Navidrome's hourly one, started mid-run, maybe before
+        a move or a put-back; review I3) is waited out first, because startScan does nothing while it runs."""
+        return wait_for_scan(client, scan_timeout_s, poll_s) or scan_and_wait(client, scan_timeout_s, poll_s)
+
+    def closing_scan() -> None:
+        """A scan that sees every move, then the re-read of each moved file; a put-back gets one more scan, because
+        that scan marked it missing: hidden until the next one."""
+        problem = fresh_scan()
         if recheck_moved() and not problem:
-            problem = scan_and_wait(client, scan_timeout_s, poll_s)
+            problem = fresh_scan()
         out["(scan)"] = f"failed: {problem}" if problem else "done"
 
     try:
@@ -565,8 +582,8 @@ def _trash(plan, client, navidrome_db, music_root, trash_root, forget, log_path,
                 except Exception as ex:                      # recorded; the other groups and the scan still run
                     out[e["id"]] = f"failed: {ex!r}"
     except CleanupRefused as e:
-        if moved or earlier:   # a scan started mid-run, maybe before a move (review I3): wait for it, then one more
-            closing_scan(wait_for_scan(client, scan_timeout_s, poll_s))
+        if moved or earlier:
+            closing_scan()
         raise CleanupRefused(str(e), out) from None
     if moved or earlier:
         closing_scan()

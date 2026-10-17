@@ -1247,3 +1247,83 @@ def test_wait_for_scan_reports_an_error_or_a_scan_that_does_not_end():
     assert wait_for_scan(Nav([True, True, False]), 60, 0) == ""
     assert wait_for_scan(Nav([OSError("down")]), 60, 0) == "Navidrome scan failed (OSError: down)"
     assert wait_for_scan(Nav([True, True]), 0, 0) == "Navidrome scan still running after 0 s"
+
+
+# ── N1F-03: the review of N1F ──────────────────────────────────────────────────────────────────────────────────
+
+def test_a_scan_that_starts_during_the_last_move_is_waited_for_before_ours(tr, monkeypatch):
+    """No later move checks the scan status, so the closing scan itself must wait out a running one: startScan is a
+    no-op while a scan runs, and that scan began before the move (review N1F-03 I-A)."""
+    def forget(path):
+        tr.forgot.append(path)
+        tr.srv.state.scanning, tr.srv.state.scan_polls = True, 2          # the hourly scan starts during the move
+        return True
+    real, seen = dc.scan_and_wait, []
+
+    def scan(client, timeout_s, poll_s):
+        seen.append(tr.srv.state.scanning)
+        return real(client, timeout_s, poll_s)
+    monkeypatch.setattr(dc, "scan_and_wait", scan)
+    out = tr.run(forget=forget)
+    assert out["s3"].startswith("moved to ") and out["(scan)"] == "done"
+    assert seen == [False] and len(scans(tr.srv)) == 1                   # ours starts once that one is over
+
+
+def test_a_put_back_that_fails_during_the_move_still_logs_the_move_and_a_later_run_puts_it_back(tr, monkeypatch):
+    """The trash log line is written for every file that moved, so the next run can put it back from the log
+    instead of "failed: gone from the library" (review N1F-03 I-B)."""
+    real = dc.move_to_trash
+
+    def racing(rel, music_root, trash_root, before=None):
+        def hook(dst):
+            tr.srv.state.playlists["pl-1"]["songs"].append("s3")         # Amperfy adds it during the move
+            tr.srv.state.sync()
+        return real(rel, music_root, trash_root, before=hook)
+
+    def no_room(trashed, rel, music_root):
+        raise OSError(28, "No space left on device")
+    monkeypatch.setattr(dc, "move_to_trash", racing)
+    monkeypatch.setattr(dc, "restore", no_room)
+    out = tr.run()
+    dst = tr.trash_root / today() / S3
+    assert out["s3"].startswith("failed: added to 1 playlist entry after the move, not put back (OSError(28")
+    assert out["(scan)"] == "done" and dst.is_file() and not (tr.music / S3).exists()
+    [line] = log_lines(tr.log)
+    assert (line["extra"], line["path"], line["trash_path"], line["forgotten"]) == ("s3", S3, str(dst), None)
+    assert tr.forgot == []                                               # not forgotten while a playlist holds it
+    monkeypatch.undo()
+    tr.srv.state.requests.clear()
+    out = tr.run()
+    assert out["s3"] == f"refused: still in 1 playlist entry; put back from {today()}/{S3}; beets still lists it"
+    assert (tr.music / S3).is_file() and len(scans(tr.srv)) == 1
+    assert [x.get("restored") for x in log_lines(tr.log)] == [None, True]
+
+
+def test_a_put_back_without_beets_does_not_say_beets_forgot_it(tr, monkeypatch):
+    def scan(client, timeout_s, poll_s):
+        if "s3" not in tr.srv.state.playlists["pl-2"]["songs"]:
+            tr.srv.state.playlists["pl-2"]["songs"].append("s3")
+        tr.srv.state.sync()
+        return ""
+    monkeypatch.setattr(dc, "scan_and_wait", scan)
+    out = tr.run(forget=None)
+    assert out["s3"].startswith("refused: added to 1 playlist entry after the move; put back; beets still lists it")
+
+
+def test_the_scan_after_a_put_back_also_waits_out_a_running_one(tr, monkeypatch):
+    """The hourly scan may start between our closing scan and the put-back and not see the file back: the scan for
+    the put-back waits it out first, as the closing scan does."""
+    real, seen = dc.scan_and_wait, []
+
+    def scan(client, timeout_s, poll_s):
+        seen.append(tr.srv.state.scanning)
+        problem = real(client, timeout_s, poll_s)
+        if len(seen) == 1:
+            tr.srv.state.playlists["pl-2"]["songs"].append("s3")         # Amperfy adds it before our scan ends
+            tr.srv.state.sync()
+            tr.srv.state.scanning, tr.srv.state.scan_polls = True, 2      # and the hourly scan starts
+        return problem
+    monkeypatch.setattr(dc, "scan_and_wait", scan)
+    out = tr.run()
+    assert out["s3"].startswith("refused: added to 1 playlist entry after the move; put back")
+    assert out["(scan)"] == "done" and seen == [False, False] and (tr.music / S3).is_file()
