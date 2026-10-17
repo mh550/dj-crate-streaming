@@ -193,3 +193,21 @@ def test_rows_in_flight_or_done_are_reported_not_refetched(world, tmp_path):
         world["store"].set_track_status("pl-2", "s4", "ok", None); world["store"].commit()
         r = run(world, srv, approve=True)
     assert r.status == "ok" and "already" in r.reason
+
+
+def test_the_row_says_checking_before_the_verifier_runs(world, tmp_path):
+    """The web's progress strip (downloading → checking) reads the row's reason: it must change, and be committed,
+    before the minutes-long verifier starts, not after."""
+    seen = {}
+
+    def spy(path, duration, tier=None, reference=None, **kw):
+        row = world["store"].find_wanted("s4")
+        seen.update(status=row["status"], reason=row["reason"], in_tx=world["store"].db.in_transaction)
+        return header_only(path, duration, tier=tier, reference=reference, **kw)
+
+    flac = good_flac_bytes(tmp_path)
+    with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: flac}) as srv:
+        new_song(world["nd"], len(flac))
+        r = run(world, srv, approve=True, verifier=spy)
+    assert r.status == "ok", r.reason
+    assert seen == {"status": "sourcing", "reason": "checking 03 - Good Times.flac", "in_tx": False}

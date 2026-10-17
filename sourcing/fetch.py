@@ -451,6 +451,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         extra = {"recording_id": rid, "lookup": lookup} if lookup is not None else {}    # see header_only in tests
         if intent == "version" and best.length_s:        # the peer's listing of this file, checked against what arrived
             extra["listed_length_s"] = best.length_s
+        set_status("sourcing", f"checking {best.basename}")      # committed: the web's progress strip shows the phase
         vd = verifier(landed, expected, tier=at, reference=ref, intent=intent, **extra)   # still `sourcing`: not ours yet
         store.set_verification(wanted_id, vd.as_dict(at) | {"file": landed.name,
                                "reference": _rel(ref).as_posix() if ref is not None else None})

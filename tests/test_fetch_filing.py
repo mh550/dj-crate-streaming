@@ -336,7 +336,7 @@ def test_reference_event_is_committed_before_the_verifier_runs(world, tmp_path):
     wrote = []
 
     def verifier(path, duration, tier=None, reference=None, **kw):
-        assert [e["kind"] for e in other.events(limit=1)] == ["reference"]   # committed, so visible here
+        assert "reference" in [e["kind"] for e in other.events(limit=5)]       # committed, so visible here (a "checking" status follows it)
         other.log(None, "s4", "approved", "while the download is verified"); other.commit()
         wrote.append(1)
         return verify(path, duration)
