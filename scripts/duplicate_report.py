@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from contextlib import closing
 from pathlib import Path
 
 try:
@@ -60,14 +61,14 @@ def other_version_groups(rows: list[dict], dup_ids: set[str]) -> dict[str, list[
 
 
 def load(db: Path) -> tuple[list[dict], dict[str, list[str]]]:
-    con = open_ro(db)
-    con.row_factory = lambda cur, r: dict(zip([c[0] for c in cur.description], r))
-    rows = con.execute("SELECT id, artist, title, album, path, suffix, bit_rate, duration, size, mbz_recording_id "
-                       "FROM media_file WHERE missing = 0 ORDER BY artist, title").fetchall()
-    held: dict[str, list[str]] = {}
-    for r in con.execute("SELECT pt.media_file_id AS mid, p.name AS name FROM playlist_tracks pt "
-                         "JOIN playlist p ON p.id = pt.playlist_id"):
-        held.setdefault(r["mid"], []).append(r["name"])
+    with closing(open_ro(db)) as con:
+        con.row_factory = lambda cur, r: dict(zip([c[0] for c in cur.description], r))
+        rows = con.execute("SELECT id, artist, title, album, path, suffix, bit_rate, duration, size, mbz_recording_id "
+                           "FROM media_file WHERE missing = 0 ORDER BY artist, title, id").fetchall()
+        held: dict[str, list[str]] = {}
+        for r in con.execute("SELECT pt.media_file_id AS mid, p.name AS name FROM playlist_tracks pt "
+                             "JOIN playlist p ON p.id = pt.playlist_id"):
+            held.setdefault(r["mid"], []).append(r["name"])
     return rows, held
 
 

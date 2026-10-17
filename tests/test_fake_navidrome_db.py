@@ -106,3 +106,7 @@ def test_media_file_mirrors_album_artist_and_year(srv):
     srv.state.songs["s3"].pop("year", None)
     srv.state.sync()
     assert _rows(srv, "SELECT album_artist, year FROM media_file WHERE id = 's3'") == [("", 0)]
+
+
+def test_db_mirrors_bit_rate(srv):
+    assert _rows(srv, "SELECT bit_rate FROM media_file WHERE id = 's3'") == [(192,)]

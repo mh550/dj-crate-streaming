@@ -32,7 +32,7 @@
         "Run .harness/check.sh tests/test_duplicate_cleanup.py tests/test_fake_navidrome_db.py tests/test_playlist_edit.py tests/test_duplicate_report.py while iterating; commit `N1-02: duplicate_cleanup plan`.",
         ".harness/check.sh is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "N1-03",

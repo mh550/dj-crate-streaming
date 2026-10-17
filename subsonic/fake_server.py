@@ -62,7 +62,7 @@ SAMPLE_PLAYLISTS = [
     {"id": "pl-3", "name": "Sunday Listening", "comment": "", "owner": "demo", "public": False, "songs": ["s2"]},
 ]
 
-# The subset of Navidrome v0.64.2's schema that M8 reads (names as in the live navidrome.db).
+# The subset of Navidrome v0.64.2's schema that M8 and N1 read (names as in the live navidrome.db).
 # playlist_tracks.id is the 1-based position, hidden (missing) rows included; rules is NULL unless the playlist is smart.
 NAVIDROME_SCHEMA = """
 CREATE TABLE IF NOT EXISTS playlist (id VARCHAR(255) PRIMARY KEY, name VARCHAR(255), comment VARCHAR(255),
@@ -72,7 +72,8 @@ CREATE TABLE IF NOT EXISTS playlist_tracks (id INTEGER NOT NULL, playlist_id VAR
 CREATE TABLE IF NOT EXISTS media_file (id VARCHAR(255) PRIMARY KEY, path VARCHAR(255), title VARCHAR(255),
                                        artist VARCHAR(255), album VARCHAR(255), duration REAL, suffix VARCHAR(255),
                                        size INTEGER, missing BOOLEAN DEFAULT 0, mbz_recording_id VARCHAR(255),
-                                       album_artist VARCHAR(255) DEFAULT '', year INTEGER DEFAULT 0);
+                                       album_artist VARCHAR(255) DEFAULT '', year INTEGER DEFAULT 0,
+                                       bit_rate INTEGER DEFAULT 0);
 """
 
 # 1x1 transparent PNG for getCoverArt
@@ -104,10 +105,10 @@ class FakeState:
                 con.execute(f"DELETE FROM {t}")
             con.executemany(
                 "INSERT INTO media_file (id, path, title, artist, album, duration, suffix, size, missing, mbz_recording_id,"
-                " album_artist, year) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                " album_artist, year, bit_rate) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 [(i, s.get("path", ""), s.get("title", ""), s.get("artist", ""), s.get("album", ""), s.get("duration", 0),
                   s.get("suffix", ""), s.get("size", 0), int(i in self.missing), s.get("musicBrainzId", ""),
-                  s.get("albumArtist", ""), s.get("year", 0))
+                  s.get("albumArtist", ""), s.get("year", 0), s.get("bitRate", 0))
                  for i, s in self.songs.items()])
             for pid, p in self.playlists.items():
                 con.execute("INSERT INTO playlist (id, name, comment, owner_id, rules) VALUES (?,?,?,?,?)",
