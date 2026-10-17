@@ -196,7 +196,7 @@
         "The progress entry and INBOX give Michael the exact install command; no sudo was run",
         "`.harness/check.sh` is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "H2-02",
