@@ -180,7 +180,7 @@
         "docs/backup-plan.md says the nightly snapshot now includes navidrome.db and that the backup script runs this script from ~/projects/dj-crate-streaming (so main must be checked out there)",
         "`.harness/check.sh` is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "H2-01",
