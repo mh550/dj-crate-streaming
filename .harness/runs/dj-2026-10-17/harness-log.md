@@ -35,3 +35,4 @@
 - 2026-10-17 05:23 · N5-02 · claude-opus-5-5 · passes=false · 5/19 passing
 - 2026-10-17 05:23 · no feature left to try: 5/19 passing
 - 2026-10-17 05:23 · run ended: 5/19 passing · 35 sessions · 5 features passed · $22.56 · 1.9 h · by kind: init 1 ($6.25), coding 33 ($16.16), verify 1 ($0.15) · by model: claude-fable-5-1 1 ($6.25), claude-opus-5-5 31 ($16.16), claude-sonnet-5-5 3 ($0.15)
+- 2026-10-17 05:23 · final verified and tagged run/dj-2026-10-17/final · PR https://github.com/mh550/dj-crate-streaming/pull/3
