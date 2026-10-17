@@ -44,3 +44,4 @@
 - 2026-10-17 17:08 · N1F-02 · claude-opus-5-5 · passes=true · 20 min · 7/33 passing
 - 2026-10-17 17:42 · N1F-03 · claude-opus-5-5 · passes=true · 33 min · 8/33 passing
 - 2026-10-17 17:43 · N1F verified and tagged run/dj-2026-10-17/N1F
+- 2026-10-17 17:44 · N1F merged into main · https://github.com/mh550/dj-crate-streaming/pull/6
