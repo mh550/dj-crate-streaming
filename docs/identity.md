@@ -61,8 +61,8 @@ Real example: the library holds "Get Down Saturday Night (Original 12'' Version)
 Down in the 90's-mix)" at 403 s. They share a song, but the labels differ (extended against a named remix), so
 they are two versions. beets called them one at 96.8%, which is why beets does not propose ids here.
 
-On the live library the rules find **131 pairs of the same version in 102 groups**. Those are the copies M8 will
-deal with. Mostly they differ only by a remaster note or "feat. X": "I Can't Tell You Why" and "I Can't Tell You
+On the live library the rules find **131 pairs of the same version in 102 groups**. M8 replaces a copy only when a
+new download proves itself against it; the existing groups wait for M9's reviewed clean-up (docs/specs/2026-10-17-m9-remaining-ownership.md). Mostly they differ only by a remaster note or "feat. X": "I Can't Tell You Why" and "I Can't Tell You
 Why (2013 Remaster)", "Touch" and "Touch (feat. Paul Williams)".
 
 ## Where it is used
