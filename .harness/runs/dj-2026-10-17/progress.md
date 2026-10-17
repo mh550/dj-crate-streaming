@@ -13,6 +13,24 @@ stop`; answers to the questions below go under `## Answers`. Every session reads
 
 ---
 
+### 2026-10-17 17:43 · verify N1F
+
+| Feature | Step | What you ran or read | What you saw | Holds |
+|---|---|---|---|---|
+| N1F-01 | 1 | read `test_trash_refuses_unless_a_scan_finished_after_the_newest_repoint_log` (tests/test_duplicate_cleanup.py:1012) + `test_main_trash_exits_1_naming_the_scan` | asserts CleanupRefused 'no Navidrome scan finished after the newest repoint log', nothing moved/forgot/scanned; CLI exits 1 with that text | yes |
+| N1F-01 | 2 | read `test_a_scan_after_the_newest_repoint_log_lets_trash_proceed` + the tail of the test above; ran the file (101 pass) | lastScan newer: s3 'moved to'; existing trash tests unchanged and green | yes |
+| N1F-01 | 3 | read `test_an_extra_whose_file_on_disk_is_not_the_planned_file_is_refused` (:1077) | s3 refused with path and both sizes ('38 bytes on disk, navidrome.db says N, the plan says N'); s4 moved | yes |
+| N1F-01 | 4 | read docs/worker.md lines 420-436, 469 | trash section states the no-scan refusal and the size refusal with wording matching the code | yes |
+| N1F-01 | 5 | `/home/mh550/projects/agent-harness/lib/check.sh`; `.harness/check.sh tests/test_duplicate_cleanup.py` | green, cached for tree, 1227 tests; subset 101 passed | yes |
+| N1F-02 | 1 | read `test_a_scan_that_starts_mid_trash_is_waited_for_then_one_more_and_a_file_a_playlist_took_goes_back` (:1118) | scan starts after first move; seen==[False,False], 2 startScan; put-back line (restored True) in trash log; 2 cleanup events; other extra untouched | yes |
+| N1F-02 | 2 | read `test_a_dry_run_repoint_previews_every_playlist_the_real_run_would_refuse` (:1174) | smart, other-owner, hidden row each 'would refuse' with reason; spy on playlist_edit.checked_entries sees all 4; no updates/scans/log/db change; CLI exits 1 | yes |
+| N1F-02 | 3 | check.sh as above | green, 1227 tests | yes |
+| N1F-03 | 1 | read the N1F-03 and N1F-02 progress entries | lists review 1 findings I-A, I-B and review 2 fixes, each with test-first evidence | yes |
+| N1F-03 | 2 | read docs/worker.md 454-479 (error table) and grep refusals in scripts/duplicate_cleanup.py | table names lock, scan, unmount, no-scan, size, same-file, still in, in use, added/put back, failed rows; no refusal found missing | yes |
+| N1F-03 | 3 | check.sh as above | green, 1227 tests | yes |
+
+All 11 steps hold; no `passes` changed.
+
 ### 2026-10-17 23:20 · N1F-03 · passes
 - **Changed:** `scripts/duplicate_cleanup.py` `_trash`: the closing scan, and the scan after a put-back, now wait out a scan that is already running before starting ours (`fresh_scan` = `wait_for_scan` or `scan_and_wait`). The refusal path and the normal path share one `closing_scan()`. Every file that stays moved gets its trash-log line (try/finally), also when its put-back during the move failed or `references()` raised, and it stays in `moved`, so the recheck after the scan retries. Put-back messages now say "beets no longer lists it" only when beets did forget it, otherwise "beets still lists it". `docs/worker.md` trash has a table of every line trash can print and what to do. The plan §trash and the module docstring are updated. Tests 1,223 → 1,227.
 - **Review 1 (Opus, whole N1F diff `/tmp/…/n1f.diff`):** 0 Critical. **I-A** (a scan starting during the *last* move was never waited for, so `scan_and_wait` returned when that pre-move scan ended) and **I-B** (a move whose put-back failed got no trash line, so the next run said "failed: gone from the library" instead of putting the file back from the log) are both fixed test-first. Minor M-b (the beets wording) is fixed. Not done: M-a (no repoint log beside `--plan` skips I1 silently), M-c (a changed trash root makes the earlier-run put-back a generic `failed: ValueError`), M-d (a disk error in the refusal-path recheck replaces the refusal with a traceback), M-e (the I3 test does not pin the request order).
