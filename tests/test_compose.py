@@ -49,6 +49,9 @@ def test_navidrome_answers_ping_with_the_wget_in_its_image(services):
     hc = services["navidrome"]["healthcheck"]
     assert hc["test"][0] == "CMD" and hc["test"][1] == "wget"
     assert hc["test"][-1] == "http://127.0.0.1:4533/ping"
+    assert "--spider" in hc["test"]                                   # no file written inside the container
+    wget_timeout = float(hc["test"][hc["test"].index("-T") + 1])
+    assert wget_timeout < _seconds(hc["timeout"])                     # wget gives up before Docker kills it
 
 
 @pytest.mark.parametrize("name", ["navidrome", "crates", "worker"])

@@ -361,7 +361,7 @@ All commands run from `/srv/docker`. Output goes to `/data/duplicate-cleanup/` i
 `/srv/docker/crates/duplicate-cleanup/` on the host. Stop at the first surprise and undo from the logs (below).
 
 **check** below means
-`docker compose run --rm worker sh -c 'python3 -m scripts.export_playlists export && python3 -m scripts.export_playlists check'`.
+`docker compose run --rm --no-deps worker sh -c 'python3 -m scripts.export_playlists export && python3 -m scripts.export_playlists check'`.
 Only the worker image mounts `/srv/music`. The worker exports only every 300 s, and not at all while it is stopped, so
 a check without a fresh export reports "stale".
 
@@ -408,11 +408,11 @@ docker compose exec -T crates python3 -m crates.cli reconcile
 
 ```
 docker compose stop worker
-docker compose run --rm worker python3 -m scripts.duplicate_cleanup trash --dry-run
-docker compose run --rm worker python3 -m scripts.duplicate_cleanup trash --limit 5      # then check
-docker compose run --rm worker python3 -m scripts.duplicate_cleanup trash --limit 50     # then check
-docker compose run --rm worker python3 -m scripts.duplicate_cleanup trash                # then check
-docker compose up -d worker
+docker compose run --rm --no-deps worker python3 -m scripts.duplicate_cleanup trash --dry-run
+docker compose run --rm --no-deps worker python3 -m scripts.duplicate_cleanup trash --limit 5      # then check
+docker compose run --rm --no-deps worker python3 -m scripts.duplicate_cleanup trash --limit 50     # then check
+docker compose run --rm --no-deps worker python3 -m scripts.duplicate_cleanup trash                # then check
+docker compose start worker
 ```
 
 - Use `run --rm worker`, not `exec`. Only that container has `DJ_WORKER=1`, which tells beets to forget each trashed
@@ -549,7 +549,7 @@ cd /srv/docker
 docker compose logs -f worker      # watch it work
 docker compose stop worker         # stop (queued approvals wait; a stop mid-download marks that approval
                                    # "interrupted: worker restarted" and the row failed at the next start: approve again)
-docker compose up -d worker        # start / resume
+docker compose start worker        # resume (never recreates; `up -d worker` would re-read compose.yml)
 ```
 
 **Is it alive?** The worker touches `/srv/docker/crates/worker.heartbeat` (beside `crates.db`) when a tick ends, and
@@ -568,8 +568,8 @@ container runs means the loop is stuck, every tick fails (`tick failed:`), or th
 
 **Deploying, and what healthy means.** `scripts/deploy.sh` (from a clean checkout of the commit to run; its header has
 the rollback) builds `crates` + `worker`, tags `dj-crates:<10-char sha>` and recreates both. Note the running tag
-from `docker compose ps` first: it is the rollback. Compose starts `crates` and `worker` only once Navidrome is
-healthy. The healthchecks in `deploy/compose.yml` run every 30 s with a 10 s timeout. Three failures in a row make a
+from `docker compose ps` first: it is the rollback. `docker compose up` starts `crates` and `worker` only once
+Navidrome is healthy (after a reboot Docker's restart policy starts all three at once). The healthchecks in `deploy/compose.yml` run every 30 s with a 10 s timeout. Three failures in a row make a
 container unhealthy. During its start period a container is checked every 5 s, and its first pass makes it healthy.
 
 | Container | Healthy means | Start period |
@@ -584,10 +584,14 @@ docker inspect --format '{{json .State.Health}}' dj-worker-1 | python3 -m json.t
 ```
 
 After a deploy, all three should read `(healthy)` within 2 minutes; then run the Check (`CLAUDE.md`). Docker only
-labels a container: it neither restarts nor alerts on unhealthy. `/srv/docker/compose.yml` is a symlink to
+labels a container: it neither restarts nor alerts on unhealthy. A worker inside one long step that does not beat
+(a reconcile, a beets import, a hanging Navidrome) can read unhealthy for a while and still be working: read its log.
+An image built before H1-03 (`dj-crates:b2df730b1d` and older) has no `scripts/healthcheck.py`, so a rollback to it
+reads `(unhealthy)` for good while it works normally. `/srv/docker/compose.yml` is a symlink to
 `~/projects/dj-crate-streaming/deploy/compose.yml`. Compose recreates a running dependency whose settings differ from
-the file it reads. So while that checkout's file has no healthchecks, any `docker compose up` or `run` there that
-reaches Navidrome recreates it without one. Add `--no-deps` to a `run`.
+the file it reads. So while that checkout's file has no healthchecks, a `docker compose up` there recreates what it touches without
+them (and Navidrome with it). This page's `run` commands use `--no-deps` and resume with `start` for that reason; a
+code or policy change goes out with `scripts/deploy.sh` from a checkout that has them.
 
 The worker mounts `/srv/music`, `/srv/docker/beets` and `/srv/incoming/soulseek` at the same paths as on the host,
 because beets stores absolute paths in `library.db`. It also mounts `/srv/_trash` read-write at the same path

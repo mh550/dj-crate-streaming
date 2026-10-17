@@ -316,14 +316,14 @@ docker compose ps                                  # what runs
 docker compose up -d --build crates worker         # after any code or policy.toml change
 docker compose logs -f worker                      # watch ticks, downloads, filings
 docker compose logs --tail 5 worker                # after a policy edit: did it start?
-docker compose stop worker / up -d worker          # pause / resume (a stop mid-download: approve again)
+docker compose stop worker / start worker          # pause / resume (a stop mid-download: approve again)
 ```
 
 | Task | How |
 |---|---|
 | Approve a download | web client Wanted tab: Preview, then Approve |
 | …from a shell | `docker compose exec -T worker python -m sourcing.cli fetch --wanted <id> --approve [--wait]` |
-| One tick by hand | stop the service first, then `docker compose run --rm worker python -m sourcing.cli worker --once` (an `exec … --once` beside the daemon exits "worker already running") |
+| One tick by hand | stop the service first, then `docker compose run --rm --no-deps worker python -m sourcing.cli worker --once` (an `exec … --once` beside the daemon exits "worker already running") |
 | Re-check a never-indexed row | web client **Re-check**, or approve it again |
 | Import a playlist | `docker compose exec -T crates python -m sourcing.cli import-playlist <url> [--name N] [--tier T] --dry-run`, then without `--dry-run` |
 | Toggle a crate | web client (the crate switch), or `docker compose exec -T crates python -m crates.cli toggle <playlist-id> on`; writes `crates.db` only. `tier` and `attrs migrate` are retired under `CRATES_OWNER=app` |
@@ -334,7 +334,7 @@ docker compose stop worker / up -d worker          # pause / resume (a stop mid-
 | Identity propose | `docker compose exec -T worker python -m scripts.identity_backfill propose [--limit 40]` |
 | Identity apply | `… identity_backfill apply /data/identity/identity-proposal.json --dry-run`, then `--yes [--limit 5] [--classes …] [--only GLOB]` |
 | Undo apply | `… identity_backfill revert /data/identity/apply-<time>.jsonl` |
-| Duplicate cleanup | `docker compose exec -T worker python3 -m scripts.duplicate_cleanup plan`, then `repoint [--dry-run] [--limit N]`; with the worker stopped `docker compose run --rm worker python3 -m scripts.duplicate_cleanup trash [--dry-run] [--limit N]`; staged runbook and undo in `docs/worker.md` "Duplicate cleanup" |
+| Duplicate cleanup | `docker compose exec -T worker python3 -m scripts.duplicate_cleanup plan`, then `repoint [--dry-run] [--limit N]`; with the worker stopped `docker compose run --rm --no-deps worker python3 -m scripts.duplicate_cleanup trash [--dry-run] [--limit N]`; staged runbook and undo in `docs/worker.md` "Duplicate cleanup" |
 | Tests | `cd ~/projects/dj-crate-streaming && ~/.local/bin/pytest -q` (about 1,100 tests, a few minutes) |
 | Offline demo | `python3 -m crates.cli demo` → http://127.0.0.1:4580 |
 
