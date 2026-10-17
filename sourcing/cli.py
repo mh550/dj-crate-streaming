@@ -39,7 +39,7 @@ def _fetch_env() -> dict:
              if os.environ.get("DJ_WORKER") == "1" else None)
     return {"music_root": Path(os.environ.get("MUSIC_ROOT") or "/srv/music"),
             "downloads_root": Path(os.environ.get("DOWNLOADS_ROOT") or "/srv/incoming/soulseek"),
-            "trash_root": Path(os.environ.get("TRASH_ROOT") or "/srv/docker/_trash"),
+            "trash_root": Path(os.environ.get("TRASH_ROOT") or "/srv/_trash"),
             "filer": filer,
             "navidrome_db": Path(os.environ.get("NAVIDROME_DB", "/srv/docker/navidrome/navidrome.db")),
             "lookup": make_lookup(k) if (k := os.environ.get("ACOUSTID_KEY")) else None}

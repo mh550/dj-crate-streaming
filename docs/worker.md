@@ -166,15 +166,15 @@ is `review` and says why ("replacement #N repoint: old song still in N playlist 
 Remove the old song from that playlist yourself and the next tick carries on. If a playlist gets the old song back
 while the file is moving or in the trash, the worker restores the file and repoints again.
 
-**Where the old file goes.** `/srv/docker/_trash/<YYYY-MM-DD>/<its library path>`, for example
-`/srv/docker/_trash/2026-10-17/Chic/Risque (1979)/03 - Good Times.flac`. A name already in the trash gets
+**Where the old file goes.** `/srv/_trash/<YYYY-MM-DD>/<its library path>`, for example
+`/srv/_trash/2026-10-17/Chic/Risque (1979)/03 - Good Times.flac`. A name already in the trash gets
 `(2)`, `(3)`. Nothing deletes from the trash; you empty it. `crates.cli status` shows its size and oldest day.
 The worker mounts it read-write at that path; the crates container sees it read-only.
 
 **How to undo it.** Each dated folder has a `MOVES.txt` with one reverse `mv` line per file, written before the move:
 
 ```
-mv '/srv/docker/_trash/2026-10-17/Chic/Risque (1979)/03 - Good Times.flac' '/srv/music/Chic/Risque (1979)/03 - Good Times.flac'
+mv '/srv/_trash/2026-10-17/Chic/Risque (1979)/03 - Good Times.flac' '/srv/music/Chic/Risque (1979)/03 - Good Times.flac'
 ```
 
 Run the line on the host (the paths are the same inside and outside the containers; `mkdir -p` the target folder if
@@ -270,7 +270,7 @@ All set in `deploy/compose.yml` (the worker service); change them there and `doc
 | `WORKER_RECHECK_S` | 300 | a `verify` row is re-checked (one Navidrome scan) at most this often; also the scan interval of a replacement |
 | `WORKER_RECONCILE_S` | 600 | playlist comments re-read and tiers re-derived; 0 = never |
 | `WORKER_EXPORT_S` | 300 | `.m3u8` export into `/srv/music/_playlists`; 0 = never |
-| `TRASH_ROOT` | `/srv/docker/_trash` | where a replaced copy goes (mounted read-write in the worker) |
+| `TRASH_ROOT` | `/srv/_trash` | where a replaced copy goes (mounted read-write in the worker) |
 | `NAVIDROME_DB` | `/srv/docker/navidrome/navidrome.db` | read-only; copy replacement and playlist edits cross-check it |
 | `MUSIC_ROOT`, `DOWNLOADS_ROOT` | `/srv/music`, `/srv/incoming/soulseek` | as before |
 | `DJ_WORKER`, `ACOUSTID_KEY`, `BEETSDIR`, `CRATES_DB` | | as before |
@@ -418,6 +418,6 @@ docker compose up -d worker        # start / resume
 ```
 
 The worker mounts `/srv/music`, `/srv/docker/beets` and `/srv/incoming/soulseek` at the same paths as on the host,
-because beets stores absolute paths in `library.db`. It also mounts `/srv/docker/_trash` read-write at the same path
+because beets stores absolute paths in `library.db`. It also mounts `/srv/_trash` read-write at the same path
 (copy replacement moves old files there). Navidrome's database is mounted read-only, in the worker and in the crates
 container.

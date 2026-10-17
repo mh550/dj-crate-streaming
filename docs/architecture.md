@@ -52,8 +52,8 @@ proven-worse copies (old one to trash), asks before swapping versions and adds p
 | Service | Runs | Mounts (host → container) |
 |---|---|---|
 | `navidrome` | `deluan/navidrome:latest` (0.64.2 measured), `127.0.0.1:4533`, scan hourly + file watcher | `/srv/music` → `/music` **ro**; `/srv/docker/navidrome` → `/data` |
-| `crates` | `python -m crates.cli serve`, `127.0.0.1:4580` | `/srv/docker/crates` → `/data`; `/srv/docker/_trash` → `/trash` **ro**; `/srv/docker/navidrome` → same path **ro** (`NAVIDROME_DB`, M8) |
-| `worker` | `python -m sourcing.cli worker`, `DJ_WORKER=1`, no port | `/srv/music`, `/srv/docker/beets`, `/srv/incoming/soulseek` rw at the **same paths**; `/srv/docker/crates` → `/data`; `/srv/docker/navidrome` **ro**; `/srv/docker/_trash` rw at the same path (M8, `TRASH_ROOT`) |
+| `crates` | `python -m crates.cli serve`, `127.0.0.1:4580` | `/srv/docker/crates` → `/data`; `/srv/_trash` → `/trash` **ro**; `/srv/docker/navidrome` → same path **ro** (`NAVIDROME_DB`, M8) |
+| `worker` | `python -m sourcing.cli worker`, `DJ_WORKER=1`, no port | `/srv/music`, `/srv/docker/beets`, `/srv/incoming/soulseek` rw at the **same paths**; `/srv/docker/crates` → `/data`; `/srv/docker/navidrome` **ro**; `/srv/_trash` rw at the same path (M8, `TRASH_ROOT`) |
 | `slskd` | in gluetun's network namespace; 5 upload slots, 586 KiB/s | `/srv/docker/slskd` → `/app`; `/srv/incoming/soulseek` → `/app/downloads`; `/srv/music` → `/app/shared` **ro** |
 | `gluetun` | ProtonVPN WireGuard (NL), port forwarding; publishes `127.0.0.1:5030` for slskd | `/srv/docker/gluetun` |
 | beets | not a service: the `beet` 1.6.0 CLI, run only by the worker's filer | config `deploy/beets.yaml` (`-c`), state `BEETSDIR=/srv/docker/beets` |
@@ -122,7 +122,7 @@ Other stores:
 - **Playlist comment**: owns the playlist's attributes (M8): `#crate`, `#tier:<t>`, plus `#imported` (import-playlist's
   marker). Whitespace-delimited tokens, any case; `#crates` or `x#crate` are not tokens. Name markers `[crate]` / `🎛`
   also flag a crate. Only `crates/attrs.py` writes our tokens; the rest of your comment is never touched.
-- **Trash**: `/srv/docker/_trash/<date>/<path>` with `MOVES.txt` of reverse `mv`s. Never emptied by code.
+- **Trash**: `/srv/_trash/<date>/<path>` with `MOVES.txt` of reverse `mv`s. Never emptied by code.
   M3's `scripts/dedupe_copies.py` and (M8) the worker's copy replacement write it; the worker mounts it rw.
 - **`.m3u8` exports**: `/srv/music/_playlists/*.m3u8`, written by `scripts/export_playlists.py export` (by hand
   today). Navidrome's auto-import of them is off on purpose (it would duplicate every playlist).
@@ -315,7 +315,7 @@ docker compose stop worker / up -d worker          # pause / resume (a stop mid-
 | Move crates.db flags into comments (once) | `docker compose exec -T crates python -m crates.cli attrs migrate [--out PATH]`, then `--apply` (§9: before the first reconcile) |
 | Reconcile now | web client, or `docker compose exec -T crates python -m crates.cli reconcile` (the worker does it every 600 s) |
 | Answer a version / copy question | Wanted tab (Swap / Keep), or `docker compose exec -T crates python -m crates.cli proposals [--all]`, `proposals accept\|decline <id>` |
-| Undo a trashed copy | run its reverse `mv` line from `/srv/docker/_trash/<day>/MOVES.txt` on the host (`docs/worker.md`) |
+| Undo a trashed copy | run its reverse `mv` line from `/srv/_trash/<day>/MOVES.txt` on the host (`docs/worker.md`) |
 | Export / check playlists | `docker compose exec -T worker python -m scripts.export_playlists export` (or `check`) |
 | Identity propose | `docker compose exec -T worker python -m scripts.identity_backfill propose [--limit 40]` |
 | Identity apply | `… identity_backfill apply /data/identity/identity-proposal.json --dry-run`, then `--yes [--limit 5] [--classes …] [--only GLOB]` |
@@ -354,7 +354,7 @@ and commands: `docs/worker.md`. What changed, and why:
 - **Copy replacement** (`sourcing/replace.py`): a resumable job (`replacements` table: repoint, trash, scan, done,
   or blocked). It starts only when the stored verification has `replaceable` literally true and the old file is
   still the one compared; it repoints **every** playlist (not only crates), then moves the old copy to
-  `/srv/docker/_trash` and tells beets (`beet remove`, index only). It never trashes while any playlist entry
+  `/srv/_trash` and tells beets (`beet remove`, index only). It never trashes while any playlist entry
   (hidden ones too) still holds the old song, so a smart playlist or Amperfy's own playlist makes it wait. No proof:
   both copies stay and the row is `review`. `docs/worker.md` "Copy replacement and the trash" has the undo.
 - **The Navidrome trap it guards**: `getPlaylist` hides songs whose file is missing, but their `playlist_tracks`
@@ -414,13 +414,13 @@ containers; see `TODO-MICHAEL.md`).
      docker compose exec -T crates python -c "import os; from scripts.export_playlists import open_ro; \
        print(open_ro(os.environ['NAVIDROME_DB']).execute('select count(*) from playlist_tracks').fetchone())"
      ```
-   - A trash move inside the worker container. `/srv/music` and `/srv/docker/_trash` are two bind mounts of one
+   - A trash move inside the worker container. `/srv/music` and `/srv/_trash` are two bind mounts of one
      filesystem, so a hard link or rename between them fails (EXDEV) and the move must take the copy path:
 
      ```
      docker compose exec -T worker sh -c 'mkdir -p /srv/music/_probe && echo x > /srv/music/_probe/probe.txt'
      docker compose exec -T worker python -c "from crates.trash import move_to_trash; \
-       print(move_to_trash('_probe/probe.txt', '/srv/music', '/srv/docker/_trash'))"
+       print(move_to_trash('_probe/probe.txt', '/srv/music', '/srv/_trash'))"
      ```
 
      Expect the printed trash path to exist, `/srv/music/_probe/probe.txt` to be gone, the day's `MOVES.txt` to hold
@@ -575,7 +575,7 @@ Each has a default in place; answering changes only what is named.
 22. **M8, play-now:** a fast copy that was verified as strictly as the row's tier and passes it counts as the row's
     file, with no upgrade queued; otherwise the upgrade waits for your approval. *Default: yes.* And if a tiered
     playlist later holds the same song, its row takes over the upgrade (one open request per song). *Default: yes.*
-23. **M8, the trash:** nothing empties `/srv/docker/_trash`, and it is not size-limited. *Default: you empty it by
+23. **M8, the trash:** nothing empties `/srv/_trash`, and it is not size-limited. *Default: you empty it by
     hand; `crates.cli status` shows size and oldest day.*
 24. **M8, ".1" names and the 102 old copy groups:** left alone; a same-format upgrade stays "… .1.flac", and the
     groups M7 found are for M9 to clean up in a reviewed step. *Default: leave both.*

@@ -1,7 +1,7 @@
 """What the trash holds, for `crates.cli status` (spec §4.3: never auto-emptied; Michael empties it).
 
-Trash is `/srv/docker/_trash/<YYYY-MM-DD>/<path relative to /srv/music>` (the runbook's /srv/_trash needs
-root to create); each dated folder has a MOVES.txt of reverse `mv` commands, which is not counted.
+Trash is `/srv/_trash/<YYYY-MM-DD>/<path relative to /srv/music>` (until 2026-10-16 it was
+/srv/docker/_trash); each dated folder has a MOVES.txt of reverse `mv` commands, which is not counted.
 The crates container sees it read-only at $CRATES_TRASH (compose mounts it at /trash); the worker mounts it
 read-write at the same path and is the only code that moves a library file into it (`move_to_trash`).
 

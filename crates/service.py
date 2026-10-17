@@ -57,7 +57,7 @@ class Config:
     db_path: str = "data/crates.db"
     bind: str = "127.0.0.1"
     port: int = 4580
-    trash_dir: str | None = None          # read-only view of /srv/docker/_trash (status reports it)
+    trash_dir: str | None = None          # read-only view of /srv/_trash (status reports it)
     slskd_url: str | None = None          # slskd, for previews (and the worker)
     slskd_key: str | None = None
     navidrome_db: str | None = None       # read-only navidrome.db: playlist edits cross-check it (crates.playlist_edit)

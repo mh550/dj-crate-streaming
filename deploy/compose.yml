@@ -48,7 +48,7 @@ services:
       NAVIDROME_DB: /srv/docker/navidrome/navidrome.db   # read-only: playlist edits cross-check it (crates/playlist_edit.py)
     volumes:
       - /srv/docker/crates:/data
-      - /srv/docker/_trash:/trash:ro         # runbook wanted /srv/_trash (needs root): see Needs Michael
+      - /srv/_trash:/trash:ro                # the trash (Michael created /srv/_trash 2026-10-16)
       - /srv/docker/navidrome:/srv/docker/navidrome:ro
     depends_on: [navidrome]
     restart: unless-stopped
@@ -75,14 +75,14 @@ services:
       WORKER_RECHECK_S: "300"                # a `verify` row is re-checked (one Navidrome scan) at most this often
       WORKER_RECONCILE_S: "600"              # playlist comments re-read, tiers re-derived (Amperfy edits take effect)
       WORKER_EXPORT_S: "300"                 # playlists re-exported as .m3u8 into /srv/music/_playlists (changed files only)
-      TRASH_ROOT: /srv/docker/_trash         # copy replacement moves the old copy here (never deleted)
+      TRASH_ROOT: /srv/_trash                # copy replacement moves the old copy here (never deleted)
     volumes:                               # identical paths: beets stores absolute paths in library.db
       - /srv/music:/srv/music
       - /srv/docker/beets:/srv/docker/beets
       - /srv/incoming/soulseek:/srv/incoming/soulseek
       - /srv/docker/crates:/data
       - /srv/docker/navidrome:/srv/docker/navidrome:ro
-      - /srv/docker/_trash:/srv/docker/_trash
+      - /srv/_trash:/srv/_trash
     depends_on: [navidrome, gluetun]
     restart: unless-stopped
 
