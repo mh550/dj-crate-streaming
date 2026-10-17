@@ -38,23 +38,30 @@ Pass: exit 0 and "ok: every playlist file matches Navidrome…". Export first: t
 (never while stopped), so a bare `check` reports "stale".
 
 ### Snapshots
-- `scripts/snapshot-crates-db.sh` (from the worktree). Pass: exit 0 and "integrity ok". It writes
-  `/srv/docker/crates/crates.db.snap`, the same file the nightly backup takes, so it overwrites the previous one.
+- `scripts/snapshot-crates-db.sh` (from the worktree), then copy its output to a run-named file:
+  `cp /srv/docker/crates/crates.db.snap /srv/docker/crates/crates.db.pre-<run-id>.snap`. The script's own file is
+  the nightly backup's and is overwritten at 03:30. Pass: exit 0 and "integrity ok".
 - `sqlite3 /srv/docker/navidrome/navidrome.db ".backup /srv/docker/navidrome/navidrome.db.pre-<run-id>.snap"`.
-  Pass: exit 0, and `sqlite3 <snap> 'pragma integrity_check'` prints `ok`.
+  Pass: exit 0, and `sqlite3 <snap> 'pragma integrity_check'` prints `ok`. This is the only consistent copy of
+  navidrome.db: the nightly backup copies its files raw while Navidrome writes.
 
 ### Backups
-Nightly restic (`restic-backup.timer` → `restic-backup.service`, 03:30 + ≤15 min, `Persistent=true`). Read:
-`systemctl show restic-backup.service -p ExecMainExitTimestamp -p ExecMainStatus`.
-Pass: `ExecMainStatus=0` and the timestamp less than 26 h old; otherwise no live writes this session. The job skips
-when the backup HDD isn't mounted; whether a skip also exits 0 is (unverified).
+Nightly restic (`restic-backup.timer` → `restic-backup.service`): 03:30 + up to 15 min random delay, about 2 min
+long (2026-10-17: 03:39–03:41, snapshot `da26a815` of /srv/music, /srv/docker, /srv/crates).
+- **Status:** `systemctl show restic-backup.service -p ExecMainExitTimestamp -p ExecMainStatus`. Pass:
+  `ExecMainStatus=0` and less than 26 h old; otherwise no live writes this session. A skipped backup (HDD not
+  mounted) exits 1, so status 0 means a snapshot was saved (`/usr/local/sbin/restic-backup`, checked 2026-10-17).
+- **Window:** no live write and no deploy from 03:15 to 04:30, or while `systemctl is-active restic-backup.service`
+  prints `active`.
+- **Lock:** the live-writer lock is `/srv/docker/crates/live.lock` (`LIVE_LOCK` in `.harness/config.sh`), so the
+  backup job can hold the same lock while it snapshots and backs up.
 
 ### Deploy and rollback
 - First record what runs: `docker compose ps` (the `dj-crates:<sha>` image of `crates` and `worker`) and
   `docker image ls dj-crates`. That tag is the rollback.
 - Deploy: `scripts/deploy.sh` from the run's worktree, on a pushed commit. It refuses a dirty tree, builds
   `crates` + `worker` and tags `dj-crates:<10-char sha>`.
-- After: `docker compose ps` shows `crates` and `worker` up (no healthchecks are defined), then **Check** green.
+- After: `docker compose ps` shows `crates` and `worker` up (healthy, once healthchecks exist), then **Check** green.
 - Rollback (the `deploy.sh` header's form; old image gone → `scripts/deploy.sh` from a worktree at the old commit):
   `GIT_SHA=<old> CRATES_SRC=$PWD docker compose --project-directory /srv/docker -f deploy/compose.yml up -d --no-build crates worker`
 
