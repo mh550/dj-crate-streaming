@@ -139,11 +139,29 @@ def filed_path(reason: str | None) -> str | None:
     return (m.group(1) or m.group(2)) if m else None
 
 
+# One open request per song (D20 ruling): a playlist row whose song is play-now's provisional copy, while that copy's
+# upgrade (the external row) is in flight, is held in `review` with this reason. Not in flight itself: every reconcile
+# judges it again, and once the external row is done the row gets its own verdict.
+_HELD = re.compile(r"^upgrade in flight as (ext-\d+)$")
+
+
+def held_reason(ext_id: str) -> str:
+    return f"upgrade in flight as {ext_id}"
+
+
+def held_by(reason: str | None) -> str | None:
+    """The external row a held playlist row waits for (held_reason), else None."""
+    m = _HELD.match(reason or "")
+    return m.group(1) if m else None
+
+
 def in_flight(status: str, reason: str | None) -> bool:
     """A row reconcile must not touch, whatever its tier or verdict: a download under way (`sourcing`), a filed file
-    Navidrome has not indexed (`verify`, or `failed` with a filed path), a question for Michael (`review`). Its
-    playlist losing its tier does not remove it either: fetch must still reach it to finish."""
-    return status in ("sourcing", "verify", "review") or (status == "failed" and filed_path(reason) is not None)
+    Navidrome has not indexed (`verify`, or `failed` with a filed path), a question for Michael (`review`, except a
+    row held for an upgrade in flight: held_reason). Its playlist losing its tier does not remove it either: fetch
+    must still reach it to finish."""
+    return (status in ("sourcing", "verify") or (status == "review" and held_by(reason) is None)
+            or (status == "failed" and filed_path(reason) is not None))
 
 
 # A `review` row is a question. Copy replacement (sourcing.replace / fetch) and proposals leave rows in `review` with
@@ -661,6 +679,25 @@ class CrateStore:
         """What the download starting now is for (fetch sets it as the row enters `sourcing`): a filed file that
         Navidrome lists later is then known to be provisional even across a worker restart."""
         self.db.execute("UPDATE external_wanted SET provisional=? WHERE id=?", (int(provisional), _ext_pk(ext_id)))
+
+    def upgrade_row(self, song_id: str) -> dict | None:
+        """The open external row whose library song is `song_id` (play-now's provisional copy, waiting for its
+        upgrade), if any."""
+        r = self.db.execute("SELECT * FROM external_wanted WHERE library_song_id=? AND status NOT IN ('ok','removed') "
+                            "ORDER BY id LIMIT 1", (song_id,)).fetchone()
+        return self._ext_row(r) if r else None
+
+    def upgrade_busy(self, row: dict) -> bool:
+        """An external upgrade row that must finish on its own: in flight (in_flight, `review` included) or holding
+        an approval waiting or being fetched (Michael's yes is kept, never superseded)."""
+        return in_flight(row["status"], row.get("reason")) or self.approval_in_progress(row["song_id"]) is not None
+
+    SUPERSEDED = "superseded by the playlist row — its tier applies"
+
+    def supersede_upgrade(self, ext_id: str) -> None:
+        """Close an external upgrade row because a tiered playlist holds its song: that playlist row is the one
+        request for a better file now (fetch refuses a `removed` row)."""
+        self.set_external_status(ext_id, "removed", self.SUPERSEDED)
 
     def set_external_status(self, ext_id: str, status: str, reason: str | None = None) -> None:
         assert status in STATUSES, status

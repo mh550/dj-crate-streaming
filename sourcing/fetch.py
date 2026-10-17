@@ -63,7 +63,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from crates import proposals
-from crates.reconcile import Reconciler
+from crates.reconcile import Reconciler, judge
 from crates.store import CrateStore, filed_path, never_indexed, retryable_review
 from scripts.export_playlists import open_ro
 from subsonic.client import SubsonicClient, SubsonicError
@@ -227,6 +227,13 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
             return FetchResult("verify", why, best, filed, explain=text)
         store.set_wanted_names(wanted_id, new.artist or "", new.title)      # what the library calls it now
         rel = filed.relative_to(music_root).as_posix()
+        done = f"filed as {rel}"
+        if copy_id is None and external and (store.external(wanted_id) or {}).get("provisional"):
+            # Judged at the row's tier with reconcile's judge: a fast copy that already meets it is the row's file.
+            policy_at = reconciler.policy_for(row["tier"]) if reconciler is not None else TIERS[row["tier"]]
+            if judge(new, policy_at)[0] == "ok":
+                store.set_external_song(wanted_id, new.id, False)
+                done = f"filed as {rel}; provisional copy already meets {row['tier']}"
         if copy_id is None and external and (store.external(wanted_id) or {}).get("provisional"):
             # Play-now's fast copy (the row says so from the moment its download started, so a re-check after a
             # worker restart reads it too): it plays now, but it is not the row's file at its tier. The row stays
@@ -241,7 +248,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         if copy_id is None:
             if external:
                 store.set_library_song(wanted_id, new.id)
-            set_status("ok", f"filed as {rel}")
+            set_status("ok", done)
             if external:                 # another version of a song a tiered playlist holds: ask, never swap (D23)
                 ask(lambda: proposals.version_swaps(store, navidrome_db, new.id), rel)
             return FetchResult("ok", "filed and visible in Navidrome", best, filed, new.id, text)
@@ -342,6 +349,8 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         return FetchResult("ok", f"filed; replacement #{j['id']} {what} ({detail})", best, filed, new_id, text)
 
     status = row.get("status")
+    if status == "removed":              # an upgrade row a tiered playlist's row superseded (one request per song)
+        return FetchResult("removed", f"{wanted_id} is closed ({row.get('reason')}); nothing searched")
     if status == "ok":
         return FetchResult("ok", "already ok; nothing to do")
     if status == "review" and not retryable_review(row.get("reason")):     # import-playlist: several versions fit

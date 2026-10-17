@@ -72,10 +72,12 @@ def filer(world, tmp_path) -> BeetsFiler:
 
 
 def lib_song(world, song_id, rel, size, suffix):
-    """What Navidrome 'finds' after the rescan (the fake has no files): the filed copy."""
+    """What Navidrome 'finds' after the rescan (the fake has no files): the filed copy (the mp3 at FAST_MP3's 64 kbps,
+    which meets medium's floor and not high's)."""
     nd = world["nd"]
     nd.state.songs[song_id] = dict(nd.state.songs["s1"], id=song_id, title="Good Times", artist="Chic", album="Risqué",
-                                   suffix=suffix, size=size, path=rel, duration=501)
+                                   suffix=suffix, size=size, path=rel, duration=501,
+                                   **({"bitRate": 64} if suffix == "mp3" else {}))
 
 
 def worker(world, srv, tmp_path, verifier=None, lines=None, **kw) -> Worker:
@@ -88,7 +90,7 @@ def worker(world, srv, tmp_path, verifier=None, lines=None, **kw) -> Worker:
                   log=lines.append, **kw)
 
 
-def ext(world, tier="medium") -> str:
+def ext(world, tier="high") -> str:
     return world["store"].add_external_wanted("Chic", "Good Times", album="Risqué", duration_s=501, year=1979, tier=tier)
 
 
@@ -129,7 +131,7 @@ def test_play_now_records_michaels_approval_for_one_low_copy(world, web):
     assert s == 200, a
     assert (a["approved_by"], a["tier"], a["purpose"], a["candidate"], a["used_at"]) == ("michael", "low", "play-now",
                                                                                           None, None)
-    assert world["store"].external(e)["tier"] == "medium"                # the row's tier is untouched
+    assert world["store"].external(e)["tier"] == "high"                  # the row's tier is untouched
     assert [x["wanted_id"] for x in world["store"].pending_approvals()] == [e]
     assert world["store"].has_play_now()
 
@@ -332,7 +334,7 @@ def test_play_now_scores_and_verifies_at_low_without_changing_the_row_tier(world
     report, srv = play_now_tick(world, tmp_path, spy)
     assert srv.enqueued == [("fastpeer", MP3)]                              # the fast mp3, not the slow FLAC
     assert [c["tier"] for c in spy.calls] == ["low"] and spy.calls[0]["intent"] is None
-    assert store.external(e)["tier"] == "medium"
+    assert store.external(e)["tier"] == "high"
     assert store.verification(e)["tier"] == "low"
 
 
@@ -343,10 +345,10 @@ def test_provisional_copy_requeues_the_row_as_an_upgrade_awaiting_approval(world
     report, _ = play_now_tick(world, tmp_path)
     row = store.external(e)
     assert (row["library_song_id"], row["provisional"], row["status"]) == ("s10", 1, "needs_source")
-    assert row["reason"] == f"provisional low copy filed as {MP3_REL}; upgrade at medium waits for approval"
+    assert row["reason"] == f"provisional low copy filed as {MP3_REL}; upgrade at high waits for approval"
     assert store.pending_approvals() == []
     assert store.approval(e)["result"] == "ok: filed (provisional); upgrade queued"
-    assert events(store, "upgrade_queued") == [f"{MP3_REL} is a provisional low copy; upgrade at medium waits for approval"]
+    assert events(store, "upgrade_queued") == [f"{MP3_REL} is a provisional low copy; upgrade at high waits for approval"]
     assert (world["music"] / MP3_REL).read_bytes() == MP3_BYTES
     assert e in [w["song_id"] for w in store.wanted()]                     # the upgrade is queued, Michael approves it
     assert all("fastpeer" not in (x["detail"] or "") for x in store.events(limit=1000))
@@ -435,7 +437,7 @@ def test_a_plain_download_after_a_failed_play_now_is_not_provisional(world, tmp_
         worker(world, srv, tmp_path).tick()                                # filed, never listed
     (world["music"] / MP3_REL).unlink()                                    # and the file went away
     store.set_external_status(e, "failed", "download timed out"); store.commit()
-    store.approve(e, "michael", None, "medium")
+    store.approve(e, "michael", None, "high")
     flac = flac_bytes(tmp_path)
     with FakeSlskdServer([SLOW_FLAC], world["dl"], files={FLAC: flac}) as srv:
         lib_song(world, "s9", FLAC_REL, len(flac), "flac")
@@ -480,7 +482,7 @@ def test_upgrade_of_a_provisional_copy_is_a_copy_replacement(world, tmp_path, go
     store.approve(e, "michael", None, store.external(e)["tier"])
     spy = Spy()
     upgrade(world, tmp_path, spy, gone=gone)
-    assert spy.calls[0]["tier"] == "medium" and spy.calls[0]["intent"] == "copy"
+    assert spy.calls[0]["tier"] == "high" and spy.calls[0]["intent"] == "copy"
     assert spy.calls[0]["reference"] == str(world["music"] / MP3_REL)      # compared with the provisional file
     row = store.external(e)
     assert (row["status"], row["library_song_id"], row["provisional"]) == ("ok", "s9", 0), row["reason"]
@@ -494,7 +496,7 @@ def test_upgrade_of_a_provisional_copy_is_a_copy_replacement(world, tmp_path, go
 def test_an_upgrade_not_proven_the_same_keeps_the_provisional_copy(world, tmp_path):
     store = world["store"]
     e = provisional(world, tmp_path)
-    store.approve(e, "michael", None, "medium")
+    store.approve(e, "michael", None, "high")
     upgrade(world, tmp_path, Spy(replaceable=False))
     row = store.external(e)
     assert row["status"] == "review" and row["reason"].startswith(f"kept beside {MP3_REL}")
@@ -510,8 +512,8 @@ def test_an_unproven_upgrade_accepted_in_every_slot_ends_the_row_ok(world, tmp_p
     e = provisional(world, tmp_path)
     client.update_playlist("pl-2", add_song_ids=["s10"])                   # e.g. an import re-run added it
     client.update_playlist("pl-2", add_song_ids=["s10"])                   # twice: two slots, two questions
+    store.approve(e, "michael", None, "high")                              # approved first: the upgrade is in flight
     world["rec"].run()
-    store.approve(e, "michael", None, "medium")
     upgrade(world, tmp_path, Spy(replaceable=False))
     qs = store.proposals()
     assert [q["kind"] for q in qs] == ["unproven_copy", "unproven_copy"]
@@ -541,3 +543,94 @@ def test_reimport_does_not_close_an_upgrade_row():
         row = store.external(kiwa["song_id"])
         assert (row["status"], row["reason"], row["provisional"]) == ("needs_source", reason, 1)
         assert "kw" in [x.id for x in c.playlist(first.playlist_id).entries]   # the provisional copy plays there
+
+
+# --- one open request per song; no upgrade when the fast copy already meets the tier (controller rulings) -------
+
+def test_a_fast_copy_that_meets_the_row_tier_queues_no_upgrade(world, tmp_path):
+    store = world["store"]
+    e = ext(world, tier="medium")                                          # 64 kbps meets medium's floor
+    store.approve(e, "michael", None, "low", purpose="play-now")
+    play_now_tick(world, tmp_path)
+    row = store.external(e)
+    assert (row["status"], row["library_song_id"], row["provisional"]) == ("ok", "s10", 0)
+    assert row["reason"] == f"filed as {MP3_REL}; provisional copy already meets medium"
+    assert events(store, "upgrade_queued") == [] and e not in [w["song_id"] for w in store.wanted()]
+
+
+def open_requests(store, song_id) -> list[str]:
+    """Wanted rows asking for a better file of this song that Michael could approve now."""
+    return [w["song_id"] for w in store.wanted() if (w["song_id"] == song_id or w.get("library_song_id") == song_id)
+            and w["status"] in ("needs_source", "failed") and not w["filed"]]
+
+
+def test_a_tiered_playlist_holding_the_provisional_copy_supersedes_the_upgrade_row(world, tmp_path):
+    store = world["store"]
+    e = provisional(world, tmp_path)
+    world["client"].update_playlist("pl-2", add_song_ids=["s10"])         # the crate now holds the fast copy
+    world["rec"].run()
+    row = store.external(e)
+    assert (row["status"], row["reason"]) == ("removed", "superseded by the playlist row — its tier applies")
+    assert open_requests(store, "s10") == ["s10"]                          # the playlist row, judged at crate
+    assert store.track_status_map("pl-2")["s10"]["status"] == "needs_source"
+    world["rec"].run()
+    assert store.external(e)["status"] == "removed" and open_requests(store, "s10") == ["s10"]
+
+
+def test_reimport_adding_the_provisional_song_to_its_tiered_playlist_leaves_one_open_row():
+    from crates.reconcile import Reconciler
+    from tests.test_import_playlist import ROWS, _lib
+    with FakeSubsonicServer() as srv:
+        _lib(srv)
+        c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
+        first = ip.import_playlist("Tea tent", ROWS, c, store, source="s")         # #tier:medium
+        kiwa = next(r for r in store.external_for_playlist(first.playlist_id) if r["artist"] == "Michael Kiwanuka")
+        srv.state.songs["kw"] = dict(srv.state.songs["s1"], id="kw", title="Piano Joint (This Kind Of Love)",
+                                     artist="Michael Kiwanuka", duration=232, suffix="mp3", bitRate=48)
+        store.set_external_song(kiwa["song_id"], "kw", True)
+        store.set_external_status(kiwa["song_id"], "needs_source", "provisional low copy filed as kw.mp3; upgrade …")
+        store.commit()
+        ip.import_playlist("Tea tent", ROWS, c, store, source="s")                # adds kw to the playlist
+        Reconciler(c, store).run()
+        assert store.external(kiwa["song_id"])["status"] == "removed"
+        assert open_requests(store, "kw") == ["kw"]
+
+
+@pytest.mark.parametrize("busy", ["sourcing", "verify", "approved"])
+def test_an_upgrade_in_flight_holds_the_playlist_row(world, tmp_path, web, app, busy):
+    store, rec = world["store"], world["rec"]
+    e = provisional(world, tmp_path)
+    if busy == "approved":                                                 # Michael's yes is kept, not superseded
+        store.approve(e, "michael", None, "high")
+    else:
+        store.set_external_status(e, busy, "filed as x.flac but Navidrome has not picked it up yet" if busy == "verify"
+                                  else "downloading 03 - Good Times.flac")
+    store.commit()
+    world["client"].update_playlist("pl-2", add_song_ids=["s10"])
+    rec.run()
+    held = store.track_status_map("pl-2")["s10"]
+    assert (held["status"], held["reason"]) == ("review", f"upgrade in flight as {e}")
+    assert store.external(e)["status"] == (busy if busy != "approved" else "needs_source")
+    s, body = post(web.url + "/api/wanted/s10/approve", {})
+    assert s == 409 and f"approve {e}" in body["error"]
+    app.slskd = SlskdClient("http://127.0.0.1:9", "k")                    # never reached: refused first
+    with pytest.raises(Exception, match=f"approve {e}"):
+        app.preview("s10")
+    rec.run()                                                              # still held, re-judged every time
+    assert store.track_status_map("pl-2")["s10"]["reason"] == f"upgrade in flight as {e}"
+    store.db.execute("UPDATE approvals SET used_at=1, result='ok: x'")
+    store.set_external_song(e, "s10", False); store.set_external_status(e, "ok", "filed as x.flac"); store.commit()
+    rec.run()                                                              # the external row finished
+    assert store.track_status_map("pl-2")["s10"]["status"] == "needs_source"   # judged normally (crate)
+    assert store.external(e)["status"] == "ok"
+
+
+def test_a_superseded_upgrade_row_is_never_downloaded(world, tmp_path):
+    """Closed while a worker in another process had just claimed its approval: fetch refuses the closed row."""
+    store = world["store"]
+    e = provisional(world, tmp_path)
+    store.approve(e, "michael", None, "high")
+    store.set_external_status(e, "removed", "superseded by the playlist row — its tier applies"); store.commit()
+    with FakeSlskdServer([SLOW_FLAC], world["dl"], files={FLAC: flac_bytes(tmp_path)}) as srv:
+        report = worker(world, srv, tmp_path).tick()
+    assert srv.enqueued == [] and store.approval(e)["result"].startswith("removed:")

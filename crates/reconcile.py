@@ -30,7 +30,7 @@ from sourcing.policy import DEFAULT_POLICY, DEFAULT_TIER, TIERS, QualityPolicy, 
 from sourcing.scorer import Wanted
 from subsonic.client import Playlist, Song, SubsonicClient, SubsonicError
 from . import attrs
-from .store import CrateStore, in_flight
+from .store import CrateStore, held_reason, in_flight
 
 # Name markers, for clients that can rename a playlist but not edit its comment
 # (most phone apps). "Disco Edits [crate]" or "🎛 Disco Edits" both count.
@@ -320,7 +320,7 @@ class Reconciler:
         self.store.commit()
         return rep
 
-    def _policy(self, tier: str) -> QualityPolicy:
+    def policy_for(self, tier: str) -> QualityPolicy:
         """The crate tier is this reconciler's policy (a test or service may pass its own); the others are policy.toml's."""
         return self.policy if tier == DEFAULT_TIER else TIERS[tier]
 
@@ -353,12 +353,20 @@ class Reconciler:
         ok = need = 0
         for pos, s in enumerate(pl.entries):
             seen.add(s.id)
-            status, reason = judge(s, self._policy(derived[s.id]))
+            status, reason = judge(s, self.policy_for(derived[s.id]))
             old = prev.get(s.id)
+            # One open request per song: a play-now provisional copy's upgrade (an external row) gives way to this
+            # row, unless it is in flight; then this row is held until it finishes (no second download meanwhile).
+            up = self.store.upgrade_row(s.id)
+            if up is not None and not self.store.upgrade_busy(up):
+                self.store.supersede_upgrade(up["song_id"])
+                up = None
             # An in-flight row keeps its status and reason whatever the verdict: a download under way or a filed
             # file Navidrome has not indexed yet (re-checked, never downloaded twice), or a question for Michael.
             if old and in_flight(old["status"], old["reason"]):
                 status, reason = old["status"], old["reason"]
+            elif up is not None and status != "ok":
+                status, reason = "review", held_reason(up["song_id"])
             self.store.upsert_track(pl.id, s.id, pos, song_facts(s), status, reason)
             if not old or old["status"] != status:
                 self.store.log(pl.id, s.id, "status", f"{status}: {reason}")

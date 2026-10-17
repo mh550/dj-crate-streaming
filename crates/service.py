@@ -32,7 +32,7 @@ from sourcing.slskd_client import SlskdClient
 from subsonic.client import SubsonicClient, SubsonicError
 from .reconcile import CommentNotKept, NameMarked, ReconcileBusy, Reconciler
 from . import proposals, trash
-from .store import CrateStore, PlayNowRefused, filed_path
+from .store import CrateStore, PlayNowRefused, filed_path, held_by
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 mimetypes.add_type("application/manifest+json", ".webmanifest")
@@ -171,6 +171,9 @@ class CrateApp:
             raise ApiError(404, f"{wanted_id} is not in any enabled crate or the external queue")
         if row["status"] in ("sourcing", "verify"):
             raise ApiError(409, f"{wanted_id} is {row['status']} (in progress): the worker finishes it")
+        ext = held_by(row.get("reason")) if row["status"] == "review" else None
+        if ext is not None:                         # one open request per song: the upgrade in flight is it
+            raise ApiError(409, f"{wanted_id} waits for its upgrade in flight: approve {ext}")
         return row
 
     def preview(self, wanted_id: str) -> dict:
