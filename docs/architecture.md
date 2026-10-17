@@ -57,7 +57,7 @@ before swapping versions and adds play-now. (The pivot moved the crate flag's ow
 
 | Service | Runs | Mounts (host → container) |
 |---|---|---|
-| `navidrome` | `deluan/navidrome:latest` (0.64.2 measured), `127.0.0.1:4533`, scan hourly + file watcher | `/srv/music` → `/music` **ro**; `/srv/docker/navidrome` → `/data` |
+| `navidrome` | `deluan/navidrome:0.64.2` (pinned 2026-10-17; was `:latest`, same image), `127.0.0.1:4533`, scan hourly + file watcher | `/srv/music` → `/music` **ro**; `/srv/docker/navidrome` → `/data` |
 | `crates` | `python -m crates.cli serve`, `127.0.0.1:4580` | `/srv/docker/crates` → `/data`; `/srv/_trash` → `/trash` **ro**; `/srv/docker/navidrome` → same path **ro** (`NAVIDROME_DB`, M8) |
 | `worker` | `python -m sourcing.cli worker`, `DJ_WORKER=1`, no port | `/srv/music`, `/srv/docker/beets`, `/srv/incoming/soulseek` rw at the **same paths**; `/srv/docker/crates` → `/data`; `/srv/docker/navidrome` **ro**; `/srv/_trash` rw at the same path (M8, `TRASH_ROOT`) |
 | `slskd` | in gluetun's network namespace; 5 upload slots, 586 KiB/s | `/srv/docker/slskd` → `/app`; `/srv/incoming/soulseek` → `/app/downloads`; `/srv/music` → `/app/shared` **ro** |

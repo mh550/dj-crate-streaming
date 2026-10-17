@@ -11,6 +11,16 @@ code at `40b0d47`.
 **One rule carried through every item:** a fact has one owner. M9 adds no new owner. It adds commands that apply an
 owner's intent once (a placement, a reviewed tag write, a reviewed trash) and checks that catch a mirror drifting.
 
+**Update 2026-10-17 (Michael's direction, see [`2026-10-17-amperfy-pivot.md`](2026-10-17-amperfy-pivot.md)):**
+- Item 1 (insert at the Spotify position) is **wanted**: it is on the roadmap, and should be built before heavy use.
+- Item 3 is the **Navidrome cleanup**, to be done **first**: remove duplicate songs, then rebuild the playlists that
+  point at them. Its input now exists: `scripts/duplicate_report.py` writes `docs/duplicates-report.md` (read-only;
+  102 groups, 115 extra files, each with the playlists using it). Michael has also deleted playlists by hand, so
+  the report is re-run before any step. Item 5b (the 11 import `review` rows) mostly disappears once duplicates are gone.
+- Version labels (item 4) and tiers: the pivot made tiers one rule (D24) and removed the 12" preference (D26); read
+  "tier" and "D16" below in that light. Item 8's "pinning" is done for Navidrome (`0.64.2`).
+- Order: 3 (cleanup) → 1 (placement) → 4 (VERSION tag, approved "later") → 5 (pickers) → the rest.
+
 | # | Item | Size | Michael decides |
 |---|---|---|---|
 | 1 | A downloaded track goes into its playlist at its Spotify position | M | yes (Q1, Q2) |
