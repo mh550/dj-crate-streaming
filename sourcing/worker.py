@@ -27,6 +27,13 @@ Each tick:
      into <music>/_playlists (scripts.export_playlists rewrites only changed files), so repoints, proposal swaps and
      Michael's own edits reach the files.
 
+Heartbeat (H1): with `heartbeat_path` (the CLI uses <dirname(CRATES_DB)>/worker.heartbeat) the worker touches that
+file when a tick ends, and at each poll while a fetch waits on a download or a Navidrome scan (fetch's `sleep`). A
+tick that raises (DB locked, a bug) does not beat, so a worker failing every tick goes stale. `run` removes an earlier
+heartbeat before its first tick, so a new container is healthy only once it has ticked. `scripts/healthcheck.py
+worker` calls the worker healthy while the file is younger than 3 × WORKER_POLL_S (at least 90 s). A heartbeat that
+cannot be written is logged once (until it works again) and the tick goes on.
+
 One bad row never stops the tick, and one bad tick (slskd or Navidrome down, DB locked) never stops `run`.
 Log lines name wanted ids and file basenames only: stdout is the container log and must not carry Soulseek peers.
 """
@@ -70,12 +77,33 @@ class TickReport:
 class Worker:
     def __init__(self, *, store, slskd, navidrome, reconciler, fetch_kwargs: dict, fetcher=fetch, log=print,
                  recheck_s: float = 0, reconcile_s: float = 0, clock=time.monotonic, lock_path: Path | None = None,
-                 export_s: float = 0, exporter=export):
+                 export_s: float = 0, exporter=export, heartbeat_path: Path | None = None):
         self.store, self.fetcher, self.log, self.recheck_s = store, fetcher, log, recheck_s
         self.reconciler, self.reconcile_s, self.clock, self._reconciled_at = reconciler, reconcile_s, clock, None
         self.export_s, self.exporter, self._exported_at = export_s, exporter, None
         self.lock_path, self._lock_fd = lock_path, None
+        self.heartbeat_path, self._beat_failed = heartbeat_path, False
         self.common = dict(store=store, slskd=slskd, navidrome=navidrome, reconciler=reconciler, **fetch_kwargs)
+        if heartbeat_path is not None:
+            self.common["sleep"] = self._sleep
+
+    def beat(self) -> None:
+        """Touch the heartbeat file (scripts/healthcheck.py worker reads its age). A failure is logged once, until a
+        beat works again."""
+        if self.heartbeat_path is None:
+            return
+        try:
+            self.heartbeat_path.touch()
+            self._beat_failed = False
+        except OSError as e:
+            if not self._beat_failed:
+                self.log(f"heartbeat failed: {type(e).__name__}: {e}")
+            self._beat_failed = True
+
+    def _sleep(self, s: float) -> None:
+        """fetch's poll wait: a long download or scan keeps the heartbeat fresh."""
+        self.beat()
+        time.sleep(s)
 
     def _lock(self) -> None:
         """One worker at a time (the CLI passes <dirname(CRATES_DB)>/worker.lock). Taken before `recover`, so a
@@ -181,6 +209,11 @@ class Worker:
         """No `tier` is passed: the row's current tier rules, and an approval's tier only records what was approved.
         Play-now approvals go first, before the reconcile and the re-checks (each may take a while): Michael is
         waiting to hear the track."""
+        report = self._tick()
+        self.beat()                                        # only a tick that ends: one that raises goes stale
+        return report
+
+    def _tick(self) -> TickReport:
         results, rechecked = [], 0
         claimed = self._spend([a for a in self.store.pending_approvals() if a.get("purpose") == "play-now"], results)
         self.reconcile_due()
@@ -212,6 +245,11 @@ class Worker:
         start). `ticks` ends the loop after that many (tests); `sleep` and `now` are injectable for the same reason."""
         self._lock()                                       # WorkerRunning propagates: the CLI exits non-zero
         try:
+            if self.heartbeat_path is not None:            # the last container's beat is not ours
+                try:
+                    self.heartbeat_path.unlink(missing_ok=True)
+                except OSError as e:
+                    self.log(f"heartbeat failed: {type(e).__name__}: {e}")
             try:
                 self.recover()
             except Exception as e:                         # e.g. DB locked: the next start recovers

@@ -552,6 +552,20 @@ docker compose stop worker         # stop (queued approvals wait; a stop mid-dow
 docker compose up -d worker        # start / resume
 ```
 
+**Is it alive?** The worker touches `/srv/docker/crates/worker.heartbeat` (beside `crates.db`) when a tick ends, and
+at each poll while it waits on a download or a Navidrome scan. A tick that fails as a whole (`tick failed:` in the
+log) does not, and a starting worker removes the old file, so it reads unhealthy until its first tick ends.
+`scripts/healthcheck.py` (stdlib, exit 0 healthy, 1 not, one line saying why) reads it:
+
+```
+docker compose exec worker python scripts/healthcheck.py worker   # heartbeat younger than 3 × WORKER_POLL_S, at least 90 s
+docker compose exec crates python scripts/healthcheck.py crates   # /api/status answers 200 within 5 s
+```
+
+`crates` is unhealthy while Navidrome is down too, because `/api/status` asks it (502). A stale heartbeat while the
+container runs means the loop is stuck, every tick fails (`tick failed:`), or the file cannot be written
+(`heartbeat failed:`).
+
 The worker mounts `/srv/music`, `/srv/docker/beets` and `/srv/incoming/soulseek` at the same paths as on the host,
 because beets stores absolute paths in `library.db`. It also mounts `/srv/_trash` read-write at the same path
 (copy replacement moves old files there). Navidrome's database is mounted read-only, in the worker and in the crates

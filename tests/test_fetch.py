@@ -211,3 +211,12 @@ def test_the_row_says_checking_before_the_verifier_runs(world, tmp_path):
         r = run(world, srv, approve=True, verifier=spy)
     assert r.status == "ok", r.reason
     assert seen == {"status": "sourcing", "reason": "checking 03 - Good Times.flac", "in_tx": False}
+
+
+def test_the_download_wait_polls_through_the_given_sleep(world):
+    """The worker passes a `sleep` that beats its heartbeat (H1-02): a long download must not look like a dead worker."""
+    world["store"].approve("s4", "michael", None, "crate"); world["store"].commit()
+    calls = []
+    with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: b"x"}, complete=False) as srv:
+        r = run(world, srv, True, download_timeout_s=0.2, sleep=calls.append)
+    assert (r.status, r.reason) == ("failed", "download timed out") and calls and set(calls) == {0.01}
