@@ -58,10 +58,10 @@ main { flex:1; padding:12px 16px 120px; max-width:860px; width:100%; margin:0 au
 .err { color:var(--bad); }
 .wrap { white-space:normal; overflow-wrap:anywhere; }
 .reason { flex-basis:100%; font-size:12px; color:var(--muted); overflow-wrap:anywhere; }
-#proposals-box h3 { margin:8px 0 4px; font-size:15px; color:var(--accent); }
-#proposals li, #wanted li { flex-wrap:wrap; }
-#proposals .grow, #wanted .grow { flex:1 1 220px; }
-#wanted .reason { flex-basis:auto; }
+#proposals-box h3, #detail-wanted h3 { margin:8px 0 4px; font-size:15px; color:var(--accent); }
+#proposals li, #wanted li, #detail-wanted-list li { flex-wrap:wrap; }
+#proposals .grow, #wanted .grow, #detail-wanted-list .grow { flex:1 1 220px; }
+#wanted .reason, #detail-wanted-list .reason { flex-basis:auto; }
 .actions { display:flex; gap:8px; }
 .actions button { min-width:72px; }
 #proposals li { border-left:3px solid var(--accent); padding-left:10px; }
@@ -72,10 +72,10 @@ pre.sub { white-space:pre-wrap; overflow-wrap:anywhere; max-width:100%; }
   .tracks .reason { padding-left:52px; }
   .tracks .fmt, #results .fmt { order:5; flex-basis:100%; padding-left:46px; }
 }
-#wanted .title, #proposals .title { white-space:normal; overflow-wrap:anywhere; }
+#wanted .title, #detail-wanted-list .title, #proposals .title { white-space:normal; overflow-wrap:anywhere; }
 /* play-now (D20): a ▶ on a queued track downloads a quick copy; the strip under the title says where it is */
-#wanted .play { user-select:none; touch-action:manipulation; width:40px; height:40px; border-radius:50%; padding:0; display:grid; place-items:center; flex:none; }
-#wanted .play.playing { border-color:var(--accent); color:var(--accent); }
+#wanted .play, #detail-wanted-list .play { user-select:none; touch-action:manipulation; width:40px; height:40px; border-radius:50%; padding:0; display:grid; place-items:center; flex:none; }
+#wanted .play.playing, #detail-wanted-list .play.playing { border-color:var(--accent); color:var(--accent); }
 .pn { flex-basis:100%; font-size:12px; margin-top:2px; }
 .pn-hint { color:var(--muted); }
 .pn-line { color:var(--info); font-weight:600; }

@@ -134,3 +134,20 @@ def test_script_offers_preview_and_approve_on_retryable_review_rows_only(svc):
     assert m and m.group(1).replace("\\d", r"\d") == RETRYABLE_REVIEW.pattern
     assert "RETRYABLE_REVIEW.test(t.reason" in js and "offer" in js
     assert "!review) {" not in js and "&& !review" not in js         # no unconditional review exclusion left
+
+
+def test_playlist_detail_lists_what_is_not_in_the_library_yet_with_play_now(svc):
+    """The playlist's `wanted` rows (GET /api/playlists/<id>) get the Wanted tab's ▶: the same functions, one POST per tap."""
+    js, html, css = asset(svc, "app.js"), asset(svc, ""), asset(svc, "app.css")
+    assert 'id="detail-wanted"' in html and 'id="detail-wanted-list"' in html and 'id="detail-wanted-title"' in html
+    assert "Not in the library yet (" in js and "p.wanted" in js
+    body = js[js.index("function renderPlaylistWanted"):]
+    body = body[:body.index("\n}\n")]
+    assert "pnButton(" in body and "pnFill(" in body                   # the shared play-now button and progress strip
+    assert "api(" not in body and "alert(" not in body                 # the tap goes through playNow: one POST, no popup
+    assert "playNow(t, pl)" in js[js.index("function pnButton"):js.index("function pnButton") + 500]
+    assert js.count("/play-now") == 1                                   # one place posts it
+    assert "renderPlaylistWanted(p)" in js[js.index("async function openPlaylist"):js.index("$(\"#back\")")]
+    assert "#detail-wanted-list" in css
+    for peer in ("username", "vinylhead77"):
+        assert peer not in body

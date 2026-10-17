@@ -165,3 +165,32 @@ def test_approve_endpoint_accepts_a_retryable_review_row(svc, reason):  # noqa: 
     code, body = post(srv.url + "/api/wanted/s4/approve", {})
     assert code == 200, body
     assert app.store.approval("s4") is not None
+
+
+# --- 4. playlist detail lists the playlist's queued rows the library does not have yet
+def test_playlist_detail_lists_its_external_rows_not_yet_in_the_library(svc):  # noqa: F811
+    fake, app, srv = svc
+    a = app.store.add_external_wanted("Twain", "The Magician", playlist_id="pl-2", position=3)
+    b = app.store.add_external_wanted("Chic", "Everybody Dance", playlist_id="pl-2", position=4)
+    done = app.store.add_external_wanted("Sade", "Smooth Operator", playlist_id="pl-2", position=5)
+    elsewhere = app.store.add_external_wanted("Yes", "Roundabout", playlist_id="pl-1", position=0)
+    app.store.set_external_status(a, "failed", "no acceptable candidate on /srv/incoming/soulseek/vinylhead77/x.flac")
+    app.store.set_external_status(done, "ok", "filed")
+    app.store.db.execute("UPDATE external_wanted SET library_song_id='s1' WHERE id=?", (int(done[4:]),))
+    app.store.db.execute("UPDATE external_wanted SET provisional=1 WHERE id=?", (int(b[4:]),))
+    app.store.commit()
+    code, _, body = get(srv.url + "/api/playlists/pl-2")
+    assert code == 200
+    rows = {w["id"]: w for w in body["wanted"]}
+    assert set(rows) == {a, b}                                  # not the finished row, not another playlist's
+    assert list(rows) == [a, b]                                 # in playlist order
+    assert rows[a]["artist"] == "Twain" and rows[a]["title"] == "The Magician" and rows[a]["status"] == "failed"
+    assert rows[b]["provisional"] is True and rows[a]["provisional"] is False
+    assert rows[a]["library_song_id"] is None and rows[a]["filed"] is False
+    assert "/srv" not in json.dumps(body) and "vinylhead77" not in json.dumps(body)     # no peer, no absolute path
+    assert "x.flac" in rows[a]["reason"]                        # the basename stays
+
+
+def test_playlist_detail_wanted_is_empty_without_external_rows(svc):  # noqa: F811
+    fake, app, srv = svc
+    assert get(srv.url + "/api/playlists/pl-2")[2]["wanted"] == []

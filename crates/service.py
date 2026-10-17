@@ -130,6 +130,13 @@ class CrateApp:
                 "bitDepth": s.bit_depth, "coverArt": s.raw.get("coverArt"),
                 "crateStatus": st["status"] if st else None, "crateReason": st["reason"] if st else None,
             })
+        # the playlist's queued rows the library does not have yet (import-playlist's): the web lists them with the
+        # play-now ▶ the Wanted tab has; public() keeps peer names and absolute paths out of the reasons
+        view["wanted"] = [public({
+            "id": w["song_id"], "artist": w["artist"], "title": w["title"], "status": w["status"],
+            "reason": w["reason"], "provisional": bool(w["provisional"]), "library_song_id": w["library_song_id"],
+            "filed": filed_path(w["reason"]) is not None})
+            for w in self.store.external_for_playlist(pid) if not w["library_song_id"] and w["status"] != "ok"]
         return view
 
     def search(self, q: str, count: int = 25) -> list[dict]:

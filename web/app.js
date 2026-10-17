@@ -79,6 +79,26 @@ async function openPlaylist(id) {
     if (t.crateReason && ["review", "failed"].includes(t.crateStatus)) li.append(el("div", "reason", t.crateReason));   // a phone has no hover
     ol.append(li);
   });
+  renderPlaylistWanted(p);
+}
+// A playlist's queued tracks the library does not have yet (GET /api/playlists/<id> `wanted`): each offers the same
+// play-now ▶ as the Wanted tab (one POST per tap; playNow and its progress strip are shared), and says why when not.
+function renderPlaylistWanted(p) {
+  const box = $("#detail-wanted"), ul = $("#detail-wanted-list"), items = p.wanted || [];
+  ul.innerHTML = ""; box.classList.toggle("hidden", !items.length);
+  $("#detail-wanted-title").textContent = `Not in the library yet (${items.length})`;
+  for (const w of items) {
+    const t = { song_id: w.id, external: true, artist: w.artist, title: w.title, status: w.status, reason: w.reason,
+                provisional: w.provisional, library_song_id: w.library_song_id, filed: w.filed };
+    const li = el("li", "wrow"), grow = el("div", "grow"), mine = pn[w.id] && pn[w.id].active;
+    const canPlayNow = !w.library_song_id && (mine || w.status === "needs_source" || (w.status === "failed" && !w.filed));
+    if (canPlayNow) li.append(pnButton(t, mine));
+    grow.append(el("div", "title", `${w.artist} — ${w.title}`));
+    if (canPlayNow || pn[w.id]) { const b = el("div", "pn"); b.dataset.wid = w.id; b.setAttribute("role", "status"); b.setAttribute("aria-live", "polite"); pnFill(b, w.id); grow.append(b); }
+    if (w.reason) grow.append(el("div", "reason", w.reason));
+    li.append(grow, el("span", "badge " + w.status, w.status.replace("_", " ")));
+    ul.append(li);
+  }
 }
 $("#back").onclick = () => { $("#detail").classList.add("hidden"); $("#playlists").classList.remove("hidden"); loadPlaylists(); };
 $("#detail-crate").onchange = async e => {
@@ -280,6 +300,14 @@ async function playNow(t, btn) {
   catch (e) { return pnRefused(t, e); }
   pnSchedule(t, pnDelay(pn[id].tries++));
 }
+// The ▶ of a queued track the library does not have (the Wanted tab and a playlist's "Not in the library yet" list).
+function pnButton(t, mine) {
+  const pl = el("button", "play pn-btn", mine ? "…" : "▶");
+  pl.setAttribute("aria-label", "Play now: downloads a quick copy of this track, then plays it");
+  pl.dataset.wid = t.song_id; pl.disabled = !!mine;
+  pl.onclick = () => playNow(t, pl);
+  return pl;
+}
 // a page that was asleep (or reloaded) watches again at once
 document.addEventListener("visibilitychange", () => {
   for (const s of Object.values(pn)) {
@@ -312,11 +340,7 @@ async function loadWanted() {
       pl.onclick = () => playTrack({ id: lib || id, title: t.title, artist: t.artist, album: t.album, provisional: t.provisional });
       li.append(pl);
     } else if (canPlayNow) {
-      const pl = el("button", "play pn-btn", mine ? "…" : "▶");
-      pl.setAttribute("aria-label", "Play now: downloads a quick copy of this track, then plays it");
-      pl.dataset.wid = id; pl.disabled = !!mine;
-      pl.onclick = () => playNow(t, pl);
-      li.append(pl);
+      li.append(pnButton(t, mine));
     }
     grow.append(el("div", "title", `${t.artist} — ${t.title}`));
     grow.append(el("div", "sub wrap", `${t.album || ""} ${t.year || ""} · ${dur(t.duration)} · ${t.crates.length ? "in " + t.crates.join(", ") : "external"} · tier ${t.tier}`));
