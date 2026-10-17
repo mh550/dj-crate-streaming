@@ -1,24 +1,15 @@
-# Project rules — dj-crate-streaming (unattended harness run)
-
 _Appended to every harness prompt. Binding on every session._
 
 ## The one rule that shapes this night: build and test, never operate
 This repo runs Michael's live music server: Navidrome, the crates and worker containers,
-`/srv/music`, `/srv/_trash`. **An unattended session never touches anything live.** Every item is
-built test-first against the fakes, `tmp_path` and the sandboxed suite (`.harness/check.sh`). The
-live run is written down for Michael, never executed.
-- Never run `docker` / `docker compose`, `scripts/deploy.sh`, or any `crates.cli` / `sourcing.cli` /
-  `scripts.*` command against real data. Never read or write under `/srv`. Never call Navidrome
-  (`:4533`) or slskd. Never read `/srv/docker/.env` or any secret.
-- No Soulseek transfers: never `fetch --approve`.
-- Read-only inputs: the repo's `docs/`, `fixtures/` and `tests/`. Facts about the live system come
-  from the docs (`docs/next-todos.md` "State at hand-off", `docs/duplicates-report.md`,
-  `docs/hard-won-facts.md`), not from probing it.
-- **For every item that has a live step,** the closing feature writes
-  `docs/live-steps/<date>-<item>.md`: the exact commands Michael runs (dry run → `--limit` → all),
-  what to check after each stage, and the revert. Model it on `docs/worker.md` and the M3/M8 plans.
-- Stay in this worktree. Never run git commands in `~/projects` or `~/projects/dj-crate-streaming`
-  (another session and the live deploy use them).
+`/srv/music`, `/srv/_trash`. You can test out your changes live, as this is an app in beta with
+only me as the user. Every item is built test-first against the fakes, `tmp_path` and the sandboxed suite (`.harness/check.sh`).
+- Before each live write: the playlist check passes, sqlite3 ".backup" snapshots are taken, and the last restic run and the running image are noted.
+- Stages: dry run, then --limit 5, then --limit 50, then all, with the tool’s checks plus the playlist check after each stage.
+- On the first problem: stop, revert with the reverse log, and log it.
+- One live writer at a time.
+- Deploy with scripts/deploy.sh from the run’s worktree, noting the previous image for rollback.
+- Still never: Soulseek transfers (D7), writes under /srv/incoming, the amperfy account, secrets, or rewriting git history.
 
 ## The spec
 - **Build list:** `docs/next-todos.md` → "In order". **Tonight: items 1–4, code only.**
