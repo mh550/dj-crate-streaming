@@ -157,6 +157,139 @@ async function loadAfterProposal() {
   if (state.current) await openPlaylist(state.current.id);        // the slot may have changed under an open playlist
 }
 
+// ---- play-now (D20). Pressing ▶ on a queued track the library does not have is Michael's approval for ONE fast copy:
+// the page says so, shows where the copy is (queued → downloading → checking → filed → playing), starts it when the
+// file lands, and says why when it cannot. One request per tap; the polling backs off and sleeps with the page.
+// pn:begin
+const PN_STEPS = ["queued", "downloading", "checking", "filed", "playing"];
+const PN_GIVE_UP_MS = 10 * 60 * 1000;                      // of visible waiting; a later tap on ▶ picks the watch up again
+function pnDelay(n) { return Math.min(10000, Math.round(2000 * Math.pow(1.5, n))); }       // 2 s, 3, 4.5, 6.75, then 10
+// Where a row (GET /api/wanted/<id>) is on the way to a playable file: one of PN_STEPS, or "ended" with the reason why.
+function pnPhase(r) {
+  const a = r.approval, why = r.reason || "";
+  if (r.library_song_id) return { phase: "playing" };
+  if (r.status === "verify") return { phase: r.filed ? "filed" : "checking" };   // today a verify row is always already filed
+  if (r.status === "sourcing") return { phase: /^(?:checking|verifying)\b/i.test(r.reason || "") ? "checking" : "downloading" };
+  if (r.status === "needs_source" || r.status === "failed") {
+    if (r.status === "needs_source" && a && !a.used_at) return { phase: "queued" };
+    if (r.status === "needs_source" && a && a.result === "started") return { phase: "downloading" };
+    if (r.status === "needs_source" && a && /^ok\b/.test(a.result || "")) return { phase: "checking" };   // filed; Navidrome not listing it yet
+  }
+  const result = a && a.used_at && a.result && a.result !== "started" ? a.result : "";
+  const parts = [why || result];                          // the row's own reason; the approval's result only when it has none
+  if (r.status === "ok") return { phase: "ended", message: "It is in the library already: search for it." };
+  return { phase: "ended", message: parts.join(" · ") || "Nothing is fetching this track." };
+}
+// pn:pure-end
+const pn = {};          // wanted id -> {active, phase, note, message, tries, waited, errs, timer, paused, busy, t}
+const PN_HINT = "▶ downloads a quick copy to play now";
+const SILENCE = "data:audio/wav;base64,UklGRnQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVAAAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==";
+
+// A phone lets a page start audio only from a tap, and the file lands seconds later: the tap itself primes the player.
+function unlockAudio() {
+  const a = $("#audio");
+  if (a.getAttribute("src")) return;                       // something already played here, so it is unlocked
+  a.src = SILENCE; a.play().catch(() => {});
+}
+function pnSel(id) { return CSS.escape(id); }
+function pnPaint(id) {
+  document.querySelectorAll(`.pn[data-wid="${pnSel(id)}"]`).forEach(box => pnFill(box, id));
+  document.querySelectorAll(`button.pn-btn[data-wid="${pnSel(id)}"]`).forEach(b => {
+    const on = !!(pn[id] && pn[id].active); b.disabled = on; b.textContent = on ? "…" : "▶";
+  });
+}
+function pnFill(box, id) {
+  const s = pn[id]; box.replaceChildren();
+  if (!s) { box.append(el("div", "pn-hint", PN_HINT)); return; }
+  if (s.active || s.phase === "playing") {
+    const at = PN_STEPS.indexOf(s.phase);
+    box.append(el("div", "pn-line", s.active ? `fetching… ${s.phase}` : "playing"));
+    const ol = el("ol", "pn-steps");
+    PN_STEPS.forEach((n, i) => ol.append(el("li", i < at || (!s.active && i === at) ? "done" : i === at ? "now" : null, n)));
+    box.append(ol);
+    if (s.note) box.append(el("div", "pn-note", s.note));
+  }
+  if (s.message) box.append(el("div", "pn-msg", s.message));
+}
+function pnStop(id, message) {
+  const s = pn[id]; if (!s) return;
+  clearTimeout(s.timer); Object.assign(s, { active: false, timer: null, paused: false, busy: false, message });
+  pnPaint(id);
+}
+function pnSchedule(t, delay) {
+  const id = t.song_id, s = pn[id]; if (!s || !s.active) return;
+  clearTimeout(s.timer); s.timer = null; s.t = t;
+  if (document.hidden) { s.paused = true; return; }        // nothing is asked of the server while nobody looks
+  if (s.waited >= PN_GIVE_UP_MS) return pnStop(id, "Still not here after 10 minutes. It may yet arrive: check Wanted later, or tap ▶ to keep watching.");
+  s.paused = false; s.waited += delay; s.timer = setTimeout(() => pnTick(t), delay);
+}
+async function pnTick(t) {
+  const id = t.song_id, s = pn[id];
+  if (!s || !s.active || s.busy) return;
+  if (document.hidden) { s.paused = true; return; }
+  s.busy = true; let row;
+  try { row = await api(`/api/wanted/${id}`); s.errs = 0; }
+  catch (e) {
+    s.busy = false;
+    if (e.status === 404) return pnStop(id, "This track left the queue before a file arrived.");
+    if (++s.errs >= 5) return pnStop(id, "Lost contact with the crate service. The download may still finish: check Wanted.");
+    return pnSchedule(t, pnDelay(s.tries++));
+  }
+  s.busy = false;
+  if (!s.active) return;
+  const ph = pnPhase(row);
+  if (ph.phase === "playing") return pnLanded(t, row);
+  if (ph.phase === "ended") return pnStop(id, `Couldn't fetch it: ${ph.message}`);
+  s.phase = ph.phase; pnPaint(id);
+  pnSchedule(t, pnDelay(s.tries++));
+}
+// The file is in the library: play it (a provisional copy says so; the upgrade is queued for Michael's approval).
+async function pnLanded(t, row) {
+  const id = t.song_id;
+  clearTimeout(pn[id].timer);
+  pn[id] = { active: false, phase: "playing" };
+  const ok = await playTrack({ id: row.library_song_id, title: row.title, artist: row.artist, album: row.album, provisional: row.provisional });
+  if (!ok) pn[id].message = "It is here, but the browser blocked autoplay: tap ▶ to play.";
+  pnPaint(id);
+  if ($("#tab-wanted").classList.contains("active")) loadWanted().catch(() => {});
+}
+async function pnRefused(t, e) {
+  const id = t.song_id, s = pn[id];
+  if (e.status === 409) {                                 // already being fetched (a double tap elsewhere), or has a file, or must wait
+    let row = null;
+    try { row = await api(`/api/wanted/${id}`); } catch (_) { /* the refusal below stands */ }
+    const ph = row && pnPhase(row);
+    if (ph && ph.phase === "playing") return pnLanded(t, row);
+    if (ph && ph.phase !== "ended") {                     // someone else's tap: watch it instead of starting another
+      Object.assign(s, { phase: ph.phase, note: "Already being fetched (another tap or device)." });
+      pnPaint(id); return pnSchedule(t, 0);
+    }
+    return pnStop(id, `Not started: ${e.message.split(id).join("this track")}`);
+  }
+  if (e.status === 404) return pnStop(id, "Not started: this track is no longer in the queue. Reload Wanted.");
+  if (e.status) return pnStop(id, `Not started: ${e.message}`);
+  pnStop(id, "Couldn't reach the crate service, so nothing was confirmed. Check Wanted before tapping again.");
+}
+async function playNow(t, btn) {
+  const id = t.song_id;
+  if (pn[id] && pn[id].active) return;                     // a second tap is dropped here, never sent
+  btn.disabled = true;
+  pn[id] = { active: true, phase: "queued", tries: 0, waited: 0, errs: 0, t };
+  pnPaint(id); unlockAudio();
+  try { await api(`/api/wanted/${id}/play-now`, {}); }
+  catch (e) { return pnRefused(t, e); }
+  pnSchedule(t, pnDelay(pn[id].tries++));
+}
+// a page that was asleep (or reloaded) watches again at once
+document.addEventListener("visibilitychange", () => {
+  for (const s of Object.values(pn)) {
+    if (!s.active || !s.t) continue;
+    if (document.hidden) { clearTimeout(s.timer); s.timer = null; s.paused = true; }
+    else if (s.paused) pnSchedule(s.t, 0);
+  }
+});
+// pn:end
+
 async function loadWanted() {
   await loadProposals().catch(e => { $("#proposals-box").classList.add("hidden"); alert(e.message); });
   const items = await api("/api/wanted"); const ul = $("#wanted"); ul.innerHTML = "";
@@ -165,13 +298,35 @@ async function loadWanted() {
     const li = el("li", "wrow"); const grow = el("div", "grow");
     const review = t.status === "review";     // keep-both / declined / ambiguous: a decision is waiting
     const offer = !review || RETRYABLE_REVIEW.test(t.reason || "");   // only retryable reviews can be previewed or approved
+    const id = t.song_id, lib = t.library_song_id, ph = pnPhase(t).phase;
+    // a play-now another tab/device started, or this page before a reload: watch it instead of offering a second tap
+    if (t.external && !lib && !pn[id] && t.approval && t.approval.purpose === "play-now" && PN_STEPS.slice(0, 4).includes(ph)) {
+      pn[id] = { active: true, phase: ph, tries: 0, waited: 0, errs: 0, t }; pnSchedule(t, 0);
+    }
+    const mine = pn[id] && pn[id].active;
+    const idle = !t.approval || t.approval.used_at;
+    const canPlayNow = t.external && !lib && (mine || ((t.status === "needs_source" || (t.status === "failed" && !t.filed)) && idle));
+    if (lib || !t.external) {                    // a file Navidrome has: play it, nothing is downloaded
+      const pl = el("button", "play" + (state.playingId === (lib || id) ? " playing" : ""), "▶");
+      pl.setAttribute("aria-label", "Play the library copy");
+      pl.onclick = () => playTrack({ id: lib || id, title: t.title, artist: t.artist, album: t.album, provisional: t.provisional });
+      li.append(pl);
+    } else if (canPlayNow) {
+      const pl = el("button", "play pn-btn", mine ? "…" : "▶");
+      pl.setAttribute("aria-label", "Play now: downloads a quick copy of this track, then plays it");
+      pl.dataset.wid = id; pl.disabled = !!mine;
+      pl.onclick = () => playNow(t, pl);
+      li.append(pl);
+    }
     grow.append(el("div", "title", `${t.artist} — ${t.title}`));
     grow.append(el("div", "sub wrap", `${t.album || ""} ${t.year || ""} · ${dur(t.duration)} · ${t.crates.length ? "in " + t.crates.join(", ") : "external"} · tier ${t.tier}`));
+    if (lib && t.provisional) grow.append(el("div", "pn-prov", "provisional — a better copy is queued for your approval"));
+    if (canPlayNow || (pn[id] && (!lib || pn[id].phase === "playing" || pn[id].message))) { const box = el("div", "pn"); box.dataset.wid = id; box.setAttribute("role", "status"); box.setAttribute("aria-live", "polite"); pnFill(box, id); grow.append(box); }
     if (t.reason) grow.append(el("div", "reason", t.reason));
     if (t.verify) grow.append(el("div", "sub wrap", verifyLine(t.verify)));
     const pending = t.approval && !t.approval.used_at, pk = t.preview && t.preview.pick;
     const busy = t.status === "sourcing" || t.status === "verify";   // in progress: shown, not offered again
-    if (pending) grow.append(el("div", "sub wrap", "approved · waiting for worker"));
+    if (pending && !mine) grow.append(el("div", "sub wrap", "approved · waiting for worker"));
     else if (t.approval) grow.append(el("div", "sub wrap", `worker: ${t.approval.result}`));
     if (pk && !pending) {                      // basename only: the peer's name stays out of the UI
       grow.append(el("div", "sub wrap", `pick: ${pk.basename} · ${pk.extension} · ${pk.bit_rate ?? "?"}k · score ${pk.score.toFixed(2)}`));
@@ -243,12 +398,17 @@ async function loadStreamTier() {   // the menu comes from the server's table; t
 function playTrack(t) {
   state.playingId = t.id;
   $("#player").classList.remove("hidden");
-  $("#np-title").textContent = t.title; $("#np-sub").textContent = `${t.artist || ""} · ${fmt(t)}`;
-  const a = $("#audio"); a.src = streamUrl(t.id); a.play().catch(() => {});
+  $("#np-title").textContent = t.title; $("#np-sub").textContent = [t.artist, fmt(t), t.provisional ? "provisional copy" : ""].filter(Boolean).join(" · ");
+  const a = $("#audio"); a.src = streamUrl(t.id);
+  const started = a.play().then(() => true, () => false);       // false: the browser refused (play-now says so)
   document.querySelectorAll(".play").forEach(b => b.classList.remove("playing"));
   if ("mediaSession" in navigator) navigator.mediaSession.metadata = new MediaMetadata({ title: t.title, artist: t.artist || "", album: t.album || "" });
   if (state.current) openPlaylist(state.current.id);
+  return started;
 }
+$("#audio").addEventListener("error", () => {             // a stream that cannot play says so instead of staying silent
+  if (state.playingId) $("#np-sub").textContent = "Couldn't play this one: Navidrome did not send the file.";
+});
 $("#quality").onchange = async () => {
   api("/api/stream-tier", { tier: $("#quality").value }).catch(e => alert(e.message));   // saved in parallel
   const a = $("#audio"); if (!state.playingId) return;

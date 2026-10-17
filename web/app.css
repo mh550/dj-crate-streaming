@@ -73,3 +73,18 @@ pre.sub { white-space:pre-wrap; overflow-wrap:anywhere; max-width:100%; }
   .tracks .fmt, #results .fmt { order:5; flex-basis:100%; padding-left:46px; }
 }
 #wanted .title, #proposals .title { white-space:normal; overflow-wrap:anywhere; }
+/* play-now (D20): a ▶ on a queued track downloads a quick copy; the strip under the title says where it is */
+#wanted .play { user-select:none; touch-action:manipulation; width:40px; height:40px; border-radius:50%; padding:0; display:grid; place-items:center; flex:none; }
+#wanted .play.playing { border-color:var(--accent); color:var(--accent); }
+.pn { flex-basis:100%; font-size:12px; margin-top:2px; }
+.pn-hint { color:var(--muted); }
+.pn-line { color:var(--info); font-weight:600; }
+.pn-steps { list-style:none; margin:4px 0 0; padding:0; display:flex; flex-wrap:wrap; gap:4px; }
+.list .pn-steps li { display:inline-flex; padding:1px 7px; border:1px solid var(--line); border-radius:6px; color:var(--muted); font-size:11px; }
+.list .pn-steps li.done { color:var(--ok); border-color:var(--ok); }
+.list .pn-steps li.now { color:var(--info); border-color:var(--info); animation:pn-pulse 1.4s ease-in-out infinite; }
+@keyframes pn-pulse { 50% { opacity:.45; } }
+@media (prefers-reduced-motion: reduce) { .list .pn-steps li.now { animation:none; } }
+.pn-note { color:var(--muted); margin-top:2px; }
+.pn-msg { margin-top:4px; padding:6px 8px; border-left:3px solid var(--warn); background:var(--panel); color:var(--fg); overflow-wrap:anywhere; }
+.pn-prov { font-size:12px; color:var(--accent); overflow-wrap:anywhere; }
