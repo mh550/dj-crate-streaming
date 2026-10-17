@@ -49,7 +49,6 @@ async function loadPlaylists() {
     grow.append(el("div", "sub", sub));
     li.append(grow);
     if (p.crate) li.append(el("span", "badge crate", "crate"));
-    else if (p.tier) li.append(el("span", "badge tier", p.tier));
     li.onclick = () => openPlaylist(p.id);
     ul.append(li);
   }
@@ -61,8 +60,7 @@ async function openPlaylist(id) {
   $("#playlists").classList.add("hidden"); $("#detail").classList.remove("hidden");
   $("#detail-name").textContent = p.name;
   $("#detail-crate").checked = p.crate;
-  renderTier(p);
-  const label = p.crate ? "crate" : p.tier ? `tier ${p.tier}` : null;
+  const label = p.crate ? "crate" : null;
   $("#detail-summary").textContent = p.summary
     ? `${label || "tiered"} · ${p.summary.ok} ready · ${p.summary.needs_source} need sourcing` + (p.summary.sourcing ? ` · ${p.summary.sourcing} downloading` : "") + (p.summary.failed ? ` · ${p.summary.failed} failed` : "") + (p.summary.review ? ` · ${p.summary.review} to decide` : "")
     : `${p.songCount} tracks · ${dur(p.duration)} · ${label || "not a crate"}`;
@@ -106,26 +104,6 @@ $("#detail-crate").onchange = async e => {
   try { await api(`/api/playlists/${p.id}/crate`, { enabled: e.target.checked }); await openPlaylist(p.id); await loadStatus(); }
   catch (err) { alert(changeError(err)); e.target.checked = !e.target.checked; }
   finally { e.target.disabled = false; }
-};
-
-// The comment owns crate and tier (D21). A crate always wins: while crate is on, the stored tier (tierTag) is shown
-// but the menu is off and says when it applies, so it never looks like it did nothing.
-function renderTier(p) {
-  const sel = $("#detail-tier"), note = $("#detail-tier-note");
-  sel.value = (p.crate ? p.tierTag : p.tier) || "";
-  sel.disabled = !!p.crate;
-  let text = "";
-  if (p.crate) {
-    text = p.tierTag ? `crate (tier ${p.tierTag} applies when crate is off)` : "crate (no other tier set; pick one once crate is off)";
-    if (p.crateByName) text += " · crate by name: remove [crate]/🎛 from the name to turn it off";
-  }
-  note.textContent = text; note.classList.toggle("hidden", !text);
-}
-$("#detail-tier").onchange = async e => {
-  const p = state.current, sel = e.target; sel.disabled = true;
-  try { await api(`/api/playlists/${p.id}/tier`, { tier: sel.value || null }); await openPlaylist(p.id); await loadStatus(); }
-  catch (err) { alert(changeError(err)); renderTier(p); }          // back to what the playlist really has
-  finally { sel.disabled = !!state.current.crate; }
 };
 
 // ---- wanted

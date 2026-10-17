@@ -1,11 +1,13 @@
 """Quality policy: what counts as acceptable / preferred for a crate file.
 
-Mirrors the spec's "preferred + whitelist/blacklist filetypes/bitrates". Four tiers (spec §1, D9):
-low / medium / high trade quality for arrival time when sourcing something to listen to; crate is
-the policy for files that go on real systems (lossless preferred, 320 kbps floor), unchanged.
+Mirrors the spec's "preferred + whitelist/blacklist filetypes/bitrates". Since 2026-10-17 (D24) deploy/policy.toml
+holds ONE rule in four identically-set tiers: lossless (flac preferred) or lossy at 256 kbps or more. The tier
+names stay because the code looks them up; the machinery (speed weight, strict vs lenient verify, version words)
+is unchanged and still tested against tests/fixtures/policy-legacy.toml, which keeps the old four distinct tiers.
 """
 from __future__ import annotations
 
+import os
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -38,8 +40,9 @@ class QualityPolicy:
     # Downloaded-file check (spec §3a): a file that isn't the quality it claims (transcode, padded bits,
     # upsampled) is rejected (True, crate) or accepted with a warning (False, the listening tiers).
     strict_verify: bool = True
-    # D16 version preferences (deploy/policy.toml): kinds favoured when picking a download, best first, and
-    # other versions an import may accept in place of the one a playlist row asked for.
+    # Version preferences (deploy/policy.toml [versions.*]): kinds favoured when picking a download, best first, and
+    # other versions an import may accept in place of the one a playlist row asked for. The live file lists none
+    # (D26: the exact track is sourced); the legacy test fixture still lists D16's 12" words.
     prefer_versions: tuple[str, ...] = ()
     accept_versions: tuple[str, ...] = ()
 
@@ -58,9 +61,9 @@ class QualityPolicy:
         return ext.lower().lstrip(".") in self.LOSSLESS
 
 
-# The tiers (spec §1, D9) and the version preferences (D16) are Michael's settings, so they live in
-# deploy/policy.toml. Low/medium/high are for listening; crate is for files that go on real systems.
-POLICY_FILE = Path(__file__).resolve().parent.parent / "deploy" / "policy.toml"
+# The quality rule (D24) and any version preferences are Michael's settings, so they live in deploy/policy.toml.
+# DJ_POLICY_FILE overrides the path (the test suite uses it).
+POLICY_FILE = Path(os.environ.get("DJ_POLICY_FILE") or Path(__file__).resolve().parent.parent / "deploy" / "policy.toml")
 
 _TIER_KEYS = {"allow": list, "deny": list, "min_lossy_bitrate": int, "speed_weight": (int, float),
               "arrival_budget_s": (int, float), "download_cap_Bps": int, "strict_verify": bool}
@@ -148,7 +151,7 @@ DEFAULT_TIER = "crate"
 IMPORT_TIER = "medium"      # D15 (Michael, 2026-10-15): new rows from import-playlist / seed-spotify, unless --tier
 DEFAULT_POLICY = TIERS[DEFAULT_TIER]
 
-# D19: a sourcing tier only says which file we keep; stream quality belongs to the client. "server" sends no
+# D19/D25: a sourcing tier only says which file we keep; stream quality belongs to the client. "server" sends no
 # format and no maxBitRate, so Navidrome's per-player transcoding profile decides. The opus presets and
 # "crate" (original bytes) stay as explicit overrides: (Subsonic format, maxBitRate kbps).
 STREAM: dict[str, tuple[str | None, int | None]] = {

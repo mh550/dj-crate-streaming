@@ -34,17 +34,10 @@
       <div class="detail-head">
         <button id="back" class="ghost">‹ back</button>
         <h2 id="detail-name"></h2>
-        <label class="switch" title="Toggle crate: every track must have a crate-quality file, analysis, stems, and a place on your DJ devices">
+        <label class="switch" title="Keep this playlist synced as a crate: every track gets a DJ-quality file (flac, or mp3 at 256 kbps or more)">
           <input type="checkbox" id="detail-crate"><span class="slider"></span><span class="switch-label">crate</span>
         </label>
-        <select id="detail-tier" aria-label="Sourcing tier" title="Tier: how good the files of this playlist's tracks must be. A crate always wins; the tier applies when crate is off.">
-          <option value="">tier: —</option>
-          <option value="low">tier: low</option>
-          <option value="medium">tier: medium</option>
-          <option value="high">tier: high</option>
-        </select>
       </div>
-      <div id="detail-tier-note" class="muted note hidden"></div>
       <div id="detail-summary" class="muted"></div>
       <ol id="tracks" class="list tracks"></ol>
       <div id="detail-wanted" class="hidden">

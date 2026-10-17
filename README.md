@@ -10,8 +10,8 @@ subsonic/   OpenSubsonic protocol layer
   fake_server.py    an in-process fake Navidrome — enough protocol to develop and test offline
 crates/     the orchestration layer: playlist → crate
   store.py          SQLite: cache of crate/tier flags, per-track status, approvals, replacements, proposals, event log
-  attrs.py          M8: read and write `#crate` / `#tier:<t>` in a playlist comment (the comment owns them)
-  reconcile.py      rebuild the cache from the comments, derive each song's tier, judge each track against it
+  attrs.py          retired design (D21): `#crate` / `#tier:<t>` in a playlist comment; only used with CRATES_OWNER=comment
+  reconcile.py      judge each crate track against the DJ-quality rule; the crate flag lives in crates.db (CRATES_OWNER=app)
   migrate_attrs.py  M8: one-time move of crates.db's flags and import tiers into comments (dry run by default)
   playlist_edit.py  M8: the only code that edits a playlist by index (cross-checks navidrome.db, refuses on doubt)
   trash.py          M8: move a library file to the trash (MOVES.txt first, never overwrites), restore it, size report
@@ -78,7 +78,10 @@ Navidrome can't match stays `verify` with the filed path in the reason. `MUSIC_R
 `/srv/incoming/soulseek`, where the slskd container writes) are overridable; the worker refuses an approved
 fetch before any transfer when neither they nor their parent folders exist.
 
-**Quality tiers** (spec §1): `low | medium | high | crate`. `rank`, `fetch`, `seed-spotify` and
+**Quality** (2026-10-17, D24): one rule, lossless (flac preferred) or lossy at 256 kbps or more; the four tier names below
+are identical in `deploy/policy.toml` and `--tier` no longer changes what is accepted. The older description follows.
+
+**Quality tiers** (spec §1, retired as a choice): `low | medium | high | crate`. `rank`, `fetch`, `seed-spotify` and
 `import-playlist` take `--tier`; wanted rows remember theirs (new rows from `import-playlist` and `seed-spotify` default to
 `medium`; crate tracks are always `crate`), and `fetch` scores with the row's tier. Listening tiers trade quality for estimated arrival,
 assuming our own download speed is 1 MB/s (`deploy/policy.toml`). `rank --slskd … --save r.json` keeps
@@ -98,8 +101,8 @@ with real titles from the library. What it changed:
 - **verify** knows a copy upgrade from a new version. A copy upgrade reports `replaceable` (full-length fingerprint
   against the old file, bit-error rate 0.20 or less, durations agree, verdict `ok`). M8 trashes the old copy only
   when it is true.
-- **`deploy/policy.toml`** holds the tiers (same numbers as before, D17 still open) and the version preferences (D16),
-  editable without code: `docs/worker.md` "Editing the policy".
+- **`deploy/policy.toml`** holds the one download-quality rule (lossless, or lossy at 256 kbps or more; D24) in four
+  identical tier entries, and no version preferences (D26: the exact track is sourced), editable without code: `docs/worker.md` "Editing the policy".
 - **The id backfill** (`scripts/identity_backfill.py`) proposes MusicBrainz recording, work and AcoustID ids for the
   files that lack them. It does not use beets (measured: beets matched a 412 s 12" to a 403 s 90's mix). Michael reviews
   the report, then `apply` writes only those id fields where the file's own field is empty, and `revert` can undo it.
@@ -119,13 +122,9 @@ The proposal and report land in `/srv/docker/crates/identity/`. Nothing is writt
 
 M8 follows `docs/specs/2026-10-16-ownership-and-identity.md`. What it changed, in plain words:
 
-- **The comment owns crate and tier.** `crates/attrs.py` reads and writes `#crate` and `#tier:<t>`; every other
-  byte of your comment is left alone. `reconcile` runs in the worker every `WORKER_RECONCILE_S` (600 s), so an edit
-  made in Amperfy takes effect without opening the web client. When the cache and a comment disagree the comment
-  wins and an `attrs` event records both.
-- **One-time migration.** Before the new code first reconciles, `crates.cli attrs migrate` copies what only
-  `crates.db` knew (the crate flag, the import tiers) into comments. It is a dry run unless you add `--apply`.
-  Deploy order: `docs/architecture.md` §9.
+- **(Retired 2026-10-17) The comment owns crate and tier.** The crates app owns the crate flag now
+  (`docs/specs/2026-10-17-amperfy-pivot.md`); `attrs migrate` is refused. `reconcile` still runs in the worker every
+  `WORKER_RECONCILE_S` (600 s), so a change of the crate switch or of the library takes effect without opening the web client.
 - **Listening tiers upgrade only below their floor.** A low, medium or high playlist queues a track only when its
   format is not allowed or a lossy file is under the tier's bit rate floor. "Lossless preferred" is a crate wish.
 - **Copy replacement.** A better copy of the same recording, proven by fingerprint, takes the old copy's place in
@@ -147,8 +146,7 @@ export SUBSONIC_URL=http://127.0.0.1:4533 SUBSONIC_USER=you SUBSONIC_PASS=...
 export SUBSONIC_PUBLIC_URL=https://<box>.<tailnet>.ts.net     # what the phone can reach; omit if same
 python3 -m crates.cli status
 python3 -m crates.cli playlists
-python3 -m crates.cli toggle <playlist-id> on           # writes #crate into the playlist comment
-python3 -m crates.cli tier <playlist-id> medium|...|none  # writes #tier:<t> (none clears it)
+python3 -m crates.cli toggle <playlist-id> on           # keep this playlist synced as a crate (crates.db only)
 python3 -m crates.cli wanted                     # → feed each line to sourcing.cli rank --slskd ...
 python3 -m crates.cli publish [NAME ...]         # make playlists visible to every Navidrome user
 python3 -m crates.cli serve                      # 127.0.0.1:4580 → front with `tailscale serve`
@@ -163,15 +161,11 @@ phone browser ──/api/*──▶ crates.service ──Subsonic──▶ Navid
                                └──wanted──▶ sourcing.scorer ──▶ slskd (search, download) ──▶ sourcing.verify
 ```
 
-- **A crate is a playlist plus a promise.** Since M8 the playlist's own comment owns
-  it: `#crate` makes it a crate, `#tier:low|medium|high` sets the quality its tracks are
-  sourced at without making it a crate. Every Subsonic client shows the comment, and it
-  survives losing `crates.db`, which only caches what `reconcile` reads from the
-  comments. The toggle and `crates.cli tier` write the comment, read it back, then refresh
-  the cache. From a client that can rename a playlist but not edit its comment, a name
-  marker (`Disco Edits [crate]` or `🎛 Disco Edits`) still counts as a crate; such a crate is
-  turned off by renaming. A track's tier is not stored: it is the highest tier among the
-  playlists holding it.
+- **A crate is a playlist plus a promise.** Since 2026-10-17 (D27) the crates app owns it: you switch a playlist on in the
+  crates web client (or `crates.cli toggle`), `crates.db` holds the answer, and nothing is written to the playlist's
+  name or comment (the comment keeps only the import marker `#imported`). Every track of a crate must have a
+  DJ-quality file: lossless, or lossy at 256 kbps or more. The earlier comment-owned design (`#crate`, `#tier:`; set
+  `CRATES_OWNER=comment`) is retired but still in the code.
 - **Judging** uses only what Subsonic reports (suffix, bitRate, samplingRate,
   bitDepth) against `sourcing/policy.py`. Deep checks run in `sourcing/verify.py` once we
   hold the bytes (spec §3a, `docs/download-validation.md`): one ffmpeg decode measures the

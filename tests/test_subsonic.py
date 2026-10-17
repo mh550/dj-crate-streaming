@@ -58,7 +58,7 @@ def test_create_and_delete_playlist(srv):
 def test_search_and_song(srv):
     c = SubsonicClient(srv.url, "demo", "demo")
     assert {s.id for s in c.search_songs("feel")} == {"s2", "s4"}
-    assert c.song("s3").bit_rate == 320
+    assert c.song("s3").bit_rate == 192
 
 
 def test_stream_url_honours_format_and_bitrate(srv):

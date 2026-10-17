@@ -312,8 +312,8 @@ class CrateStore:
             f"WHERE t.status!='removed' AND {TIERED} AND t.song_id IN ({','.join('?' * len(ids))})", ids)}
 
     def set_enabled(self, playlist_id: str, name: str, enabled: bool, source: str = "app") -> Crate:
-        """Write the flag directly. Only tests use it: the comment owns the flag (D21), so production code caches
-        it through set_attrs, and the next reconcile overwrites whatever this wrote."""
+        """Write the flag directly: the crates app's own switch (owner="app"). Under the earlier owner="comment"
+        design (D21) only tests used it, since the next reconcile overwrote it from the comment."""
         now = time.time()
         self.db.execute(
             "INSERT INTO crates(playlist_id,name,enabled,source,created_at,updated_at) VALUES(?,?,?,?,?,?) "
@@ -323,6 +323,13 @@ class CrateStore:
         self.log(playlist_id, None, "crate_on" if enabled else "crate_off", source)
         self.db.commit()
         return self.get(playlist_id)  # type: ignore[return-value]
+
+    def set_name(self, playlist_id: str, name: str) -> None:
+        """Refresh the stored name of a playlist that already has a row (a rename in Navidrome); no row, no change."""
+        c = self.get(playlist_id)
+        if c and c.name != name:
+            self.db.execute("UPDATE crates SET name=? WHERE playlist_id=?", (name, playlist_id))
+            self.db.commit()
 
     def set_attrs(self, playlist_id: str, name: str, crate: bool, tier: str | None) -> tuple[bool, str | None] | None:
         """Cache what the playlist's comment says (source 'comment'). Returns the OLD (crate, tier) when either

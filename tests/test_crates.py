@@ -23,7 +23,7 @@ def song(**kw):
 
 def test_judge_policy():
     assert judge(song(suffix="flac", bit_rate=900, sample_rate=44100, bit_depth=16))[0] == "ok"
-    assert judge(song(suffix="mp3", bit_rate=320))[0] == "needs_source"       # allowed but lossless preferred
+    assert judge(song(suffix="mp3", bit_rate=320))[0] == "ok"                 # lossy at/above the floor is kept (2026-10-17)
     assert judge(song(suffix="mp3", bit_rate=128))[0] == "needs_source"
     assert judge(song(suffix="wma", bit_rate=320))[0] == "needs_source"
     assert judge(song(suffix="flac", bit_rate=200))[0] == "needs_source"      # fake lossless

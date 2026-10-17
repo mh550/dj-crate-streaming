@@ -38,21 +38,17 @@ def asset(svc, name):
     return fetch(svc[2].url + "/" + name)[1]
 
 
-def test_page_has_the_tier_menu_and_the_proposals_list(svc):
+def test_page_has_the_crate_switch_and_the_proposals_list_but_no_tier_menu(svc):
+    """2026-10-17 pivot: tiers are retired, so the crate switch is the one control beside the playlist name."""
     html = asset(svc, "")
-    assert re.search(r'<select[^>]*id="detail-tier"', html)
-    for tier in ("low", "medium", "high"):
-        assert f'value="{tier}"' in html.split('id="detail-tier"')[1].split("</select>")[0]
-    assert 'id="detail-tier-note"' in html          # says why the menu is off for a crate
-    assert 'id="proposals"' in html
-    # the menu sits beside the crate switch, inside the detail head
-    assert html.index('id="detail-crate"') < html.index('id="detail-tier"') < html.index('id="detail-summary"')
+    assert 'id="detail-crate"' in html and 'id="proposals"' in html
+    assert "detail-tier" not in html and "sourcing tier" not in html.lower()
 
 
-def test_script_calls_the_tier_and_proposal_endpoints(svc):
+def test_script_calls_the_proposal_endpoints_and_not_the_tier_one(svc):
     js = asset(svc, "app.js")
     assert "/api/proposals" in js and "/accept" in js and "/decline" in js
-    assert "/tier" in js and "detail-tier" in js
+    assert "/tier" not in js and "detail-tier" not in js
     assert "Swap" in js and "Keep" in js
 
 
@@ -61,7 +57,6 @@ def test_script_names_each_failure_in_the_words_the_brief_gave(svc):
     assert "Navidrome didn't keep the change; nothing was changed here" in js      # 502
     assert "busy, try again" in js                                                  # 503
     assert "remove [crate]" in js                                                   # 409 on a name-marked crate
-    assert "applies when crate is off" in js        # crate wins over a stored tier: the menu says so
 
 
 def test_a_stale_accept_shows_its_reason_not_success(svc):

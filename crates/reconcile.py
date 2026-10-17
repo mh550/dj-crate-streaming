@@ -1,10 +1,16 @@
-"""Reconcile: rebuild the cache of which playlists are crates (and their tiers) from the playlists' own
-comments, and decide per track whether the library file is good enough for its tier or must be sourced.
+"""Reconcile: decide per track of each crate whether the library file is good enough or must be sourced, and keep
+the record of which playlists are crates.
+
+OWNER (2026-10-17 pivot, `owner="app"`, the default): the crates app owns the crate flag. Michael chooses which
+playlists to keep synced in the crates web client; crates.db holds the answer and nothing is written to a playlist
+comment or name. There are no listening tiers: a crate is judged at the one DJ-quality rule (deploy/policy.toml).
+`owner="comment"` is the earlier design (D21, below), kept so its code and tests still run; nothing selects it
+in production.
 
 Fact #7: a track's tier is derived, never stored: the highest effective tier of the tiered playlists holding it
 (crate > high > medium > low, deploy/policy.toml order). Each song is judged once, at that tier.
 
-The playlist's comment owns the crate flag and the tier (D21, spec fact #6): `#crate` and `#tier:<t>`, read and
+D21 (`owner="comment"`): the playlist's comment owns the crate flag and the tier (spec fact #6): `#crate` and `#tier:<t>`, read and
 written only through crates.attrs, so Michael's own text survives byte for byte. crates.db caches them; when the
 cache and a comment disagree, the comment wins and an `attrs` event records both. The setters (set_crate,
 set_tier) write the comment first, read it back, and only then refresh the cache: a failed write or a crash in
@@ -35,6 +41,14 @@ from .store import CrateStore, held_reason, in_flight
 # Name markers, for clients that can rename a playlist but not edit its comment
 # (most phone apps). "Disco Edits [crate]" or "🎛 Disco Edits" both count.
 NAME_MARKERS = ("[crate]", "🎛")
+
+
+def default_owner() -> str:
+    """Who owns the crate flag: "app" (crates.db; the default) or "comment" (D21), from $CRATES_OWNER."""
+    owner = os.environ.get("CRATES_OWNER") or "app"
+    if owner not in ("app", "comment"):
+        raise ValueError(f"unknown CRATES_OWNER {owner!r} (app or comment)")
+    return owner
 
 
 class NameMarked(Exception):
@@ -137,10 +151,8 @@ def judge(song: Song, policy: QualityPolicy = DEFAULT_POLICY) -> tuple[str, str]
         return "ok", f".{ext} lossless"
     if (song.bit_rate or 0) < policy.min_lossy_bitrate:
         return "needs_source", f".{ext} {song.bit_rate or '?'} kbps below {policy.min_lossy_bitrate} floor"
-    if rank > 0:
-        # Acceptable lossy (e.g. 320 mp3) but a better format is preferred → keep the file usable,
-        # still queue an upgrade. That is what "preferred vs allowed" means in the policy.
-        return "needs_source", f".{ext} {song.bit_rate} kbps acceptable; lossless preferred"
+    # 2026-10-17: a lossy file at or above the floor is DJ quality and is kept. "Lossless preferred" only steers
+    # the scorer when a download is chosen; it never queues an upgrade by itself (it would flag every mp3).
     return "ok", f".{ext} {song.bit_rate} kbps"
 
 
@@ -175,9 +187,14 @@ _BESIDE_DB = object()
 
 class Reconciler:
     def __init__(self, client: SubsonicClient, store: CrateStore, policy: QualityPolicy = DEFAULT_POLICY,
-                 lock_path: str | Path | None | object = _BESIDE_DB, lock_timeout_s: float = 60):
-        """`lock_path` defaults to reconcile.lock beside the store's database; an in-memory store has no lock."""
+                 lock_path: str | Path | None | object = _BESIDE_DB, lock_timeout_s: float = 60,
+                 owner: str | None = None):
+        """`lock_path` defaults to reconcile.lock beside the store's database; an in-memory store has no lock.
+        `owner` is "app" (crates.db owns the crate flag) or "comment" (D21); default: $CRATES_OWNER, else "app"."""
         self.client, self.store, self.policy = client, store, policy
+        self.owner = owner or default_owner()
+        if self.owner not in ("app", "comment"):
+            raise ValueError(f"unknown owner {self.owner!r} (app or comment)")
         if lock_path is _BESIDE_DB:
             lock_path = None if store.path == ":memory:" else Path(store.path).parent / "reconcile.lock"
         self.lock_path, self.lock_timeout_s = lock_path, lock_timeout_s
@@ -203,15 +220,28 @@ class Reconciler:
     # --- setters: the comment first, then the cache
     def set_crate(self, playlist_id: str, enabled: bool) -> dict:
         pl = self.client.playlist(playlist_id)
+        if self.owner == "app":
+            return self._set_crate_app(pl, enabled)
         if not enabled and has_name_marker(pl.name):
             raise NameMarked(f"{pl.name!r} is a crate by its name: rename it (drop \"[crate]\" / \"🎛\") to turn it off")
         return self._write_attrs(pl, crate=enabled)
 
     def set_tier(self, playlist_id: str, tier: str | None) -> dict:
         """`None` clears `#tier:`; `"crate"` sets the crate flag; any other tier keeps the flag as it is."""
+        if self.owner == "app":
+            raise ValueError("tiers are retired: every download is DJ quality (mark crates with the crate switch)")
         if tier is not None:
             check_tier(tier)
         return self._write_attrs(self.client.playlist(playlist_id), tier=tier)
+
+    def _set_crate_app(self, pl: Playlist, enabled: bool) -> dict:
+        """owner="app": the flag goes into crates.db only (source 'app'); the playlist itself is never edited."""
+        with self._locked():
+            self.store.set_enabled(pl.id, pl.name, enabled, source="app")
+            self.reconcile_playlist(pl)
+            self.store.derive_external_tiers()
+            self.store.commit()
+            return self.crate_view(pl)
 
     def _write_attrs(self, pl: Playlist, **change) -> dict:
         with self._locked():                                     # busy: ReconcileBusy before anything is written
@@ -236,7 +266,11 @@ class Reconciler:
         return self.crate_view(pl)
 
     def refresh_cache(self, pl: Playlist) -> list[str]:
-        """cache := what the comment (or a name marker) says. Returns the changes as text, empty when none."""
+        """cache := what the comment (or a name marker) says. Returns the changes as text, empty when none.
+        owner="app": the cache is the truth, so only the playlist's name is refreshed."""
+        if self.owner == "app":
+            self.store.set_name(pl.id, pl.name)
+            return []
         a = attrs.parse(pl.comment)
         crate = effective_tier(pl.name, pl.comment) == DEFAULT_TIER
         old = self.store.set_attrs(pl.id, pl.name, crate, a.tier)
@@ -249,8 +283,9 @@ class Reconciler:
             out.append(f"{pl.name}: tier {old[1] or 'none'}→{a.tier or 'none'}")
         return out
 
-    @staticmethod
-    def _disagrees(pl: Playlist, cached) -> bool:
+    def _disagrees(self, pl: Playlist, cached) -> bool:
+        if self.owner == "app":
+            return False
         a = attrs.parse(pl.comment)
         crate = effective_tier(pl.name, pl.comment) == DEFAULT_TIER
         return (crate, a.tier) != ((cached.enabled, cached.tier) if cached else (False, None))

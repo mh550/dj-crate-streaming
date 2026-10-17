@@ -1,71 +1,58 @@
-# Sourcing policy: Michael's settings (spec fact #8). Read once at start-up by sourcing/policy.py; restart the
-# crates and worker containers after an edit. A typo (unknown key, unknown version word, wrong type) stops the
-# start with a message naming the key. The numbers are what policy.py held before M7 (D17, raising the floors
-# to medium >= 128 / high >= 192 kbps, is still open: it is one number per tier below).
+# Sourcing policy: Michael's settings. Read once at start-up by sourcing/policy.py; restart the crates and worker
+# containers after an edit (docker compose up -d --build crates worker). A typo (unknown key, unknown version word,
+# wrong type) stops the start with a message naming the key.
+#
+# THE RULE (Michael, 2026-10-17): we only download files good enough for DJing, whatever the playlist.
+#     lossless (flac preferred, then wav / aiff / alac), or lossy at 256 kbps or more (mp3 / m4a).
+# Streaming quality is NOT our business: Navidrome (or the client) transcodes that one file down per player.
+# The four tier names below stay only because the code looks them up by name (the crate flag, import, the web
+# client's old presets). They are identical on purpose; edit all four together.
 #
 # Every tier has exactly these keys:
 #   allow / deny        file types we may / never take
 #   min_lossy_bitrate   kbps floor for lossy files
 #   speed_weight        0 = quality only, 1 = arrival time only
-#   arrival_budget_s    an estimated arrival of this many seconds scores 50 of 100 on speed
-#   download_cap_Bps    our own download cap in bytes/s (0 = none); 1 MB/s through the VPN is an assumption
-#                       until a real download measures it
-#   strict_verify       true = reject a file that is not the quality it claims; false = accept with a warning
+#   arrival_budget_s    an estimated arrival of this many seconds scores 50 of 100 on speed (unused at weight 0)
+#   download_cap_Bps    our own download cap in bytes/s (0 = none)
+#   strict_verify       true = reject a file that is not the quality it claims (a 128 kbps file re-encoded to 320,
+#                       fake hi-res); false = accept with a warning
+#
+# Versions: we source the exact track the playlist row names (the Soulseek-style label stays in the title:
+# "Title (Extended Mix)"). No version is preferred and none stands in for another, so there is no [versions.*]
+# table. (Docs: docs/specs/2026-10-17-amperfy-pivot.md.)
 
 [tiers.low]
-allow = ["flac", "wav", "aiff", "alac", "m4a", "mp3", "ogg", "opus"]
-deny = ["wma", "ra", "mid"]
-min_lossy_bitrate = 32
-speed_weight = 0.8
-arrival_budget_s = 60
-download_cap_Bps = 1000000
-strict_verify = false
-
-[tiers.medium]
-allow = ["flac", "wav", "aiff", "alac", "m4a", "mp3", "ogg", "opus"]
-deny = ["wma", "ra", "mid"]
-min_lossy_bitrate = 64
-speed_weight = 0.6
-arrival_budget_s = 60
-download_cap_Bps = 1000000
-strict_verify = false
-
-[tiers.high]
-allow = ["flac", "wav", "aiff", "alac", "m4a", "mp3", "ogg", "opus"]
-deny = ["wma", "ra", "mid"]
-min_lossy_bitrate = 128
-speed_weight = 0.35
-arrival_budget_s = 300
-download_cap_Bps = 1000000
-strict_verify = false
-
-[tiers.crate]
 allow = ["flac", "wav", "aiff", "alac", "m4a", "mp3"]
-deny = ["wma", "ra", "mid", "opus"]
-min_lossy_bitrate = 320
+deny = ["wma", "ra", "mid", "opus", "ogg"]
+min_lossy_bitrate = 256
 speed_weight = 0
 arrival_budget_s = 60
 download_cap_Bps = 0
 strict_verify = true
 
-# D16 (not set in stone): which versions the system prefers.
-#   prefer  versions we favour when picking a download, best first
-#   accept  other versions that may stand in for the one a playlist row asked for when an import matches the
-#           library (a playlist's own choice always wins)
-# Words: edit extended club dub instrumental acappella live remix reedit demo alt original.
+[tiers.medium]
+allow = ["flac", "wav", "aiff", "alac", "m4a", "mp3"]
+deny = ["wma", "ra", "mid", "opus", "ogg"]
+min_lossy_bitrate = 256
+speed_weight = 0
+arrival_budget_s = 60
+download_cap_Bps = 0
+strict_verify = true
 
-[versions.crate]
-prefer = ["extended", "club", "original"]
-accept = ["extended", "club"]
+[tiers.high]
+allow = ["flac", "wav", "aiff", "alac", "m4a", "mp3"]
+deny = ["wma", "ra", "mid", "opus", "ogg"]
+min_lossy_bitrate = 256
+speed_weight = 0
+arrival_budget_s = 60
+download_cap_Bps = 0
+strict_verify = true
 
-[versions.high]       # D16: a 12" may stand in for the radio version
-prefer = []
-accept = ["extended"]
-
-[versions.medium]
-prefer = []
-accept = ["extended"]
-
-[versions.low]
-prefer = []
-accept = ["extended"]
+[tiers.crate]
+allow = ["flac", "wav", "aiff", "alac", "m4a", "mp3"]
+deny = ["wma", "ra", "mid", "opus", "ogg"]
+min_lossy_bitrate = 256
+speed_weight = 0
+arrival_budget_s = 60
+download_cap_Bps = 0
+strict_verify = true

@@ -1,7 +1,7 @@
 """Questions about one playlist slot (D23): "replace X with Y in P at slot n?". Michael answers them.
 
 The playlists are Michael's (fact #5), so a new *version* never replaces anything by itself, even when the playlist's
-tier prefers it (D16: crates prefer 12"/extended): its arrival only asks. So does a better copy that verify could not
+tier prefers it (policy `prefer`; empty since D26, which retired D16's 12" preference): its arrival only asks. So does a better copy that verify could not
 prove is the same recording (sourcing.fetch keeps both). Two kinds:
 
   version_swap   a filed song is another version of a song a tiered playlist holds, and that tier prefers it

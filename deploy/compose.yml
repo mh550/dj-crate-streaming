@@ -29,10 +29,12 @@ services:
 
   crates:                                    # crate service + web client (this repo)
     user: "1000:1000"
+    image: dj-crates:${GIT_SHA:-dev}         # tagged with the commit it was built from (scripts/deploy.sh sets GIT_SHA)
     build:
       # Compose resolves relative paths against the directory of the compose file *as given*
       # (/srv/docker via the symlink), so a relative default would point at /srv. Require it.
       context: ${CRATES_SRC:?set CRATES_SRC=<repo checkout> in /srv/docker/.env}
+      args: {GIT_SHA: "${GIT_SHA:-dev}"}
     ports: ["127.0.0.1:4580:4580"]
     environment:
       SUBSONIC_URL: http://navidrome:4533
@@ -40,6 +42,7 @@ services:
       SUBSONIC_USER: ${ND_USER}
       SUBSONIC_PASS: ${ND_PASS}
       CRATES_DB: /data/crates.db
+      CRATES_OWNER: app                      # 2026-10-17: the crates app owns the crate flag; playlist comments are never read for it
       CRATES_TRASH: /trash                   # status reports trash size/age; never emptied automatically
       SLSKD_URL: http://gluetun:5030         # slskd shares gluetun's network: search/rank/preview here. Approve in the web
                                              # client; the worker service below downloads (this one has no /srv/music or
@@ -55,10 +58,13 @@ services:
 
   worker:                                  # D18: the only process that downloads or runs beets
     user: "1000:1000"
+    image: dj-crates:${GIT_SHA:-dev}         # the same image as `crates`
     build:
       context: ${CRATES_SRC:?set CRATES_SRC=<repo checkout> in /srv/docker/.env}
+      args: {GIT_SHA: "${GIT_SHA:-dev}"}
     command: ["python", "-m", "sourcing.cli", "worker"]
     environment:
+      CRATES_OWNER: app
       DJ_WORKER: "1"                         # only here does sourcing.cli build a beets filer (the one beets writer)
       SUBSONIC_URL: http://navidrome:4533
       SUBSONIC_USER: ${ND_USER}

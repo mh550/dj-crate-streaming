@@ -1,0 +1,70 @@
+# Pivot, 2026-10-17: one download quality, Amperfy for now
+
+Michael's direction after reading `TODO-MICHAEL.md`. It replaces earlier decisions where it says so. When a doc and
+this page disagree, this page wins.
+
+## What changed, in one paragraph
+
+The system downloads **one kind of file**: good enough to DJ with. Everything else about quality (how loud the
+phone's data plan is allowed to be) is the streaming client's and Navidrome's job, through transcoding. Tiers
+(low / medium / high / crate) stop being something Michael chooses. A "crate" is only a playlist he has chosen, in
+the crates app, to keep synced. Versions are no longer swapped: the exact track a playlist names is the one
+sourced. Until the system outgrows it, the client is **Amperfy** (talking to Navidrome); what Amperfy cannot do is
+listed below for the later custom client.
+
+## Decisions (new ledger entries)
+
+| # | Decision | Replaces |
+|---|---|---|
+| D24 | **One download quality.** A file is acceptable when it is lossless (flac preferred, then wav / aiff / alac) or lossy at **256 kbps or more** (mp3 or m4a). ogg, opus, wma and anything lower are refused. Verification is strict for every download (a re-encoded fake is rejected). A lossy file at or above the floor is kept; "flac preferred" only steers which candidate wins when we download, it never queues an upgrade by itself. | D9 tiers as a user choice, D15 (imports default to medium), D17 (floors), the M8 ruling on listening-tier upgrades |
+| D25 | **Streaming quality belongs to the client and Navidrome.** We store the one good file; Navidrome's per-player transcoding (Amperfy: its own Wi-Fi / cellular settings) turns it into whatever the connection needs. Our own stream presets stay in the code only as notes for the future client (see "For the future client"). | D19 as a feature of this app |
+| D26 | **Source the exact track.** The default is the version the playlist row names (Spotify's). A 12" / extended mix is never preferred and never stands in for a radio edit. `deploy/policy.toml` has no `[versions.*]` table. The version machinery (parse, compare, propose) stays, because it still tells versions apart. | D16 (all of it: crate preference, stand-ins, import and scorer bonuses) |
+| D27 | **The crates app owns the crate flag.** Michael picks, in the crates web client, which playlists to keep synced; `crates.db` holds the answer. No `#tier:` and no `#crate` is written to any playlist name or comment. The comment keeps only the import marker `#imported`. `CRATES_OWNER=app` is the default; `comment` is the retired D21 design, kept so its code still runs. | D21 (comment owns crate and tier), the M8 `attrs migrate` step |
+| D28 | **Version labels follow the Soulseek habit**: the label stays in the title, in parentheses, as a trailing group: `Title (Extended Mix)`, `Title (Club Mix)`, `Title (Dub)`, `Title (Radio Edit)`, `Title (Live)`. `parse_title` already reads these and the ` - Extended Mix` and `[Dub]` spellings. The version field (`VERSION`/`TIT3`) is filled later, as its own reviewed proposal. | design default (3) |
+| D29 | **beets writes full tags on a fresh download only with a confident MusicBrainz match**, and anything doubtful is raised to Michael as a review row. | design default (2) |
+| D30 | **Play-now approves one download.** It is the same DJ-quality download, taken at once. With one quality there is no "provisional low copy" to upgrade later, so the old two-step disappears in practice. | D20 (kept; the provisional step is moot) |
+
+## What Michael still owes (defaults in place)
+
+- 7 "A": unclear which choice this answers. Default kept: the id backfill applies the `confirmed`, `isrc` and `acoustid`
+  classes only.
+- 12 "pin it": not applied; see the report.
+
+## Consequences in the code (what was done)
+
+- `deploy/policy.toml`: four identical tiers (256 kbps floor, no ogg / opus, quality only, strict). The names stay only
+  because the code looks them up. `DJ_POLICY_FILE` points the test suite at a frozen copy of the old file
+  (`tests/fixtures/policy-legacy.toml`), because the tier mechanism is still tested.
+- `crates/reconcile.py`: `owner="app"`. The toggle writes `crates.db` only; reconcile never reads comments or name
+  markers; `set_tier` is retired; a rename in Navidrome refreshes the stored name. `judge` keeps a lossy file at or
+  above the floor.
+- `sourcing/import_playlist.py`: a created playlist's comment is `#imported` alone.
+- `web/`: the tier menu is gone; the crate switch is the one control.
+- Not removed: the `crates.tier` column, `crates/attrs.py`, `crates/migrate_attrs.py` (refused under `app`), the
+  `--tier` option (accepted, no effect on quality), the stream presets in `sourcing/policy.py`. Removing them is a
+  clean-up for when the custom client replaces the web client.
+
+## What Amperfy cannot do (to build in the later client)
+
+Amperfy is a Subsonic client. It shows what Navidrome has and nothing else. So these live in our own web client for now
+or wait for a custom client:
+
+1. **One search across everything**: the local library, Spotify, Soulseek and other sources at once, with the result
+   marked "have it / can get it". Amperfy only searches Navidrome.
+2. **Tracks you do not own, in the playlist, in place.** A Spotify playlist's missing tracks appear greyed at their
+   Spotify position, with Preview / Approve / Play-now. In Amperfy they are not there at all; they live in the web
+   client's Wanted tab.
+3. **Play-now for a track you do not own**: tap, it downloads and starts. Amperfy has no way to ask us for it.
+4. **The crate switch and crate status**: pick playlists to keep synced, see which are ready. (Web client now.)
+5. **Version questions**: "a different version arrived, swap or keep?", and picking one of several library copies
+   (the `review` rows). (Web client now.)
+6. **Insert a downloaded track at its Spotify position** (M9). The server can do this; Amperfy cannot show progress.
+7. **Per-device stream presets chosen from inside the app** and bound to the connection. Amperfy has its own bitrate
+   settings; they are not ours to read.
+8. **A download queue view** with progress, failures and re-check.
+
+### For the future client: streaming preferences to carry over
+
+The default is **server decides** (Navidrome's player profile for the client's name). Recorded preferences: opus at
+128 kbps on cellular and Wi-Fi as the starting point; "raw" (the original file) on Wi-Fi when wanted; the older web
+presets were low = opus 64, medium = opus 96, high = opus 160, crate = raw (`STREAM` in `sourcing/policy.py`).

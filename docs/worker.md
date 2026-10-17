@@ -12,8 +12,9 @@ of at most one second and ends early when a play-now approval is waiting (see "P
 1. **Play-now approvals.** Any unused play-now approval is claimed and fetched first, because you are waiting to
    hear the track.
 2. **Reconcile.** At most once every `WORKER_RECONCILE_S` seconds (600 by default; 0 turns it off; the first tick
-   always runs it). It re-reads every playlist comment, rebuilds the crate/tier cache from them, derives each
-   song's tier and re-judges the tracks. This is how a `#crate` or `#tier:` you edit in Amperfy takes effect. If
+   always runs it). It reads the crate switches in `crates.db`, refreshes playlist names, derives each song's tier
+   and re-judges the tracks. (Under the retired `CRATES_OWNER=comment` it re-read every playlist comment, which is how
+   a `#crate` or `#tier:` edited in Amperfy took effect.) If
    the crates service is reconciling at that moment, the worker logs "reconcile skipped" and tries next interval.
 3. **Re-check.** Every row that was filed but not yet seen by Navidrome (status `verify`) is asked again whether the
    song has appeared, at most once every `WORKER_RECHECK_S` seconds per row (300 by default), because each re-check
@@ -376,21 +377,12 @@ Each tier may have a `[versions.<tier>]` block with two lists:
 The words are `edit extended club dub instrumental acappella live remix reedit demo alt original`. A 12" is
 `extended`.
 
-D16 as it stands today:
-
-```
-[versions.crate]
-prefer = ["extended", "club", "original"]   # at crate quality, take the 12" or club mix when we choose
-accept = ["extended", "club"]
-
-[versions.high]                              # same for medium and low
-prefer = []
-accept = ["extended"]                        # a 12" may stand in for a radio-version row
-```
-
-So an import row for "Good Times" can match a "Good Times (12" Version)" in the library at `high`. A "Good Times
-(12" Dub)" cannot, because `dub` is not accepted: that row goes to review. A crate upgrade never swaps in another
-version at all; it only looks for better copies of the version the library already holds.
+As it stands (D26, 2026-10-17): **no `[versions.*]` table at all.** We source the exact track a playlist names, no
+version is preferred, and none stands in for another. The mechanism above still exists (a policy that lists words
+behaves as described), but the live file lists none. So an import row for "Good Times" matches only a library
+"Good Times" of the same version and length; a "Good Times (12" Version)" in the library is a different version and the
+row stays wanted (or goes to review if several candidates fit). A crate upgrade only looks for better copies of the
+version the library already holds.
 
 ## Streaming default
 

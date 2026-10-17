@@ -11,6 +11,8 @@ COPY web/ web/
 COPY scripts/ scripts/
 COPY deploy/beets.yaml deploy/beets.yaml
 COPY deploy/policy.toml deploy/policy.toml
+ARG GIT_SHA=dev
+LABEL org.opencontainers.image.revision=$GIT_SHA
 ENV CRATES_DB=/data/crates.db CRATES_BIND=0.0.0.0 CRATES_PORT=4580
 VOLUME ["/data"]
 EXPOSE 4580

@@ -94,12 +94,16 @@ def main(argv: list[str] | None = None) -> int:
         try:
             v = (app.set_crate(a.playlist_id, a.state == "on") if a.cmd == "toggle"
                  else app.set_tier(a.playlist_id, None if a.tier == "none" else a.tier))
-        except (NameMarked, CommentNotKept, ReconcileBusy) as e:
+        except (NameMarked, CommentNotKept, ReconcileBusy, ValueError) as e:
             print(f"{a.cmd}: {e}", file=sys.stderr)
             return 1
         print(json.dumps(v, indent=2))
     elif a.cmd == "attrs":
         from . import migrate_attrs
+        if app.reconciler.owner == "app":
+            print("attrs migrate: retired. The crates app owns the crate flag (CRATES_OWNER=app) and playlist "
+                  "comments are no longer written; set CRATES_OWNER=comment only to run the old design.", file=sys.stderr)
+            return 1
         changes = migrate_attrs.plan(app.api, app.store)
         text = migrate_attrs.report(changes, app.api, app.store)
         if not a.apply:

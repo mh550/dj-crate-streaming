@@ -4,6 +4,11 @@ Written 2026-10-16 from the code on `overnight2/2026-10-15` at `e73e803`. Where 
 file says what the code does (see §10b). History of M1–M5: [`RECAP-M1-M5.md`](../../RECAP-M1-M5.md).
 Legend: **built** = in the code; **live** = also running on the box; **planned** = only in a plan.
 
+> **2026-10-17 pivot** ([`specs/2026-10-17-amperfy-pivot.md`](specs/2026-10-17-amperfy-pivot.md)): one download quality
+> (lossless, or lossy at 256 kbps or more), no 12" preference or stand-in (exact track), and **the crates app owns the
+> crate flag** (`CRATES_OWNER=app`; no `#tier` or `#crate` in playlist comments). Text below that describes the
+> comment-owned design (D21, tiers, D16) is the retired design, kept where the code still has it.
+
 | Milestone | State |
 |---|---|
 | M6 worker, approvals, beets filing, stream "server" | built, **live** (images built 10:16) |
@@ -29,8 +34,9 @@ are judged against the crate quality policy, and weak ones become wanted rows to
 file through slskd behind the VPN, checks it (`verify`), files it into `/srv/music` with beets, asks Navidrome to
 rescan, copies Navidrome's names back onto the row, and for a crate swaps the new song into the playlist. Nothing
 downloads without an approval. M7 adds one definition of "same song / same version / same copy" and a reviewed
-backfill of MusicBrainz ids into the library's tags. M8 makes the playlist comment the owner of crate/tier, replaces
-proven-worse copies (old one to trash), asks before swapping versions and adds play-now.
+backfill of MusicBrainz ids into the library's tags. M8 replaces proven-worse copies (old one to trash), asks
+before swapping versions and adds play-now. (The pivot moved the crate flag's owner from the playlist comment to
+`crates.db`, set in the crates web client.)
 
 ## 2. Components
 
@@ -83,12 +89,12 @@ derived or a mirror.
 | Where a file lives | `deploy/beets.yaml` paths | beets in the worker | one convention |
 | Which songs exist, their ids | Navidrome (`navidrome.db`) | Navidrome's scan | every client asks it |
 | Playlist membership + order | Navidrome | you in any client; our logged commands | you edit in Amperfy |
-| Is a crate / tier | the playlist comment (`#crate`, `#tier:<t>`); `crates.db` only caches it (M8) | you in any client; the toggle and `crates.cli tier` write it; reconcile rebuilds the cache | D21 |
-| Tier a track should reach | derived: the highest tier among the tiered playlists holding it (M8) | — | D21 fact 7 |
-| Tier rules, version prefs | `deploy/policy.toml` | you | D16, D17 |
+| Is a crate | `crates.db` (`crates.enabled`, source `app`); no comment or name is read | you, in the crates web client (`crates.cli toggle`) | D27 (was D21) |
+| Quality a file must reach | one rule: lossless or lossy ≥ 256 kbps | `deploy/policy.toml` | D24 |
+| Version preferences | none: the exact track is sourced | `deploy/policy.toml` (no `[versions.*]`) | D26 (was D16) |
 | Quality of a file | measured by `verify` | worker (`verifications` is a cache) | re-measurable |
 | Queue, approvals, log | `crates.db` | crates service, worker | nowhere else to live |
-| Stream quality | the client / Navidrome player profile | you | D19 |
+| Stream quality | the client / Navidrome player profile | you | D25 (D19) |
 | Originals | `/srv/incoming/library-import` | nobody (read-only) | safety net |
 | Secrets | `/srv/docker/.env` | you | never printed |
 
@@ -119,8 +125,8 @@ Other stores:
 - **beets `library.db`**: a disposable index of the library. Rebuild with `beet update -M` (file → DB, no
   moves). Nothing reads a fact from it in preference to the file. The filer reads it read-only to find what an
   import just added (`filer.py:238-254`).
-- **Playlist comment**: owns the playlist's attributes (M8): `#crate`, `#tier:<t>`, plus `#imported` (import-playlist's
-  marker). Whitespace-delimited tokens, any case; `#crates` or `x#crate` are not tokens. Name markers `[crate]` / `🎛`
+- **Playlist comment**: since the pivot it carries only `#imported` (import-playlist's marker); under the retired
+  `CRATES_OWNER=comment` it owned the playlist's attributes (M8): `#crate`, `#tier:<t>`, plus `#imported`. Whitespace-delimited tokens, any case; `#crates` or `x#crate` are not tokens. Name markers `[crate]` / `🎛`
   also flag a crate. Only `crates/attrs.py` writes our tokens; the rest of your comment is never touched.
 - **Trash**: `/srv/_trash/<date>/<path>` with `MOVES.txt` of reverse `mv`s. Never emptied by code.
   M3's `scripts/dedupe_copies.py` and (M8) the worker's copy replacement write it; the worker mounts it rw.
@@ -236,7 +242,9 @@ Runs in the worker (`scripts/identity_backfill.py`), because it has `/srv/music`
 - **Accepted other version**: every kind of the candidate is on the tier's list (subset rule), so "12" Dub" is a
   dub, not a 12" stand-in.
 
-How D16 (prefer 12" for crates) bites:
+How D16 (prefer 12" for crates) bit, **retired by D26**: `deploy/policy.toml` now lists no preferred or accepted
+version, so every row below is inert and the exact track is sourced. The machinery stays because policy files can
+still list words:
 
 | Where | Effect |
 |---|---|
@@ -250,6 +258,10 @@ within tolerance, the files differ and the verdict is ok. Missing reference ⇒ 
 only after `sourcing/replace.py` re-checks the old file is still the one compared.
 
 ## 6. Tiers and `deploy/policy.toml`
+
+**Since 2026-10-17 (D24) all four tiers hold one rule:** flac / wav / aiff / alac / m4a / mp3 only; lossy at 256 kbps
+or more; quality only (speed weight 0); strict verify. The table below is the **retired** four-tier design, still what
+the test fixture `tests/fixtures/policy-legacy.toml` holds.
 
 | Tier | Lossy floor | Speed weight | Strict verify |
 |---|---|---|---|
@@ -269,7 +281,7 @@ only after `sourcing/replace.py` re-checks the old file is still the one compare
   for anything else is `crate` (`policy.py:145-146`). `judge` in reconcile always uses the crate policy.
 - Loaded **once at import** from the copy baked into the image: edit, then `docker compose up -d --build crates
   worker`. A typo stops the start with the key named.
-- **D17 is open**: raising medium to ≥128 and high to ≥192 is two numbers here.
+- **D17 is answered by D24**: every tier has the 256 kbps floor.
 
 ## 7. Safety invariants (what the code enforces, and where)
 
@@ -311,8 +323,7 @@ docker compose stop worker / up -d worker          # pause / resume (a stop mid-
 | One tick by hand | stop the service first, then `docker compose run --rm worker python -m sourcing.cli worker --once` (an `exec … --once` beside the daemon exits "worker already running") |
 | Re-check a never-indexed row | web client **Re-check**, or approve it again |
 | Import a playlist | `docker compose exec -T crates python -m sourcing.cli import-playlist <url> [--name N] [--tier T] --dry-run`, then without `--dry-run` |
-| Toggle a crate / set a tier | web client, or `docker compose exec -T crates python -m crates.cli toggle <playlist-id> on` / `… tier <playlist-id> medium` (`none` clears it); both write the playlist comment |
-| Move crates.db flags into comments (once) | `docker compose exec -T crates python -m crates.cli attrs migrate [--out PATH]`, then `--apply` (§9: before the first reconcile) |
+| Toggle a crate | web client (the crate switch), or `docker compose exec -T crates python -m crates.cli toggle <playlist-id> on`; writes `crates.db` only. `tier` and `attrs migrate` are retired under `CRATES_OWNER=app` |
 | Reconcile now | web client, or `docker compose exec -T crates python -m crates.cli reconcile` (the worker does it every 600 s) |
 | Answer a version / copy question | Wanted tab (Swap / Keep), or `docker compose exec -T crates python -m crates.cli proposals [--all]`, `proposals accept\|decline <id>` |
 | Undo a trashed copy | run its reverse `mv` line from `/srv/_trash/<day>/MOVES.txt` on the host (`docs/worker.md`) |
@@ -329,7 +340,7 @@ Where to look: worker stdout (`docker compose logs worker`), the web client's lo
 Undo: identity → `revert`; a filed download → it is a normal library file (move it to trash by hand, then
 reconcile); a repoint or swap → put the old song back in the playlist in any client (after restoring its file from
 the trash if it was trashed); a policy edit → git revert + rebuild; trash → the `mv` lines in `MOVES.txt`; a comment
-the migration wrote → edit the comment in any client. An approval cannot be cancelled (a new one only supersedes it): stop the worker before
+the retired migration wrote → edit the comment in any client. An approval cannot be cancelled (a new one only supersedes it): stop the worker before
 its next tick if you change your mind.
 
 ## 9. M8 (built)
@@ -337,12 +348,10 @@ its next tick if you change your mind.
 Built and committed on this branch, **not live**. Design: `docs/specs/2026-10-16-ownership-and-identity.md`; details
 and commands: `docs/worker.md`. What changed, and why:
 
-- **The playlist comment owns crate and tier** (D21): `#crate`, `#tier:medium` (`crates/attrs.py`). `crates.db`
-  caches them; `reconcile` rebuilds the cache from the comments, and on disagreement the comment wins and an `attrs`
-  event records both. The setters (web toggle, `crates.cli toggle|tier`, import) write the comment, read it back,
-  and only then refresh the cache. Why: a failed mirror used to leave two stores disagreeing. If a comment names an
-  unknown tier, or several, the playlist shows a problem in the reconcile report and the highest valid tier is used.
-  A comment crate wins over a stored tier (the API shows both).
+- **(Retired by the pivot) The playlist comment owned crate and tier** (D21): `#crate`, `#tier:medium`
+  (`crates/attrs.py`). The code is still there under `CRATES_OWNER=comment`; production uses `CRATES_OWNER=app`
+  (the default), where `crates.db` is the owner, reconcile never reads a comment, and the toggle never writes one.
+
 - **A track's tier is derived**: the highest tier among the tiered playlists holding it. `crate_tracks` covers every
   tiered playlist, not only crates. Listening tiers (low/medium/high) queue an upgrade only below their floor (a
   format they do not allow, or a lossy file under the bit rate floor), not for "lossless preferred" (ruling; it
@@ -384,27 +393,16 @@ containers; see `TODO-MICHAEL.md`).
 1. **Tasks 5–8 ship together.** Until Task 8 routed the swap in `fetch.finish` through `playlist_edit` and
    `replace.py`, a download would swap into every tiered playlist with an unguarded index edit (the trap above).
    Build the branch tip, never a commit between Task 5 and Task 8.
-2. **Migrate before the new code's first reconcile.** Today the import tiers exist only in `crates.db`, and the crate
-   flag is mirrored into a comment only when it was set through the app. The first reconcile of the new code
-   rebuilds `crates.db` from comments, so without the migration it would forget the tiers and switch off any crate
-   whose comment lacks `#crate`. The new worker reconciles
-   on its first tick, so keep it stopped until the comments are written:
+2. **No comment migration.** The comment-owned design needed `attrs migrate` to write `#tier:` tokens before the first
+   reconcile. Under `CRATES_OWNER=app` (the default) there is nothing to migrate: `crates.db` already holds the one
+   crate flag, and the first reconcile leaves it alone. Build the committed tip, then:
 
    ```
    cd /srv/docker
-   docker compose stop worker
-   docker compose up -d --build --no-deps crates
-   docker compose exec -T crates python -m crates.cli attrs migrate --out /data/attrs-migration-report.md   # dry run
-   # read the report (/srv/docker/crates/attrs-migration-report.md), then:
-   docker compose exec -T crates python -m crates.cli attrs migrate --apply
-   docker compose exec -T crates python -m crates.cli reconcile
-   docker compose up -d --build worker
+   docker compose up -d --build crates worker
+   docker compose logs --tail 20 worker       # started? (a policy typo stops it, naming the key)
    ```
 
-   Do not tap reconcile or toggle in the web client before the `--apply`. The migration only adds tokens, never
-   removes, refuses a playlist whose comment changed since the plan, and exits 1 if anything was refused. When
-   planned, the expected report was: the 11 imported playlists each gain `#tier:medium`, no crate changes, no
-   upgrades queued. If it differs, stop and read it. `--apply` writes the comments; to undo, edit the comment.
 3. **Live checks** (each needs the real containers, so none has run):
    - `navidrome.db` opens read-only in the crates container. It is a WAL database on a `:ro` mount, and SQLite may
      need to touch the `-shm`/`-wal` files. A number back means it works; "unable to open database file" means
@@ -426,10 +424,6 @@ containers; see `TODO-MICHAEL.md`).
      Expect the printed trash path to exist, `/srv/music/_probe/probe.txt` to be gone, the day's `MOVES.txt` to hold
      the reverse `mv` line, and no `.partial-` file beside it. Then remove `/srv/music/_probe` and the probe file
      from the trash by hand.
-   - The "#crate" lookalike list. The old crate test was a substring match; the new one needs `#crate` as a whole
-     word. The migration report's "Contains #crate but is not read as a crate" section lists playlists like
-     `#crates` or `#crate.` that were crates before and are not now. Decide each: fix its comment, or say so and it
-     gets flagged.
 4. **iOS autoplay on a real phone.** The play-now tap primes the audio player so the file can start when it lands
    seconds later. Desktop browsers do this fine; Safari on iOS is stricter. The first real test is a play-now on your
    phone, which downloads a real file (D7: your go).
@@ -563,9 +557,7 @@ Each has a default in place; answering changes only what is named.
 
 ### New with M8 (each has a default in place)
 
-19. **M8 migration, "#crate" lookalikes:** after the dry run, which playlists whose comment or name contains `#crate`
-    but not as a whole word (`#crates`, `#crate.`) should be crates? *Default: none; the migration leaves them
-    alone and lists them.* You fix the comment, or tell me to flag them.
+19. **(Void since the pivot)** The "#crate" lookalike question belonged to the comment migration, which no longer runs.
 20. **M8, other users' playlists:** a copy replacement never edits a playlist owned by another Navidrome user
     (Amperfy's account), so if one holds the old copy the replacement waits and the old file stays. *Default: wait;
     you remove the old song there.* Allowing admin edits would remove the wait but touch playlists that are not yours

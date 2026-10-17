@@ -1,0 +1,74 @@
+# FROZEN COPY of deploy/policy.toml as it was before the 2026-10-17 pivot (four different tiers, 12" preferences).
+# Only the test suite reads it (tests/conftest.py sets DJ_POLICY_FILE): the tier machinery (speed weights, strict vs
+# lenient verify, version words) is still code, and its tests need tiers that differ. It is NOT the live policy.
+# Sourcing policy: Michael's settings (spec fact #8). Read once at start-up by sourcing/policy.py; restart the
+# crates and worker containers after an edit. A typo (unknown key, unknown version word, wrong type) stops the
+# start with a message naming the key. The numbers are what policy.py held before M7 (D17, raising the floors
+# to medium >= 128 / high >= 192 kbps, is still open: it is one number per tier below).
+#
+# Every tier has exactly these keys:
+#   allow / deny        file types we may / never take
+#   min_lossy_bitrate   kbps floor for lossy files
+#   speed_weight        0 = quality only, 1 = arrival time only
+#   arrival_budget_s    an estimated arrival of this many seconds scores 50 of 100 on speed
+#   download_cap_Bps    our own download cap in bytes/s (0 = none); 1 MB/s through the VPN is an assumption
+#                       until a real download measures it
+#   strict_verify       true = reject a file that is not the quality it claims; false = accept with a warning
+
+[tiers.low]
+allow = ["flac", "wav", "aiff", "alac", "m4a", "mp3", "ogg", "opus"]
+deny = ["wma", "ra", "mid"]
+min_lossy_bitrate = 32
+speed_weight = 0.8
+arrival_budget_s = 60
+download_cap_Bps = 1000000
+strict_verify = false
+
+[tiers.medium]
+allow = ["flac", "wav", "aiff", "alac", "m4a", "mp3", "ogg", "opus"]
+deny = ["wma", "ra", "mid"]
+min_lossy_bitrate = 64
+speed_weight = 0.6
+arrival_budget_s = 60
+download_cap_Bps = 1000000
+strict_verify = false
+
+[tiers.high]
+allow = ["flac", "wav", "aiff", "alac", "m4a", "mp3", "ogg", "opus"]
+deny = ["wma", "ra", "mid"]
+min_lossy_bitrate = 128
+speed_weight = 0.35
+arrival_budget_s = 300
+download_cap_Bps = 1000000
+strict_verify = false
+
+[tiers.crate]
+allow = ["flac", "wav", "aiff", "alac", "m4a", "mp3"]
+deny = ["wma", "ra", "mid", "opus"]
+min_lossy_bitrate = 320
+speed_weight = 0
+arrival_budget_s = 60
+download_cap_Bps = 0
+strict_verify = true
+
+# D16 (not set in stone): which versions the system prefers.
+#   prefer  versions we favour when picking a download, best first
+#   accept  other versions that may stand in for the one a playlist row asked for when an import matches the
+#           library (a playlist's own choice always wins)
+# Words: edit extended club dub instrumental acappella live remix reedit demo alt original.
+
+[versions.crate]
+prefer = ["extended", "club", "original"]
+accept = ["extended", "club"]
+
+[versions.high]       # D16: a 12" may stand in for the radio version
+prefer = []
+accept = ["extended"]
+
+[versions.medium]
+prefer = []
+accept = ["extended"]
+
+[versions.low]
+prefer = []
+accept = ["extended"]

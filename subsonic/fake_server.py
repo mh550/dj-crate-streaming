@@ -46,7 +46,7 @@ SAMPLE_SONGS = [
      "duration": 356, "bitRate": 2550, "suffix": "flac", "contentType": "audio/flac", "size": 113000000,
      "samplingRate": 96000, "bitDepth": 24, "path": "Donna Summer/I Remember Yesterday (1977)/08 - I Feel Love.flac", "coverArt": "al-2", "albumId": "al-2"},
     {"id": "s3", "title": "Move Your Body", "artist": "Marshall Jefferson", "album": "The House Music Anthem", "year": 1986, "track": 1,
-     "duration": 383, "bitRate": 320, "suffix": "mp3", "contentType": "audio/mpeg", "size": 15320000,
+     "duration": 383, "bitRate": 192, "suffix": "mp3", "contentType": "audio/mpeg", "size": 15320000,
      "samplingRate": 44100, "path": "Marshall Jefferson/The House Music Anthem/01 - Move Your Body.mp3", "coverArt": "al-3", "albumId": "al-3"},
     {"id": "s4", "title": "Can You Feel It", "artist": "Mr. Fingers", "album": "Washing Machine", "year": 1986, "track": 2,
      "duration": 340, "bitRate": 128, "suffix": "mp3", "contentType": "audio/mpeg", "size": 5440000,

@@ -128,3 +128,17 @@ def test_a_missing_required_tier_names_the_file_and_tier(tmp_path):
     with pytest.raises(ValueError, match=r"\[tiers.medium\]") as e:
         require_tiers(p, tiers, ["crate", "medium"])
     assert "policy.toml" in str(e.value)
+
+
+def test_live_policy_is_one_dj_quality_rule():
+    """deploy/policy.toml after the 2026-10-17 pivot: all four tiers identical (mp3/m4a >= 256 kbps or lossless),
+    quality only, strict, and no version is preferred or stands in for another."""
+    live = load_policy(ROOT / "deploy" / "policy.toml")
+    assert list(live) == ["low", "medium", "high", "crate"]
+    first = dataclasses.replace(live["crate"], name="")
+    for pol in live.values():
+        assert dataclasses.replace(pol, name="") == first
+        assert pol.min_lossy_bitrate == 256 and pol.speed_weight == 0 and pol.strict_verify
+        assert pol.prefer_versions == () and pol.accept_versions == ()
+        assert not (set(pol.allow) & {"opus", "ogg", "wma"})
+        assert pol.format_rank("flac") < pol.format_rank("mp3")

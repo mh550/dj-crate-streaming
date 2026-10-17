@@ -41,7 +41,7 @@ def test_track_tier_is_the_highest_of_its_playlists(env):
     client.update_playlist("pl-1", comment="#tier:medium")          # s1 s2 s3; pl-2 "warmup #crate": s3 s4 s5
     rec.run()
     w = wanted_by_id(store)
-    assert w["s3"]["tier"] == "crate"                                # a 320 mp3 needs lossless at crate
+    assert w["s3"]["tier"] == "crate"                                # a 192 mp3 is under the crate floor
     assert w["s3"]["crates"] == ["Chicago 86"] and sorted(w["s3"]["playlists"]) == ["Chicago 86", "Disco Edits"]
     assert row(store, "pl-1", "s3")["status"] == "needs_source"       # judged once, at the derived tier
     assert store.song_tier("s3") == "crate" and store.song_tier("s1") == "medium"
@@ -86,7 +86,8 @@ def test_listening_tiers_do_not_ask_for_lossless():
     assert judge(song(suffix="mp3", bit_rate=100), TIERS["high"])[0] == "needs_source"
     assert judge(song(suffix="", bit_rate=320), p)[0] == "needs_source"
     crate = TIERS["crate"]                                                 # unchanged (test_crates::test_judge_policy)
-    assert judge(song(suffix="mp3", bit_rate=320), crate) == ("needs_source", ".mp3 320 kbps acceptable; lossless preferred")
+    assert judge(song(suffix="mp3", bit_rate=320), crate) == ("ok", ".mp3 320 kbps")      # kept (2026-10-17)
+    assert judge(song(suffix="mp3", bit_rate=192), crate)[0] == "needs_source"
     assert judge(song(suffix="flac", bit_rate=200), crate)[0] == "needs_source"
     assert judge(song(suffix="flac", bit_rate=900, sample_rate=44100, bit_depth=16), crate)[0] == "ok"
 
@@ -258,7 +259,7 @@ def test_migration_report_judges_a_new_crate_at_crate(env):
     store.set_enabled("pl-1", "Disco Edits", True)                      # crates.db says crate; comment says nothing
     text = mig.report(mig.plan(client, store), client, store)
     line = next(x for x in text.splitlines() if "queue" in x and "Disco Edits" in x)
-    assert "at crate" in line and "1 of 3" in line                      # s3, a 320 mp3, is not crate-worthy
+    assert "at crate" in line and "1 of 3" in line                      # s3, a 192 mp3, is under the crate floor
 
 
 def test_a_filed_upgrade_is_swapped_into_a_tiered_playlist_that_is_not_a_crate(world, tmp_path):

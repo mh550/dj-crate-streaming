@@ -8,7 +8,8 @@ questions are asked in order:
   2. same version: the same version key (label kinds + credit; "original mix" is neutral). With a row length:
      hits within ±4 s whose base title fits; without one: the lead artist and the *same* base title;
   3. an accepted other version: the lead artist, the same base title, another key every kind of which the
-     tier's policy accepts (deploy/policy.toml `accept`, D16: a 12" may stand in; a 12" Dub is a dub too).
+     tier's policy accepts (deploy/policy.toml `accept`; empty since D26, so only the exact version matches; a policy
+     that listed "extended" would let a 12" stand in, and a 12" Dub is a dub too).
      Matched, `how` names the label, and the report notes it, so a stand-in is never silent.
 Otherwise the row is `ambiguous` (a review row): "other version" (the same song with a label the tier does not
 accept), "length differs" (the same song at another length), "title differs" (no length; a title that only
@@ -26,7 +27,7 @@ import unicodedata
 from dataclasses import dataclass, field
 
 from crates import attrs
-from crates.reconcile import CommentNotKept, Reconciler, effective_tier, write_comment
+from crates.reconcile import CommentNotKept, Reconciler, default_owner, effective_tier, write_comment
 from crates.store import CrateStore
 from subsonic.client import Song, SubsonicClient
 from .identity import Title, loose, parse_title, stands_in
@@ -284,7 +285,11 @@ def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: C
     Navidrome did not keep it, the playlist edit and the wanted rows are still recorded, then CommentNotKept is
     raised with `.report` set."""
     existing = next((p for p in client.playlists() if p.name == name), None)
-    at = tier or effective_tier(name, existing.comment if existing else None) or IMPORT_TIER   # D21: the comment's (or name's)
+    app_owned = default_owner() == "app"        # 2026-10-17: the crates app owns the flag; the comment only says #imported
+    if app_owned:
+        at = tier or (store.playlist_tier(existing.id) if existing else None) or IMPORT_TIER
+    else:
+        at = tier or effective_tier(name, existing.comment if existing else None) or IMPORT_TIER   # D21: the comment's (or name's)
     accept = frozenset(TIERS[at].accept_versions)
     matches = [match(client, r, accept) for r in rows]
     ours = existing is not None and is_imported(existing.comment)
@@ -319,11 +324,11 @@ def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: C
         if existing is None:
             target = client.create_playlist(name, new_ids)
             playlist_id = target.id
-            comment = attrs.write(MARKER, tier=tier or IMPORT_TIER)                # D15: the import tier, owned by the comment
+            comment = MARKER if app_owned else attrs.write(MARKER, tier=tier or IMPORT_TIER)   # D15 (comment owner only)
             client.update_playlist(playlist_id, public=True)                      # spec §2a: visible to every user
         else:                                       # visibility is set once, at creation: Michael may change it
             target = existing
-            comment = _rerun_comment(existing.comment, ours, tier)
+            comment = _rerun_comment(existing.comment, ours, None if app_owned else tier)
             client.update_playlist(existing.id, add_song_ids=new_ids)
         not_kept = None
         if comment is not None:
