@@ -147,13 +147,15 @@ def _remap(entries: list[str], old: str, new: str) -> list[str]:
     return out
 
 
-def repoint_everywhere(client, db: Path, old: str, new: str) -> dict[str, str]:
+def repoint_everywhere(client, db: Path, old: str, new: str, before_write=None) -> dict[str, str]:
     """Every playlist that holds `old` (navidrome.db, so not only crates and not only tiered playlists): old→new in
     place. Returns {playlist name: "repointed" | "skipped: smart playlist" | "refused: <why>" | "failed: <why>"};
     "refused" wrote nothing (another user's playlist reads "refused: owned by <owner>"); "failed" is any other error,
     and a write may have happened. A second playlist with the same name is keyed "<name> (<id>)", one whose name
     cannot be read is keyed by its id. One playlist's error does not stop the others; the caller trashes nothing
-    unless references(db, old) is empty afterwards."""
+    unless references(db, old) is empty afterwards. `before_write(playlist_id, name, before, after)`, when given, is
+    called once a playlist passed its checks and right before its write, with the entries the write replaces (the
+    caller's reverse log); if it raises, that playlist is "failed" and not written."""
     if old == new:
         raise ValueError(f"repoint {old} to itself")
     out: dict[str, str] = {}
@@ -165,7 +167,10 @@ def repoint_everywhere(client, db: Path, old: str, new: str) -> dict[str, str]:
             name = (row[0] if row else None) or pid
             key = name if name not in out else f"{name} ({pid})"
             before = checked_entries(client, db, pid)
-            rewrite(client, db, pid, before, _remap(before, old, new))
+            after = _remap(before, old, new)
+            if before_write is not None:
+                before_write(pid, name, before, after)
+            rewrite(client, db, pid, before, after)
             out[key] = "repointed"
         except NotEditable:
             out[key] = "skipped: smart playlist"

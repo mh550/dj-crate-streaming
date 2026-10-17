@@ -110,3 +110,15 @@ def test_media_file_mirrors_album_artist_and_year(srv):
 
 def test_db_mirrors_bit_rate(srv):
     assert _rows(srv, "SELECT bit_rate FROM media_file WHERE id = 's3'") == [(192,)]
+
+
+def test_start_scan_moves_last_scan(srv):
+    """Navidrome's getScanStatus carries lastScan; a scan waiter needs it to move (scanning=false alone could be a
+    scan not yet begun)."""
+    c = _client(srv)
+    first = c.scan_status()["lastScan"]
+    c.start_scan()
+    second = c.scan_status()
+    assert second["scanning"] is False and second["lastScan"] != first
+    c.start_scan()
+    assert c.scan_status()["lastScan"] != second["lastScan"]

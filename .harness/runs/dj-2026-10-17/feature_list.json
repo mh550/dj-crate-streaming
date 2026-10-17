@@ -49,7 +49,7 @@
         "Commit `N1-03: duplicate_cleanup repoint`.",
         ".harness/check.sh is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "N1-04",

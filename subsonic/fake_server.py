@@ -90,6 +90,7 @@ class FakeState:
         self.playlists = {p["id"]: dict(p, songs=list(p["songs"])) for p in SAMPLE_PLAYLISTS}
         self.players: dict[tuple[str, str], dict] = {}   # (user, client) → {"format": ..., "maxBitRate": ...}
         self.scanning = False
+        self.scans = 0                                   # startScan count: lastScan moves with it
         self.requests: list[tuple[str, dict]] = []       # (method, params) log for tests
         self.lock = threading.Lock()
         self.sync()
@@ -205,10 +206,12 @@ def make_handler(state: FakeState):
                                                           {"name": "songLyrics", "versions": [1]}]}))
 
         def m_getScanStatus(self, q, m):
-            self._send(_resp({"scanStatus": {"scanning": state.scanning, "count": len(state.songs)}}))
+            self._send(_resp({"scanStatus": {"scanning": state.scanning, "count": len(state.songs),
+                                             "lastScan": f"2026-01-01T00:00:00Z+{state.scans}"}}))
 
         def m_startScan(self, q, m):
             state.sync()            # a scan is when navidrome.db learns of songs (a test adds them to state.songs)
+            state.scans += 1        # and is over at once, unless a test sets state.scanning
             self._send(_resp({"scanStatus": {"scanning": True, "count": len(state.songs)}}))
 
         def m_getPlaylists(self, q, m):

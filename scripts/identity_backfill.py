@@ -49,6 +49,7 @@ from pathlib import Path
 from sourcing import acoustid
 from sourcing.identity import Copy, is_placeholder, lead_artist, loose, parse_title, version_groups
 from sourcing.musicbrainz import MusicBrainz, Recording
+from subsonic.client import scan_and_wait
 
 AUDIO = (".flac", ".mp3", ".m4a", ".wav")
 TOL_S = 4.0
@@ -819,22 +820,9 @@ def _navidrome_recordings(db: Path, paths: list[str]) -> dict[str, str] | None:
 
 
 def _scan(navidrome, timeout_s: float, poll_s: float) -> str:
-    """Start a Navidrome scan and wait for it; "" when done, else the problem. A scan that has not begun yet also
-    reports scanning=false, so when the status carries `lastScan`, the wait also needs it to move."""
-    try:
-        last = navidrome.scan_status().get("lastScan")
-        navidrome.start_scan()
-        deadline = time.monotonic() + timeout_s
-        while True:
-            st = navidrome.scan_status()
-            if not st.get("scanning") and (last is None or st.get("lastScan") != last):
-                break
-            if time.monotonic() >= deadline:
-                return f"Navidrome scan still running after {timeout_s:.0f} s; id and playlist checks not run"
-            time.sleep(poll_s)
-    except Exception as e:
-        return f"Navidrome scan failed ({type(e).__name__}: {e}); id and playlist checks not run"
-    return ""
+    """subsonic.client.scan_and_wait; "" when done, else the problem."""
+    problem = scan_and_wait(navidrome, timeout_s, poll_s)
+    return f"{problem}; id and playlist checks not run" if problem else ""
 
 
 def _write_one(p: Path, rel: str, row: dict, write: dict[str, str], log: Path, writer) -> tuple[str, str]:

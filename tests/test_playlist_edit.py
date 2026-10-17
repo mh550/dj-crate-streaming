@@ -158,6 +158,30 @@ def test_repoint_keeps_playlists_with_the_same_name_apart(srv, db):
     assert _songs(srv, twin) == ["s9"]
 
 
+def test_repoint_calls_before_write_with_the_exact_entries_it_replaces(srv, db):
+    """The caller's reverse log: called after the playlist passed its checks and before its write, never for a
+    refused one; when it raises, that playlist is not written."""
+    c = _client(srv)
+    srv.state.smart.add("pl-2")
+    srv.state.sync()
+    seen = []
+
+    def hook(pid, name, before, after):
+        seen.append((pid, name, before, after, list(srv.state.playlists[pid]["songs"])))
+    out = pe.repoint_everywhere(c, db, "s3", "s9", before_write=hook)
+    assert out == {"Disco Edits": "repointed", "Chicago 86": "skipped: smart playlist"}
+    assert seen == [("pl-1", "Disco Edits", ["s1", "s2", "s3"], ["s1", "s2", "s9"], ["s1", "s2", "s3"])]
+
+    srv.state.smart.clear()
+    srv.state.sync()
+
+    def broken(*a):
+        raise OSError("disk full")
+    out = pe.repoint_everywhere(c, db, "s3", "s9", before_write=broken)
+    assert out["Chicago 86"].startswith("failed: ") and "disk full" in out["Chicago 86"]
+    assert _songs(srv, "pl-2") == ["s3", "s4", "s5"]
+
+
 def test_repoint_to_itself_is_an_error(srv, db):
     with pytest.raises(ValueError):
         pe.repoint_everywhere(_client(srv), db, "s3", "s3")
