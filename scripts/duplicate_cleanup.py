@@ -24,7 +24,9 @@ repoint-<UTC ts>.jsonl beside the plan (fsynced); `before` is exactly what the w
 newest first with playlist_edit.rewrite(client, db, id, after, before) undoes it; a line whose write then failed
 replays as PlaylistChanged, which changes nothing. Every run that is not a dry run and reached a playlist check ends
 with one waited scan (the scan between repoint and trash), so a re-run after a timed-out scan scans again. Exit 1
-when any playlist was refused or failed or the scan did not finish: the runbook stops there.
+when any playlist was refused or failed or the scan did not finish: the runbook stops there. Each playlist written is
+a crates.db event (kind `cleanup`, song_id = the extra, "repointed <playlist> to <keeper>"); a dry run opens no
+crates.db.
 
     docker compose stop worker
     docker compose run --rm worker python3 -m scripts.duplicate_cleanup trash [--plan P] [--limit N] [--dry-run]
@@ -41,8 +43,15 @@ path (a failure is noted, not fatal) and one line {ts, extra, path, keeper, tras
 trash-<UTC ts>.jsonl beside the plan. A file already gone is `already gone` (`failed` while a playlist row, hidden
 or not, still names it); beets forgets it unless the trash log says it did (a crash between the move and forget, or a
 forget that failed, heals on the next run). The library and the trash must be mounted. One waited scan after a run
-that moved a file. Exit 1 when anything was refused or failed; a refusal mid-run still re-checks the files it moved
-(docs/plans/2026-10-17-n1-duplicate-cleanup.md §trash).
+that moved a file, and one more when a file was put back after it (that scan marked it missing). Each move and put-back
+is a crates.db event (kind `cleanup`, "trashed to <day>/<path>", "put back from <day>/<path>: …", trash-relative: the
+absolute paths are in MOVES.txt). Exit 1 when anything was refused or failed; a refusal mid-run still re-checks the
+files it moved (docs/plans/2026-10-17-n1-duplicate-cleanup.md §trash).
+
+repoint and trash read SUBSONIC_* through crates.service.Config.from_env and need CRATES_DB set to an existing
+crates.db (exit 2 otherwise; never a stray one, never from_env's ./data default). Events are a copy of the jsonl logs:
+one that cannot be written is noted on stderr and fails nothing. Every path defaults from the worker's environment
+(NAVIDROME_DB, MUSIC_ROOT, TRASH_ROOT, CLEANUP_DIR), so the runbook needs no path flags.
 """
 from __future__ import annotations
 
@@ -59,6 +68,7 @@ from pathlib import Path
 
 try:
     from crates.playlist_edit import references, repoint_everywhere
+    from crates.service import Config
     from crates.store import CrateStore
     from crates.trash import free_path, move_to_trash, restore
     from scripts.dedupe_copies import remap
@@ -69,6 +79,7 @@ try:
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from crates.playlist_edit import references, repoint_everywhere
+    from crates.service import Config
     from crates.store import CrateStore
     from crates.trash import free_path, move_to_trash, restore
     from scripts.dedupe_copies import remap
@@ -107,15 +118,15 @@ def build_plan(navidrome_db: Path, music_root: Path, limit: int | None = None) -
             if limit is not None and unheld >= limit:
                 continue
             unheld += 1
-        pids = [list(dict.fromkeys(pid for pid, _ in references(navidrome_db, e["id"]))) for e in extras]
-        picked.append((keep, extras, pids, hold))
-    with closing(open_ro(navidrome_db)) as con:          # read after references(): a playlist made since is just new
+        picked.append((keep, extras, hold))
+    with closing(open_ro(navidrome_db)) as con:          # one snapshot: held_by and the previews agree
         names = dict(con.execute("SELECT id, name FROM playlist"))
         tracks: dict[str, list[str]] = {}
         for pid, sid in con.execute("SELECT playlist_id, media_file_id FROM playlist_tracks ORDER BY playlist_id, id"):
             tracks.setdefault(pid, []).append(sid)
     groups, replace, touched = [], {}, {}
-    for keep, extras, pids, hold in picked:
+    for keep, extras, hold in picked:
+        pids = [[pid for pid, sids in tracks.items() if e["id"] in sids] for e in extras]   # hidden rows included
         groups.append({"keep": _file(keep), "extras": [
             dict(_file(e), held_by=[names.get(pid) or pid for pid in ps]) for e, ps in zip(extras, pids)], "hold": hold})
         if hold is None:
@@ -123,8 +134,7 @@ def build_plan(navidrome_db: Path, music_root: Path, limit: int | None = None) -
             touched.update(dict.fromkeys(pid for ps in pids for pid in ps))
     playlists = [{"id": pid, "name": names.get(pid) or pid, "before": tracks[pid], "after": remap(tracks[pid], replace)}
                  for pid in touched if pid in tracks]       # one deleted meanwhile has nothing to repoint
-    made_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    return {"made_at": made_at, "groups": groups, "playlists": playlists}
+    return {"made_at": _now(), "groups": groups, "playlists": playlists}
 
 
 def _n(k: int, word: str) -> str:
@@ -237,12 +247,26 @@ def failed(out: dict[str, str]) -> bool:
     return any(v.startswith(("refused:", "failed:")) for v in out.values())
 
 
+def _event(store, playlist_id: str | None, song_id: str, detail: str) -> None:
+    """A crates.db event, kind `cleanup` (None: no crates.db here), committed at once so no write lock is held over
+    a scan. A copy of the jsonl logs, which stay the record: one that cannot be written (crates.db busy) is noted on
+    stderr and never fails the repoint or the move it describes."""
+    if store is None:
+        return
+    try:
+        store.log(playlist_id, song_id, "cleanup", detail)
+        store.commit()
+    except Exception as ex:
+        print(f"event not logged ({detail}): {ex!r}", file=sys.stderr)
+
+
 def repoint(plan: dict, client, navidrome_db: Path, log_path: Path, limit: int | None = None, dry_run: bool = False,
-            scan_timeout_s: float = 600, poll_s: float = 2) -> dict[str, str]:
+            scan_timeout_s: float = 600, poll_s: float = 2, store=None) -> dict[str, str]:
     """{extra id: "repointed N playlists" | "skipped: held (<why>)" | "skipped: no longer a duplicate of <keeper>" |
     "skipped: keeper missing" | "refused: <playlist>: <why>; …" | "failed: <playlist>: <why>; …" | "dry run: would
     repoint <names>" | "failed: <error>"}, plus "(scan)": "done" | "failed: <problem>" when an extra reached
-    repoint_everywhere (not on a dry run). `limit` counts the groups to act on (plan order)."""
+    repoint_everywhere (not on a dry run). `limit` counts the groups to act on (plan order). Each playlist written
+    is an event in `store` (crates.db)."""
     rows, _ = load(navidrome_db)
     group_of = {r["id"]: i for i, grp in enumerate(duplicate_groups(rows)) for r in grp}
     out: dict[str, str] = {}
@@ -267,8 +291,9 @@ def repoint(plan: dict, client, navidrome_db: Path, log_path: Path, limit: int |
                     out[extra] = f"dry run: would repoint {', '.join(names) or 'nothing'}"
                     continue
                 scan = True
-                out[extra] = _summary(repoint_everywhere(client, navidrome_db, extra, keeper,
-                                                         before_write=partial(_reverse, log_path, extra, keeper)))
+                out[extra] = _summary(repoint_everywhere(
+                    client, navidrome_db, extra, keeper, before_write=partial(_reverse, log_path, extra, keeper),
+                    after_write=lambda pid, name: _event(store, pid, extra, f"repointed {name} to {keeper}")))
             except Exception as ex:                          # recorded; the other groups and the scan still run
                 out[extra] = f"failed: {ex!r}"
     if scan:
@@ -322,7 +347,8 @@ def _forget(forget, path: Path) -> bool | None:
         return False
 
 
-def _put_back(navidrome_db: Path, extra: str, rel: str, dst: Path, music_root: Path, when: str) -> str | None:
+def _put_back(navidrome_db: Path, extra: str, rel: str, dst: Path, music_root: Path, trash_root: Path, when: str,
+              store) -> str | None:
     """The value for an extra a playlist took again after its file moved, having put the file back; None when no
     playlist holds it."""
     left = references(navidrome_db, extra)
@@ -332,7 +358,13 @@ def _put_back(navidrome_db: Path, extra: str, rel: str, dst: Path, music_root: P
         restore(dst, rel, music_root)
     except Exception as ex:
         return f"failed: added to {_entries(len(left))} {when}, not put back ({ex!r}); the file is at {dst}"
+    _event(store, None, extra, f"put back from {_in_trash(dst, trash_root)}: in {_entries(len(left))} {when}")
     return f"refused: added to {_entries(len(left))} {when}; put back"
+
+
+def _in_trash(dst: Path, trash_root: Path) -> str:
+    """The trash path an event names: relative to the trash root (the absolute one is in MOVES.txt)."""
+    return Path(dst).relative_to(trash_root).as_posix()
 
 
 def trash(plan: dict, client, navidrome_db: Path, music_root: Path, trash_root: Path, lock_path: Path, forget,
@@ -405,20 +437,22 @@ def _trash(plan, client, navidrome_db, music_root, trash_root, forget, log_path,
             return "dry run: would move"
         dst = move_to_trash(rel, music_root, trash_root)
         moved[extra] = (rel, dst)
-        back = _put_back(navidrome_db, extra, rel, dst, music_root, "during the move")
+        back = _put_back(navidrome_db, extra, rel, dst, music_root, trash_root, "during the move", store)
         if back:
             del moved[extra]
             return back
         forgotten = _forget(forget, src)
         _append(log_path, {"extra": extra, "path": rel, "keeper": keeper, "trash_path": str(dst),
                            "forgotten": forgotten})
+        _event(store, None, extra, f"trashed to {_in_trash(dst, trash_root)}")
         return f"moved to {dst}" + (" (beets still lists it)" if forgotten is False else "")
 
-    def recheck_moved() -> None:
-        """A row added between a move and now (the scan, or a refusal) puts the file back."""
+    def recheck_moved() -> bool:
+        """A row added between a move and now (the scan, or a refusal) puts the file back; True when one did."""
+        put = False
         for extra, (rel, dst) in moved.items():
             try:
-                back = _put_back(navidrome_db, extra, rel, dst, music_root, "after the move")
+                back = _put_back(navidrome_db, extra, rel, dst, music_root, trash_root, "after the move", store)
             except Exception as ex:
                 back = f"failed: re-checking its playlists after the move: {ex!r}"
             if back:
@@ -426,7 +460,9 @@ def _trash(plan, client, navidrome_db, music_root, trash_root, forget, log_path,
                     _append(log_path, {"extra": extra, "path": rel, "keeper": None, "trash_path": str(dst),
                                        "restored": True})
                     back += "; beets no longer lists it; Navidrome lists it again after the next scan"
+                    put = True
                 out[extra] = back
+        return put
 
     try:
         for g in _in_scope(plan, limit):
@@ -445,8 +481,9 @@ def _trash(plan, client, navidrome_db, music_root, trash_root, forget, log_path,
         raise CleanupRefused(str(e), out) from None
     if moved:
         problem = scan_and_wait(client, scan_timeout_s, poll_s)
+        if recheck_moved() and not problem:              # that scan marked it missing: hidden until the next one
+            problem = scan_and_wait(client, scan_timeout_s, poll_s)
         out["(scan)"] = f"failed: {problem}" if problem else "done"
-        recheck_moved()
     return out
 
 
@@ -458,48 +495,53 @@ def _count(text: str) -> int:
 
 
 def main(argv=None) -> int:
+    """Defaults come from the worker's environment (deploy/compose.yml): NAVIDROME_DB, MUSIC_ROOT, TRASH_ROOT,
+    CLEANUP_DIR, and through crates.service.Config.from_env SUBSONIC_* and CRATES_DB (events; its folder holds
+    worker.lock)."""
+    env = os.environ
+    out_dir = Path(env.get("CLEANUP_DIR") or DEFAULT_OUT)
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("plan", help="read-only: write plan.json and report.md")
-    p.add_argument("--navidrome-db", type=Path, default=Path(os.environ.get("NAVIDROME_DB") or DEFAULT_DB))
-    p.add_argument("--music-root", type=Path, default=Path(os.environ.get("MUSIC_ROOT") or "/srv/music"))
-    p.add_argument("--out", type=Path, default=Path(os.environ.get("CLEANUP_DIR") or DEFAULT_OUT))
-    p.add_argument("--limit", type=_count, default=None, help="keep only the first N groups to act on")
+    p.add_argument("--out", type=Path, default=out_dir)
     r = sub.add_parser("repoint", help="repoint every playlist from each extra to its keeper, then scan")
-    r.add_argument("--plan", type=Path, default=Path(os.environ.get("CLEANUP_DIR") or DEFAULT_OUT) / "plan.json")
-    r.add_argument("--navidrome-db", type=Path, default=Path(os.environ.get("NAVIDROME_DB") or DEFAULT_DB))
-    r.add_argument("--limit", type=_count, default=None, help="act on the first N groups to act on")
-    r.add_argument("--dry-run", action="store_true", help="say what would be repointed; write nothing")
-    r.add_argument("--poll-s", type=float, default=2.0, help=argparse.SUPPRESS)
     t = sub.add_parser("trash", help="with the worker stopped: move each extra no playlist holds to the trash, then scan")
-    t.add_argument("--plan", type=Path, default=Path(os.environ.get("CLEANUP_DIR") or DEFAULT_OUT) / "plan.json")
-    t.add_argument("--navidrome-db", type=Path, default=Path(os.environ.get("NAVIDROME_DB") or DEFAULT_DB))
-    t.add_argument("--music-root", type=Path, default=Path(os.environ.get("MUSIC_ROOT") or "/srv/music"))
-    t.add_argument("--trash-root", type=Path, default=Path(os.environ.get("TRASH_ROOT") or "/srv/_trash"))
-    t.add_argument("--limit", type=_count, default=None, help="act on the first N groups to act on")
-    t.add_argument("--dry-run", action="store_true", help="say what would move; move and write nothing")
-    t.add_argument("--poll-s", type=float, default=2.0, help=argparse.SUPPRESS)
+    for x in (p, r, t):
+        x.add_argument("--navidrome-db", type=Path, default=Path(env.get("NAVIDROME_DB") or DEFAULT_DB))
+        x.add_argument("--limit", type=_count, default=None, help="only the first N groups to act on")
+    for x in (p, t):
+        x.add_argument("--music-root", type=Path, default=Path(env.get("MUSIC_ROOT") or "/srv/music"))
+    t.add_argument("--trash-root", type=Path, default=Path(env.get("TRASH_ROOT") or "/srv/_trash"))
+    for x in (r, t):
+        x.add_argument("--plan", type=Path, default=out_dir / "plan.json")
+        x.add_argument("--dry-run", action="store_true", help="say what would happen; write nothing")
+        x.add_argument("--poll-s", type=float, default=2.0, help=argparse.SUPPRESS)
     a = ap.parse_args(argv)
     if a.cmd == "plan":
         plan = build_plan(a.navidrome_db, a.music_root, a.limit)
         print(f"{counts(plan)} → {write_plan(plan, a.out)}")
         return 0
-    client = SubsonicClient(os.environ.get("SUBSONIC_URL", "http://127.0.0.1:4533"), os.environ.get("SUBSONIC_USER", ""),
-                            os.environ.get("SUBSONIC_PASS", ""))
+    cfg = Config.from_env()
+    crates_db = Path(cfg.db_path)
+    if not env.get("CRATES_DB") or not crates_db.is_file():  # not from_env's ./data default; never a stray one
+        print("set CRATES_DB to the crate service's database (events; its folder holds worker.lock)", file=sys.stderr)
+        return 2
+    client = SubsonicClient(cfg.subsonic_url, cfg.username, cfg.password)
     stamp = f"{datetime.datetime.now(datetime.timezone.utc):%Y%m%dT%H%M%SZ}"
     plan = json.loads(a.plan.read_text(encoding="utf-8"))
     if a.cmd == "repoint":
         log = a.plan.parent / f"repoint-{stamp}.jsonl"
-        out = repoint(plan, client, a.navidrome_db, log, a.limit, a.dry_run, poll_s=a.poll_s)
+        store = None if a.dry_run else CrateStore(crates_db)    # opening it may migrate it: not on a dry run
+        try:
+            out = repoint(plan, client, a.navidrome_db, log, a.limit, a.dry_run, poll_s=a.poll_s, store=store)
+        finally:
+            if store is not None:
+                store.db.close()
     else:
-        crates_db = Path(os.environ.get("CRATES_DB") or "")
-        if not crates_db.is_file():                         # its folder holds worker.lock; never make a stray one
-            print("set CRATES_DB to the crate service's database (its folder holds worker.lock)", file=sys.stderr)
-            return 2
         from sourcing.cli import DEFAULT_BEETS_CONFIG
         from sourcing.filer import BeetsFiler
-        forget = (BeetsFiler(Path(os.environ.get("BEETS_CONFIG") or DEFAULT_BEETS_CONFIG)).forget
-                  if os.environ.get("DJ_WORKER") == "1" else None)       # beets lives in the worker image only
+        forget = (BeetsFiler(Path(env.get("BEETS_CONFIG") or DEFAULT_BEETS_CONFIG)).forget
+                  if env.get("DJ_WORKER") == "1" else None)       # beets lives in the worker image only
         if forget is None:
             print("no beets here (DJ_WORKER is not 1): beets keeps rows for the trashed paths", file=sys.stderr)
         log = a.plan.parent / f"trash-{stamp}.jsonl"

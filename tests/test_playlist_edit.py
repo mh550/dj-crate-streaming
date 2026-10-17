@@ -182,6 +182,17 @@ def test_repoint_calls_before_write_with_the_exact_entries_it_replaces(srv, db):
     assert _songs(srv, "pl-2") == ["s3", "s4", "s5"]
 
 
+def test_repoint_calls_after_write_only_for_a_playlist_written_and_read_back(srv, db):
+    """The caller's event: after the write was read back, never for a smart or refused playlist."""
+    srv.state.smart.add("pl-2")
+    srv.state.sync()
+    seen = []
+    out = pe.repoint_everywhere(_client(srv), db, "s3", "s9",
+                                after_write=lambda pid, name: seen.append((pid, name, list(srv.state.playlists[pid]["songs"]))))
+    assert out == {"Disco Edits": "repointed", "Chicago 86": "skipped: smart playlist"}
+    assert seen == [("pl-1", "Disco Edits", ["s1", "s2", "s9"])]
+
+
 def test_repoint_to_itself_is_an_error(srv, db):
     with pytest.raises(ValueError):
         pe.repoint_everywhere(_client(srv), db, "s3", "s3")

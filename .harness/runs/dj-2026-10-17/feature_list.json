@@ -81,7 +81,7 @@
         "Commit `N1-05: review and simplify the duplicate cleanup`.",
         ".harness/check.sh is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "N2-01",

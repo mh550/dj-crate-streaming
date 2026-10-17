@@ -297,12 +297,13 @@ the test fixture `tests/fixtures/policy-legacy.toml` holds.
 | beets writes tags only on a confirmed match | `-W` import + `confirm` hook (`filer.py:291-299`) |
 | A filed file is never downloaded twice | row → `verify` with path as soon as beets filed it (`fetch.py:307-313`); re-checks never search (`fetch.py:211-224`) |
 | Originals read-only | not mounted in any container; slskd sees only its own folder |
-| Trash, never delete library files | no code deletes a library file; trash never overwrites (`(2)` suffix); the one library-file mover is `trash.move_to_trash`, reached only through `sourcing/replace.py` after the licence and an empty `references()` |
+| Trash, never delete library files | no code deletes a library file; trash never overwrites (`(2)` suffix); the one library-file mover is `trash.move_to_trash`, reached only through `sourcing/replace.py` (after the licence and an empty `references()`) and `scripts/duplicate_cleanup.py trash` (below) |
 | Playlist index edits are guarded | only `crates/playlist_edit.py` edits by index; it cross-checks `navidrome.db` and refuses on any difference, on smart playlists and on playlists owned by another user |
 | One reconcile at a time | flock on `/data/reconcile.lock`, 60 s, then 503 / skip (`reconcile.py`) |
 | Never overwrite an id | `apply` writes only empty fields, file unchanged since propose (`identity_backfill.py:732`) |
 | Other tags untouched | `write_minimal` sets only named fields; `apply` re-reads all others |
 | Peer names never in UI/logs/events | `explain(peers=False)`, basenames only in events and worker stdout |
+| Duplicate cleanup never trashes a file a playlist holds (built N1, not run live) | `scripts/duplicate_cleanup.py`: groups recomputed from navidrome.db right before each repoint and move; `repoint` only via `playlist_edit.repoint_everywhere`, reverse line before each write, then a waited scan; `trash` under `worker.lock`, no scan running, `references()` empty (hidden rows, other owners) before and after each move and after the closing scan (else put back), `CrateStore.song_in_use` empty, `MOVES.txt` before each move; every repoint and move a `cleanup` event |
 | Navidrome DB read-only | `open_ro` (`mode=ro`) and a `:ro` mount |
 | Policy typos stop the start | `load_policy` raises naming the key (`policy.py:95`) |
 
@@ -333,6 +334,7 @@ docker compose stop worker / up -d worker          # pause / resume (a stop mid-
 | Identity propose | `docker compose exec -T worker python -m scripts.identity_backfill propose [--limit 40]` |
 | Identity apply | `… identity_backfill apply /data/identity/identity-proposal.json --dry-run`, then `--yes [--limit 5] [--classes …] [--only GLOB]` |
 | Undo apply | `… identity_backfill revert /data/identity/apply-<time>.jsonl` |
+| Duplicate cleanup | `docker compose exec -T worker python3 -m scripts.duplicate_cleanup plan`, then `repoint [--dry-run] [--limit N]`; with the worker stopped `docker compose run --rm worker python3 -m scripts.duplicate_cleanup trash [--dry-run] [--limit N]`; staged runbook and undo in `docs/worker.md` "Duplicate cleanup" |
 | Tests | `cd ~/projects/dj-crate-streaming && ~/.local/bin/pytest -q` (about 1,100 tests, a few minutes) |
 | Offline demo | `python3 -m crates.cli demo` → http://127.0.0.1:4580 |
 

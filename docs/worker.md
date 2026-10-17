@@ -349,6 +349,93 @@ you changed by hand is left alone, and the run says so. Running it twice is harm
 To apply again after an undo, run `propose` first: the undo changes each file's modification time, so `apply`
 skips those files as "changed since the proposal".
 
+## Duplicate cleanup (built in N1, not yet run live)
+
+Navidrome lists some recordings more than once (102 groups, 115 extra files in `docs/duplicates-report.md`). The
+cleanup keeps the best copy of each (lossless first, then bit rate, then the properly filed path: `keep_rank`),
+repoints every playlist from the other copies to it, and moves the other files to `/srv/_trash/<day>/` (D31). It runs
+in three commands: `plan` (read-only), `repoint`, `trash`. All of them take their paths from the worker's environment,
+so no path flags are needed. The design, with every check, is in `docs/plans/2026-10-17-n1-duplicate-cleanup.md`.
+
+All commands run from `/srv/docker`. Output goes to `/data/duplicate-cleanup/` in the container, which is
+`/srv/docker/crates/duplicate-cleanup/` on the host. Stop at the first surprise and undo from the logs (below).
+
+**check** below means
+`docker compose run --rm worker sh -c 'python3 -m scripts.export_playlists export && python3 -m scripts.export_playlists check'`.
+Only the worker image mounts `/srv/music`. The worker exports only every 300 s, and not at all while it is stopped, so
+a check without a fresh export reports "stale".
+
+**1. Before.** Deploy the image with `scripts/deploy.sh` and note the previous image tag for a rollback. Then take the
+snapshots: `scripts/snapshot-crates-db.sh` and
+`sqlite3 /srv/docker/navidrome/navidrome.db ".backup /srv/docker/navidrome/navidrome.db.pre-n1.snap"`. Note when
+restic last ran. **check** must be green.
+
+**2. Plan (read-only).**
+
+```
+docker compose exec -T worker python3 -m scripts.duplicate_cleanup plan
+```
+
+Read `duplicate-cleanup/report.md`. Groups whose keeper file is not on disk, and groups with two lossless copies,
+are held and listed only (D35). To act on a "both lossless" group, set its `"hold"` to `null` in `plan.json`. Leave
+"keeper missing on disk" holds alone. A re-run of `plan` keeps the old `plan.json` as `plan-<made_at>.json`.
+
+**3. Repoint (the worker may keep running).**
+
+```
+docker compose exec -T worker python3 -m scripts.duplicate_cleanup repoint --dry-run
+docker compose exec -T worker python3 -m scripts.duplicate_cleanup repoint --limit 5     # then check
+docker compose exec -T worker python3 -m scripts.duplicate_cleanup repoint --limit 50    # then check
+docker compose exec -T worker python3 -m scripts.duplicate_cleanup repoint               # then check
+docker compose exec -T crates python3 -m crates.cli reconcile
+```
+
+- Each run reads every playlist's current entries and edits it only through `crates/playlist_edit.py`. A hidden
+  row, a smart playlist, another user's playlist or an edit made meanwhile refuses that playlist, and it stays as it
+  was.
+- Before each write, one reverse line goes to `repoint-<time>.jsonl`. Each written playlist is also a `cleanup`
+  event in crates.db.
+- Each run ends with a Navidrome scan and waits for it (the scan between repoint and trash).
+- Exit 1 means a playlist was refused or failed, or the scan did not finish. Read it before going on.
+- `--limit N` counts groups in plan order. A re-run does not write the done ones again.
+
+**4. Trash (the worker stopped).**
+
+```
+docker compose stop worker
+docker compose run --rm worker python3 -m scripts.duplicate_cleanup trash --dry-run
+docker compose run --rm worker python3 -m scripts.duplicate_cleanup trash --limit 5      # then check
+docker compose run --rm worker python3 -m scripts.duplicate_cleanup trash --limit 50     # then check
+docker compose run --rm worker python3 -m scripts.duplicate_cleanup trash                # then check
+docker compose up -d worker
+```
+
+- Use `run --rm worker`, not `exec`. Only that container has `DJ_WORKER=1`, which tells beets to forget each trashed
+  path, and `/srv/music` and `/srv/_trash` mounted.
+- It refuses to start while the worker holds `/data/worker.lock`, while a Navidrome scan runs (checked again before
+  every move), or when the library or the trash is not mounted.
+- Per file, it moves nothing unless all of these hold:
+  - no playlist row names the extra in navidrome.db (hidden rows and other users' playlists included);
+  - nothing in crates.db is still working with it;
+  - the keeper is on disk and still one recording with it.
+- Each move goes through `crates.trash.move_to_trash`, so its `mv` back is in `/srv/_trash/<day>/MOVES.txt` before
+  the file moves. Then there is a line in `trash-<time>.jsonl` and a `cleanup` event.
+- If a playlist takes the song during the move, or before the closing scan ends, the file is put back.
+- A re-run reports the moved files as `already gone`.
+- Exit 1 means something was refused or failed. Read every refusal before the next stage.
+
+Expected end state: 730 songs listed if the 9 "both lossless" groups stay held, 0 playlist rows on a missing file,
+**check** green. Do not purge missing files in Navidrome until you are sure: the purge is what makes a restored file
+come back under a new id.
+
+**Undo.**
+- **A trashed file:** run its `MOVES.txt` line with `mv -n` (it never overwrites), or use `crates.trash.restore`.
+  Then scan. It comes back under its old id only while Navidrome still has its missing row, that is, before a purge.
+- **A repointed playlist:** first get its files back and scanned. Then replay its lines of `repoint-<time>.jsonl`
+  **newest first**, each as `playlist_edit.rewrite(client, db, playlist_id, after, before)`. The oldest line's
+  `before` is the playlist as it was.
+- The `.m3u8` exports are not an undo source: every check re-exports them.
+
 ## Editing the policy
 
 `deploy/policy.toml` holds Michael's settings: the four quality tiers (what each accepts, its floors and speed

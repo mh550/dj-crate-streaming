@@ -94,17 +94,18 @@ scan between repoint and trash. Reuse `scripts/identity_backfill._scan` (start, 
 `scanning` is false *and* `lastScan` has moved; a timeout or error is reported and exits 1) — lift it to a shared
 helper rather than copy it. So a `repoint` that exits 0 has had its scan; one that exits 1 tells the runbook to stop.
 
-**Reverse log** `repoint-<UTC ts>.jsonl` beside the plan: **before** each `repoint_everywhere` call, exactly one
-line per affected playlist (`references(db, extra)`'s playlist ids) `{ts, playlist_id, name, extra, keeper, before,
-after}`, `before` read from navidrome.db `playlist_tracks` order, `after` = `playlist_edit._remap(before, extra,
-keeper)`. Written before the call, so a crash mid-write still leaves the reverse. No second line is needed: when
-`repoint_everywhere` reports `repointed`, `rewrite` has already read the playlist back and found it equal to `after`
-(else it raises `EditNotKept`, reported as `failed`); the per-playlist result goes to stdout and the event (N1-05).
-The happy-path test counts two lines (pl-1, pl-2). This replaces N1-03's wording "the after list is the one read
-back", which cannot hold for a line written before the call. `--dry-run` writes no log and sends no `updatePlaylist`.
+**Reverse log** `repoint-<UTC ts>.jsonl` beside the plan (as built in N1-03): one line per playlist
+`{ts, playlist_id, name, extra, keeper, before, after}`, written by `repoint_everywhere`'s `before_write` hook once
+that playlist passed its checks and **right before its own write**, fsynced. So `before` is exactly what the write
+replaces (even if Amperfy edited the playlist since the plan), and a refused playlist gets no line. No second line is
+needed: `repointed` means `rewrite` read the playlist back equal to `after` (else `EditNotKept`, reported as
+`failed`). The happy-path test counts two lines (pl-1, pl-2). Every run that is not a dry run and reached a playlist
+check ends with the waited scan, so a re-run after a scan timeout cannot exit 0 unscanned. `--dry-run` writes no log,
+sends no `updatePlaylist` and opens no crates.db.
 
-crates.db is not written by `repoint`: the worker's own reconcile (`WORKER_RECONCILE_S`, 600 s) re-reads the
-repointed playlists and refreshes `crate_tracks`; the runbook also runs `crates.cli reconcile` once.
+Each playlist written is also a crates.db event (`after_write` hook, below). The worker's own reconcile
+(`WORKER_RECONCILE_S`, 600 s) re-reads the repointed playlists and refreshes `crate_tracks`; the runbook also runs
+`crates.cli reconcile` once.
 
 ### `trash` (N1-04)
 
@@ -139,8 +140,8 @@ names it (a crash between the move and `forget` is healed by the next run; a fin
 
 After the loop, if a file moved, one scan, waited for as in `repoint`, so Navidrome marks the extras missing (their
 `media_file` rows stay, with no playlist rows on them, until Michael purges missing files in Navidrome). The run then
-re-checks `references()` for every extra it moved; one that reappeared is restored as in step 2 and reported (the
-next scan lists it again under its id). Exit 1 when anything was refused. No new deleting code:
+re-checks `references()` for every extra it moved; one that reappeared is restored as in step 2 and reported, and
+the run scans once more (the first scan marked it missing, so its playlist row would stay hidden until the next one). Exit 1 when anything was refused. No new deleting code:
 `move_to_trash` stays the only library-file mover; this is its second caller after `sourcing/replace.py`.
 
 **Why the keeper is never re-identified by Navidrome:** measured fact 6 (retag + move between scans gives a new id)
@@ -151,7 +152,12 @@ so the scan after `trash` only marks the extras missing.
 
 Every repoint and move is also a crates.db event (`store.log`, kind `cleanup`, `song_id` = the extra; `detail` names
 the playlist or the trash path relative to the trash root). No peer names exist here; no absolute library path goes
-into an event beyond what `MOVES.txt` already holds.
+into an event beyond what `MOVES.txt` already holds. As built: `repointed <playlist> to <keeper>` (`playlist_id` set,
+from `repoint_everywhere(after_write=…)`, after the readback), `trashed to <day>/<path>` (after the trash-log line),
+`put back from <day>/<path>: in <n> playlist entries during|after the move`. Each is committed at once (no write lock
+held over a scan). The jsonl logs and `MOVES.txt` stay the record: an event that cannot be written (crates.db busy)
+is noted on stderr and never fails the action. `CRATES_DB` must be set and name an existing file (exit 2): never
+`Config.from_env`'s `./data/crates.db` default, whose folder would hold the wrong `worker.lock`.
 
 ### Undo
 
@@ -215,7 +221,7 @@ mirror, which is why the repoint jsonl, not the exports, is the playlist undo.
    note the last restic run and the running image; **check** is green.
 2. `docker compose exec -T worker python3 -m scripts.duplicate_cleanup plan` → read `duplicate-cleanup/report.md`;
    clear any `both lossless` hold you want acted on by setting it to `null` in `plan.json`.
-3. `docker compose exec -T crates python3 -m scripts.duplicate_cleanup repoint --dry-run`, then `repoint --limit 5`
+3. `docker compose exec -T worker python3 -m scripts.duplicate_cleanup repoint --dry-run`, then `repoint --limit 5`
    (it waits for its scan), **check**; `--limit 50`, check; all, check. Then
    `docker compose exec -T crates python3 -m crates.cli reconcile`.
 4. `docker compose stop worker`; `docker compose run --rm worker python3 -m scripts.duplicate_cleanup trash --dry-run`;

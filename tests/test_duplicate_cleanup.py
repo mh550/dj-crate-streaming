@@ -263,9 +263,7 @@ def test_a_hidden_row_refuses_that_playlist_only_and_exits_1(lib, tmp_path, monk
     dc.write_plan(dc.build_plan(db, music), out)
     srv.state.missing.add("s2")                                          # hidden in pl-1
     srv.state.sync()
-    monkeypatch.setenv("SUBSONIC_URL", srv.url)
-    monkeypatch.setenv("SUBSONIC_USER", "demo")
-    monkeypatch.setenv("SUBSONIC_PASS", "demo")
+    _env(monkeypatch, srv, tmp_path / "crates.db")
     assert dc.main(["repoint", "--plan", str(out / "plan.json"), "--navidrome-db", str(db), "--poll-s", "0"]) == 1
     assert srv.state.playlists["pl-1"]["songs"] == FIXTURE["pl-1"]
     assert srv.state.playlists["pl-2"]["songs"] == ["s9", "s4", "s5"]
@@ -428,9 +426,13 @@ def test_an_error_on_one_extra_is_failed_and_the_rest_still_run(lib, tmp_path, m
     assert out[second] == "repointed 1 playlist" and out["(scan)"] == "done" and dc.failed(out)   # s4: pl-2 only
 
 
-def _env(monkeypatch, srv):
+def _env(monkeypatch, srv, crates_db=None):
+    """SUBSONIC_* for the fake; with `crates_db`, also an empty crates.db there as CRATES_DB."""
     for k, v in (("SUBSONIC_URL", srv.url), ("SUBSONIC_USER", "demo"), ("SUBSONIC_PASS", "demo")):
         monkeypatch.setenv(k, v)
+    if crates_db is not None:
+        CrateStore(crates_db).db.close()
+        monkeypatch.setenv("CRATES_DB", str(crates_db))
 
 
 def test_main_repoint_dry_run_then_limit_then_all_exit_0(lib, tmp_path, monkeypatch, capsys):
@@ -439,7 +441,7 @@ def test_main_repoint_dry_run_then_limit_then_all_exit_0(lib, tmp_path, monkeypa
     out = tmp_path / "cleanup"
     monkeypatch.setenv("CLEANUP_DIR", str(out))
     dc.write_plan(dc.build_plan(db, music), out)
-    _env(monkeypatch, srv)
+    _env(monkeypatch, srv, tmp_path / "crates.db")
     args = ["repoint", "--navidrome-db", str(db), "--poll-s", "0"]
     srv.state.requests.clear()
     assert dc.main(args + ["--dry-run"]) == 0
@@ -674,7 +676,8 @@ def test_a_row_added_during_the_move_puts_the_file_back(tr, monkeypatch):
 
 def test_a_row_added_before_the_scan_ends_puts_the_file_back(tr, monkeypatch):
     def scan(client, timeout_s, poll_s):
-        tr.srv.state.playlists["pl-2"]["songs"].append("s3")
+        if "s3" not in tr.srv.state.playlists["pl-2"]["songs"]:
+            tr.srv.state.playlists["pl-2"]["songs"].append("s3")
         tr.srv.state.sync()
         return ""
     monkeypatch.setattr(dc, "scan_and_wait", scan)
@@ -818,3 +821,169 @@ def test_main_trash_dry_run_then_all(tr, monkeypatch, capsys):
     said = capsys.readouterr().out
     assert "s3: moved to " in said and "(scan): done" in said and "trash log:" in said
     assert not (tr.music / S3).exists() and len(list(out.glob("trash-*.jsonl"))) == 1
+
+
+# ── events, main() from the worker's environment, end to end (N1-05) ──────────────────────────────────────────
+
+def cleanup_events(db_path):
+    store = CrateStore(db_path)
+    try:
+        return [(e["playlist_id"], e["song_id"], e["detail"]) for e in reversed(store.events(100))
+                if e["kind"] == "cleanup"]
+    finally:
+        store.db.close()
+
+
+def test_each_repointed_playlist_is_a_cleanup_event(lib, tmp_path):
+    srv, db, music = lib
+    store = CrateStore(tmp_path / "crates.db")
+    plan = dc.build_plan(db, music)
+    srv.state.missing.add("s2")                                         # pl-1 is refused: no event for it
+    srv.state.sync()
+    assert dc.repoint(plan, _client(srv), db, tmp_path / "r.jsonl", poll_s=0, store=store)["s3"].startswith("refused")
+    store.db.close()
+    assert cleanup_events(tmp_path / "crates.db") == [("pl-2", "s3", "repointed Chicago 86 to s9")]
+
+
+def test_a_dry_run_repoint_is_no_event(lib, tmp_path):
+    srv, db, music = lib
+    store = CrateStore(tmp_path / "crates.db")
+    dc.repoint(dc.build_plan(db, music), _client(srv), db, tmp_path / "r.jsonl", dry_run=True, poll_s=0, store=store)
+    store.db.close()
+    assert cleanup_events(tmp_path / "crates.db") == []
+
+
+def test_each_move_and_put_back_is_a_cleanup_event_with_the_trash_relative_path(tr, tmp_path, monkeypatch):
+    CrateStore(tmp_path / "crates.db").db.close()
+    assert tr.run(crates_db=tmp_path / "crates.db")["s3"].startswith("moved to ")
+    rel = f"{today()}/{S3}"
+    assert cleanup_events(tmp_path / "crates.db") == [(None, "s3", f"trashed to {rel}")]
+    assert str(tr.music) not in str(cleanup_events(tmp_path / "crates.db"))
+
+    restore(tr.trash_root / rel, S3, tr.music)                           # put back by hand; then a late row
+    def scan(client, timeout_s, poll_s):
+        tr.srv.state.playlists["pl-2"]["songs"].append("s3")
+        tr.srv.state.sync()
+        return ""
+    monkeypatch.setattr(dc, "scan_and_wait", scan)
+    assert tr.run(crates_db=tmp_path / "crates.db")["s3"].startswith("refused: added to 1 playlist entry after")
+    assert cleanup_events(tmp_path / "crates.db")[1:] == [
+        (None, "s3", f"trashed to {rel}"), (None, "s3", f"put back from {rel}: in 1 playlist entry after the move")]
+
+
+def test_a_dry_run_trash_is_no_event(tr, tmp_path):
+    CrateStore(tmp_path / "crates.db").db.close()
+    tr.run(crates_db=tmp_path / "crates.db", dry_run=True)
+    assert cleanup_events(tmp_path / "crates.db") == []
+
+
+def test_end_to_end_plan_repoint_trash_from_the_worker_environment_then_the_playlist_check(lib, tmp_path,
+                                                                                            monkeypatch, capsys):
+    """The commands as the runbook runs them, every path from the worker's environment, then export + check."""
+    from scripts import export_playlists as ep
+    srv, db, music = lib
+    second_group(srv, music)
+    trash_root, cleanup, crates_db = tmp_path / "trash", tmp_path / "cleanup", tmp_path / "data" / "crates.db"
+    trash_root.mkdir()
+    crates_db.parent.mkdir()
+    CrateStore(crates_db).db.close()
+    _env(monkeypatch, srv)
+    for k, v in (("NAVIDROME_DB", db), ("MUSIC_ROOT", music), ("TRASH_ROOT", trash_root), ("CLEANUP_DIR", cleanup),
+                 ("CRATES_DB", crates_db)):
+        monkeypatch.setenv(k, str(v))
+    monkeypatch.delenv("DJ_WORKER", raising=False)
+    exports = tmp_path / "exports"
+    ep.export(db, music, exports)
+    assert ep.check(db, music, exports) == []
+
+    assert dc.main(["plan"]) == 0 and (cleanup / "plan.json").is_file()
+    assert dc.main(["repoint", "--poll-s", "0"]) == 0
+    assert dc.main(["trash", "--poll-s", "0"]) == 0                    # the fake marks nothing missing on its scan
+    said = capsys.readouterr().out
+    assert "s3: moved to " in said and "s4: moved to " in said
+    assert not (music / S3).exists() and (trash_root / today() / S3).is_file()
+    assert (music / S9["path"]).is_file() and (music / srv.state.songs["s8"]["path"]).is_file()
+    assert songs(srv) == {"pl-1": ["s1", "s2", "s9"], "pl-2": ["s9", "s8", "s5"]}
+    assert [d for _, _, d in cleanup_events(crates_db)] == [
+        "repointed Disco Edits to s9", "repointed Chicago 86 to s9", "repointed Chicago 86 to s8",
+        f"trashed to {today()}/{S3}", f"trashed to {today()}/{srv.state.songs['s4']['path']}"]
+    assert len(list(cleanup.glob("repoint-*.jsonl"))) == 1 and len(list(cleanup.glob("trash-*.jsonl"))) == 1
+    ep.export(db, music, exports)
+    assert ep.check(db, music, exports) == []
+
+
+def test_repoint_and_trash_need_an_existing_crates_db(lib, tmp_path, monkeypatch, capsys):
+    srv, db, music = lib
+    dc.write_plan(dc.build_plan(db, music), tmp_path / "cleanup")
+    _env(monkeypatch, srv)
+    monkeypatch.setenv("CLEANUP_DIR", str(tmp_path / "cleanup"))
+    monkeypatch.setenv("NAVIDROME_DB", str(db))
+    monkeypatch.setenv("CRATES_DB", str(tmp_path / "nowhere.db"))
+    for cmd in ("repoint", "trash"):
+        assert dc.main([cmd, "--dry-run"]) == 2
+        assert "CRATES_DB" in capsys.readouterr().err
+    assert not (tmp_path / "nowhere.db").exists() and srv.state.playlists["pl-1"]["songs"] == FIXTURE["pl-1"]
+
+
+class LockedStore:
+    """crates.db busy (the crates service writing): every event fails."""
+    def log(self, *a):
+        raise sqlite3.OperationalError("database is locked")
+
+    def commit(self):
+        pass
+
+    def song_in_use(self, song_id):
+        return None
+
+
+def test_an_event_that_cannot_be_written_never_fails_the_repoint_or_the_move(tr, lib, tmp_path, monkeypatch, capsys):
+    srv, db, music = lib
+    second_group(srv, music)
+    plan = dc.build_plan(db, music)
+    out = dc.repoint(plan, _client(srv), db, tmp_path / "r2.jsonl", poll_s=0, store=LockedStore())
+    assert out["s4"] == "repointed 1 playlist" and not dc.failed(out)
+    monkeypatch.setattr(dc, "CrateStore", lambda path: type("S", (LockedStore,), {"db": sqlite3.connect(":memory:")})())
+    out = tr.run(plan, crates_db=tmp_path / "crates.db")
+    assert out["s3"].startswith("moved to ") and out["s4"].startswith("moved to ") and not dc.failed(out)
+    assert "event not logged" in capsys.readouterr().err
+
+
+def test_crates_db_must_be_named_not_defaulted(lib, tmp_path, monkeypatch, capsys):
+    """Config.from_env falls back to ./data/crates.db; a stray one there must not pass for the worker's."""
+    srv, db, music = lib
+    dc.write_plan(dc.build_plan(db, music), tmp_path / "cleanup")
+    _env(monkeypatch, srv)
+    monkeypatch.delenv("CRATES_DB", raising=False)
+    monkeypatch.setenv("CLEANUP_DIR", str(tmp_path / "cleanup"))
+    monkeypatch.setenv("NAVIDROME_DB", str(db))
+    (tmp_path / "data").mkdir()
+    CrateStore(tmp_path / "data" / "crates.db").db.close()
+    monkeypatch.chdir(tmp_path)
+    assert dc.main(["repoint", "--dry-run"]) == 2 and "CRATES_DB" in capsys.readouterr().err
+
+
+def test_a_dry_run_repoint_does_not_open_crates_db(lib, tmp_path, monkeypatch):
+    srv, db, music = lib
+    dc.write_plan(dc.build_plan(db, music), tmp_path / "cleanup")
+    _env(monkeypatch, srv, tmp_path / "crates.db")
+    monkeypatch.setenv("CLEANUP_DIR", str(tmp_path / "cleanup"))
+    monkeypatch.setenv("NAVIDROME_DB", str(db))
+    monkeypatch.setattr(dc, "CrateStore", lambda path: pytest.fail("opened crates.db"))
+    assert dc.main(["repoint", "--dry-run"]) == 0
+
+
+def test_a_put_back_after_the_closing_scan_scans_again(tr, monkeypatch):
+    """The first scan marked the extra missing; without another one its playlist row stays hidden."""
+    calls = []
+
+    def scan(client, timeout_s, poll_s):
+        calls.append(1)
+        if len(calls) == 1:
+            tr.srv.state.playlists["pl-2"]["songs"].append("s3")
+            tr.srv.state.sync()
+        return ""
+    monkeypatch.setattr(dc, "scan_and_wait", scan)
+    out = tr.run()
+    assert out["s3"].startswith("refused: added to 1 playlist entry after the move") and len(calls) == 2
+    assert out["(scan)"] == "done"
