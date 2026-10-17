@@ -13,6 +13,29 @@ stop`; answers to the questions below go under `## Answers`. Every session reads
 
 ---
 
+### 2026-10-17 20:10 · verify H1
+
+| Feature | Step | What you ran or read | What you saw | Holds |
+|---|---|---|---|---|
+| H1-01 | 1 | ran snapshot script with tmp WAL c.db/n.db (CRATES_DB, NAVIDROME_DB), no args; `pragma integrity_check` on each .snap; also read tests/test_snapshot_script.py (23 pass in the 50-test subset) | c.db.snap + n.db.snap written, exit 0, both print ok | yes |
+| H1-01 | 2 | `--suffix pre-x` after md5sum of the two .snap files | c.db.pre-x.snap and n.db.pre-x.snap written, integrity ok; md5sum -c: both .snap unchanged | yes |
+| H1-01 | 3 | made n.db garbage, then mode 000; ran script | exit 1 both times ('file is not a database' / 'unable to open'); md5sum -c: existing snapshots unchanged; no .new left in ls | yes |
+| H1-01 | 4 | NAVIDROME_DB=nope.db | one stderr note 'no navidrome.db … skipped', c.db.snap written, exit 0 | yes |
+| H1-01 | 5 | `git diff 60a23d0..HEAD -- CLAUDE.md`; read progress H1-01 entry | H1-01 did not touch CLAUDE.md (only H1-03's commit 198ce81 did, --no-deps, flagged to Michael); H1-01 entry has 'Proposed changes' with Snapshots wording | yes |
+| H1-01 | 6 | `/home/mh550/projects/agent-harness/lib/check.sh` | green, cached, 1283 tests | yes |
+| H1-02 | 1 | read tests/test_worker.py:522 test_cli_worker_once_writes_the_heartbeat_beside_crates_db | runs `worker --once` on fakes, asserts tmp_path/worker.heartbeat is a file with mtime <10 s old; test passes (subset run) | yes |
+| H1-02 | 2 | `healthcheck.py worker` with CRATES_DB in scratch, WORKER_POLL_S=30: missing / fresh / touched 5 min ago | missing exit 1 'no heartbeat'; fresh exit 0 'healthy: 0 s old (limit 90 s)'; stale exit 1 '300 s old' | yes |
+| H1-02 | 3 | `CRATES_PORT=1 healthcheck.py crates` timed; read tests/test_healthcheck.py:84 and :103 | closed port exit 1 in 0.07 s; test_crates_is_healthy_when_status_answers_200 asserts code 0 against CrateServer /api/status; closed-port test asserts code 1 and took<6 | yes |
+| H1-02 | 4 | lib/check.sh | green, 1283 tests | yes |
+| H1-03 | 1 | `CRATES_SRC=$PWD GIT_SHA=test docker compose -f deploy/compose.yml config` | exit 0; healthcheck blocks under crates, navidrome, worker; depends_on service_healthy for crates and worker | yes |
+| H1-03 | 2 | read H1-03 progress Live entry (verbatim commands); `docker image ls dj-crates` | flock + deploy.sh recorded outside backup window, rollback b2df730b1d recorded and image still present; I did not redeploy (not needed for verify) | yes |
+| H1-03 | 3 | `docker compose ps`, `docker inspect dj-worker-1 dj-crates-1` | crates, worker, navidrome all 'Up (healthy)' on dj-crates:caef38ce9b; Check pass recorded in progress (not re-run live) | yes |
+| H1-03 | 4 | read docs/worker.md 559-590 | 'Deploying, and what healthy means': what healthy is per service, docker compose ps/inspect commands, 2-minute expectation | yes |
+| H1-03 | 5 | lib/check.sh; ran tests/test_compose.py in subset | green, 1283 tests; 50 passed in subset | yes |
+| H1-04 | 1 | read progress H1-04 entry | Opus review: 0 Critical, 1 Important (runbooks' up -d) + Minor, with fixes and test-first notes listed | yes |
+| H1-04 | 2 | read docs/backup-plan.md 32-44 | says script now writes crates.db.snap AND navidrome.db.snap; runs from ~/projects/dj-crate-streaming so main must be checked out there | yes |
+| H1-04 | 3 | lib/check.sh | green, 1283 tests | yes |
+
 ### 2026-10-17 19:30 · H1-04 · passes
 - **Changed:** `docs/backup-plan.md` item 4: the nightly job's first line (`sudo -u mh550 /home/mh550/projects/dj-crate-streaming/scripts/snapshot-crates-db.sh || true`, read from `/usr/local/sbin/restic-backup`) now writes `crates.db.snap` **and** `navidrome.db.snap`. It runs from `~/projects/dj-crate-streaming`, so **main must be checked out (and pulled) there**. `|| true` hides a failed snapshot. The recovery order puts the `.snap` files in place. Fixes from the review are listed below. Tests 1,281 → 1,283.
 - **Review (Opus, whole H1 diff `/tmp/…/h1.diff`, `git diff 60a23d0..HEAD`):** 0 Critical. **Important 1** (fixed): five runbook lines (`docs/worker.md` settings + policy.toml, `docs/architecture.md` §6, §8 and the M-steps) still said `docker compose up -d [--build] crates worker` from `/srv/docker`. That recreates Navidrome, crates and worker from main's compose file without healthchecks. They now say `scripts/deploy.sh` from a clean, pushed checkout. Minor, fixed test-first: `.backup` had no busy timeout, so a locked source failed at once. It now runs `sqlite3 -cmd '.timeout 10000'`, and a new test holds an exclusive lock for 1.5 s: red "database is locked", then green. `healthcheck.py` did not catch `http.client.HTTPException`, so a garbage reply printed a traceback. A new test was red, then green. Minor, docs only: the snapshot header no longer claims the rename of the two databases is atomic, and `docs/worker.md` names the Soulseek search (up to 30 s, no beat) as a step that can read unhealthy. No simplification needed.
