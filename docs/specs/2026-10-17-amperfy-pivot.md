@@ -29,6 +29,7 @@ listed below for the later custom client.
 | D34 | **Future, low priority: Spotify ↔ Navidrome playlist sync.** A playlist stays in step with its Spotify source. Michael floated a marker in the Navidrome playlist title for it; that would reverse "no hashtags in names", so ask before building. Exploration only. | |
 | D35 *default* | **Two lossless copies are held.** A duplicate group with a lossless extra beside a lossless keeper (often two masters) is listed in the cleanup plan, never repointed or trashed, until Michael sets its `hold` to `null` in `plan.json` (`docs/plans/2026-10-17-n1-duplicate-cleanup.md`). | refines D31 ("ties: the properly filed path") |
 | D36 *default* | **The cleanup's trash step runs only with the worker stopped**, holding `<dirname(CRATES_DB)>/worker.lock`, so beets has one writer (`plan` and `repoint` run beside the daemon). | refines D18 (one beets writer) for D31; instead of M9 §3's worker replacement jobs |
+| D37 *default* | **The import flag lives in a new crates.db table**, `imported_playlists` (one row per playlist id, `docs/plans/2026-10-17-n2-imported-marker.md`). import-playlist decides "ours" from it alone, so a playlist with `#imported` in its comment but no row is foreign. The one-time migration commits the row **before** it strips the token from the comment, and the legacy comment reader (`is_imported`) survives only for that migration and `crates/migrate_attrs.py`. | makes D33 concrete |
 
 
 ## Recorded settings and answers (2026-10-17)
