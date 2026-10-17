@@ -17,4 +17,19 @@ Optional, outside 03:15–04:30, to see it work once (this runs a real backup, a
 
 Rollback: `git checkout <older main commit>` in that checkout, then the same `sudo deploy/install-backup.sh`.
 
+Before the `sudo`, check the installer itself is main's (sudo runs the working-tree copy; this prints nothing):
+
+    git -C ~/projects/dj-crate-streaming diff origin/main -- deploy/install-backup.sh
+
+### H2-02 (2026-10-17): give the backup unit a start timeout (optional, any time outside 03:15–04:30)
+`restic-backup.service` has `TimeoutStartUSec=infinity`, so a hang (e.g. a stuck mount) leaves it "activating"
+for good: no backup, no failure, and the timer never fires again. A 3 h limit makes a hang fail visibly:
+
+    sudo mkdir -p /etc/systemd/system/restic-backup.service.d
+    printf '[Service]\nTimeoutStartSec=3h\n' | sudo tee /etc/systemd/system/restic-backup.service.d/timeout.conf
+    sudo systemctl daemon-reload
+    systemctl show restic-backup.service -p TimeoutStartUSec     # expect 3h
+
+Rollback: `sudo rm /etc/systemd/system/restic-backup.service.d/timeout.conf && sudo systemctl daemon-reload`.
+
 ## Answers

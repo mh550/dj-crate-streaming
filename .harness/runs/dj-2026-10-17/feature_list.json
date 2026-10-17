@@ -209,7 +209,7 @@
         "docs/backup-plan.md matches deploy/restic-backup",
         "`.harness/check.sh` is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "H3-01",

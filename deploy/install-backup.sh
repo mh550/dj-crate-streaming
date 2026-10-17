@@ -9,6 +9,8 @@
 # Refuses a dirty tree and a commit that is not on origin/main (an older one is fine: that is the rollback). The files
 # come from the commit itself, not the working tree, so what is installed is exactly what the diff shows. Shows a diff
 # of each file against what is installed, asks, installs, and prints the installed commit.
+# The checks cover the files it installs, not this script: sudo runs the working-tree copy, so before running it make
+# sure it is main's (`git diff origin/main -- deploy/install-backup.sh` prints nothing).
 # RESTIC_BACKUP_TARGET and SNAPSHOT_TARGET override the targets (tests).
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -41,7 +43,8 @@ for ((i = 0; i < ${#pairs[@]}; i += 2)); do
     path="${pairs[i]}" dst="${pairs[i+1]}"
     src="$tmp/$(basename "$path")"
     git show "HEAD:$path" >"$src"
-    if [ -f "$dst" ] && cmp -s "$src" "$dst"; then
+    # Unchanged means the same bytes, 0755 and owned by whoever installs (root): a writable copy is not unchanged.
+    if [ -f "$dst" ] && cmp -s "$src" "$dst" && [ "$(stat -c '%a %u' "$dst")" = "755 $(id -u)" ]; then
         echo "$dst: unchanged"
     else
         changed=1

@@ -98,6 +98,16 @@ def test_nothing_to_do_when_already_installed(repo):
     assert "[y/N]" not in out.stdout + out.stderr
 
 
+def test_a_target_whose_mode_changed_is_installed_again(repo):
+    # Same content but group-writable: whoever can write it can change what root runs nightly.
+    first = _run(repo)
+    first.backup.chmod(0o775)
+    out = _run(repo)
+    assert out.returncode == 0, out.stderr
+    assert "already installed" not in out.stdout
+    assert stat.S_IMODE(first.backup.stat().st_mode) == 0o755
+
+
 @pytest.mark.parametrize("dirt", ["modified", "untracked"])
 def test_a_dirty_tree_is_refused_before_any_diff(repo, dirt):
     if dirt == "modified":
