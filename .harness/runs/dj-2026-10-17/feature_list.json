@@ -183,6 +183,101 @@
       "passes": false
     },
     {
+      "id": "H2-01",
+      "milestone": "H2",
+      "kind": "build",
+      "model": "opus",
+      "description": "deploy/restic-backup (the nightly backup, now in git) takes the live-writer lock before snapshotting and releases it after `restic backup`, snapshots with the installed snapshot script, warns on a failed snapshot, and pushes a success heartbeat to Gatus; deploy/install-backup.sh is the sudo install Michael runs. See docs/specs/2026-10-17-backup-lock-and-monitoring.md §H2.",
+      "steps": [
+        "Stub-based tests show the order lock → snapshot → mount check → backup → unlock → forget/check",
+        "Unmounted drive: exit 1 and no heartbeat; restic failure: no heartbeat; failed snapshot: 'WARNING: DB snapshot failed' and the backup still runs",
+        "A lock held by another process makes it wait; past the (test-shortened) timeout it logs 'backing up anyway' and proceeds; a lock file it creates is usable by uid 1000",
+        "install-backup.sh refuses a dirty tree or a non-main commit and shows a diff before installing (tested with temp target paths)",
+        "The progress entry and INBOX give Michael the exact install command; no sudo was run",
+        "`.harness/check.sh` is green"
+      ],
+      "passes": false
+    },
+    {
+      "id": "H2-02",
+      "milestone": "H2",
+      "kind": "review",
+      "model": "opus",
+      "description": "H2 is reviewed and simplified: an Opus reviewer reads the H2 diff from a file; Critical/Important findings are fixed test-first; docs/backup-plan.md describes the lock, the installed snapshot path and the heartbeat (and no longer says the backup runs from ~/projects/dj-crate-streaming).",
+      "steps": [
+        "The review's findings and their fixes are in the progress entry (or 'no Critical/Important')",
+        "docs/backup-plan.md matches deploy/restic-backup",
+        "`.harness/check.sh` is green"
+      ],
+      "passes": false
+    },
+    {
+      "id": "H3-01",
+      "milestone": "H3",
+      "kind": "build",
+      "model": "sonnet",
+      "description": "/api/status reports the worker heartbeat's age in seconds (from H1-02's worker.heartbeat; null when missing), so one HTTP check covers crates and the worker.",
+      "steps": [
+        "A test with a fresh heartbeat file sees a small age; with none it sees null; with an old mtime it sees that age",
+        "The existing status tests still pass; `.harness/check.sh` is green"
+      ],
+      "passes": false
+    },
+    {
+      "id": "H3-02",
+      "milestone": "H3",
+      "kind": "build",
+      "model": "opus",
+      "description": "Gatus is added to deploy/compose.yml (pinned v5 tag, 127.0.0.1:4590, read-only config from the repo, history in /srv/docker/gatus) with deploy/gatus/config.yaml: navidrome /ping, crates /api/status incl. worker age < 180 s, slskd via gluetun, external endpoints 'backup' (26 h heartbeat) and 'disk', ntfy alerts from ${GATUS_NTFY_TOPIC} after 3 failures, send-on-resolved. See docs/specs/2026-10-17-backup-lock-and-monitoring.md §H3.",
+      "steps": [
+        "A test parses deploy/compose.yml and finds gatus pinned (not :latest), bound to 127.0.0.1 only, config mounted read-only",
+        "A test checks config.yaml has every endpoint in the spec's table with a 60 s interval and failure-threshold 3 on the HTTP ones, and no secret literals (only ${...} names)",
+        "deploy/.env.example lists GATUS_NTFY_TOPIC and GATUS_BACKUP_TOKEN",
+        "If the pinned Gatus doesn't support external-endpoint heartbeats, INBOX says so and proposes an alternative; nothing is improvised",
+        "`.harness/check.sh` is green"
+      ],
+      "passes": false
+    },
+    {
+      "id": "H3-03",
+      "milestone": "H3",
+      "kind": "build",
+      "model": "sonnet",
+      "description": "deploy/health-push.sh pushes disk health (/srv < 85 %, /mnt/backup mounted and < 90 %) to Gatus' 'disk' external endpoint; deploy/systemd/dj-health-push.{service,timer} run it every 10 min as user units (written and tested, not enabled).",
+      "steps": [
+        "Tests with stub df/mountpoint/curl: healthy → success=true; full or unmounted → success=false with the reason; unset URL/token → exits 0 with a warning, no request",
+        "The unit files pass `systemd-analyze --user verify` (or the session says why it couldn't run it)",
+        "`.harness/check.sh` is green"
+      ],
+      "passes": false
+    },
+    {
+      "id": "H3-04",
+      "milestone": "H3",
+      "kind": "build",
+      "model": "opus",
+      "description": "Gatus is deployed live under the live-staged protocol: `flock -n <LIVE_LOCK> scripts/deploy.sh gatus` from this run's worktree (outside the 03:15–04:30 window), then the navidrome, crates and slskd endpoints read green from http://127.0.0.1:4590/api/v1/endpoints/statuses; backup and disk may stay grey until Michael's one-time steps. Rollback is stop + rm of the gatus container.",
+      "steps": [
+        "The progress entry quotes the deploy command, the statuses response for the three HTTP endpoints, and the rollback command",
+        "No other container was recreated (`docker ps` uptimes for navidrome, crates, worker, slskd, gluetun unchanged)",
+        "INBOX lists Michael's one-time steps from the spec, verbatim"
+      ],
+      "passes": false
+    },
+    {
+      "id": "H3-05",
+      "milestone": "H3",
+      "kind": "review",
+      "model": "opus",
+      "description": "H2+H3 monitoring is reviewed and simplified: an Opus reviewer reads the H3 diff from a file; Critical/Important findings are fixed test-first; docs/monitoring.md says what is checked, how often, how alerts reach Michael, how to add a check, and his one-time steps.",
+      "steps": [
+        "The review's findings and their fixes are in the progress entry (or 'no Critical/Important')",
+        "docs/monitoring.md exists and matches deploy/gatus/config.yaml",
+        "`.harness/check.sh` is green"
+      ],
+      "passes": false
+    },
+    {
       "id": "N2-01",
       "milestone": "N2",
       "model": "opus",
