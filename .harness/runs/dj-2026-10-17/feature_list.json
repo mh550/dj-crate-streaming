@@ -138,7 +138,7 @@
         "CLAUDE.md is not edited; the progress entry proposes the Snapshots wording for Michael",
         "`.harness/check.sh` is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "H1-02",
@@ -152,7 +152,7 @@
         "`healthcheck.py crates` exits 0 against the test server's /api/status and 1 against a closed port, within 6 s",
         "`.harness/check.sh` is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "H1-03",
@@ -167,7 +167,7 @@
         "docs/worker.md's deploy section says what healthy means and how to read it",
         "`.harness/check.sh` is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "H1-04",
@@ -180,7 +180,7 @@
         "docs/backup-plan.md says the nightly snapshot now includes navidrome.db and that the backup script runs this script from ~/projects/dj-crate-streaming (so main must be checked out there)",
         "`.harness/check.sh` is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "H2-01",

@@ -25,6 +25,13 @@ services:
     volumes:
       - /srv/docker/navidrome:/data
       - /srv/music:/music:ro
+    healthcheck:                             # H1: the image has busybox wget, no curl
+      test: ["CMD", "wget", "-q", "--spider", "-T", "5", "http://127.0.0.1:4533/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+      start_interval: 5s
     restart: unless-stopped
 
   crates:                                    # crate service + web client (this repo)
@@ -53,7 +60,15 @@ services:
       - /srv/docker/crates:/data
       - /srv/_trash:/trash:ro                # the trash (Michael created /srv/_trash 2026-10-16)
       - /srv/docker/navidrome:/srv/docker/navidrome:ro
-    depends_on: [navidrome]
+    healthcheck:                             # H1: /api/status answers 200 within 5 s (502 while Navidrome is down)
+      test: ["CMD", "python", "scripts/healthcheck.py", "crates"]
+      interval: 30s
+      timeout: 10s                           # the script's 5 s is per socket operation
+      retries: 3
+      start_period: 30s
+      start_interval: 5s
+    depends_on:
+      navidrome: {condition: service_healthy}
     restart: unless-stopped
 
   worker:                                  # D18: the only process that downloads or runs beets
@@ -89,7 +104,16 @@ services:
       - /srv/docker/crates:/data
       - /srv/docker/navidrome:/srv/docker/navidrome:ro
       - /srv/_trash:/srv/_trash
-    depends_on: [navidrome, gluetun]
+    healthcheck:                             # H1: worker.heartbeat beside crates.db younger than max(90 s, 3 × WORKER_POLL_S)
+      test: ["CMD", "python", "scripts/healthcheck.py", "worker"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s                     # a new worker is unhealthy until its first tick ends
+      start_interval: 5s
+    depends_on:
+      navidrome: {condition: service_healthy}
+      gluetun: {condition: service_started}
     restart: unless-stopped
 
   # --- Phase 1: Soulseek, only ever through the VPN (brought up in M4) ---

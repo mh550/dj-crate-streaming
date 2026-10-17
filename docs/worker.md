@@ -263,7 +263,8 @@ queued, downloading, checking, filed, playing.
 
 ## Settings the worker reads
 
-All set in `deploy/compose.yml` (the worker service); change them there and `docker compose up -d worker`.
+All set in `deploy/compose.yml` (the worker service); change them there, commit, push and run `scripts/deploy.sh worker`
+from that clean checkout (see "Deploying, and what healthy means"; not `docker compose up` from `/srv/docker`).
 
 | Variable | Default | What it does |
 |---|---|---|
@@ -361,14 +362,14 @@ All commands run from `/srv/docker`. Output goes to `/data/duplicate-cleanup/` i
 `/srv/docker/crates/duplicate-cleanup/` on the host. Stop at the first surprise and undo from the logs (below).
 
 **check** below means
-`docker compose run --rm worker sh -c 'python3 -m scripts.export_playlists export && python3 -m scripts.export_playlists check'`.
+`docker compose run --rm --no-deps worker sh -c 'python3 -m scripts.export_playlists export && python3 -m scripts.export_playlists check'`.
 Only the worker image mounts `/srv/music`. The worker exports only every 300 s, and not at all while it is stopped, so
 a check without a fresh export reports "stale".
 
 **1. Before.** Deploy the image with `scripts/deploy.sh` and note the previous image tag for a rollback. Then take the
-snapshots: `scripts/snapshot-crates-db.sh` and
-`sqlite3 /srv/docker/navidrome/navidrome.db ".backup /srv/docker/navidrome/navidrome.db.pre-n1.snap"`. Note when
-restic last ran. **check** must be green.
+snapshots: `scripts/snapshot-crates-db.sh --suffix pre-<run>` writes `crates.db.pre-<run>.snap` and
+`navidrome.db.pre-<run>.snap` beside the databases (each checked with `pragma integrity_check`), which the nightly
+`.snap` copies never overwrite. Note when restic last ran. **check** must be green.
 
 **2. Plan (read-only).**
 
@@ -408,11 +409,11 @@ docker compose exec -T crates python3 -m crates.cli reconcile
 
 ```
 docker compose stop worker
-docker compose run --rm worker python3 -m scripts.duplicate_cleanup trash --dry-run
-docker compose run --rm worker python3 -m scripts.duplicate_cleanup trash --limit 5      # then check
-docker compose run --rm worker python3 -m scripts.duplicate_cleanup trash --limit 50     # then check
-docker compose run --rm worker python3 -m scripts.duplicate_cleanup trash                # then check
-docker compose up -d worker
+docker compose run --rm --no-deps worker python3 -m scripts.duplicate_cleanup trash --dry-run
+docker compose run --rm --no-deps worker python3 -m scripts.duplicate_cleanup trash --limit 5      # then check
+docker compose run --rm --no-deps worker python3 -m scripts.duplicate_cleanup trash --limit 50     # then check
+docker compose run --rm --no-deps worker python3 -m scripts.duplicate_cleanup trash                # then check
+docker compose start worker
 ```
 
 - Use `run --rm worker`, not `exec`. Only that container has `DJ_WORKER=1`, which tells beets to forget each trashed
@@ -499,13 +500,14 @@ weight) and the version preferences. The worker and the crates service read it o
 (`Dockerfile` copies it). To change it:
 
 ```
-cd /srv/docker
-$EDITOR /home/mh550/projects/dj-crate-streaming/deploy/policy.toml
-docker compose up -d --build crates worker
+$EDITOR deploy/policy.toml            # in a checkout of the branch you deploy; commit and push it
+scripts/deploy.sh                     # from that clean checkout: builds and recreates crates + worker
+cd /srv/docker && docker compose logs --tail 5 worker
 ```
 
 A typo (an unknown key, a version word that does not exist, a wrong type) stops the start with a message naming the
-key, so check `docker compose logs --tail 5 worker` afterwards.
+key, so check the log afterwards. `scripts/deploy.sh`, not `docker compose up` from `/srv/docker`: see "Deploying, and
+what healthy means".
 
 The tier numbers are the same as before M7. D17 (raising the medium and high bitrate floors) is still open, and it is
 one number per tier in this file.
@@ -549,8 +551,49 @@ cd /srv/docker
 docker compose logs -f worker      # watch it work
 docker compose stop worker         # stop (queued approvals wait; a stop mid-download marks that approval
                                    # "interrupted: worker restarted" and the row failed at the next start: approve again)
-docker compose up -d worker        # start / resume
+docker compose start worker        # resume (never recreates; `up -d worker` would re-read compose.yml)
 ```
+
+**Is it alive?** The worker touches `/srv/docker/crates/worker.heartbeat` (beside `crates.db`) when a tick ends, and
+at each poll while it waits on a download or a Navidrome scan. A tick that fails as a whole (`tick failed:` in the
+log) does not, and a starting worker removes the old file, so it reads unhealthy until its first tick ends.
+`scripts/healthcheck.py` (stdlib, exit 0 healthy, 1 not, one line saying why) reads it:
+
+```
+docker compose exec worker python scripts/healthcheck.py worker   # heartbeat younger than 3 × WORKER_POLL_S, at least 90 s
+docker compose exec crates python scripts/healthcheck.py crates   # /api/status answers 200 within 5 s
+```
+
+`crates` is unhealthy while Navidrome is down too, because `/api/status` asks it (502). A stale heartbeat while the
+container runs means the loop is stuck, every tick fails (`tick failed:`), or the file cannot be written
+(`heartbeat failed:`).
+
+**Deploying, and what healthy means.** `scripts/deploy.sh` (from a clean checkout of the commit to run; its header has
+the rollback) builds `crates` + `worker`, tags `dj-crates:<10-char sha>` and recreates both. Note the running tag
+from `docker compose ps` first: it is the rollback. `docker compose up` starts `crates` and `worker` only once
+Navidrome is healthy (after a reboot Docker's restart policy starts all three at once). The healthchecks in `deploy/compose.yml` run every 30 s with a 10 s timeout. Three failures in a row make a
+container unhealthy. During its start period a container is checked every 5 s, and its first pass makes it healthy.
+
+| Container | Healthy means | Start period |
+|---|---|---|
+| navidrome | `/ping` answers (the busybox `wget` in its image) | 60 s |
+| crates | `scripts/healthcheck.py crates`: `/api/status` answers 200 within 5 s (not while Navidrome is down) | 30 s |
+| worker | `scripts/healthcheck.py worker`: the heartbeat is younger than max(90 s, 3 × `WORKER_POLL_S`) | 120 s |
+
+```
+docker compose ps                                          # STATUS "Up 2 minutes (healthy)", "(health: starting)", "(unhealthy)"
+docker inspect --format '{{json .State.Health}}' dj-worker-1 | python3 -m json.tool   # the last 5 checks and the line each printed
+```
+
+After a deploy, all three should read `(healthy)` within 2 minutes; then run the Check (`CLAUDE.md`). Docker only
+labels a container: it neither restarts nor alerts on unhealthy. A worker inside one long step that does not beat
+(a reconcile, a Soulseek search, a beets import, a hanging Navidrome) can read unhealthy for a while and still be working: read its log.
+An image built before H1-03 (`dj-crates:b2df730b1d` and older) has no `scripts/healthcheck.py`, so a rollback to it
+reads `(unhealthy)` for good while it works normally. `/srv/docker/compose.yml` is a symlink to
+`~/projects/dj-crate-streaming/deploy/compose.yml`. Compose recreates a running dependency whose settings differ from
+the file it reads. So while that checkout's file has no healthchecks, a `docker compose up` there recreates what it touches without
+them (and Navidrome with it). This page's `run` commands use `--no-deps` and resume with `start` for that reason; a
+code or policy change goes out with `scripts/deploy.sh` from a checkout that has them.
 
 The worker mounts `/srv/music`, `/srv/docker/beets` and `/srv/incoming/soulseek` at the same paths as on the host,
 because beets stores absolute paths in `library.db`. It also mounts `/srv/_trash` read-write at the same path

@@ -515,3 +515,76 @@ def test_a_recheck_that_raises_still_waits_for_the_interval(world):
         assert (row["status"], row["reason"]) == ("verify", why) and row["updated_at"] > stale
         w.tick()
     assert calls == ["s4"]                                              # not retried every tick
+
+
+# --- H1-02: the heartbeat (scripts/healthcheck.py worker reads its mtime) ---
+
+def test_cli_worker_once_writes_the_heartbeat_beside_crates_db(tmp_path, monkeypatch):
+    import time
+    shutil.copy(cli.DEFAULT_BEETS_CONFIG, tmp_path / "beets.yaml")
+    with FakeSubsonicServer() as nd, FakeSlskdServer(RESPONSES, tmp_path / "dl", files={}) as sl:
+        _cli_env(monkeypatch, tmp_path, nd, sl)
+        monkeypatch.setenv("BEETS_CONFIG", str(tmp_path / "beets.yaml"))
+        monkeypatch.setenv("DJ_WORKER", "1")
+        assert cli.main(["worker", "--once"]) == 0
+    hb = tmp_path / "worker.heartbeat"                                  # <dirname(CRATES_DB)>/worker.heartbeat
+    assert hb.is_file() and time.time() - hb.stat().st_mtime < 10
+
+
+def test_only_a_tick_that_ends_beats_and_no_heartbeat_path_writes_nothing(world, tmp_path, monkeypatch):
+    """A tick that fails as a whole (DB locked, a bug) is a broken worker: it must go stale, not stay healthy."""
+    import os
+    hb, lines = tmp_path / "hb", []
+    with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
+        worker(world, srv, lines).run(0, ticks=1)                       # no heartbeat_path: nothing written
+        assert not hb.exists()
+        w = worker(world, srv, lines, heartbeat_path=hb)
+        w.tick()
+        assert hb.is_file()
+        os.utime(hb, (1, 1))
+        monkeypatch.setattr(world["store"], "pending_approvals", lambda: (_ for _ in ()).throw(RuntimeError("db locked")))
+        with pytest.raises(RuntimeError):
+            w.tick()
+    assert hb.stat().st_mtime == 1 and any(l.startswith("tick: ") for l in lines)
+
+
+def test_run_drops_an_earlier_heartbeat_before_its_first_tick(world, tmp_path, monkeypatch):
+    """A redeploy must not inherit the old container's fresh heartbeat: healthy means this worker has ticked."""
+    hb, seen = tmp_path / "hb", []
+    hb.touch()
+    monkeypatch.setattr(Worker, "tick", lambda self: seen.append(hb.exists()))
+    with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
+        worker(world, srv, heartbeat_path=hb).run(0, ticks=1)
+    assert seen == [False]
+
+
+def test_the_heartbeat_beats_while_fetch_waits_on_a_scan(world, tmp_path):
+    flac, seen = good_flac_bytes(tmp_path), []
+    world["store"].approve("s4", "michael", None, "crate"); world["store"].commit()
+    nd = world["nd"]
+    with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: flac}) as srv:
+        new_song(nd, len(flac))
+        w = worker(world, srv, heartbeat_path=tmp_path / "hb")
+        w.beat = lambda: seen.append(nd.state.scanning)
+        orig = world["client"].start_scan
+
+        def start_scan():                                               # a scan that ends by itself after 3 polls
+            orig(); nd.state.scanning, nd.state.scan_polls = True, 3
+        world["client"].start_scan = start_scan
+        report = w.tick()
+    assert report.results[0].startswith("s4: ok:")
+    assert seen.count(True) >= 2                                        # beats during the scan wait, not just around the tick
+
+
+def test_a_heartbeat_that_cannot_be_written_is_logged_once_and_the_tick_goes_on(world, tmp_path):
+    lines = []
+    with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
+        w = worker(world, srv, lines, heartbeat_path=tmp_path / "missing-dir" / "hb")
+        w.tick(); w.tick()
+        assert len([l for l in lines if l.startswith("heartbeat failed:")]) == 1
+        (tmp_path / "missing-dir").mkdir()
+        w.tick()                                                        # works again
+        (tmp_path / "missing-dir" / "hb").unlink(); (tmp_path / "missing-dir").rmdir()
+        w.tick()                                                        # fails again: logged again
+    assert len([l for l in lines if l.startswith("heartbeat failed:")]) == 2
+    assert lines.count("tick: 0 approvals, 0 rechecked") == 4                # every tick went on

@@ -29,11 +29,19 @@ is **done**, and `/srv/music` + `/srv/docker` are in it.
 3. **Exclude the transcoding cache.** `/srv/docker/navidrome/cache/` is rebuilt on demand and is allowed
    to grow to 3 GB (`ND_TRANSCODINGCACHESIZE`). If it isn't already in `/etc/restic/excludes`, add
    `/srv/docker/navidrome/cache` and `/srv/docker/slskd/logs`. (Can't read the excludes file without root.)
-4. **Live SQLite files are in the set.** `navidrome.db` (WAL) and `crates.db` are copied while the services
-   run. Fine in practice for Navidrome's DB (rebuildable from the files + playlists), but crates.db
-   now holds approvals (not rebuildable) and runs in WAL mode, so a plain file copy can miss recent writes:
-   snapshot it before restic. A consistent copy costs one line: `sqlite3 /srv/docker/crates/crates.db ".backup /srv/docker/crates/crates.db.bak"`
-   before the backup, or stop `crates` for the few seconds the snapshot takes.
+4. **Live SQLite files are in the set, so the job snapshots them first.** `navidrome.db` and `crates.db` run in WAL
+   mode and are copied while the services run, so a plain file copy can miss recent writes (crates.db holds
+   approvals, which are not rebuildable). The nightly job's first step is
+   `sudo -u mh550 /home/mh550/projects/dj-crate-streaming/scripts/snapshot-crates-db.sh || true` (no arguments;
+   with `|| true` a failed snapshot neither stops the backup nor says so, and restic saves the previous `.snap`).
+   Since H1 that script writes **both** `/srv/docker/crates/crates.db.snap` and `/srv/docker/navidrome/navidrome.db.snap`
+   (`sqlite3 .backup`, one self-contained file each, `integrity_check`, all or nothing: D38 *default*), and restic
+   picks them up with the rest of `/srv/docker`. Restore from the `.snap` files, not the live `.db` copies.
+   **The job runs the script from `~/projects/dj-crate-streaming`, so it runs whatever that checkout has: `main`
+   must be checked out there** (and pulled: until that checkout has H1, the nightly run writes `crates.db.snap`
+   only). H2 replaces this with an installed copy (`/usr/local/lib/dj-crates/snapshot-crates-db.sh`, see
+   `docs/specs/2026-10-17-backup-lock-and-monitoring.md`). A run's own restore point is
+   `scripts/snapshot-crates-db.sh --suffix pre-<run>`, which the nightly call never overwrites.
 5. **`.env` secrets are in the set.** `/srv/docker/.env` is inside the (encrypted) repo. That's desirable
    for recovery; just remember the repo password is the key to everything.
 6. **Off-site is the remaining hole.** The HDD sits next to the NVMe. The cheapest step is a second
@@ -53,6 +61,7 @@ restic mount /mnt/restic-browse &               # or browse it like a filesystem
 ```
 
 Full-box recovery order: reinstall Pop → mount HDD → restore `/etc/restic`, `/srv/docker` (brings `.env`,
-compose symlink target is the git checkout), `/srv/music`, `/home/mh550` → `docker compose up -d` →
-Navidrome rescans → playlists come back from `navidrome.db` (or rebuild from
+compose symlink target is the git checkout), `/srv/music`, `/home/mh550` → put the snapshots in place: copy
+`navidrome.db.snap` over `navidrome.db` and `crates.db.snap` over `crates.db`, and delete any `-wal`/`-shm` beside
+them → `docker compose up -d` → Navidrome rescans → playlists come back from `navidrome.db` (or rebuild from
 `docs/library-map.csv` with `scripts/folders_to_playlists.py`).

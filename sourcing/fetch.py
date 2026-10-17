@@ -162,10 +162,13 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
           tier: str | None = None, policy: QualityPolicy | None = None, download_timeout_s: float = 600, poll_s: float = 1.0,
           scan_timeout_s: float = 120, verifier=verify, filer: BeetsFiler | None = None,
           navidrome_db: Path | None = None, lookup=None, prefer: dict | None = None,
-          trash_root: Path | None = None, score_tier: str | None = None, provisional: bool = False) -> FetchResult:
+          trash_root: Path | None = None, score_tier: str | None = None, provisional: bool = False,
+          sleep=None) -> FetchResult:
     """`score_tier` ranks and verifies at that tier's policy and leaves the row's tier alone (unlike `tier`, which
     re-tiers an external row). `provisional` (play-now, D20; external rows without a library song) files the copy
-    as provisional: see the module docstring."""
+    as provisional: see the module docstring. `sleep` (default time.sleep) waits each poll of the download and of
+    the scan; the worker passes one that also beats its heartbeat, so a long download doesn't look like a dead worker."""
+    sleep = sleep or time.sleep
     music_root, downloads_root = Path(music_root), Path(downloads_root)
     row = store.find_wanted(wanted_id)
     if row is None:
@@ -203,7 +206,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         navidrome.start_scan()
         t0 = time.time()
         while navidrome.scan_status().get("scanning") and time.time() - t0 < scan_timeout_s:
-            time.sleep(poll_s)
+            sleep(poll_s)
         ext, size, rel = filed.suffix.lstrip(".").lower(), filed.stat().st_size, filed.relative_to(music_root).as_posix()
         query = query if query is not None else f"{wanted.artist} {wanted.title}"
         hits = [s for s in navidrome.search_songs(query.strip(), count=50)
@@ -437,7 +440,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
             elif time.time() - t0 > download_timeout_s:
                 why = "download timed out"
             else:
-                time.sleep(poll_s)
+                sleep(poll_s)
                 continue
             return fail(why, best, text)
 

@@ -261,7 +261,8 @@ def main(argv: list[str] | None = None) -> int:
                     recheck_s=float(os.environ.get("WORKER_RECHECK_S", "300")),
                     reconcile_s=0 if a.no_reconcile else float(os.environ.get("WORKER_RECONCILE_S", "600")),
                     export_s=float(os.environ.get("WORKER_EXPORT_S", "300")),
-                    lock_path=Path(cfg.db_path).parent / "worker.lock")
+                    lock_path=Path(cfg.db_path).parent / "worker.lock",
+                    heartbeat_path=Path(cfg.db_path).parent / "worker.heartbeat")    # scripts/healthcheck.py worker
         try:
             if a.once:
                 wk.once()

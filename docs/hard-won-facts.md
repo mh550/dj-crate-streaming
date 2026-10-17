@@ -45,5 +45,7 @@ on this system.
 - A full-library `verify` takes about 75 minutes with 6 in parallel (CPU-bound).
 
 ## SQLite
-- `crates.db` is in WAL mode: its data can sit in `crates.db-wal` while the main file is 4 KB. Copy it only with
-  `scripts/snapshot-crates-db.sh` (`sqlite3 .backup`), which the nightly restic job runs first.
+- `crates.db` and `navidrome.db` are in WAL mode: data can sit in `<db>-wal` while the main file is 4 KB. Copy them
+  only with `scripts/snapshot-crates-db.sh` (`sqlite3 .backup`, both databases since H1); `--suffix <run>` gives a
+  run its own restore point. The nightly restic job runs it first, from `~/projects/dj-crate-streaming`, so
+  `navidrome.db.snap` exists only once that checkout has this version (H2 installs a fixed copy instead).
