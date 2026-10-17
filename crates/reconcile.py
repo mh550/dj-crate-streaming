@@ -353,7 +353,12 @@ class Reconciler:
         ok = need = 0
         for pos, s in enumerate(pl.entries):
             seen.add(s.id)
-            status, reason = judge(s, self.policy_for(derived[s.id]))
+            policy = self.policy_for(derived[s.id])
+            status, reason = judge(s, policy)
+            if status == "ok" and policy.strict_verify and self.store.is_provisional(s.id):
+                # Play-now's fast copy was verified at low only: a strict tier's checks never ran on it, so the
+                # tags passing judge do not make it this tier's file.
+                status, reason = "needs_source", f"provisional copy (verified at low only); {policy.name} needs its own download"
             old = prev.get(s.id)
             # One open request per song: a play-now provisional copy's upgrade (an external row) gives way to this
             # row, unless it is in flight; then this row is held until it finishes (no second download meanwhile).

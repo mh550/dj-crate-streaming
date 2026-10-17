@@ -56,7 +56,8 @@ def test_approved_event_never_names_the_peer():
 def test_preview_endpoint_returns_and_caches_the_pick(svc_slskd):
     fake, srv, app, web = svc_slskd
     s, pv = post(web.url + "/api/wanted/s4/preview", {})
-    assert s == 200 and pv["pick"]["username"] == "vinylhead77" and "Good Times" in pv["explain"]
+    assert s == 200 and "username" not in pv["pick"] and pv["pick"]["token"] and "Good Times" in pv["explain"]
+    assert app.store.preview("s4")["pick"]["username"] == "vinylhead77"         # kept server-side only
     assert srv.enqueued == []
     # no peer is named: every ranked line's user column is a pN label (a plain word like "locked" may
     # still appear in a rejection reason, so the usernames are checked in that column, not by substring)
@@ -82,7 +83,8 @@ def test_approve_with_body_candidate(svc_slskd):
     fake, srv, app, web = svc_slskd
     cand = {"username": "u", "filename": "f"}
     s, a = post(web.url + "/api/wanted/s4/approve", {"candidate": cand})
-    assert s == 200 and a["candidate"] == cand
+    assert s == 200 and a["candidate"] == {"filename": "f"}                     # the peer stays server-side
+    assert app.store.approval("s4")["candidate"] == cand
 
 
 def test_approve_unknown_id_is_404_and_bad_candidate_400(svc_slskd):

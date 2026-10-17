@@ -20,6 +20,7 @@ Tables
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sqlite3
@@ -175,6 +176,33 @@ def retryable_review(reason: str | None) -> bool:
     """True when a `review` row's reason is one a replacement left, i.e. approving the row may download again.
     web/app.js repeats this test (RETRYABLE_REVIEW there) to decide which review rows offer Preview/Approve."""
     return bool(RETRYABLE_REVIEW.match(reason or ""))
+
+
+def pick_token(candidate: dict) -> str:
+    """An opaque name for a ranked candidate (D18): the web client sees this, never the peer, and approving by it
+    resolves the full candidate from the preview kept server-side."""
+    key = "\0".join(str(candidate.get(k) or "") for k in ("username", "filename", "size"))
+    return hashlib.sha256(key.encode()).hexdigest()[:16]
+
+
+# What leaves the server never names a Soulseek peer or a local absolute path (the containers' mounts): row responses
+# go through public(), which drops every `username` key and every reference's `path`, and cuts the directories off
+# any absolute path inside a string (a path in an error text keeps its basename). Relative library paths stay.
+_ABS = re.compile(r"(?<![\w.:/\\])/(?:[^\s/'\"]+/)+")
+
+
+def public(v):
+    """`v` (a wanted row, an approval, a preview) as the HTTP API may show it; see _ABS."""
+    if isinstance(v, str):
+        return _ABS.sub("", v)
+    if isinstance(v, dict):
+        out = {k: public(x) for k, x in v.items() if k != "username"}
+        if isinstance(out.get("reference"), dict):
+            out["reference"].pop("path", None)
+        return out
+    if isinstance(v, list):
+        return [public(x) for x in v]
+    return v
 
 
 def never_indexed(rel) -> str:
@@ -679,6 +707,11 @@ class CrateStore:
         """What the download starting now is for (fetch sets it as the row enters `sourcing`): a filed file that
         Navidrome lists later is then known to be provisional even across a worker restart."""
         self.db.execute("UPDATE external_wanted SET provisional=? WHERE id=?", (int(provisional), _ext_pk(ext_id)))
+
+    def is_provisional(self, song_id: str) -> bool:
+        """`song_id` is play-now's provisional copy for some external row (verified at low only, D20)."""
+        return self.db.execute("SELECT 1 FROM external_wanted WHERE library_song_id=? AND provisional=1 LIMIT 1",
+                               (song_id,)).fetchone() is not None
 
     def upgrade_row(self, song_id: str) -> dict | None:
         """The open external row whose library song is `song_id` (play-now's provisional copy, waiting for its

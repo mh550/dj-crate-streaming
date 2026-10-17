@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from crates.service import Config, CrateApp, CrateServer
-from crates.store import CrateStore, PlayNowRefused
+from crates.store import CrateStore, PlayNowRefused, pick_token
 from sourcing import import_playlist as ip
 from sourcing.fake_slskd import FakeSlskdServer
 from sourcing.fetch import FetchResult
@@ -47,10 +47,11 @@ class Spy:
         self.calls.append({"tier": tier, "intent": intent, "name": Path(path).name,
                            "reference": str(reference) if reference else None})
         m = {"intent": intent}
-        if intent == "copy" and reference is not None and self.replaceable:
+        if intent == "copy" and reference is not None:
             st = Path(reference).stat()
-            m.update(replaceable=True, reference={"path": str(Path(reference).resolve()), "size": st.st_size,
-                                                  "mtime_ns": st.st_mtime_ns})
+            m["reference"] = {"path": str(Path(reference).resolve()), "size": st.st_size, "mtime_ns": st.st_mtime_ns}
+            if self.replaceable:
+                m["replaceable"] = True
         return Verdict(True, [], None, measurements=m)
 
 
@@ -634,3 +635,110 @@ def test_a_superseded_upgrade_row_is_never_downloaded(world, tmp_path):
     with FakeSlskdServer([SLOW_FLAC], world["dl"], files={FLAC: flac_bytes(tmp_path)}) as srv:
         report = worker(world, srv, tmp_path).tick()
     assert srv.enqueued == [] and store.approval(e)["result"].startswith("removed:")
+
+
+# --- review fixes -------------------------------------------------------------------------------------------------
+
+def flac_play_now(world, tmp_path, tier="crate") -> str:
+    """Play-now on a row whose only offer is the FLAC: filed at FLAC_REL as s10, verified at low only."""
+    store = world["store"]
+    e = ext(world, tier=tier)
+    store.approve(e, "michael", None, "low", purpose="play-now")
+    flac = flac_bytes(tmp_path)
+    with FakeSlskdServer([SLOW_FLAC], world["dl"], files={FLAC: flac}) as srv:
+        lib_song(world, "s10", FLAC_REL, len(flac), "flac")             # 880 kbps 44.1 kHz/16: crate's judge passes
+        worker(world, srv, tmp_path).tick()
+    return e
+
+
+def test_a_flac_verified_only_at_low_is_still_provisional_for_a_crate_row(world, tmp_path):
+    store = world["store"]
+    e = flac_play_now(world, tmp_path)
+    assert store.verification(e)["tier"] == "low"
+    row = store.external(e)
+    assert (row["status"], row["library_song_id"], row["provisional"]) == ("needs_source", "s10", 1)
+    assert events(store, "upgrade_queued") == [f"{FLAC_REL} is a provisional low copy; upgrade at crate waits for approval"]
+
+
+def test_a_flac_verified_at_low_meets_a_listening_tier(world, tmp_path):
+    e = flac_play_now(world, tmp_path, tier="high")                     # high verifies no stricter than low
+    assert (world["store"].external(e)["status"], world["store"].external(e)["provisional"]) == ("ok", 0)
+
+
+def test_a_crate_playlist_holding_a_provisional_flac_is_not_ok(world, tmp_path):
+    store = world["store"]
+    e = flac_play_now(world, tmp_path)
+    world["client"].update_playlist("pl-2", add_song_ids=["s10"])
+    world["rec"].run()
+    t = store.track_status_map("pl-2")["s10"]
+    assert t["status"] == "needs_source" and "provisional" in t["reason"]
+    assert open_requests(store, "s10") == ["s10"]                         # the crate row carries the one request
+    world["rec"].run()
+    assert store.track_status_map("pl-2")["s10"]["status"] == "needs_source"
+
+
+def test_approve_and_preview_refuse_while_a_play_now_download_runs(world, web, app):
+    store = world["store"]
+    e = ext(world)
+    post(web.url + f"/api/wanted/{e}/play-now", {})
+    assert store.claim_approval(store.pending_approvals()[0]["id"])       # the worker has it
+    s, body = post(web.url + f"/api/wanted/{e}/approve", {})
+    assert s == 409 and "a play-now download is in progress" in body["error"]
+    app.slskd = SlskdClient("http://127.0.0.1:9", "k")                    # never reached
+    s, body = post(web.url + f"/api/wanted/{e}/preview", {})
+    assert s == 409 and "a play-now download is in progress" in body["error"]
+    assert len(approvals(store)) == 1
+
+
+def test_approve_replaces_a_play_now_not_yet_taken(world, web):
+    store = world["store"]
+    e = ext(world)
+    post(web.url + f"/api/wanted/{e}/play-now", {})
+    s, a = post(web.url + f"/api/wanted/{e}/approve", {})
+    assert s == 200 and a["purpose"] == "download"
+    assert [(x["purpose"], x["result"]) for x in approvals(store)] == [("play-now", f"superseded by #{a['id']}"),
+                                                                       ("download", None)]
+
+
+def test_no_peer_name_or_absolute_path_leaves_the_server(world, tmp_path, web, app):
+    from sourcing.scorer import Wanted, rank
+    from sourcing.policy import TIERS
+    from tests.test_fetch import GOOD, RESPONSES, good_flac_bytes
+    store = world["store"]
+    peers = {r["username"] for r in RESPONSES} - {"locked"}     # "locked" is also a word in "rejected: locked"
+    e = provisional(world, tmp_path)
+    store.approve(e, "michael", None, "high")
+    upgrade(world, tmp_path, Spy(replaceable=False))                      # kept beside: verify names the reference
+    assert store.verification(e)["measurements"]["reference"]["path"].startswith(str(tmp_path))
+    flac = good_flac_bytes(tmp_path)
+    with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
+        app.slskd = SlskdClient(srv.url, "k")
+        s, pv = post(web.url + "/api/wanted/s4/preview", {})
+        assert s == 200 and pv["pick"]["token"] and "username" not in pv["pick"]
+        second = [c for c in rank(RESPONSES, Wanted("Chic", "Good Times", "Risqué", 501, 1979), TIERS["crate"])
+                  if not c.rejected][1]
+        store.set_preview("s4", {"pick": second.as_dict() | {"token": pick_token(second.as_dict())}})
+        bodies = [get(web.url + "/api/wanted", raw=True)[2], get(web.url + "/api/wanted/s4", raw=True)[2],
+                  get(web.url + f"/api/wanted/{e}", raw=True)[2]]
+        _, _, rows = get(web.url + "/api/wanted")
+        pick = next(r for r in rows if r["song_id"] == "s4")["preview"]["pick"]
+        assert post(web.url + "/api/wanted/s4/approve", {"candidate": dict(pick, token="0" * 16)})[0] == 409
+        s, a = post(web.url + "/api/wanted/s4/approve", {"candidate": pick})   # as the web posts it
+        assert s == 200 and "username" not in a["candidate"]
+        bodies += [json_text(pv), json_text(a), get(web.url + "/api/wanted", raw=True)[2]]
+    for body in bodies:
+        text = body.decode() if isinstance(body, bytes) else body
+        assert not any(p in text for p in peers), text[:300]
+        assert str(tmp_path) not in text and "/tmp/" not in text, text[:300]
+    assert store.approval("s4")["candidate"]["username"] == second.username          # kept server-side
+    with FakeSlskdServer(RESPONSES, world["dl"], files={second.filename: flac}) as srv:
+        from tests.test_worker import worker as plain_worker
+        from tests.test_fetch import new_song
+        new_song(world["nd"], len(flac))
+        plain_worker(world, srv).tick()
+    assert srv.enqueued == [(second.username, second.filename)]
+
+
+def json_text(obj) -> str:
+    import json
+    return json.dumps(obj)

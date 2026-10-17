@@ -229,9 +229,13 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         rel = filed.relative_to(music_root).as_posix()
         done = f"filed as {rel}"
         if copy_id is None and external and (store.external(wanted_id) or {}).get("provisional"):
-            # Judged at the row's tier with reconcile's judge: a fast copy that already meets it is the row's file.
+            # A fast copy that already meets the row's tier is the row's file, but only when it was verified at
+            # least as strictly as that tier (a crate's checks never ran at low), and reconcile's judge passes it
+            # at that tier (its floor and formats; verify checks no lossy floor).
             policy_at = reconciler.policy_for(row["tier"]) if reconciler is not None else TIERS[row["tier"]]
-            if judge(new, policy_at)[0] == "ok":
+            verified_at = (store.verification(wanted_id) or {}).get("tier")
+            strict_enough = verified_at in TIERS and TIERS[verified_at].strict_verify >= policy_at.strict_verify
+            if strict_enough and judge(new, policy_at)[0] == "ok":
                 store.set_external_song(wanted_id, new.id, False)
                 done = f"filed as {rel}; provisional copy already meets {row['tier']}"
         if copy_id is None and external and (store.external(wanted_id) or {}).get("provisional"):

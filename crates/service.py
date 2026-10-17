@@ -32,7 +32,7 @@ from sourcing.slskd_client import SlskdClient
 from subsonic.client import SubsonicClient, SubsonicError
 from .reconcile import CommentNotKept, NameMarked, ReconcileBusy, Reconciler
 from . import proposals, trash
-from .store import CrateStore, PlayNowRefused, filed_path, held_by
+from .store import CrateStore, PlayNowRefused, filed_path, held_by, pick_token, public
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 mimetypes.add_type("application/manifest+json", ".webmanifest")
@@ -174,6 +174,10 @@ class CrateApp:
         ext = held_by(row.get("reason")) if row["status"] == "review" else None
         if ext is not None:                         # one open request per song: the upgrade in flight is it
             raise ApiError(409, f"{wanted_id} waits for its upgrade in flight: approve {ext}")
+        a = self.store.approval_in_progress(wanted_id)
+        if a is not None and a["used_at"] is not None:  # claimed: the worker is searching or downloading already
+            what = "a play-now download" if a["purpose"] == "play-now" else "a download"
+            raise ApiError(409, f"{wanted_id}: {what} is in progress (approval #{a['id']}); the worker finishes it")
         return row
 
     def preview(self, wanted_id: str) -> dict:
@@ -186,23 +190,32 @@ class CrateApp:
                       downloads_root=Path(os.environ.get("DOWNLOADS_ROOT", "/srv/incoming/soulseek")), approve=False)
             if r.status == "missing":
                 raise ApiError(404, r.reason)
-            out = {"status": r.status, "reason": r.reason, "pick": r.pick.as_dict() if r.pick else None,
-                   "explain": r.explain, "ts": time.time()}
-            self.store.set_preview(wanted_id, out)
-            return out
+            pick = r.pick.as_dict() if r.pick else None
+            if pick is not None:
+                pick["token"] = pick_token(pick)    # what the web posts back to approve it (no peer name)
+            out = {"status": r.status, "reason": r.reason, "pick": pick, "explain": r.explain, "ts": time.time()}
+            self.store.set_preview(wanted_id, out)   # kept whole, server-side
+            return public(out)
 
     def approve(self, wanted_id: str, candidate: dict | None) -> dict:
         """Michael's yes for one row: the candidate he saw, else the cached preview's pick (which may be None,
-        leaving the worker to search and pick itself)."""
+        leaving the worker to search and pick itself). The web posts the pick as previews show it, with its `token`
+        and no peer name: the full candidate is the stored preview's pick with that token (409 when the preview
+        changed since: preview again). A candidate naming its peer (`username` + `filename`) is taken as it is."""
         with self._lock:
             row = self._not_in_progress(wanted_id)
             if candidate is None:
                 candidate = (self.store.preview(wanted_id) or {}).get("pick")
+            elif isinstance(candidate, dict) and "token" in candidate and "username" not in candidate:
+                stored = (self.store.preview(wanted_id) or {}).get("pick")
+                if not (isinstance(candidate["token"], str) and stored and pick_token(stored) == candidate["token"]):
+                    raise ApiError(409, f"{wanted_id}: that pick is no longer the preview's; preview again")
+                candidate = stored
             elif not (isinstance(candidate, dict) and isinstance(candidate.get("username"), str)
                       and isinstance(candidate.get("filename"), str)):
-                raise ApiError(400, "candidate needs a string username and filename")
+                raise ApiError(400, "candidate needs a string username and filename, or a preview's token")
             self.store.approve(wanted_id, "michael", candidate, row["tier"])
-            return self.store.approval(wanted_id)
+            return public(self.store.approval(wanted_id))
 
     def play_now(self, wanted_id: str) -> dict:
         """Michael pressed play on a queued track the library does not have (D20): that tap is his approval for ONE
@@ -230,7 +243,7 @@ class CrateApp:
                 self.store.approve(wanted_id, "michael", None, "low", purpose="play-now")
             except PlayNowRefused:                  # a double tap, a second device, or the worker fetching it
                 raise ApiError(409, self._busy(wanted_id, self.store.approval_in_progress(wanted_id))) from None
-            return self.store.approval(wanted_id)
+            return public(self.store.approval(wanted_id))
 
     @staticmethod
     def _busy(wanted_id: str, a: dict | None) -> str:
@@ -243,7 +256,7 @@ class CrateApp:
         row = self.store.wanted_row(wanted_id)
         if row is None:
             raise ApiError(404, f"{wanted_id} is not in any enabled crate or the external queue")
-        return row
+        return public(row)
 
     # --- proposals (D23): questions about one playlist slot; Michael's answer edits that slot, downloads nothing
     def proposals(self, include_decided: bool = False) -> list[dict]:
@@ -374,7 +387,7 @@ def make_handler(app: CrateApp):
                 if head == "crates":
                     return self._json([app.reconciler.crate_view(app.api.playlist(c.playlist_id)) for c in app.store.all(enabled_only=True)])
                 if head == "wanted" and len(p) == 1:
-                    return self._json(app.store.wanted())
+                    return self._json(public(app.store.wanted()))
                 if head == "wanted" and len(p) == 2:
                     return self._json(app.wanted_row(p[1]))
                 if head == "proposals" and len(p) == 1:
