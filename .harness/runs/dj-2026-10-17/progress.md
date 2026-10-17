@@ -13,6 +13,14 @@ stop`; answers to the questions below go under `## Answers`. Every session reads
 
 ---
 
+### 2026-10-17 verify N1
+- N1-01 · holds
+- N1-02 · holds
+- N1-03 · holds
+- N1-04 · holds
+- N1-05 · holds
+- check.sh green (1199 passed), imports ok.
+
 ### 2026-10-17 06:20 · N1-05 · passes
 - **Changed:** `scripts/duplicate_cleanup.py`: `main()` shares its args across subcommands, takes SUBSONIC_* via `Config.from_env` and needs `CRATES_DB` *set* and existing for repoint and trash (exit 2). It writes crates.db events (kind `cleanup`): `repointed <playlist> to <keeper>` (new `repoint_everywhere(after_write=…)`), `trashed to <day>/<path>`, `put back from …` (trash-relative). Also a second waited scan after a post-scan put-back, and `build_plan` reads one snapshot. Docs: `docs/worker.md` "Duplicate cleanup" runbook + undo, `docs/architecture.md` §7 row + §8 row, `docs/next-todos.md` item 1 "built (N1), not run live", plan file wording (§repoint as built, events, second scan, step 3 runs in `worker`). Tests 1,188 → 1,199, `.harness/check.sh` green (454 s).
 - **Verified:** end-to-end on the fake with env only (`main(["plan"])`, `["repoint"]`, `["trash"]`): s3 and s4 go to `trash/<today>/…`, pl-1 = `[s1,s2,s9]`, pl-2 = `[s9,s8,s5]`, 5 cleanup events, and `export_playlists` export + check give `[]` before and after. Mutation checks: undoing the CRATES_DB guard or the second scan turns their tests red.
