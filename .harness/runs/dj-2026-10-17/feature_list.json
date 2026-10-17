@@ -96,7 +96,7 @@
         "docs/worker.md's trash section states both refusals",
         "`.harness/check.sh` is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "N1F-02",

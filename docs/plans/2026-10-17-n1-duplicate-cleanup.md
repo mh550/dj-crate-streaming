@@ -44,9 +44,10 @@ playlists count), resolved to playlist names. `--limit N` keeps the first N unhe
 
 ```json
 {"made_at": "2026-10-17T22:10:00Z",
- "groups": [{"keep":   {"id": "…", "path": "Artist/Album/01 Title.flac", "suffix": "flac", "bit_rate": 912},
+ "groups": [{"keep":   {"id": "…", "path": "Artist/Album/01 Title.flac", "suffix": "flac", "bit_rate": 912,
+                       "size": 41230000},
              "extras": [{"id": "…", "path": "Artist/Album/01 Title.mp3", "suffix": "mp3", "bit_rate": 320,
-                         "held_by": ["Disco Edits", "Chicago 86"]}],
+                         "size": 9450000, "held_by": ["Disco Edits", "Chicago 86"]}],
              "hold": null}],
  "playlists": [{"id": "…", "name": "Disco Edits", "before": ["s1", "s2", "s3"], "after": ["s1", "s2", "s9"]}]}
 ```
@@ -176,7 +177,8 @@ is noted on stderr and never fails the action. `CRATES_DB` must be set and name 
 |---|---|---|
 | Never trash while `references(db, extra)` is non-empty, hidden rows included | N1-04 | before repoint → `refused: still in 2 playlist entries`, nothing moved; a hidden missing row in a third playlist alone blocks the move |
 | Refuse while a scan is running | N1-04 | `state.scanning = True` → `CleanupRefused` before any move or log line; a scan that starts after the first move stops the run before the second |
-| Scan between repoint and trash | N1-03 | `repoint` waits until `lastScan` moves (the fake's `getScanStatus` gains `lastScan`, set by `startScan`); a scan that never finishes → exit 1 |
+| Scan between repoint and trash | N1-03 | `repoint` waits until `lastScan` moves (the fake's `getScanStatus` gains `lastScan`, set by `startScan`); a scan that never finishes → exit 1; `trash` refuses to start unless `lastScan` is after the newest `repoint-*.jsonl`'s mtime (N1F-01) |
+| The file on disk is the planned file | N1F-01 | a file of another size at the extra's path than `media_file.size` or the plan's `size` (plans record it since N1F-01) → `refused: <path> is N bytes on disk, navidrome.db says M, the plan says P: not the planned file`, the other extras move |
 | A row added during the move puts the file back | N1-04 | the `before=` hook adds the extra to a playlist in the fake → file restored at its path, `refused`, no `forget`, no trash line |
 | Keeper and extra are different files | N1-04 | extra path a hard link / same file as the keeper → refused, nothing moved |
 | Crash between move and `forget` heals | N1-04 | file gone, no trash line → next run calls `forget` once; file gone with a trash line → not called |

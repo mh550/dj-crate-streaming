@@ -32,10 +32,12 @@ crates.db.
     docker compose run --rm worker python3 -m scripts.duplicate_cleanup trash [--plan P] [--limit N] [--dry-run]
 
 `trash` (D36: only with the worker stopped; it holds <dirname(CRATES_DB)>/worker.lock for the whole run, and refuses
-while a Navidrome scan runs, checked again before every move) moves each unheld extra to the trash with
+while a Navidrome scan runs, checked again before every move, and unless getScanStatus' lastScan is after the newest
+repoint-*.jsonl beside the plan was last written) moves each unheld extra to the trash with
 crates.trash.move_to_trash, whose reverse `mv` line is in <trash>/<day>/MOVES.txt before the move. Per extra, right
 before acting: the keeper is a present row and a file on disk (an unmounted library is never "already gone"), the
 extra has not moved since the plan, the pair is still one duplicate group, keeper and extra are different files,
+the extra's size on disk is its media_file.size and the plan's (not a new file filed at its path since the plan),
 crates.playlist_edit.references(db, extra) is empty (hidden rows and other users' playlists included) and no
 crates.db row is still working with it (CrateStore.song_in_use). references() is read again right after the move and
 after the closing scan; a row added meanwhile puts the file back (crates.trash.restore). Then beets forgets the old
@@ -92,7 +94,8 @@ DEFAULT_OUT = Path("/data/duplicate-cleanup")
 
 
 def _file(row: dict) -> dict:
-    return {"id": row["id"], "path": row["path"], "suffix": row["suffix"], "bit_rate": row["bit_rate"]}
+    return {"id": row["id"], "path": row["path"], "suffix": row["suffix"], "bit_rate": row["bit_rate"],
+            "size": row["size"]}
 
 
 def _lossless(row: dict) -> bool:
@@ -316,9 +319,39 @@ def _entries(n: int) -> str:
     return f"{n} playlist entr{'y' if n == 1 else 'ies'}"
 
 
-def _no_scan(client) -> None:
-    if client.scan_status().get("scanning"):
+def _no_scan(client) -> dict:
+    """getScanStatus, refused while a scan runs."""
+    status = client.scan_status()
+    if status.get("scanning"):
         raise CleanupRefused("a Navidrome scan is running: navidrome.db is mid-update; run trash again when it is over")
+    return status
+
+
+def _scan_time(text) -> float | None:
+    """Navidrome's lastScan (Go's time.Time in JSON: RFC 3339, up to nanoseconds, Z or an offset) as a Unix time;
+    None when it is absent or not such a time."""
+    m = re.fullmatch(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.(\d+))?(Z|[+-]\d\d:\d\d)", text or "")
+    if not m:
+        return None
+    t = datetime.datetime.fromisoformat(m[1] + m[3].replace("Z", "+00:00"))
+    return t.timestamp() + float("0." + (m[2] or "0"))
+
+
+def _scanned_since_repoint(status: dict, log_dir: Path) -> None:
+    """Refused unless a Navidrome scan finished after the newest repoint-*.jsonl in log_dir was last written (its
+    mtime: the reverse line right before that run's last playlist write), so trash reads a navidrome.db that has seen
+    every repoint (review I1). No repoint log: nothing was repointed, and references() decides alone."""
+    logs = list(log_dir.glob("repoint-*.jsonl"))
+    if not logs:
+        return
+    newest = max(logs, key=lambda f: f.stat().st_mtime)
+    written = newest.stat().st_mtime
+    last = _scan_time(status.get("lastScan"))
+    if last is None or last <= written:
+        at = datetime.datetime.fromtimestamp(written, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        raise CleanupRefused(f"no Navidrome scan finished after the newest repoint log {newest.name} (written {at}; "
+                             f"lastScan {status.get('lastScan')!r}): start a scan (or run repoint again, which scans) "
+                             f"and run trash when it is over")
 
 
 def _forgotten(log_dir: Path, extra: str, rel: str) -> bool:
@@ -373,7 +406,8 @@ def trash(plan: dict, client, navidrome_db: Path, music_root: Path, trash_root: 
     """{extra id: "moved to <trash path>" | "already gone" | "skipped: held (<why>)" | "skipped: moved since the plan
     (now <path>)" | "skipped: keeper missing" | "skipped: no longer a duplicate of <keeper>" | "refused: …" | "failed:
     …" | "dry run: would move"}, plus "(scan)" when a file moved. Raises CleanupRefused while the worker holds
-    lock_path, a scan runs, or the library or the trash is not mounted. `forget(abs path)` is BeetsFiler.forget (None:
+    lock_path, a scan runs, no scan finished after the newest repoint log in log_path's folder, or the library or the
+    trash is not mounted. `forget(abs path)` is BeetsFiler.forget (None:
     no beets here); crates.db (opened only under the lock) keeps the songs its in-flight rows use (None: not checked)."""
     try:
         fd = hold_lock(Path(lock_path))
@@ -397,14 +431,15 @@ def trash(plan: dict, client, navidrome_db: Path, music_root: Path, trash_root: 
 
 def _trash(plan, client, navidrome_db, music_root, trash_root, forget, log_path, limit, dry_run, store,
            scan_timeout_s, poll_s) -> dict[str, str]:
-    _no_scan(client)
+    _scanned_since_repoint(_no_scan(client), log_path.parent)
     rows, _ = load(navidrome_db)
     group_of = {r["id"]: i for i, grp in enumerate(duplicate_groups(rows)) for r in grp}
     path_of = {r["id"]: r["path"] for r in rows}
+    size_of = {r["id"]: r["size"] for r in rows}
     out: dict[str, str] = {}
     moved: dict[str, tuple[str, Path]] = {}
 
-    def one(keeper: str, extra: str, rel: str) -> str:
+    def one(keeper: str, extra: str, rel: str, planned_size: int | None) -> str:
         now = path_of.get(extra)
         if now is not None and now != rel:
             return f"skipped: moved since the plan (now {now})"
@@ -425,6 +460,13 @@ def _trash(plan, client, navidrome_db, music_root, trash_root, forget, log_path,
             return why
         if os.path.samefile(src, keep_file):
             return f"refused: the same file as the keeper {keeper}"
+        on_disk = src.stat().st_size                     # a new file filed at its path since the plan (review I2);
+        sizes = {"navidrome.db": size_of[extra]}         # once scanned, only the plan's size still tells
+        if planned_size is not None:                     # an N1 plan has none
+            sizes["the plan"] = planned_size
+        says = [f"{who} says {n}" for who, n in sizes.items() if n != on_disk]
+        if says:
+            return f"refused: {rel} is {on_disk} bytes on disk, {', '.join(says)}: not the planned file"
         if not dry_run:
             _no_scan(client)
         left = references(navidrome_db, extra)
@@ -471,7 +513,7 @@ def _trash(plan, client, navidrome_db, music_root, trash_root, forget, log_path,
                     out[e["id"]] = f"skipped: held ({g['hold']})"
                     continue
                 try:
-                    out[e["id"]] = one(g["keep"]["id"], e["id"], e["path"])
+                    out[e["id"]] = one(g["keep"]["id"], e["id"], e["path"], e.get("size"))   # N1 plans: no size
                 except CleanupRefused:
                     raise
                 except Exception as ex:                      # recorded; the other groups and the scan still run

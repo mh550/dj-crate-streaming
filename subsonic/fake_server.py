@@ -17,6 +17,7 @@ against both views. Without `db_path` nothing of this touches a file.
 from __future__ import annotations
 
 import argparse
+import datetime
 import hashlib
 import json
 import sqlite3
@@ -80,6 +81,11 @@ CREATE TABLE IF NOT EXISTS media_file (id VARCHAR(255) PRIMARY KEY, path VARCHAR
 _PNG = bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0300050001c3da3a9a0000000049454e44ae426082")
 
 
+def _go_time(t: datetime.datetime | None) -> str:
+    """lastScan as Navidrome's Go JSON writes a time.Time (RFC 3339, nanoseconds); Go's zero time before any scan."""
+    return f"{t:%Y-%m-%dT%H:%M:%S.%f}000Z" if t else "0001-01-01T00:00:00Z"
+
+
 class FakeState:
     def __init__(self, username: str = "demo", password: str = "demo", db_path: Path | None = None):
         self.username, self.password = username, password
@@ -90,7 +96,8 @@ class FakeState:
         self.playlists = {p["id"]: dict(p, songs=list(p["songs"])) for p in SAMPLE_PLAYLISTS}
         self.players: dict[tuple[str, str], dict] = {}   # (user, client) → {"format": ..., "maxBitRate": ...}
         self.scanning = False
-        self.scans = 0                                   # startScan count: lastScan moves with it
+        self.scans = 0                                   # startScan count
+        self.last_scan: datetime.datetime | None = None  # when the last scan ended (here: at startScan); lastScan
         self.requests: list[tuple[str, dict]] = []       # (method, params) log for tests
         self.lock = threading.Lock()
         self.sync()
@@ -207,11 +214,13 @@ def make_handler(state: FakeState):
 
         def m_getScanStatus(self, q, m):
             self._send(_resp({"scanStatus": {"scanning": state.scanning, "count": len(state.songs),
-                                             "lastScan": f"2026-01-01T00:00:00Z+{state.scans}"}}))
+                                             "lastScan": _go_time(state.last_scan)}}))
 
         def m_startScan(self, q, m):
             state.sync()            # a scan is when navidrome.db learns of songs (a test adds them to state.songs)
             state.scans += 1        # and is over at once, unless a test sets state.scanning
+            now = datetime.datetime.now(datetime.timezone.utc)
+            state.last_scan = max(now, state.last_scan + datetime.timedelta(microseconds=1)) if state.last_scan else now
             self._send(_resp({"scanStatus": {"scanning": True, "count": len(state.songs)}}))
 
         def m_getPlaylists(self, q, m):

@@ -414,10 +414,19 @@ docker compose up -d worker
   path, and `/srv/music` and `/srv/_trash` mounted.
 - It refuses to start while the worker holds `/data/worker.lock`, while a Navidrome scan runs (checked again before
   every move), or when the library or the trash is not mounted.
+- It also refuses to start unless a Navidrome scan *finished* after the newest `repoint-<time>.jsonl` was last
+  written (Navidrome's `lastScan` against the log's modification time): "no Navidrome scan finished after the newest
+  repoint log …". That happens when repoint's scan timed out or failed, or repoint ran again after the last scan.
+  Start a scan in Navidrome, wait for it to end, then run trash again. Without any repoint log there is nothing to
+  wait for. `--dry-run` refuses the same way, so the dry run shows it first.
 - Per file, it moves nothing unless all of these hold:
   - no playlist row names the extra in navidrome.db (hidden rows and other users' playlists included);
   - nothing in crates.db is still working with it;
-  - the keeper is on disk and still one recording with it.
+  - the keeper is on disk and still one recording with it;
+  - the file on disk is still the planned file: its size equals navidrome.db's `media_file.size` and the size in
+    `plan.json`. A file filed at that path since the plan is refused with its path and the sizes that differ
+    ("refused: <path> is N bytes on disk, navidrome.db says M, the plan says P: not the planned file"); the other
+    extras still move. Look at that file before anything else; a new `plan` then treats it as a new copy.
 - Each move goes through `crates.trash.move_to_trash`, so its `mv` back is in `/srv/_trash/<day>/MOVES.txt` before
   the file moves. Then there is a line in `trash-<time>.jsonl` and a `cleanup` event.
 - If a playlist takes the song during the move, or before the closing scan ends, the file is put back.

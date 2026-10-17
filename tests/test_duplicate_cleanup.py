@@ -19,14 +19,16 @@ S9 = {"id": "s9", "title": "Move Your Body", "artist": "Marshall Jefferson", "al
 
 def add_song(srv, song, music=None):
     srv.state.songs[song["id"]] = dict(song)
-    srv.state.sync()
     if music is not None:
-        touch(music, song["path"])
+        srv.state.songs[song["id"]]["size"] = touch(music, song["path"])
+    srv.state.sync()
 
 
 def touch(music, rel):
+    """The song's file; returns its size, which is what navidrome.db's media_file.size says of it."""
     (music / rel).parent.mkdir(parents=True, exist_ok=True)
     (music / rel).write_bytes(b"audio " + rel.encode())
+    return (music / rel).stat().st_size
 
 
 @pytest.fixture
@@ -36,7 +38,8 @@ def lib(tmp_path):
     with FakeSubsonicServer(db_path=tmp_path / "navidrome.db") as srv:
         add_song(srv, S9)
         for s in srv.state.songs.values():
-            touch(music, s["path"])
+            s["size"] = touch(music, s["path"])
+        srv.state.sync()
         yield srv, srv.state.db_path, music
 
 
@@ -44,8 +47,10 @@ def test_flac_copy_is_kept_and_the_mp3_is_the_extra_held_by_both_playlists(lib):
     srv, db, music = lib
     plan = dc.build_plan(db, music)
     [g] = plan["groups"]
-    assert g["keep"] == {"id": "s9", "path": S9["path"], "suffix": "flac", "bit_rate": 900}
+    assert g["keep"] == {"id": "s9", "path": S9["path"], "suffix": "flac", "bit_rate": 900,
+                         "size": srv.state.songs["s9"]["size"]}
     assert g["extras"] == [{"id": "s3", "path": srv.state.songs["s3"]["path"], "suffix": "mp3", "bit_rate": 192,
+                            "size": srv.state.songs["s3"]["size"],
                             "held_by": ["Disco Edits", "Chicago 86"]}]
     assert g["hold"] is None
     assert {p["id"]: (p["name"], p["before"], p["after"]) for p in plan["playlists"]} == {
@@ -473,14 +478,15 @@ def tr(lib, tmp_path):
     `run(**kw)` calls trash with a recording forget and `forgot` lists what it was called with."""
     srv, db, music = lib
     plan = dc.build_plan(db, music)
-    assert dc.repoint(plan, _client(srv), db, tmp_path / "repoint.jsonl", poll_s=0)["s3"] == "repointed 2 playlists"
+    (tmp_path / "cleanup").mkdir()                           # the repoint log beside the trash log: scanned since
+    assert dc.repoint(plan, _client(srv), db, tmp_path / "cleanup" / "repoint-1.jsonl", poll_s=0)["s3"] == \
+        "repointed 2 playlists"
     assert srv.state.songs["s3"]["path"] == S3
     ns = type("T", (), {})()
     ns.srv, ns.db, ns.music, ns.plan = srv, db, music, plan
     ns.trash_root, ns.lock = tmp_path / "trash", tmp_path / "worker.lock"
     ns.trash_root.mkdir()
     ns.log = tmp_path / "cleanup" / "trash-1.jsonl"
-    ns.log.parent.mkdir()
     ns.forgot = []
 
     def forget(path):
@@ -987,3 +993,118 @@ def test_a_put_back_after_the_closing_scan_scans_again(tr, monkeypatch):
     out = tr.run()
     assert out["s3"].startswith("refused: added to 1 playlist entry after the move") and len(calls) == 2
     assert out["(scan)"] == "done"
+
+
+# ── N1F-01: a scan after the newest repoint (review I1), the file on disk is the planned file (review I2) ───────
+
+def newer_repoint_log(tr, seconds):
+    """A repoint log in the trash log's folder whose last write is `seconds` after the fake's lastScan."""
+    log = tr.log.parent / "repoint-2.jsonl"
+    log.write_text('{"playlist_id": "pl-1"}\n')
+    t = tr.srv.state.last_scan.timestamp() + seconds
+    os.utime(log, (t, t))
+    return log
+
+
+def test_trash_refuses_unless_a_scan_finished_after_the_newest_repoint_log(tr):
+    newer_repoint_log(tr, 1)                                  # repointed again after the last scan
+    with pytest.raises(dc.CleanupRefused, match="no Navidrome scan finished after the newest repoint log "
+                                                "repoint-2.jsonl") as e:
+        tr.run()
+    assert "lastScan" in str(e.value) and e.value.results == {}
+    assert (tr.music / S3).is_file() and not any(tr.trash_root.iterdir()) and not tr.log.exists()
+    assert tr.forgot == [] and scans(tr.srv) == []
+    with pytest.raises(dc.CleanupRefused, match="no Navidrome scan finished"):
+        tr.run(dry_run=True)                                  # the dry run says what the real run will do
+    _client(tr.srv).start_scan()
+    tr.srv.state.last_scan += datetime.timedelta(seconds=2)    # that scan ended after the log's last write
+    assert tr.run()["s3"].startswith("moved to ")
+
+
+def test_a_scan_after_the_newest_repoint_log_lets_trash_proceed(tr):
+    newer_repoint_log(tr, -1)
+    assert tr.run()["s3"].startswith("moved to ")
+
+
+def test_trash_refuses_after_a_repoint_when_navidrome_reports_no_lastscan(tr, monkeypatch):
+    monkeypatch.setattr(SubsonicClient, "scan_status", lambda self: {"scanning": False})
+    with pytest.raises(dc.CleanupRefused, match="no Navidrome scan finished.*lastScan None"):
+        tr.run()
+    assert (tr.music / S3).is_file()
+
+
+def test_without_a_repoint_log_lastscan_is_not_needed(tr, monkeypatch):
+    for f in tr.log.parent.glob("repoint-*.jsonl"):
+        f.unlink()
+    monkeypatch.setattr(SubsonicClient, "scan_status", lambda self: {"scanning": False})
+    monkeypatch.setattr(dc, "scan_and_wait", lambda *a: "")
+    assert tr.run()["s3"].startswith("moved to ")
+
+
+def test_main_trash_exits_1_naming_the_scan(tr, monkeypatch, capsys):
+    out = tr.log.parent
+    dc.write_plan(tr.plan, out)
+    _env(monkeypatch, tr.srv)
+    monkeypatch.setenv("CLEANUP_DIR", str(out))
+    CrateStore(tr.lock.parent / "crates.db").db.close()
+    monkeypatch.setenv("CRATES_DB", str(tr.lock.parent / "crates.db"))
+    monkeypatch.delenv("DJ_WORKER", raising=False)
+    newer_repoint_log(tr, 1)
+    args = ["trash", "--navidrome-db", str(tr.db), "--music-root", str(tr.music), "--trash-root", str(tr.trash_root),
+            "--poll-s", "0"]
+    assert dc.main(args) == 1
+    assert "refused: no Navidrome scan finished after the newest repoint log" in capsys.readouterr().out
+    assert (tr.music / S3).is_file() and not list(out.glob("trash-*.jsonl"))
+
+
+@pytest.mark.parametrize("text, expect", [
+    ("2026-10-17T14:03:12.123456789+02:00", "2026-10-17T12:03:12.123456+00:00"),
+    ("2026-10-17T12:03:12Z", "2026-10-17T12:03:12+00:00"),
+    ("2026-10-17T12:03:12.5Z", "2026-10-17T12:03:12.500000+00:00"),
+    ("0001-01-01T00:00:00Z", "0001-01-01T00:00:00+00:00")])           # Go's zero time: never scanned
+def test_lastscan_is_read_as_go_writes_it(text, expect):
+    assert dc._scan_time(text) == pytest.approx(datetime.datetime.fromisoformat(expect).timestamp(), abs=1e-6)
+
+
+@pytest.mark.parametrize("text", [None, "", "yesterday", "2026-10-17 12:03:12", "2026-10-17T12:03:12"])
+def test_an_odd_lastscan_is_no_time(text):
+    assert dc._scan_time(text) is None
+
+
+def test_an_extra_whose_file_on_disk_is_not_the_planned_file_is_refused(tr):
+    """A new download filed at the extra's path after the scan: its size is not navidrome.db's media_file.size."""
+    second_group(tr.srv, tr.music)
+    plan = dc.build_plan(tr.db, tr.music)
+    assert dc.repoint(plan, _client(tr.srv), tr.db, tr.log.parent / "repoint-2.jsonl", poll_s=0)["s4"] == \
+        "repointed 1 playlist"
+    size = tr.srv.state.songs["s3"]["size"]
+    (tr.music / S3).write_bytes(b"a new download, filed at the same path")
+    out = tr.run(plan)
+    assert out["s3"] == (f"refused: {S3} is 38 bytes on disk, navidrome.db says {size}, the plan says {size}: "
+                         f"not the planned file")
+    assert dc.failed(out) and (tr.music / S3).read_bytes() == b"a new download, filed at the same path"
+    s4 = tr.srv.state.songs["s4"]["path"]
+    assert out["s4"] == f"moved to {tr.trash_root / today() / s4}" and out["(scan)"] == "done"
+    assert [x["extra"] for x in log_lines(tr.log)] == ["s4"] and tr.forgot == [tr.music / s4]
+    assert tr.run(plan, dry_run=True)["s3"].startswith(f"refused: {S3} is 38 bytes on disk")
+
+
+def test_a_new_file_scanned_since_the_plan_is_refused_by_the_plans_size(tr):
+    """A new download at the extra's path, and a scan after it: navidrome.db's size agrees with the new file (same
+    path, same id), the plan's does not."""
+    size = tr.srv.state.songs["s3"]["size"]
+    (tr.music / S3).write_bytes(b"a new download, filed at the same path")
+    tr.srv.state.songs["s3"]["size"] = 38
+    tr.srv.state.sync()
+    out = tr.run()
+    assert out == {"s3": f"refused: {S3} is 38 bytes on disk, the plan says {size}: not the planned file"}
+    assert (tr.music / S3).read_bytes() == b"a new download, filed at the same path" and tr.forgot == []
+
+
+def test_a_plan_without_sizes_checks_navidrome_db_only(tr):
+    """A plan written before sizes were recorded (N1) still trashes; the size on disk is checked against the db."""
+    plan = json.loads(json.dumps(tr.plan))
+    for g in plan["groups"]:
+        for f in [g["keep"], *g["extras"]]:
+            del f["size"]
+    assert tr.run(plan)["s3"].startswith("moved to ")
