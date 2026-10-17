@@ -38,3 +38,5 @@
 - 2026-10-17 05:23 · final verified and tagged run/dj-2026-10-17/final · PR https://github.com/mh550/dj-crate-streaming/pull/3
 - 2026-10-17 12:57 · N1 merged into main · https://github.com/mh550/dj-crate-streaming/pull/5
 - 2026-10-17 12:57 · closed the whole-run PR for harness/dj-2026-10-17 (milestones merge through their own PRs now)
+- 2026-10-17 16:17 · merged main into harness/dj-2026-10-17
+- 2026-10-17 16:17 · configuration reloaded after merging main: policy live-staged · suite .harness/check.sh · spec docs/next-todos.md docs/specs/2026-10-17-amperfy-pivot.md docs/specs/2026-10-17-m9-remaining-ownership.md docs/specs/2026-10-17-backup-lock-and-monitoring.md docs/hard-won-facts.md docs/architecture.md
