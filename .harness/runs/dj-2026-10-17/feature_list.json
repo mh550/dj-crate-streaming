@@ -16,7 +16,7 @@
         "Commit `N1-01: plan for the duplicate cleanup`.",
         ".harness/check.sh is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "N1-02",

@@ -13,6 +13,15 @@ stop`; answers to the questions below go under `## Answers`. Every session reads
 
 ---
 
+### 2026-10-17 02:49 · N1-01 · passes
+- **Changed:** new `docs/plans/2026-10-17-n1-duplicate-cleanup.md` (plan → repoint → trash design, plan JSON schema, holds, recompute rule, reverse logs, lock rule, safety-test table, tasks N1-02..05, staged live runbook); ledger rows `D35 *default*` and `D36 *default*` in `docs/specs/2026-10-17-amperfy-pivot.md`. Docs only; tests 1,120 → 1,120 (`.harness/check.sh` green, 406 s).
+- **Verified:** facts recounted from `docs/duplicates-report.md` (102 groups, 115 extras, 59 in a playlist, 9 lossless beside a lossless keeper; the 9 held groups hold **14** extras, so the end state is 730 songs, not 716). An Opus reviewer checked the plan against the code: 1 Critical and 5 Important findings, all folded in. The Critical one: re-check `references()` right after each move and restore the file on a late reference, as `replace._trash` does. The Important ones: run check via `docker compose run --rm worker`, since the crates container has no `/srv/music`; export before each check; `repoint` waits for its scan (reuses `identity_backfill._scan`, `lastScan` must move); one-line reverse log per playlist; 730.
+- **Next session (N1-02):** the plan's §plan says what `plan` writes. The fake needs `bit_rate` in `NAVIDROME_SCHEMA`; N1-03 also needs `lastScan` in the fake's `getScanStatus`.
+- **Questions for Michael:** (1) **D35:** groups with two lossless copies (9 groups, 14 extras) are held, listed only, until you set `"hold": null` in `plan.json`. OK, or trash them too, as D31 literally says? (2) **D36:** `trash` runs only with the worker stopped (`docker compose stop worker`, it takes `worker.lock`); `plan` and `repoint` run beside it. OK?
+- **Proposed changes:** N1-03 step "reverse log … the after list is the one read back" → `after` = expected `_remap`, written before the call (`rewrite`'s readback already guarantees equality); add "waits for its scan (`lastScan` moves)". N1-04 add: re-check `references()` after the move and `restore` on a hit; scan check before every move; already-gone checked before the recompute; `forget` on already-gone only when no trash-log line names it; keeper ≠ extra (`samefile`); refuse an extra in use by an unfinished approval. N1-05 runbook: "check" = export + check in the worker image.
+
+---
+
 ## 2026-10-17 initializer (Fable) — feature list written
 
 **Features per milestone:** N1 duplicate cleanup 5 · N2 imported marker 4 · N3 vanished playlist 3 · N4 placement 5 ·
