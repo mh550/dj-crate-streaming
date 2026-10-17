@@ -125,6 +125,64 @@
       "passes": false
     },
     {
+      "id": "H1-01",
+      "milestone": "H1",
+      "kind": "build",
+      "model": "opus",
+      "description": "scripts/snapshot-crates-db.sh also snapshots navidrome.db (sqlite3 .backup + integrity check) and takes `--suffix <name>` for run-named restore points; without arguments it still writes crates.db.snap (the nightly backup's call) plus navidrome.db.snap.",
+      "steps": [
+        "A test with temp WAL-mode crates.db and navidrome.db (CRATES_DB, NAVIDROME_DB): no arguments writes crates.db.snap and navidrome.db.snap, and `pragma integrity_check` on each prints ok",
+        "`--suffix pre-x` writes crates.db.pre-x.snap and navidrome.db.pre-x.snap and leaves the two .snap files unchanged",
+        "An unreadable or corrupt source exits 1 and replaces no existing snapshot",
+        "NAVIDROME_DB pointing at a missing file: crates.db only, a one-line note, exit 0",
+        "CLAUDE.md is not edited; the progress entry proposes the Snapshots wording for Michael",
+        "`.harness/check.sh` is green"
+      ],
+      "passes": false
+    },
+    {
+      "id": "H1-02",
+      "milestone": "H1",
+      "kind": "build",
+      "model": "opus",
+      "description": "The worker writes a heartbeat each tick, and `scripts/healthcheck.py crates|worker` (stdlib) says whether a container is healthy: crates answers /api/status with 200 within 5 s; the worker's heartbeat is younger than 3 × WORKER_POLL_S (at least 90 s).",
+      "steps": [
+        "A test runs one worker tick against the fakes and finds <dirname(CRATES_DB)>/worker.heartbeat with a fresh mtime",
+        "`healthcheck.py worker` exits 0 for a fresh heartbeat and 1 for a stale or missing one (tmp files, WORKER_POLL_S set)",
+        "`healthcheck.py crates` exits 0 against the test server's /api/status and 1 against a closed port, within 6 s",
+        "`.harness/check.sh` is green"
+      ],
+      "passes": false
+    },
+    {
+      "id": "H1-03",
+      "milestone": "H1",
+      "kind": "build",
+      "model": "opus",
+      "description": "deploy/compose.yml gives navidrome, crates and worker healthchecks (crates and worker via scripts/healthcheck.py; navidrome via its /ping endpoint if its image has a client for it), and crates/worker wait for a healthy navidrome; deployed live under the project's protocol.",
+      "steps": [
+        "`CRATES_SRC=$PWD GIT_SHA=test docker compose -f deploy/compose.yml config` exits 0 and shows a healthcheck for navidrome, crates and worker (or the progress entry says why navidrome has none)",
+        "Live, per CLAUDE.md's Live system section (backup window, lock, recorded rollback image): `scripts/deploy.sh` from the run's worktree",
+        "Within 2 minutes `docker compose ps` shows crates and worker (healthy), and the project's Check passes",
+        "docs/worker.md's deploy section says what healthy means and how to read it",
+        "`.harness/check.sh` is green"
+      ],
+      "passes": false
+    },
+    {
+      "id": "H1-04",
+      "milestone": "H1",
+      "kind": "review",
+      "model": "opus",
+      "description": "H1 is reviewed and simplified: an Opus reviewer reads the H1 diff from a file; Critical/Important findings are fixed test-first; docs/worker.md and docs/backup-plan.md match the code.",
+      "steps": [
+        "The review's findings and their fixes are in the progress entry (or 'no Critical/Important')",
+        "docs/backup-plan.md says the nightly snapshot now includes navidrome.db and that the backup script runs this script from ~/projects/dj-crate-streaming (so main must be checked out there)",
+        "`.harness/check.sh` is green"
+      ],
+      "passes": false
+    },
+    {
       "id": "N2-01",
       "milestone": "N2",
       "model": "opus",
