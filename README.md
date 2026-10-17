@@ -9,16 +9,22 @@ subsonic/   OpenSubsonic protocol layer
   client.py         the client we talk to Navidrome with (token auth, playlists, search, stream/download URLs)
   fake_server.py    an in-process fake Navidrome — enough protocol to develop and test offline
 crates/     the orchestration layer: playlist → crate
-  store.py          SQLite: which playlists are crates, per-track provisioning status, event log
-  reconcile.py      sync crate state from Navidrome, judge each track against the crate policy
+  store.py          SQLite: cache of crate/tier flags, per-track status, approvals, replacements, proposals, event log
+  attrs.py          M8: read and write `#crate` / `#tier:<t>` in a playlist comment (the comment owns them)
+  reconcile.py      rebuild the cache from the comments, derive each song's tier, judge each track against it
+  migrate_attrs.py  M8: one-time move of crates.db's flags and import tiers into comments (dry run by default)
+  playlist_edit.py  M8: the only code that edits a playlist by index (cross-checks navidrome.db, refuses on doubt)
+  trash.py          M8: move a library file to the trash (MOVES.txt first, never overwrites), restore it, size report
+  proposals.py      M8: questions about one playlist slot (new version, unproven copy); Swap edits that slot only
   service.py        HTTP API + serves web/ ; only this process holds Navidrome credentials
-  cli.py            status | playlists | toggle | reconcile | wanted | serve | demo
+  cli.py            status | playlists | toggle | tier | attrs migrate | reconcile | wanted | proposals | serve | demo
 web/        the client: stream + toggle crates from the same screen (vanilla JS, phone-first)
 sourcing/   Phase 1: Soulseek sourcing — one wanted track from search to a file Navidrome serves
   scorer.py  verify.py  slskd_client.py   rank + check
   identity.py       M7: what counts as the same song, version and copy (title labels, same-version test) — docs/identity.md
   policy.py         tiers + version preferences, read from deploy/policy.toml
-  fetch.py          the slice: search → score → (approved) download → verify → file → rescan → crate ok
+  fetch.py          the slice: search → score → (approved) download → verify → file → rescan → ok; copy upgrades and play-now
+  replace.py        M8: copy replacement: repoint every playlist → old copy to the trash → scan → done (resumable)
   filer.py          beet import of each verified download (the only beets writer)
   worker.py         the worker (D18): claims approvals, fetches, re-checks `verify` rows — see docs/worker.md
   acoustid.py       AcoustID lookup (only with ACOUSTID_KEY): is this file the recording Navidrome knows?
@@ -30,7 +36,7 @@ scripts/    one-off library tooling: library_map.py (folder + audio-hash map), f
             identity_backfill.py (M7: propose / apply / revert MusicBrainz ids, reviewed — docs/worker.md)
 deploy/     compose.yml (+ .env.example), beets.yaml, policy.toml (tiers + version preferences) — /srv/docker/compose.yml symlinks here
 fixtures/   slskd-shaped search responses covering the failure modes
-tests/      702 tests, no network, ~180 s
+tests/      about 1,100 tests, no network, a few minutes
 ```
 
 ## Try it now (no server needed)
@@ -66,9 +72,9 @@ cd /srv/docker && docker compose exec -T worker python -m sourcing.cli fetch --w
 ```
 
 Without `--approve` nothing is transferred (rule: Soulseek downloads are Michael's call). `fetch`
-walks the crate row `needs_source → sourcing → verify → ok | failed`, swaps the new song into every
-crate that held the old one, and reconciles; a file Navidrome can't match stays `verify` with the
-filed path in the reason. `MUSIC_ROOT` (default `/srv/music`) and `DOWNLOADS_ROOT` (default
+walks the row `needs_source → sourcing → verify → ok | failed | review`. A better copy of a song the library
+already has replaces the old one only with proof (`docs/worker.md` "Copy replacement and the trash"); a file
+Navidrome can't match stays `verify` with the filed path in the reason. `MUSIC_ROOT` (default `/srv/music`) and `DOWNLOADS_ROOT` (default
 `/srv/incoming/soulseek`, where the slskd container writes) are overridable; the worker refuses an approved
 fetch before any transfer when neither they nor their parent folders exist.
 
@@ -90,7 +96,7 @@ with real titles from the library. What it changed:
   example a 12" for a radio-edit row) is logged, never silent, and needs every one of its version words accepted.
 - **The scorer** has a version preference term, and a crate upgrade refuses another version.
 - **verify** knows a copy upgrade from a new version. A copy upgrade reports `replaceable` (full-length fingerprint
-  against the old file, bit-error rate 0.20 or less, durations agree, verdict `ok`). M8 will trash the old copy only
+  against the old file, bit-error rate 0.20 or less, durations agree, verdict `ok`). M8 trashes the old copy only
   when it is true.
 - **`deploy/policy.toml`** holds the tiers (same numbers as before, D17 still open) and the version preferences (D16),
   editable without code: `docs/worker.md` "Editing the policy".
@@ -109,6 +115,31 @@ docker compose exec -T worker python -m scripts.identity_backfill revert /data/i
 
 The proposal and report land in `/srv/docker/crates/identity/`. Nothing is written to the library until `apply --yes`.
 
+## M8: lifecycle (ownership, replacement, play-now)
+
+M8 follows `docs/specs/2026-10-16-ownership-and-identity.md`. What it changed, in plain words:
+
+- **The comment owns crate and tier.** `crates/attrs.py` reads and writes `#crate` and `#tier:<t>`; every other
+  byte of your comment is left alone. `reconcile` runs in the worker every `WORKER_RECONCILE_S` (600 s), so an edit
+  made in Amperfy takes effect without opening the web client. When the cache and a comment disagree the comment
+  wins and an `attrs` event records both.
+- **One-time migration.** Before the new code first reconciles, `crates.cli attrs migrate` copies what only
+  `crates.db` knew (the crate flag, the import tiers) into comments. It is a dry run unless you add `--apply`.
+  Deploy order: `docs/architecture.md` §9.
+- **Listening tiers upgrade only below their floor.** A low, medium or high playlist queues a track only when its
+  format is not allowed or a lossy file is under the tier's bit rate floor. "Lossless preferred" is a crate wish.
+- **Copy replacement.** A better copy of the same recording, proven by fingerprint, takes the old copy's place in
+  every playlist, and the old file goes to `/srv/docker/_trash` (never deleted, never overwritten, undo lines in
+  `MOVES.txt`). No proof: both copies stay and you are asked.
+- **Questions, not swaps.** A new version (a 12" for a radio edit) never replaces anything by itself. The Wanted tab
+  shows a question per playlist slot with Swap and Keep (`crates.cli proposals` does the same).
+- **Play-now.** The play button on a track you do not have is your approval for one fast `low` copy. It plays when
+  it lands and the proper-tier upgrade waits in Wanted for your approval.
+- **Safer API.** Preview picks carry an opaque `token`; no wanted, approval or preview response shows a Soulseek peer
+  name or an absolute path.
+
+`docs/worker.md` has the details and the commands.
+
 ## Against the real box (Phase 0 done)
 
 ```bash
@@ -116,7 +147,8 @@ export SUBSONIC_URL=http://127.0.0.1:4533 SUBSONIC_USER=you SUBSONIC_PASS=...
 export SUBSONIC_PUBLIC_URL=https://<box>.<tailnet>.ts.net     # what the phone can reach; omit if same
 python3 -m crates.cli status
 python3 -m crates.cli playlists
-python3 -m crates.cli toggle <playlist-id> on
+python3 -m crates.cli toggle <playlist-id> on           # writes #crate into the playlist comment
+python3 -m crates.cli tier <playlist-id> medium|...|none  # writes #tier:<t> (none clears it)
 python3 -m crates.cli wanted                     # → feed each line to sourcing.cli rank --slskd ...
 python3 -m crates.cli publish [NAME ...]         # make playlists visible to every Navidrome user
 python3 -m crates.cli serve                      # 127.0.0.1:4580 → front with `tailscale serve`
@@ -131,11 +163,15 @@ phone browser ──/api/*──▶ crates.service ──Subsonic──▶ Navid
                                └──wanted──▶ sourcing.scorer ──▶ slskd (search, download) ──▶ sourcing.verify
 ```
 
-- **A crate is a playlist plus a promise.** The toggle lives in our SQLite store; we
-  also mirror it as `#crate` in the Navidrome playlist comment so every Subsonic
-  client shows it. From any other client you can toggle a crate by renaming the
-  playlist with a marker (`Disco Edits [crate]` or `🎛 Disco Edits`), or by editing
-  the comment where the client allows it.
+- **A crate is a playlist plus a promise.** Since M8 the playlist's own comment owns
+  it: `#crate` makes it a crate, `#tier:low|medium|high` sets the quality its tracks are
+  sourced at without making it a crate. Every Subsonic client shows the comment, and it
+  survives losing `crates.db`, which only caches what `reconcile` reads from the
+  comments. The toggle and `crates.cli tier` write the comment, read it back, then refresh
+  the cache. From a client that can rename a playlist but not edit its comment, a name
+  marker (`Disco Edits [crate]` or `🎛 Disco Edits`) still counts as a crate; such a crate is
+  turned off by renaming. A track's tier is not stored: it is the highest tier among the
+  playlists holding it.
 - **Judging** uses only what Subsonic reports (suffix, bitRate, samplingRate,
   bitDepth) against `sourcing/policy.py`. Deep checks run in `sourcing/verify.py` once we
   hold the bytes (spec §3a, `docs/download-validation.md`): one ffmpeg decode measures the
@@ -164,10 +200,17 @@ Container build for the Compose stack: `docker build -t crates .` (see the
 
 ## Not done yet
 
-- M8: copy replacement (trash the old copy when verify says `replaceable`), repointing playlists to a new version,
-  play-now. The version *field* (`VERSION`/`TIT3`) is read but never written: labels live in titles, and writing
-  the field is a later, separately reviewed proposal. The backfill's `apply` on the real library waits for Michael's
-  review of the report.
+- **A filed external track is not placed in its playlist.** A downloaded row (and a play-now track) is in the
+  library but not in the playlist that wanted it; re-running `import-playlist` appends it at the end. M9 would
+  insert it at its Spotify position (`docs/specs/2026-10-17-m9-remaining-ownership.md`).
+- **`repoint: auto`.** A new version is always a question. A per-tier policy that answers for you is not built.
+- **The ".1" names.** A same-format upgrade is filed by beets as `… .1.flac` and keeps that name after the old copy
+  goes to the trash. Renaming it would change the Navidrome id unless the file has a recording id.
+- **The 102 existing copy groups.** M7 found 102 groups of copies of one version (217 files) already in the library.
+  Replacement is for new downloads only; a reviewed clean-up of the old ones is M9.
+- The version *field* (`VERSION`/`TIT3`) is read but never written: labels live in titles, and writing the field is
+  a later, separately reviewed proposal. The backfill's `apply` on the real library waits for Michael's review of
+  the report.
 - The worker (`docs/worker.md`) runs approved downloads automatically; automatic approval (`policy:` / `agent:`
   approvers) and a `sourcing_jobs` table (status, filed path, slskd transfer per wanted id, instead of riding on
   `crate_tracks.status` and the free-text reason) are not built. Also: check Navidrome for a good copy *before* searching.

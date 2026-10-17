@@ -26,7 +26,7 @@ owner after a loss, and only by an explicit command.
 | 3 | Where a file lives and its file name | **beets path rules** (`deploy/beets.yaml`), computed from #1 | the path itself | The convention is one definition. A path is never read as a fact (Navidrome's Subsonic paths are virtual anyway). |
 | 4 | Which songs exist and their ids | **Navidrome** (its scan of `/srv/music`) | crates.db holds Navidrome ids as references | It is the server every client talks to. The ids are only stable while #2 is filled in, so a playlist check runs after every scan (planned; today: manual `export_playlists check`, and identity apply runs it). |
 | 5 | Playlists: membership and order, *including which version sits at each position* | **Navidrome** (D11, now edited in any client) | `.m3u8` exports (backup, rewritten after each change (planned; today: manual `export_playlists export`)); Spotify is an *import source* only, never synced | Michael edits playlists in Amperfy or the web UI, so the server they write to has to be the owner. |
-| 6 | Playlist attributes: is it a crate; which tier its tracks should be sourced at | **The playlist itself**, as tags in Navidrome's playlist comment: `#crate`, `#tier:medium` | crates.db (`crates` table) becomes a cache rebuilt by `reconcile` | It is a property of the playlist, so it lives with the playlist. It is visible in every client, survives losing crates.db, and is in Navidrome's backup. **Change from today:** today crates.db owns the flag and mirrors `#crate` into the comment. |
+| 6 | Playlist attributes: is it a crate; which tier its tracks should be sourced at | **The playlist itself**, as tags in Navidrome's playlist comment: `#crate`, `#tier:medium` | crates.db (`crates` table) becomes a cache rebuilt by `reconcile` | It is a property of the playlist, so it lives with the playlist. It is visible in every client, survives losing crates.db, and is in Navidrome's backup. **Done in M8:** before M8, crates.db owned the flag and mirrored `#crate` into the comment; now the comment owns it (`crates/attrs.py`), the setters write the comment first and read it back, and a one-time `crates.cli attrs migrate` moved the old flags and import tiers into comments. |
 | 7 | The tier a track *should* reach | **Derived:** the highest tier among the playlists that contain it (`crate` if any is a crate); for a track not yet owned, the tier of the playlist that wants it | stored on wanted rows as a cache | A track has no tier of its own. It needs what its most demanding playlist needs. Flagging or un-flagging a playlist then re-derives everything, with nothing to keep in sync by hand. |
 | 8 | What each tier accepts (floors, speed weights) and the version preferences | **Repo config** (was `sourcing/policy.py`; `deploy/policy.toml` since M7, read with stdlib `tomllib`) | — | These are Michael's policy and change without code (D17, D16 "not set in stone"). |
 | 9 | Quality facts about a file (codec, bitrate, spectral cutoff, verdict) | **Measured** (`verify`) | crates.db `verifications` (a cache) | They can always be re-measured from the file. A cache can't drift into "truth" because the file wins. |
@@ -172,6 +172,9 @@ Song      "Double Exposure — My Love Is Free"          what Michael thinks of;
   - The upgrade is a copy replacement (same version), so invariant 1 applies: the provisional file goes to trash once
     the better one is verified.
   - The upgrade itself waits for approval, which is manual for now.
+  - **Built in M8, with one gap:** the play-now file is not yet placed in its playlist (the playlist that wanted the
+    track). Only its upgrade may take a slot, through a replacement; M9 would insert the file at its Spotify
+    position (`2026-10-17-m9-remaining-ownership.md`). See `docs/worker.md` "Play-now".
 - **Approval (D18 confirmed, D23):**
   - Every download carries an approval record: `approved_by` (`michael` | `policy:<name>` | `agent:<id>`), the candidate
     chosen, the time, and the tier.
@@ -190,6 +193,10 @@ Song      "Double Exposure — My Love Is Free"          what Michael thinks of;
 | **M6: worker and filing** | `/srv/incoming/soulseek/` for slskd; the worker container (D18); approval records and the Approve button; `beet import` filing of new downloads (the only beets writer); names reconcile back onto rows; reference fingerprint for copy upgrades; AcoustID when the key exists; the web client "server" stream default (D19) | — |
 | **M7: identity** | `sourcing/identity.py` (song/version/copy, version labels); the five normalisers folded in; `deploy/policy.toml` (tiers + `versions:`); the matcher, scorer and verify use the intended version; the **identity backfill proposal** (MusicBrainz and AcoustID lookups by our own code, not beets → reviewed `write_minimal` of the id fields only) | M6 (worker has the tools) |
 | **M8: lifecycle** | Playlist attributes in the comment (`#crate`, `#tier:`) with crates.db as cache; derived track tiers; upgrade = copy replacement + playlist repoint + trash (Stretch §4.3 GC); play-now (D20); version-swap *proposals* | M7 (replacement needs the same-version check) |
+
+*Decision (M8):* proposals have their own table, `proposals`, not an approvals row with a kind: a proposal edits one
+playlist slot and downloads nothing, and an approval is a licence to download. Both use the same
+`michael` / `policy:<name>` / `agent:<id>` vocabulary for who decided. See `docs/worker.md` "Proposals".
 
 ## Open choices for Michael (each has a default; defaults are in place)
 

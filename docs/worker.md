@@ -6,18 +6,31 @@ and never touches `/srv/music` or `/srv/incoming`.
 
 ## What it does each tick
 
-A tick runs every `WORKER_POLL_S` seconds (30 by default), in this order:
+A tick runs every `WORKER_POLL_S` seconds (30 by default), in this order. The wait between ticks is slept in steps
+of at most one second and ends early when a play-now approval is waiting (see "Play-now").
 
-1. **Re-check.** Every row that was filed but not yet seen by Navidrome (status `verify`) is asked again whether the
+1. **Play-now approvals.** Any unused play-now approval is claimed and fetched first, because you are waiting to
+   hear the track.
+2. **Reconcile.** At most once every `WORKER_RECONCILE_S` seconds (600 by default; 0 turns it off; the first tick
+   always runs it). It re-reads every playlist comment, rebuilds the crate/tier cache from them, derives each
+   song's tier and re-judges the tracks. This is how a `#crate` or `#tier:` you edit in Amperfy takes effect. If
+   the crates service is reconciling at that moment, the worker logs "reconcile skipped" and tries next interval.
+3. **Re-check.** Every row that was filed but not yet seen by Navidrome (status `verify`) is asked again whether the
    song has appeared, at most once every `WORKER_RECHECK_S` seconds per row (300 by default), because each re-check
    starts a Navidrome scan. It searches by the filed file's own artist and title tags (what Navidrome indexes), not
    the wanted row's names. Nothing is downloaded for these. Each miss is counted in the reason (`(check N)`); after 12
    the row fails with "Navidrome never indexed <path>; file is in the library", so you see it. Approving that row
    again downloads nothing: it re-checks the same file (counting from 1 again), and the approval reads
    `recheck: already filed as <path>`. If Navidrome still misses it, look at the file's tags.
-2. **Approvals.** Each unused approval is claimed, then fetched: search slskd, prefer the exact file you saw in
-   Preview while it is still offered (otherwise the top-ranked one), download it, verify it, file it, ask
-   Navidrome to rescan, and swap it into the crates. The outcome is written back on the approval.
+4. **Approvals.** Each remaining unused approval is claimed, then fetched: search slskd, prefer the exact file you
+   saw in Preview while it is still offered (otherwise the top-ranked one), download it, verify it, file it, ask
+   Navidrome to rescan, and then either finish the row or start a copy replacement (below). The outcome is written
+   back on the approval.
+5. **Replacements.** Every copy replacement that was left unfinished when the tick began is advanced one more time
+   (a playlist that could not be repointed yet, Navidrome not yet showing the old copy gone, a crash in between).
+6. **Export.** At most once every `WORKER_EXPORT_S` seconds (300 by default; 0 turns it off) the playlists are
+   written as `.m3u8` into `/srv/music/_playlists`, changed files only, so repoints, swaps and your own edits reach
+   the backup files.
 
 One bad row never stops the tick, and a tick that fails (slskd or Navidrome down, database locked) never stops the
 worker; the next tick tries again. `python -m sourcing.cli worker --once` runs a single tick and exits.
@@ -26,6 +39,11 @@ Only one worker runs at a time: it holds an exclusive lock on `worker.lock` next
 in the container) for its whole life. A second one, e.g. `docker compose exec -T worker python -m sourcing.cli worker
 --once` while the service is running, exits with "worker already running" and touches nothing. Outside the worker
 container (`DJ_WORKER=1` unset) `sourcing.cli worker` refuses to start.
+
+Reconcile has two callers (the crates service when you toggle or tap reconcile, and this worker), so each takes an
+exclusive lock on `reconcile.lock` next to `crates.db` and waits up to 60 s for it. If the wait runs out, the web
+client answers 503 "busy, try again" and the worker skips that run; nothing is written either way.
+`worker --once --no-reconcile` skips the reconcile step (useful for a one-off tick while you are migrating).
 
 Once beets has filed a download, the row never goes back to `failed` on an error: it becomes `verify` with the filed
 path in its reason, so the re-check picks it up and nothing downloads a second copy. Rows in progress (`sourcing`,
@@ -60,6 +78,12 @@ no candidate, and the worker re-checks the filed file without downloading.
 A Preview of a row that is already filed (`verify`, or failed as "Navidrome never indexed …") searches nothing and
 changes nothing: it answers "already filed as <path>; the worker re-checks it". The web service answers 409 to
 Preview or Approve of a row that is `sourcing` or `verify`.
+
+The web service answers 409 to Preview or Approve of a row whose approval the worker has already claimed (it is
+searching or downloading), and 404 for an unknown id. Preview picks come with an opaque `token` and no peer name:
+Approve posts the token back and the service finds the full candidate in the stored preview (409 "preview again"
+if the preview changed since). No wanted, approval or preview response shows a Soulseek peer name or an absolute
+path; library paths are relative to `/srv/music`.
 
 Approvals are claimed atomically. A second approval for the same row supersedes the first; a superseded or already
 taken approval is skipped, with a `skipped <id>: approval #N already used` line in the log.
@@ -100,13 +124,160 @@ download is verified without one.
 
 The comparison runs over the full length of both files. verify then reports `replaceable`: true only when the bit-error
 rate is 0.20 or less, the durations agree, the files differ and the verdict is `ok` (`docs/identity.md`). Without a
-reference it is false. M8's replacement will trash the old copy only when it is true. A download of another version
+reference it is false. M8's replacement trashes the old copy only when it is true. A download of another version
 of the song (the row's file name shows a different label) is not compared with the old copy: it is verified as a new
 version and added.
 
 With `ACOUSTID_KEY` set, an AcoustID lookup also checks the new file against the recording id Navidrome holds. Without
 the key there is no lookup. To enable it, add `ACOUSTID_KEY=<your key>` to `/srv/docker/.env`; the compose file passes
 it through (empty means off). The key travels in a request body, never in a URL or a log.
+
+## Copy replacement and the trash
+
+This is the one place the project removes a file from the library, so every step refuses on doubt.
+
+**When it starts.** You approve a download for a playlist row whose song is already in Navidrome but below its tier,
+and the new file arrives. A replacement starts only if all of these hold:
+- the stored verification says `replaceable` is true and names the old file it compared;
+- that old file is still exactly what was compared (same path in Navidrome's database, same size and modified time);
+- `identity.same_version` calls the two one version, and the new file is not the old file;
+- Navidrome lists the new file, and it is on disk.
+
+If any fails, nothing is replaced. Both copies stay, no playlist is touched, and the row becomes `review` with
+"kept beside <old>: not proven the same recording (<why>)". That also asks you a question per playlist slot (see
+"Proposals"). A request that was withdrawn while the file downloaded (no tiered playlist holds the old song any more)
+also ends in `review`: "filed beside <old>; request withdrawn, both copies kept".
+
+**The steps.** Each is saved in `crates.db` before the next starts, so a crash or restart resumes where it was.
+1. *repoint.* The new song takes the old song's place, in the same position, in every playlist that holds the old
+   one, not only crates. Each edit is checked against `navidrome.db` first (the hidden-song trap: a playlist with a
+   missing file would delete the wrong row), and written in one call that is read back.
+2. *trash.* Only when no playlist entry anywhere, hidden ones included, still holds the old song: the old file
+   moves to the trash and beets drops it from its index (`beet remove`, index only; the file is not touched).
+3. *scan.* The worker asks Navidrome to rescan, at most once per `WORKER_RECHECK_S`, until Navidrome stops listing
+   the old copy. Then the job is `done`. Reconcile gives the new song its own row (judged `ok` if it meets the tier)
+   and drops the old song's. The new copy is indexed before anything is repointed and the old one is moved after,
+   so Navidrome never merges two files into one song id.
+
+**What makes it wait (not blocked).** A smart playlist, a playlist owned by another Navidrome user (Amperfy's
+account: we never edit those) or a hidden row keeps a reference to the old song. The job stays in *repoint*, the row
+is `review` and says why ("replacement #N repoint: old song still in N playlist entries (<name>: refused: owned by
+…)"), and the old file does not move.
+Remove the old song from that playlist yourself and the next tick carries on. If a playlist gets the old song back
+while the file is moving or in the trash, the worker restores the file and repoints again.
+
+**Where the old file goes.** `/srv/docker/_trash/<YYYY-MM-DD>/<its library path>`, for example
+`/srv/docker/_trash/2026-10-17/Chic/Risque (1979)/03 - Good Times.flac`. A name already in the trash gets
+`(2)`, `(3)`. Nothing deletes from the trash; you empty it. `crates.cli status` shows its size and oldest day.
+The worker mounts it read-write at that path; the crates container sees it read-only.
+
+**How to undo it.** Each dated folder has a `MOVES.txt` with one reverse `mv` line per file, written before the move:
+
+```
+mv '/srv/docker/_trash/2026-10-17/Chic/Risque (1979)/03 - Good Times.flac' '/srv/music/Chic/Risque (1979)/03 - Good Times.flac'
+```
+
+Run the line on the host (the paths are the same inside and outside the containers; `mkdir -p` the target folder if
+it is gone). A line followed by `# not moved (<error>)` means the move failed and the file never left the library.
+`# restored …` means the worker put the file back itself. After you restore a file, Navidrome lists it again at its
+next scan (`ND_SCANSCHEDULE` is 1 h); the playlists keep pointing at the new copy, so put the old song back in
+by hand if you want it there.
+
+**What `blocked` means.** The worker stopped on purpose and will not retry. Nothing is deleted, and the row reads
+`review` "replacement #N blocked: <why>". Blocked is final; there is no button, so read the reason. The causes:
+- the old copy moved or changed since it was compared (path, size or modified time differ), or it is not the file
+  verify compared;
+- identity says the two are another version;
+- the new copy is missing in Navidrome, is somewhere else than it was filed, is not on disk, or is the old file;
+- the library is not reachable (an unmounted `/srv/music` also says "no such file", and is never read as "the old
+  copy is gone");
+- the file would have to be restored from the trash but its place is taken by another file, or it is not in the
+  trash any more.
+
+Playlists may already point at the new copy when it blocks later; the old file is then still in the library, in no
+playlist. The reason says which.
+
+## Proposals
+
+A new version never replaces anything by itself, even when the tier prefers it (D23). It asks instead. There are two
+questions, one per playlist slot, only for playlists that have a tier:
+- **New version.** A filed song is another version of a song a tiered playlist holds, and that tier prefers it
+  (`[versions.<tier>] prefer` in `deploy/policy.toml`, for example a 12" at crate). It stays silent for the same
+  version, a version the tier does not prefer, a playlist that has the new song already, or a version that would
+  drop what the slot specifically is (an instrumental, a credited mix).
+- **Better copy, not proven the same recording.** The copy-replacement licence failed, so both files stayed. The
+  row is `review` until every slot is answered.
+
+Answer in the Wanted tab (a box at the top: **Swap** or **Keep**), or in the crates container:
+
+```
+cd /srv/docker
+docker compose exec -T crates python -m crates.cli proposals [--all]      # open questions; --all adds answered ones
+docker compose exec -T crates python -m crates.cli proposals accept <id>  # swap that one slot
+docker compose exec -T crates python -m crates.cli proposals decline <id> # keep the playlist as it is
+```
+
+Swap edits that one slot only, with the same checks as a repoint. If the slot no longer holds the old song, the
+playlist changed, or the edit was not confirmed, the answer is `stale` with the reason and nothing is written
+(`accept` needs `NAVIDROME_DB` in the crates container). Swap never trashes: a version is a different recording, and
+an unproven copy is not proven redundant. Keep is final; the same question is not asked again. Questions whose slot
+or playlist has gone are marked stale the next time the list is read (`decided_by` `policy:slot-check`).
+
+When all slots of an unproven copy are answered: if every one was swapped, an external row becomes `ok`; otherwise
+the row stays `review`, "declined replacement #N; approve a different candidate to retry (the new copy stays in the
+library as <path>)". Rows like "kept beside …", "declined replacement …", "replacement #N not made …" and "filed
+beside …" show Preview and Approve again, so a retry is one tap. Import's "ambiguous …" review rows still need a pick
+and offer nothing.
+
+## Play-now
+
+Pressing the play button on a track that is queued but not in the library is your approval (D20) for **one fast
+copy**. The Wanted tab says so on the button ("downloads a quick copy to play now") and shows where the copy is:
+queued, downloading, checking, filed, playing.
+
+- It is an approval with `purpose` `play-now`, `approved_by` `michael`. The worker takes it first in the tick, and
+  wakes within a second instead of waiting out `WORKER_POLL_S`.
+- The download is ranked and verified at tier `low`; the row keeps its own tier. The file is filed as a
+  **provisional** copy. Once Navidrome lists it the web client plays it (autoplay) and labels it provisional.
+- The row then goes back to `needs_source` as the **upgrade**: "provisional low copy filed as <path>; upgrade at
+  <tier> waits for approval". Approve it like any download. It is an ordinary copy replacement of the provisional
+  file: with proof the provisional file goes to the trash, otherwise both stay and you are asked.
+- **One exception.** If the fast copy was verified at least as strictly as the row's tier, and passes that tier's
+  judge, it is the row's file ("provisional copy already meets <tier>"): the row is `ok` and no upgrade is queued.
+  A copy verified at `low` is never final for `crate`, whose checks are stricter, and reconcile will not mark a
+  provisional song `ok` at a crate tier either ("provisional copy (verified at low only); crate needs its own
+  download").
+- **One open request per song.** If a tiered playlist later holds the same song, its row takes over the upgrade,
+  unless the upgrade is already in flight; then the playlist row waits ("upgrade in flight as ext-N") and Preview
+  and Approve answer 409 for it.
+- Refused with 409, recording nothing: a playlist row (its song is in Navidrome, play that), a row that has a
+  library song, an `ok` row, a row in progress (`sourcing`, `verify`, filed but not indexed), a `review` row (pick a
+  version first), and a row with an approval waiting or already claimed (a double tap, a second device). Preview and
+  Approve of a row whose play-now approval is claimed also answer 409.
+- **Not placed in a playlist.** The provisional file is in the library but not in the playlist that wanted it; only
+  its upgrade may take a slot, through a replacement.
+- **iOS.** A phone lets a page start audio only from a tap, and the file lands seconds later. The tap itself primes
+  the audio player, then the page starts it when the file is listed. If the browser still blocks it the row says
+  "tap play". This has not been tried on a real phone yet.
+
+## Settings the worker reads
+
+All set in `deploy/compose.yml` (the worker service); change them there and `docker compose up -d worker`.
+
+| Variable | Default | What it does |
+|---|---|---|
+| `WORKER_POLL_S` | 30 | seconds between ticks (a waiting play-now ends the wait early) |
+| `WORKER_RECHECK_S` | 300 | a `verify` row is re-checked (one Navidrome scan) at most this often; also the scan interval of a replacement |
+| `WORKER_RECONCILE_S` | 600 | playlist comments re-read and tiers re-derived; 0 = never |
+| `WORKER_EXPORT_S` | 300 | `.m3u8` export into `/srv/music/_playlists`; 0 = never |
+| `TRASH_ROOT` | `/srv/docker/_trash` | where a replaced copy goes (mounted read-write in the worker) |
+| `NAVIDROME_DB` | `/srv/docker/navidrome/navidrome.db` | read-only; copy replacement and playlist edits cross-check it |
+| `MUSIC_ROOT`, `DOWNLOADS_ROOT` | `/srv/music`, `/srv/incoming/soulseek` | as before |
+| `DJ_WORKER`, `ACOUSTID_KEY`, `BEETSDIR`, `CRATES_DB` | | as before |
+
+The crates container reads `CRATES_TRASH` (`/trash`, read-only: status shows its size) and `NAVIDROME_DB` (the same
+file, mounted read-only: playlist edits and proposal answers need it). Navidrome's database is opened with
+`mode=ro`; if it cannot be opened, those calls answer 503 or refuse, and nothing is written.
 
 ## Identity backfill (runs in the worker)
 
@@ -247,4 +418,6 @@ docker compose up -d worker        # start / resume
 ```
 
 The worker mounts `/srv/music`, `/srv/docker/beets` and `/srv/incoming/soulseek` at the same paths as on the host,
-because beets stores absolute paths in `library.db`. Navidrome's database is mounted read-only.
+because beets stores absolute paths in `library.db`. It also mounts `/srv/docker/_trash` read-write at the same path
+(copy replacement moves old files there). Navidrome's database is mounted read-only, in the worker and in the crates
+container.
