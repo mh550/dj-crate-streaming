@@ -58,11 +58,14 @@ system treat two different versions as one and trash a real one.** That is why t
 |---|---|---:|---|
 | `confirmed` | the file already carries a recording id and MB agrees (name, version, length) | 77 | yes: only fills a missing work id |
 | `isrc` | the file's own ISRC leads to exactly one recording that passes the fit check | 172 | yes |
-| `acoustid` | the audio fingerprint matches at 0.8+ and singles out one recording that passes the fit check | 0 (no key yet) | yes |
-| `search` | only names + length: exactly one MB recording fits | 239 | **not by default** |
-| `ambiguous` | several recordings fit | 116 | only if you choose one |
-| `conflict` | the file's id does not fit, or two ids disagree | 24 | no, needs a look |
+| `acoustid` | the audio fingerprint matches at 0.8+ and singles out one recording that passes the fit check | 236 | yes |
+| `search` | only names + length: exactly one MB recording fits | 16 | **not by default** (trial of all 16 applied 2026-10-17) |
+| `ambiguous` | several recordings fit | 89 | only if you choose one |
+| `conflict` | the file's id does not fit, or two ids disagree | 38 | no, needs a look |
 | `none` | nothing fits | 203 | only if you choose one |
+
+Counts are from the second proposal (2026-10-17, with the AcoustID key). The first one (no key) had `acoustid` 0 and
+`search` 239: the key moved 223 files from `search` to `acoustid`, which is the point of the next paragraph.
 
 The first three each have a proof that does not come from the title: a label-assigned code, or the sound itself, plus
 the fit check. `search` has only names and length, and MB often holds two recordings at one length (about a third of

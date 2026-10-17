@@ -9,8 +9,10 @@ Anything that trashes files or writes tags needs a reviewed plan file and a reve
 - Live: image `dj-crates:b2df730b1d` (crates + worker), Navidrome pinned `0.64.2`, `CRATES_OWNER=app`, one DJ-quality rule.
 - Done 2026-10-17: 35 playlists deleted by Michael's rules (D32; list in `/srv/docker/crates/playlists-deleted-2026-10-17.txt`,
   restore from `/srv/music/_playlists/*.m3u8` or `/srv/docker/navidrome/navidrome.db.pre-cleanup.snap`); 10 kept.
-- Running/finished in the worker: a fresh id `propose` with the AcoustID key (output in `/srv/docker/crates/identity/`, the
-  previous one in `identity/previous-2026-10-16/`).
+- Id backfill: a fresh `propose` with the AcoustID key finished: confirmed 77, isrc 172, **acoustid 236**, search 16,
+  ambiguous 89, conflict 38, none 203 (output in `/srv/docker/crates/identity/`, the previous one in `identity/previous-2026-10-16/`).
+  The 16 `search` rows were applied as a trial (revert logs `apply-20261017T051634.jsonl`, `apply-20261017T051653.jsonl`);
+  Navidrome shows the ids, song ids unchanged, exports match. **The 485 default-class rows are not applied yet.**
 
 ## In order
 
@@ -33,8 +35,10 @@ Anything that trashes files or writes tags needs a reviewed plan file and a reve
 5. **Re-run the imports after the cleanup** so the 13 `review` rows (`external_wanted`, status `review`) and "shakori
    (Spotify)"'s 2 ambiguous rows are re-matched against a library without duplicates (`sourcing.cli import-playlist`;
    M9 spec §5b picker only for what is left).
-6. **Id backfill (D29 area):** read the new `identity-backfill-report.md`; apply `confirmed,isrc,acoustid` after Michael's
-   review; trial `--classes …,search --limit 20` and `revert` path as in `docs/how-ids-work.md`. Command list: `docs/worker.md`.
+6. **Id backfill:** after Michael has looked at `identity-backfill-report.md`, apply the default classes (`confirmed`, `isrc`,
+   `acoustid`; 485 files): dry run, then `--limit 5`, then all, as in `docs/worker.md`; scan and check after each stage
+   (the trial's checks: ids appear in `navidrome.db`, song ids unchanged, `scripts.export_playlists check`). Then the
+   `ambiguous`/`none`/`conflict` pickers (M9 item 5a). `revert` undoes any run.
 7. **Version tag (`VERSION`/`TIT3`)** as its own reviewed proposal (M9 item 4, approved "later").
 8. **Before the first real download:** run the M8 trash-move probe (`docs/architecture.md` §9 step 3); Michael says "go" with an
    `ext-N`; check the whole chain on one file (D7).
