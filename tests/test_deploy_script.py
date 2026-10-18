@@ -32,17 +32,25 @@ def repo(tmp_path):
     stub.parent.mkdir()
     stub.write_text('#!/bin/sh\necho "GATUS_DIR=$GATUS_DIR $*" >> "$DOCKER_LOG"\n')
     stub.chmod(0o755)
+    curl = stub.parent / "curl"      # Gatus' API: answers once CURL_OK_AFTER calls have failed (unset: never answers)
+    curl.write_text('#!/bin/sh\necho "$*" >> "$CURL_LOG"\nn=$(wc -l < "$CURL_LOG")\n'
+                    '[ -n "$CURL_OK_AFTER" ] && [ "$n" -gt "$CURL_OK_AFTER" ] && { echo "[]"; exit 0; }\nexit 7\n')
+    curl.chmod(0o755)
     return repo
 
 
-def _deploy(repo, *services):
+def _deploy(repo, *services, answers_after="0"):
     t = repo.parent
     env = {**os.environ, "PATH": f"{t / 'bin'}:{os.environ['PATH']}", "DOCKER_LOG": str(t / "docker.log"),
-           "GATUS_DIR": str(t / "gatus")}
+           "GATUS_DIR": str(t / "gatus"), "CURL_LOG": str(t / "curl.log"), "GATUS_WAIT": "3"}
+    env.pop("CURL_OK_AFTER", None)
+    if answers_after is not None:
+        env["CURL_OK_AFTER"] = answers_after
     out = subprocess.run(["bash", str(repo / "scripts" / "deploy.sh"), *services], capture_output=True, text=True,
                          env=env, timeout=30)
     out.docker = (t / "docker.log").read_text().splitlines() if (t / "docker.log").exists() else []
     out.config = t / "gatus" / "config" / "config.yaml"
+    out.curl = (t / "curl.log").read_text().splitlines() if (t / "curl.log").exists() else []
     return out
 
 
@@ -111,3 +119,25 @@ def test_deploying_crates_and_worker_leaves_gatus_alone(repo):
     assert out.returncode == 0, out.stderr
     assert not (repo.parent / "gatus").exists()
     assert any(line.endswith("up -d --build crates worker") for line in out.docker), out.docker
+
+
+def test_a_gatus_deploy_waits_until_gatus_answers(repo):
+    out = _deploy(repo, "gatus", answers_after="2")
+    assert out.returncode == 0, out.stderr
+    assert len(out.curl) == 3 and all("http://127.0.0.1:4590/api/v1/endpoints/statuses" in c for c in out.curl)
+    assert "gatus answers" in out.stdout
+
+
+def test_a_gatus_that_never_answers_fails_the_deploy_with_the_rollback(repo):
+    # `up -d` exits 0 even when Gatus exits at start (e.g. GATUS_NTFY_TOPIC/GATUS_BACKUP_TOKEN unset)
+    out = _deploy(repo, "gatus", answers_after=None)
+    assert out.returncode == 1
+    assert len(out.curl) == 3
+    assert "did not answer" in out.stderr and "GATUS_BACKUP_TOKEN" in out.stderr
+    assert "stop gatus" in out.stderr and "rm -f gatus" in out.stderr
+
+
+def test_a_crates_deploy_does_not_wait_for_gatus(repo):
+    out = _deploy(repo, answers_after=None)
+    assert out.returncode == 0, out.stderr
+    assert out.curl == []

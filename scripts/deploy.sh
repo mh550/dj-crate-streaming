@@ -3,7 +3,7 @@
 #
 #   scripts/deploy.sh            # crates + worker
 #   scripts/deploy.sh crates     # just one
-#   scripts/deploy.sh gatus      # monitoring: installs this commit's deploy/gatus/config.yaml, then starts Gatus
+#   scripts/deploy.sh gatus      # monitoring: installs this commit's deploy/gatus/config.yaml, then starts Gatus, waits for its API
 #
 # Refuses a dirty tree (an image must equal a commit), tags the image dj-crates:<short sha> and labels it with the
 # full sha, so `docker image ls dj-crates` and `docker inspect` say what is running. Rollback: check out the older
@@ -43,3 +43,20 @@ fi
 echo "deploy: building ${services[*]} from $GIT_SHA ($(git rev-parse --abbrev-ref HEAD)) in $root"
 docker compose --project-directory /srv/docker -f "$root/deploy/compose.yml" up -d --build "${services[@]}"
 docker compose --project-directory /srv/docker -f "$root/deploy/compose.yml" ps "${services[@]}"
+if [[ " ${services[*]} " == *" gatus "* ]]; then
+    # `up -d` exits 0 even when Gatus exits at start (an unset GATUS_NTFY_TOPIC or GATUS_BACKUP_TOKEN), so wait for
+    # its API before calling the deploy done.
+    url="http://127.0.0.1:4590/api/v1/endpoints/statuses"
+    for ((i = 1; i <= ${GATUS_WAIT:-30}; i++)); do
+        if curl -fsS -o /dev/null --max-time 2 "$url"; then
+            echo "deploy: gatus answers on $url"
+            exit 0
+        fi
+        [ "$i" -lt "${GATUS_WAIT:-30}" ] && sleep 1
+    done
+    echo "deploy: gatus did not answer $url within ${GATUS_WAIT:-30} s; are GATUS_NTFY_TOPIC and GATUS_BACKUP_TOKEN" \
+         "set in /srv/docker/.env? \`docker compose --project-directory /srv/docker -f $root/deploy/compose.yml logs gatus\`." >&2
+    echo "deploy: rollback: docker compose --project-directory /srv/docker -f $root/deploy/compose.yml stop gatus &&" \
+         "docker compose --project-directory /srv/docker -f $root/deploy/compose.yml rm -f gatus" >&2
+    exit 1
+fi

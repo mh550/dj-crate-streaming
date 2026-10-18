@@ -13,6 +13,14 @@ stop`; answers to the questions below go under `## Answers`. Every session reads
 
 ---
 
+### 2026-10-17 21:10 · H3-04 · not yet
+- **Still blocked:** INBOX Answers still has no "gatus vars set" (fetched 21:09), so no deploy. **Live:** none. No live command was run.
+- **Changed:** after `up -d gatus`, `scripts/deploy.sh gatus` now waits up to `GATUS_WAIT` (default 30 s) for `http://127.0.0.1:4590/api/v1/endpoints/statuses`. If Gatus never answers, it exits 1, names the two vars and prints the `logs` and rollback (`stop gatus && rm -f gatus`) commands. This closes the last session's review leftover: `up -d` exits 0 even when Gatus exits at start. Crates/worker deploys don't wait. `tests/test_deploy_script.py` +3 tests (stub `curl`). Tests 1,356 → 1,359.
+- **Verified:** the new tests were red first. Making the curl check always succeed turns the failure test red. `lib/check.sh` green, 1,359 tests (492 s). No Opus review: the change is 17 lines of bash.
+- **Next session (H3-04 again):** unchanged from the 20:50 entry. Once INBOX says "gatus vars set": `flock -n /srv/docker/crates/live.lock scripts/deploy.sh gatus`. Exit 0 now means Gatus answered. Exit 1 means roll back with the printed command and stop.
+- **Question for Michael:** please set the Gatus vars and write "gatus vars set" under Answers (INBOX, H3-02 section). Until you do, every H3-04 session can only wait.
+- **Proposed change:** the harness could skip H3-04 (and move on to H3-05/N2) while INBOX lacks "gatus vars set", instead of rerunning a blocked session.
+
 ### 2026-10-17 20:50 · H3-04 · not yet
 - **Blocked:** no "gatus vars set" under INBOX Answers (fetched 20:47), and Gatus exits at start without `GATUS_NTFY_TOPIC`/`GATUS_BACKUP_TOKEN`. Agents can't check `/srv/docker/.env`, so I didn't deploy. Step 3 (INBOX has the spec's one-time steps verbatim) is done; steps 1–2 need the deploy.
 - **Changed (build prep for the deploy, fixes H3-02 review I1/I2):** `scripts/deploy.sh gatus` now copies `git show HEAD:deploy/gatus/config.yaml` to `${GATUS_DIR:-/srv/docker/gatus}/config/` (mkdir as mh550, rename into place). It refuses `gatus` together with other services, and refuses a config dir it can't write (printing the `sudo chown`). `deploy/compose.yml` mounts `${GATUS_DIR}/config:/config:ro` and `${GATUS_DIR}:/data`, so the mount no longer follows `CRATES_SRC`. Recorded as **D41 *default*** in the pivot spec. New `tests/test_deploy_script.py` (8 tests, stub docker, temp repo); `tests/test_gatus.py` mount test updated, plus 1 test for `GATUS_DIR`. INBOX: the H3-03 section had landed inside the header's HTML comment (hidden on GitHub); I moved it out and added the H3-04 section. Tests 1,347 → 1,356.
