@@ -1,6 +1,18 @@
 status: run
 <!-- Steer this run from the GitHub app: edit this file on branch harness/dj-2026-10-17.
-     Change the first line to "status: pause" or "status: stop"; write answers to questions under "## Answers".
+     Change the first line to "status: pause" or "status: stop"; write answers to questions under "### H3-03 (2026-10-18): enable the disk health timer (after H3-04 deploys Gatus and the vars are set)
+Written and tested, not enabled. As mh550, from a checkout of main (no sudo):
+
+    install -D -m 0755 deploy/health-push.sh ~/.local/lib/dj-crates/health-push.sh
+    install -m 0600 /dev/null ~/.config/dj-health-push.env
+    printf 'GATUS_BACKUP_URL=http://127.0.0.1:4590\nGATUS_BACKUP_TOKEN=<same token as /srv/docker/.env>\n' >> ~/.config/dj-health-push.env
+    systemctl --user link $PWD/deploy/systemd/dj-health-push.service $PWD/deploy/systemd/dj-health-push.timer
+    systemctl --user enable --now dj-health-push.timer
+    systemctl --user start dj-health-push.service; journalctl --user -u dj-health-push -n 5
+
+Rollback: `systemctl --user disable --now dj-health-push.timer`.
+
+## Answers".
      The harness pulls before every session; every session reads this file at startup. -->
 
 ## For Michael: one-time steps (sessions write these; only you run them)

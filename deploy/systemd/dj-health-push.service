@@ -1,0 +1,9 @@
+[Unit]
+Description=Push disk health to Gatus (deploy/health-push.sh)
+
+[Service]
+Type=oneshot
+# Michael creates this file: GATUS_BACKUP_URL=http://127.0.0.1:4590 and GATUS_BACKUP_TOKEN=<same token as /srv/docker/.env>
+EnvironmentFile=-%h/.config/dj-health-push.env
+# The installed copy, so the unit survives a worktree being removed
+ExecStart=%h/.local/lib/dj-crates/health-push.sh
