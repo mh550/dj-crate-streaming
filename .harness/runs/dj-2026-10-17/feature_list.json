@@ -249,7 +249,7 @@
         "The unit files pass `systemd-analyze --user verify` (or the session says why it couldn't run it)",
         "`.harness/check.sh` is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "H3-04",
