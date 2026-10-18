@@ -236,7 +236,7 @@
         "If the pinned Gatus doesn't support external-endpoint heartbeats, INBOX says so and proposes an alternative; nothing is improvised",
         "`.harness/check.sh` is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "H3-03",
