@@ -54,14 +54,23 @@ def test_gatus_publishes_only_on_localhost_4590(gatus):
     assert [(p["host_ip"], p["published"], p["target"]) for p in gatus["ports"]] == [("127.0.0.1", "4590", 8080)]
 
 
-def test_the_config_is_mounted_read_only_from_the_repo_and_history_from_srv_docker(gatus):
+def test_the_config_is_the_deployed_commits_copy_read_only_and_history_is_in_srv_docker(gatus):
     mounts = {v["target"]: v for v in gatus["volumes"]}
     assert set(mounts) == {"/config", "/data"}
-    # a directory, not the file: a git checkout replaces config.yaml (new inode), which a file mount wouldn't see
-    assert mounts["/config"]["source"] == str(ROOT / "deploy" / "gatus")
+    # not the checkout (a removed worktree would leave Gatus without checks): `deploy.sh gatus` copies the commit's
+    # config.yaml here. A directory, not the file: the copy replaces config.yaml (new inode), which a file mount
+    # wouldn't see
+    assert mounts["/config"]["source"] == "/srv/docker/gatus/config"
     assert mounts["/config"]["read_only"] is True
     assert mounts["/data"]["source"] == "/srv/docker/gatus"
     assert not mounts["/data"].get("read_only")
+
+
+def test_gatus_dir_moves_both_mounts_as_deploy_sh_does(tmp_path_factory):
+    p = _compose_config(tmp_path_factory, GATUS_DIR="/tmp/g")
+    assert p.returncode == 0, p.stderr
+    mounts = {v["target"]: v["source"] for v in json.loads(p.stdout)["services"]["gatus"]["volumes"]}
+    assert mounts == {"/config": "/tmp/g/config", "/data": "/tmp/g"}
 
 
 def test_gatus_runs_as_mh550_restarts_and_depends_on_nothing(gatus):

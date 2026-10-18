@@ -3,6 +3,7 @@
 #
 #   scripts/deploy.sh            # crates + worker
 #   scripts/deploy.sh crates     # just one
+#   scripts/deploy.sh gatus      # monitoring: installs this commit's deploy/gatus/config.yaml, then starts Gatus
 #
 # Refuses a dirty tree (an image must equal a commit), tags the image dj-crates:<short sha> and labels it with the
 # full sha, so `docker image ls dj-crates` and `docker inspect` say what is running. Rollback: check out the older
@@ -20,6 +21,25 @@ export GIT_SHA="$(git rev-parse --short=10 HEAD)"
 export CRATES_SRC="$root"
 services=("$@")
 [ $# -eq 0 ] && services=(crates worker)
+if [[ " ${services[*]} " == *" gatus "* ]]; then
+    # On its own: a failed build after the copy below would leave Gatus checking images that never shipped.
+    if [ ${#services[@]} -ne 1 ]; then
+        echo "deploy: deploy gatus on its own (scripts/deploy.sh gatus), not with ${services[*]}" >&2
+        exit 1
+    fi
+    # Gatus reads a copy of this commit's checks, not the checkout: removing a worktree mustn't take monitoring down.
+    # mh550 creates the directory (Docker would make it root's) and the copy is renamed into place, so a running
+    # Gatus reloads a whole file. compose.yml mounts the same GATUS_DIR.
+    export GATUS_DIR="${GATUS_DIR:-/srv/docker/gatus}"
+    mkdir -p "$GATUS_DIR/config"
+    if [ ! -w "$GATUS_DIR/config" ]; then
+        echo "deploy: $GATUS_DIR/config is not writable (made by Docker as root?); Michael: sudo chown -R $(id -u):$(id -g) $GATUS_DIR" >&2
+        exit 1
+    fi
+    git show HEAD:deploy/gatus/config.yaml > "$GATUS_DIR/config/config.yaml.new"
+    mv -f "$GATUS_DIR/config/config.yaml.new" "$GATUS_DIR/config/config.yaml"
+    echo "deploy: gatus config from $GIT_SHA in $GATUS_DIR/config"
+fi
 echo "deploy: building ${services[*]} from $GIT_SHA ($(git rev-parse --abbrev-ref HEAD)) in $root"
 docker compose --project-directory /srv/docker -f "$root/deploy/compose.yml" up -d --build "${services[@]}"
 docker compose --project-directory /srv/docker -f "$root/deploy/compose.yml" ps "${services[@]}"

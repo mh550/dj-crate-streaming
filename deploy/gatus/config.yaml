@@ -1,5 +1,6 @@
 # Gatus (deploy/compose.yml → gatus): what is checked, how often, and how Michael hears about it.
-# Design: docs/specs/2026-10-17-backup-lock-and-monitoring.md §H3. Gatus re-reads this file when it changes.
+# Design: docs/specs/2026-10-17-backup-lock-and-monitoring.md §H3. `scripts/deploy.sh gatus` copies this file to
+# /srv/docker/gatus/config/ (D41); Gatus re-reads it there.
 # The two variables below are expanded by Gatus from its container environment (compose passes them from
 # /srv/docker/.env); no secret is written here. Gatus expands every dollar sign in this file, comments too.
 skip-invalid-config-update: true             # a broken edit keeps the old checks running (logged), instead of
