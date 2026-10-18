@@ -221,7 +221,7 @@
         "A test with a fresh heartbeat file sees a small age; with none it sees null; with an old mtime it sees that age",
         "The existing status tests still pass; `.harness/check.sh` is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "H3-02",

@@ -13,6 +13,13 @@ stop`; answers to the questions below go under `## Answers`. Every session reads
 
 ---
 
+### 2026-10-17 23:00 · H3-01 · passes
+- **Changed:** `crates/service.py`: `/api/status` now has `workerHeartbeatAge` (seconds since `worker.heartbeat` beside the crates db was touched; `null` if missing or the db is `:memory:`). New `test_status_reports_the_worker_heartbeat_age` in `tests/test_service.py` (none → null, fresh → under 10, mtime 300 s ago → ~300). Tests 1,315 → 1,316.
+- **Verified:** replacing the field with `None` turns the new test red; `lib/check.sh` green, 1,316 tests (488 s).
+- **Live:** none (not deployed; H3's later features deploy).
+- **Next session:** Gatus can check `[BODY].workerHeartbeatAge` is a number and `< 90` (same limit as `healthcheck.py worker`); null means no heartbeat.
+- **Questions / proposed changes:** none.
+
 ### 2026-10-17 22:00 · verify H2
 
 | Feature | Step | What you ran or read | What you saw | Holds |
