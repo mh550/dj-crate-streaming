@@ -133,7 +133,10 @@ replaces the playlist's record: the newest import is the order.
   `mark_imported`, `done`, a `placed` event ("… confirmed after an unconfirmed edit"); absent → `given_up` with
   `not_placed` "<playlist>: edit not confirmed, look at the playlist; re-run the import to append it". Not marked
   imported in that case, so the re-run can append it (if Michael removed it in that window, the re-run re-adds it
-  once: accepted). A failure of the look itself leaves the row `writing` for the next tick.
+  once: accepted). A failure of the look itself leaves the row `writing` for the next tick. As built (N4-04, after review): the look
+  happens on the *next* tick, not right after the EditNotKept (Navidrome may still be applying a timed-out edit), and
+  any failure after rewrite confirmed the edit (crates.db locked during `mark_imported`) also leaves the `writing` row
+  to be looked at, never `open`. The look checks the song the intent row names.
 - `advance_all(store, client, db, recheck_s, now) -> list[str]`: for each due pair whose `placements` row is absent,
   or `open` and `updated_at <= now - recheck_s`: `place()`; a `placed`/`skipped` result → `done` (detail = result);
   a `writing` row is resolved by looking (above), whatever its age; `EditRefused` and any unexpected exception (a

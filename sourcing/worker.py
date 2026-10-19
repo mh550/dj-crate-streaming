@@ -171,6 +171,7 @@ class Worker:
                 job = self.store.replacement(jid)
                 out.append(f"replacement #{jid}: {state}: {job['detail'] or ''}")
             except Exception as e:                         # e.g. Navidrome down: the job keeps its state
+                self.store.db.rollback()                   # nothing half-done rides along with a later commit
                 out.append(f"replacement #{jid}: error: {type(e).__name__}: {e}")
                 self.log(f"replacement #{jid} failed: {type(e).__name__}: {e}")
         return out

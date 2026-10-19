@@ -464,3 +464,19 @@ def test_a_track_wanted_by_two_playlists_has_an_order_row_in_each():
         assert _order(store, b.playlist_id) == [(1, "k1", None), (2, None, ext)]
         assert [(r["playlist_id"], r["position"]) for r in store.import_order_for(ext)] == sorted(
             [(a.playlist_id, 2), (b.playlist_id, 2)])
+
+
+def test_a_filed_track_wanted_by_two_imports_is_due_in_both():
+    # N4-04: find_external hands the second import the same wanted row; once filed it is placed in each playlist.
+    with FakeSubsonicServer() as srv:
+        _lib(srv)
+        c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
+        a = ip.import_playlist("Tea tent", ROWS[:3], c, store, source="a")
+        b = ip.import_playlist("Late set", [Row(1, "Bag Lady", "Erykah Badu", 347, "sp3"),
+                                            Row(2, "Piano Joint (This Kind Of Love)", "Michael Kiwanuka", 232, "sp2")],
+                               c, store, source="b")
+        [ext] = {r["wanted_id"] for r in store.import_order(a.playlist_id) if r["wanted_id"]}
+        store.set_external_song(ext, "k9", False)
+        store.set_external_status(ext, "ok", "filed")
+        assert sorted((d["playlist_id"], d["wanted_id"], d["song_id"]) for d in store.due_placements()) == sorted(
+            [(a.playlist_id, ext, "k9"), (b.playlist_id, ext, "k9")])

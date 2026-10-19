@@ -465,25 +465,60 @@ def _unconfirmed(srv, landed):
     return Unconfirmed(srv.url, "demo", "demo")
 
 
-def test_an_unconfirmed_edit_that_landed_is_done_after_a_look(srv, client, db, store):
+def test_an_unconfirmed_edit_is_looked_at_on_the_next_tick_and_done_when_it_landed(srv, client, db, store):
     [line] = _advance(store, _unconfirmed(srv, landed=True), db)
-    assert line == f"{store.ext} → pl-1: placed (confirmed after an unconfirmed edit)"
+    assert line.startswith(f"{store.ext} → pl-1: edit sent, not confirmed: EditNotKept")
+    assert _row(store)["state"] == "writing" and "s9" not in store.imported("pl-1")   # Navidrome may still apply it
+    assert _advance(store, client, db, now=T0 + 30) == [
+        f"{store.ext} → pl-1: placed (confirmed after an unconfirmed edit)"]
     assert _row(store)["state"] == "done" and "s9" in store.imported("pl-1")
     [ev] = _placed(store)
     assert ev["detail"] == "Disco Edits: MFSB – Love Is the Message at 2 (confirmed after an unconfirmed edit)"
     srv.state.playlists["pl-1"]["songs"].remove("s9")                           # Michael removes it: stays removed
     srv.state.sync()
     assert _advance(store, client, db, now=T0 + 1000) == [] and _songs(srv, "pl-1") == ["s1", "s2", "s3"]
+    assert len(_updates(srv)) == 1
 
 
 def test_an_unconfirmed_edit_that_did_not_land_gives_up_without_a_second_write(srv, client, db, store):
-    [line] = _advance(store, _unconfirmed(srv, landed=False), db)
+    _advance(store, _unconfirmed(srv, landed=False), db)
+    [line] = _advance(store, client, db, now=T0 + 30)
     assert line.startswith(f"{store.ext} → pl-1: given up: edit not confirmed")
     assert _row(store)["state"] == "given_up" and _songs(srv, "pl-1") == ["s1", "s2", "s3"]
     [ev] = _not_placed(store)
     assert ev["detail"] == ("Disco Edits: edit not confirmed, look at the playlist; re-run the import to append it")
     assert "s9" not in store.imported("pl-1")                                   # the re-run can append it
-    assert _advance(store, client, db, now=T0 + 1000) == [] and _updates(srv) == []
+    assert _advance(store, client, db, now=T0 + 1000) == [] and _updates(srv) == []     # never a second write
+
+
+def test_a_failure_after_the_write_landed_leaves_the_row_writing(srv, client, db, store, monkeypatch):
+    """crates.db locked while place() records the insert: the edit stands, so the next tick only looks (never a
+    second write, and a song Michael removed meanwhile is not put back)."""
+    import sqlite3
+    real = store.mark_imported
+
+    def locked(*a):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(store, "mark_imported", locked)
+    [line] = _advance(store, client, db)
+    assert line.startswith(f"{store.ext} → pl-1: edit sent, not confirmed: OperationalError: database is locked")
+    assert _row(store)["state"] == "writing" and _songs(srv, "pl-1") == ["s1", "s9", "s2", "s3"]
+    monkeypatch.setattr(store, "mark_imported", real)
+    assert _advance(store, client, db, now=T0 + 1) == [
+        f"{store.ext} → pl-1: placed (confirmed after an unconfirmed edit)"]
+    assert len(_updates(srv)) == 1 and _songs(srv, "pl-1") == ["s1", "s9", "s2", "s3"]
+
+
+def test_the_look_finds_the_song_that_was_written(srv, client, db, store):
+    """The app's accept may name a newer copy after the write: the look checks the song the intent row wrote."""
+    store.note_placement(store.ext, "pl-1", "writing", "inserting", song_id="s9", count=False, now=T0)
+    store.set_library_song(store.ext, "s5")
+    store.commit()
+    srv.state.playlists["pl-1"]["songs"].insert(1, "s9")
+    srv.state.sync()
+    assert _advance(store, client, db, now=T0 + 1)[0].endswith("placed (confirmed after an unconfirmed edit)")
+    assert "s9" in store.imported("pl-1")
 
 
 def test_a_writing_row_left_by_a_crash_is_resolved_by_looking(srv, client, db, store):

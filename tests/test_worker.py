@@ -688,3 +688,20 @@ def test_a_failing_placement_step_does_not_stop_the_tick(world, monkeypatch):
     with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
         worker(world, srv, lines, export_s=300, exporter=lambda *a: exported.append(a)).tick()
     assert "placement failed: RuntimeError: db locked" in lines and exported and lines[-1].startswith("tick:")
+
+
+def test_a_failed_replacement_step_leaves_no_open_transaction(world, monkeypatch):
+    """The placement step commits per pair: a failed replacement's half-done writes must not ride along."""
+    store, seen = world["store"], []
+
+    def advance(jid, ctx):
+        store.log(None, None, "half-done", "x")
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("sourcing.replace.advance", advance)
+    monkeypatch.setattr("crates.placement.advance_all", lambda st, *a: seen.append(st.db.in_transaction) or [])
+    with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
+        w = worker(world, srv)
+        w.advance_replacements([7])
+        w.place_due()
+    assert seen == [False] and not [e for e in store.events(100) if e["kind"] == "half-done"]
