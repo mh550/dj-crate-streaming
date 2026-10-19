@@ -13,6 +13,26 @@ stop`; answers to the questions below go under `## Answers`. Every session reads
 
 ---
 
+### 2026-10-19 · verify N5
+
+N5-01 flipped to false (stale test count 1,515 vs 1523 in README and architecture §8; D35 not one sentence). N5-02 holds.
+
+| Feature | Step | What you ran or read | What you saw | Holds |
+|---|---|---|---|---|
+| N5-01 | 1 | read docs/next-todos.md hand-off + items 1-5 | dated 2026-10-19 paragraph with branch, N1-N4 built-not-live, migrate pending; items 1-4 say Built (N1..N4); item 5 notes import_order | yes |
+| N5-01 | 2 | grep docs/architecture.md and README.md for test count; read table, §7, quirks 16/18 | N1-N4 row 'built, not live', safety rows, quirks 16/18 updated, BUT §8 and README say 1,515 tests while check.sh now reports 1523 | no |
+| N5-01 | 3 | read tail of docs/hard-won-facts.md | 'Learned in the N1-N4 run' has fake mirror columns, trash needs worker stopped, placement state-driven | yes |
+| N5-01 | 4 | grep -c '\*default\*' pivot spec; read D35-D44 rows | 9 rows, D35-D41 and D43-D44, no gap among D35-D39; D35 is two sentences, not one | no |
+| N5-01 | 5 | read docs/plans/2026-10-17-morning-checklist.md | deploy w/ previous image, imported migrate dry run then --apply, cleanup stages, reconcile, import re-runs, each with undo | yes |
+| N5-01 | 6 | git log main..HEAD | 9c12cb1 'N5-01: docs for the dj-2026-10-17 run' exists | yes |
+| N5-01 | 7 | lib/check.sh | green, 1523 tests (cached) | yes |
+| N5-02 | 1 | git diff main...HEAD to scratch run.diff (5784 lines); read references() uses in replace.py/duplicate_cleanup.py, scan checks, load()/duplicate_groups recompute, MOVES/repoint logs, tests test_trash_refuses_unless_a_scan_finished..., test_repoint_song_logs..., test_a_strip_of_an_already_recorded... | references() checked before/after each move, trash refuses during scan or without scan since repoint, groups recomputed from navidrome.db, reverse logs present | yes |
+| N5-02 | 2 | grep new tests for /srv, docs/; grep new non-test .py for beets imports; read store.public | /srv hits are strings/mocks only; no beets import; public drops username and absolute paths | yes |
+| N5-02 | 3 | read progress N5-02 entry; git log c44011b 6e57475; plans diffstat | I1-I3 fixes with tests named; N1-N4 plans updated | yes |
+| N5-02 | 4 | read top progress entry | built/not live/open questions/first command all present | yes |
+| N5-02 | 5 | git log | 765ff88/6e57475 N5-02 commits present | yes |
+| N5-02 | 6 | lib/check.sh | green, 1523 tests | yes |
+
 ### 2026-10-19 07:55 · N5-02 · passes
 - **What:** an Opus reviewer read the whole run diff (scratch `run.diff`, `e4bf623..HEAD` without `.harness/runs`, 10k lines) against the four invariants. No Critical. Fixed test-first, RED → GREEN each:
   - **I1:** trash moved a file even when crates.db's repoint failed (busy), stranding import orders and placements on the trashed id. It now refuses: "refused: crates.db not repointed (…); run again".
