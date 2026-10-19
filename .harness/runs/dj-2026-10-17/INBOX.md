@@ -71,6 +71,11 @@ H3-05's). Gatus' config now lives in `/srv/docker/gatus/config/config.yaml`, cop
 Start Gatus only that way, never with a plain `docker compose up` from /srv/docker: deploy.sh creates
 `/srv/docker/gatus` as you, and Docker would create it as root (deploy.sh then refuses and prints the `chown`).
 
+**Done 2026-10-19 01:54:** Gatus runs (`dj-gatus-1`, http://127.0.0.1:4590), and navidrome, crates and slskd are green.
+Step 1 is done, so step 3 (the H3-03 timer) can run now. Until H3 is merged and `~/projects/dj-crate-streaming` is
+pulled, `/srv/docker/compose.yml` doesn't define gatus, so compose there calls `dj-gatus-1` an orphan.
+**Don't pass `--remove-orphans`** from /srv/docker before that, or it deletes Gatus.
+
 ## Answers
 
 ### 2026-10-19 01:53 (local)
