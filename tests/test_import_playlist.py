@@ -325,6 +325,54 @@ def test_a_comment_marker_without_a_row_is_a_foreign_playlist():
         assert c.playlist(existing.id).comment == "old #imported"            # adopted: the comment is left byte for byte
 
 
+def test_a_playlist_recreated_under_the_same_name_is_foreign_until_merged():
+    # D33/D37: the flag is per playlist id. Deleted in Navidrome and made again by hand (new id): not ours.
+    import pytest
+    with FakeSubsonicServer() as srv:
+        _lib(srv)
+        c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
+        first = ip.import_playlist("Tea tent", ROWS, c, store, source="s")
+        c.delete_playlist(first.playlist_id)
+        again = c.create_playlist("Tea tent", ["k1"])
+        assert again.id != first.playlist_id and store.is_playlist_imported(first.playlist_id)
+        with pytest.raises(ip.NameCollision):
+            ip.import_playlist("Tea tent", ROWS, c, store, source="s")
+        assert [x.id for x in c.playlist(again.id).entries] == ["k1"] and not store.is_playlist_imported(again.id)
+        ip.import_playlist("Tea tent", ROWS, c, store, source="s", merge=True)
+        assert store.is_playlist_imported(again.id)
+
+
+def test_merge_never_adopts_another_users_playlist():
+    # N2-04 review: getPlaylists lists other users' public playlists too; --merge must not record or write one.
+    import pytest
+    with FakeSubsonicServer() as srv:
+        _lib(srv)
+        c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
+        theirs = c.create_playlist("Tea tent", ["k1"])
+        srv.state.playlists[theirs.id]["owner"] = "amperfy"
+        for merge in (False, True):
+            with pytest.raises(ip.NameCollision) as e:
+                ip.import_playlist("Tea tent", ROWS, c, store, source="s", merge=merge)
+            assert "belongs to amperfy" in str(e.value) and "--merge" not in str(e.value)
+        assert not store.is_playlist_imported(theirs.id) and store.external_count() == 0
+        assert [x.id for x in c.playlist(theirs.id).entries] == ["k1"]
+
+
+def test_a_rerun_refreshes_the_rows_name_and_an_adoption_says_so():
+    # N2-04 review: `imported list` shows the name as last imported; the event tells an adoption from a creation.
+    with FakeSubsonicServer() as srv:
+        _lib(srv)
+        c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
+        first = ip.import_playlist("Tea tent", ROWS, c, store, source="s")
+        c.update_playlist(first.playlist_id, name="Tea tent 26")
+        ip.import_playlist("Tea tent 26", ROWS, c, store, source="s2")
+        assert [(r["name"], r["source"]) for r in store.imported_playlists()] == [("Tea tent 26", "s")]
+        hand = c.create_playlist("Mine", ["k1"])
+        ip.import_playlist("Mine", ROWS, c, store, source="s3", merge=True)
+        ev = {e["playlist_id"]: e["detail"] for e in store.events() if e["kind"] == "imported"}
+        assert ev == {first.playlist_id: "made by import-playlist: s", hand.id: "adopted with --merge: s3"}
+
+
 def _comment_update_raises(monkeypatch, exc):
     real = SubsonicClient.update_playlist
 

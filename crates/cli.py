@@ -134,12 +134,11 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         steps = imported.plan(app.api, app.store)
         print(imported.report(steps))
-        todo = [s for s in steps if s.action != "skip"]
         if not a.apply:
-            if todo:
+            if any(s.action != "skip" for s in steps):
                 print("\nDry run: nothing was written. Run again with --apply to record these and strip the token.")
             return 0
-        done, failed = imported.apply(app.api, app.store, todo)
+        done, failed = imported.apply(app.api, app.store, steps)          # apply() never writes a skipped one
         print(f"\nMigrated ({len(done)}): {', '.join(done) or 'none'}")
         for f in failed:
             print(f"failed: {f}"); print(f"imported migrate: {f}", file=sys.stderr)

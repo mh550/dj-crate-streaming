@@ -25,7 +25,9 @@ Anything that trashes files or writes tags needs a reviewed plan file and a reve
    edits), `sourcing/replace.py` and `crates/trash.py` (trash to `/srv/_trash`, `MOVES.txt`). Never trash while any playlist,
    hidden entries included, still holds the file. Scan between repoint and trash. Check with
    `python -m scripts.export_playlists check`. Recompute the groups right before acting.
-2. **Move the `#imported` marker into crates.db (D33).** Today `MARKER`/`is_imported`/`_rerun_comment`/`NameCollision` in
+2. **Move the `#imported` marker into crates.db (D33).** **Built (N2); live migration pending:** `crates.db`
+   `imported_playlists` (D37), `crates.cli imported migrate | list`; the runbook is at the end of
+   `docs/plans/2026-10-17-n2-imported-marker.md`. Before N2, `MARKER`/`is_imported`/`_rerun_comment`/`NameCollision` in
    `sourcing/import_playlist.py` read and write the playlist comment. Store "this playlist was made by import-playlist" in
    `crates.db` (a table or column in `crates/store.py`, beside `imported_entries`), switch the checks to it, migrate the two
    marked playlists left ("Tea tent", "shakori (Spotify)"), then strip `#imported` from their comments with

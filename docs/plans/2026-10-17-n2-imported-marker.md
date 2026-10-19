@@ -132,6 +132,10 @@ crates.db `imported_playlists`, D33, built), the "Playlist comment" bullet (left
 and 4, `docs/next-todos.md` item 2 ("built (N2); live migration pending"), the pivot spec's "Consequences in the code"
 bullet for `import_playlist`. `_rerun_comment` and `_write_comment_and_cache` may shrink to the owner-comment tier write.
 
+**Done (N2-04, 2026-10-19):** both helpers inlined (one caller each, owner comment only); `--merge` never adopts
+another user's playlist (`NameCollision` names the owner); a re-run of ours refreshes the row's name; an adoption's
+event says `adopted with --merge: <source>`. Tests: the re-created playlist (new id) is foreign until `--merge`.
+
 ## Invariants (each is a test)
 
 1. Every path that decides "ours" reads the store; no code path writes `#imported` (a grep in N2-04, plus the

@@ -55,7 +55,9 @@ listed below for the later custom client.
 - `crates/reconcile.py`: `owner="app"`. The toggle writes `crates.db` only; reconcile never reads comments or name
   markers; `set_tier` is retired; a rename in Navidrome refreshes the stored name. `judge` keeps a lossy file at or
   above the floor.
-- `sourcing/import_playlist.py`: a created playlist's comment is `#imported` alone.
+- `sourcing/import_playlist.py`: decides "ours" from crates.db `imported_playlists` (D33, D37; N2) and writes no comment
+  under `app`, so a created playlist's comment stays empty. `crates.cli imported migrate` moves the old `#imported`
+  comments into that table and strips them.
 - `web/`: the tier menu is gone; the crate switch is the one control.
 - Not removed: the `crates.tier` column, `crates/attrs.py`, `crates/migrate_attrs.py` (refused under `app`), the
   `--tier` option (accepted, no effect on quality), the stream presets in `sourcing/policy.py`. Removing them is a
