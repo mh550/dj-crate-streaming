@@ -304,7 +304,8 @@ D44, M9 §1). The code is `crates/placement.py`; the plan is `docs/plans/2026-10
   new song, and a playlist that ever had the old one added counts the new one as added too. The duplicate cleanup
   does it after `repoint` and again right before `trash` moves a file, and logs a `cleanup` event "crates.db now
   names <keeper>: …". Each repoint that changed rows appends one line `{ts, old, new, rows}` to
-  `songs-repointed.jsonl` beside crates.db; `CrateStore.unrepoint_song(line)` undoes it (lines newest first).
+  `songs-repointed.jsonl` beside crates.db (a finished copy replacement too); `CrateStore.unrepoint_song(line)`
+  undoes it (lines newest first). A file trash puts back stays repointed in crates.db until the next `repoint` run.
 - **Deleted playlist.** The reconcile that drops a deleted playlist's rows (N3) drops its `import_order` and
   `placements` too, so nothing stays due for it.
 

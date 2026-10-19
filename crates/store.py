@@ -851,7 +851,8 @@ class CrateStore:
     def unrepoint_song(self, line: dict) -> None:
         """Undo one songs-repointed.jsonl line: each row it names that still names `new` names `old` again, and the
         imported_entries rows it added go. Replay lines newest first; the caller commits. A line whose commit then
-        failed describes a repoint that did not happen; replaying it changes only rows that name `new` since."""
+        failed describes a repoint that did not happen; replaying it changes only rows that name `new` since, but
+        deletes the listed playlists' imported_entries row for `new` even if an import added it since."""
         old, new, rows = line["old"], line["new"], line["rows"]
         for pid, pos in rows["import_order"]:
             self.db.execute("UPDATE import_order SET song_id=? WHERE playlist_id=? AND position=? AND song_id=?",

@@ -174,7 +174,9 @@ is noted on stderr and never fails the action. `CRATES_DB` must be set and name 
 As built (review N4-05 I2), crates.db rows are repointed too: after each repoint, and in `trash` right before the
 move, once no playlist holds the extra, `_repoint_store` calls `CrateStore.repoint_song(extra, keeper)` (import
 orders, `imported_entries`, filed `external_wanted` rows, open placements) and logs one `cleanup` event
-"crates.db now names <keeper>: …". A failure is rolled back, noted on stderr, and never fails the repoint or the move.
+"crates.db now names <keeper>: …", and the rows changed go to `songs-repointed.jsonl` beside crates.db (N5-02). A
+failure is rolled back and noted on stderr; it never fails a repoint, but trash then leaves that file: "refused:
+crates.db not repointed (…); run again" (N5-02 I1).
 
 ### Undo
 
