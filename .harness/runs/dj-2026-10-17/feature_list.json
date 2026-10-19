@@ -419,7 +419,7 @@
         "Commit `N4-03: placement rule and place()`.",
         ".harness/check.sh is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "N4-04",
