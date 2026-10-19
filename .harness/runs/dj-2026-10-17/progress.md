@@ -13,6 +13,29 @@ stop`; answers to the questions below go under `## Answers`. Every session reads
 
 ---
 
+### 2026-10-19 02:30 · verify H3
+
+| Feature | Step | What you ran or read | What you saw | Holds |
+|---|---|---|---|---|
+| H3-01 | 1 | read tests/test_service.py l.131-143; ran it; `curl 127.0.0.1:4580/api/status` live | asserts None with no file, <10 fresh, 295–320 for mtime −300 s; live workerHeartbeatAge 5.6 | yes |
+| H3-01 | 2 | pytest tests/test_service.py + `lib/check.sh` | pass; check green (cached, 1379 tests) | yes |
+| H3-02 | 1 | ran tests/test_gatus.py; read compose gatus block | image twinproduction/gatus:v5.37.0, ports 127.0.0.1:4590:8080, config dir mount :ro; tests pass | yes |
+| H3-02 | 2 | read config.yaml and test_gatus http/secret tests | navidrome/crates/slskd 60s, failure-threshold 3; backup+disk external; only ${GATUS_*} refs; pass | yes |
+| H3-02 | 3 | read deploy/.env.example | GATUS_NTFY_TOPIC and GATUS_BACKUP_TOKEN listed | yes |
+| H3-02 | 4 | live Gatus v5.37.0 loaded config | external-endpoints supported (2 validated, running); no alternative needed | yes |
+| H3-02 | 5 | `lib/check.sh` | green | yes |
+| H3-03 | 1 | ran tests/test_health_push.py (28 tests) and read healthy/full/unmounted/unset tests | healthy success=true; full/unmounted false with reason; unset URL/token warn, no request | yes |
+| H3-03 | 2 | `systemd-analyze --user verify` on repo units; read test_the_units_pass_systemd_analyze_verify | repo units fail only because ExecStart is the not-yet-installed ~/.local/lib copy; test points it at the script and passes (reason documented) | yes |
+| H3-03 | 3 | `lib/check.sh` | green | yes |
+| H3-04 | 1 | read progress 02:25 H3-04 entry; live `curl :4590/api/v1/endpoints/statuses`; diff HEAD config vs /srv/docker/gatus/config | entry quotes deploy cmd, 3 statuses, rollback; live navidrome/crates/slskd success=True; deployed config identical | yes |
+| H3-04 | 2 | `docker inspect StartedAt` now; diff h304-before.txt h304-after.txt | navidrome/slskd/gluetun predate; crates/worker 05:55Z predate Gatus deploy 06:23Z; before/after identical; only gatus recreated | yes |
+| H3-04 | 3 | diffed INBOX H3-04 steps against spec 'Michael's one-time steps' | 3 steps verbatim | yes |
+| H3-05 | 1 | read progress H3-05 entry | I-A/I-B/I-C Important findings with fixes; no Critical | yes |
+| H3-05 | 2 | ran tests/test_monitoring_doc.py; read docs/monitoring.md vs config | table matches config (URLs, intervals, thresholds, 180 s); has checked/how often/alerts/add a check/one-time steps | yes |
+| H3-05 | 3 | `lib/check.sh` | green | yes |
+
+15 hold, 0 fail. Earlier H3-04 failure (step 2) is resolved by the Gatus-only redeploy.
+
 ### 2026-10-19 02:25 · H3-04 · passes
 - **Why again:** verify H3 un-passed H3-04 because step 2 didn't hold as written: H3-04's second deploy (crates + worker for H3-01's field) recreated them on purpose. This session re-ran only the Gatus deploy, from HEAD `a64ec80410`, which also ships H3-05's config (the alert descriptions) that was waiting for it. No code changed. Tests 1,379 → 1,379.
 - **Pre-flight (02:22):** `lib/check.sh` green (cached, 1,379). Tree clean and pushed. `systemctl show restic-backup.service -p ExecMainExitTimestamp -p ExecMainStatus` → 01:05:36 today, status 0; `is-active` → inactive; outside 03:15–04:30. Running: crates/worker `dj-crates:f4882ab85b`, gatus v5.37.0, navidrome 0.64.2. **Check** (`docker compose run --rm --no-deps worker sh -c '…export && …check'`) → exit 0, "ok: every playlist file matches Navidrome and every entry exists". Snapshots: `scripts/snapshot-crates-db.sh` → exit 0, both "integrity ok"; `cp /srv/docker/crates/crates.db.snap /srv/docker/crates/crates.db.pre-dj-2026-10-17-h3-04b.snap`; `sqlite3 /srv/docker/navidrome/navidrome.db ".backup /srv/docker/navidrome/navidrome.db.pre-dj-2026-10-17-h3-04b.snap"` → exit 0, `integrity_check` → `ok`.
