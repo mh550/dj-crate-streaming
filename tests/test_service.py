@@ -141,3 +141,25 @@ def test_status_reports_the_worker_heartbeat_age(tmp_path):
             old = time.time() - 300
             os.utime(hb, (old, old))
             assert 295 < get(srv.url + "/api/status")[2]["workerHeartbeatAge"] < 320
+
+
+def test_a_gone_playlists_crate_row_does_not_break_the_views(svc):
+    # N3: between the delete in Navidrome and the next reconcile, and while an in-flight row waits after it, the
+    # crates row has no playlist behind it. status, playlists, crates and wanted still answer.
+    fake, app, srv = svc
+    app.set_crate("pl-2", True)
+    app.store.set_track_status("pl-2", "s3", "sourcing", "downloading")
+    del fake.state.playlists["pl-2"]
+    wanted = []
+    for _ in range(2):                                    # before the reconcile, then after it (the row waits)
+        for path in ("status", "playlists", "crates", "wanted"):
+            s, _, body = get(srv.url + "/api/" + path)
+            assert s == 200, (path, body)
+        s, _, crates = get(srv.url + "/api/crates")
+        assert crates == []
+        s, _, w = get(srv.url + "/api/wanted")
+        wanted.append([t["song_id"] for t in w])
+        s, r = post(srv.url + "/api/reconcile", {})
+        assert s == 200
+    assert wanted == [["s3", "s4"], ["s3"]]               # s4 queued until the reconcile drops it; s3 is downloading
+    assert r["playlists_gone"] == ["Chicago 86: playlist no longer exists in Navidrome; 0 rows dropped, 1 in flight kept"]

@@ -9,7 +9,7 @@ from sourcing.playlist_sources import Row
 from sourcing.policy import TIERS
 from subsonic.client import SubsonicClient
 from subsonic.fake_server import FakeSubsonicServer
-from tests.test_crates import song
+from tests.test_crates import check_a_vanished_playlist_is_forgotten, check_in_flight_rows_wait, song
 from tests.test_import_playlist import _lib
 
 
@@ -105,3 +105,11 @@ def test_import_writes_no_comment(monkeypatch):
         ip.import_playlist("Garden", rows, c, store, source="x", tier="high")
         updates = [q for path, q in srv.state.requests if path.endswith("updatePlaylist")]
         assert updates and not [q for q in updates if "comment" in q]      # create, re-run, merge: no comment param
+
+
+def test_a_vanished_playlist_is_forgotten(env):
+    check_a_vanished_playlist_is_forgotten(env)
+
+
+def test_a_vanished_playlists_in_flight_rows_wait(env):
+    check_in_flight_rows_wait(env)

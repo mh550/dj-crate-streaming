@@ -684,6 +684,55 @@ class CrateStore:
             self.log(playlist_id, None, "imported", detail or f"made by import-playlist: {source}")
         return new
 
+    def forget_playlist(self, playlist_id: str) -> dict:
+        """Delete what crates.db holds for a playlist Navidrome no longer has (N3, D43); the caller commits. Rows a
+        download still has to finish wait: `sourcing`/`verify` ones and one with an approval waiting or being fetched,
+        in crate_tracks or external_wanted (a `review` question or a `failed` filed row never ends on its own, so it
+        does not wait). Every other crate_tracks row is deleted. While some wait, the `crates` row stays (fetch
+        reaches its rows through it) but loses its flag and tier, so nothing counts the playlist as tiered; once none
+        waits, it goes with the import rows and the problems setting. Open wanted rows become
+        `removed` and keep playlist_id/position/tier as history. Returns every row it changed as it was before (the
+        caller's reverse log) and `live`/`kept` counts; proposals and events are left alone."""
+        pid = (playlist_id,)
+        waits = ("(status IN ('sourcing','verify') OR (status!='removed' AND EXISTS (SELECT 1 FROM approvals a "
+                 "WHERE a.wanted_id={} AND (a.used_at IS NULL OR a.result='started'))))")
+        crate_waits = waits.format("crate_tracks.song_id")
+        dropped = [dict(r) for r in self.db.execute(
+            f"SELECT * FROM crate_tracks WHERE playlist_id=? AND NOT {crate_waits} ORDER BY position", pid)]
+        self.db.execute(f"DELETE FROM crate_tracks WHERE playlist_id=? AND NOT {crate_waits}", pid)
+        kept = self.db.execute("SELECT COUNT(*) FROM crate_tracks WHERE playlist_id=?", pid).fetchone()[0]
+        wanted_removed = []
+        ext_waits = waits.format("'ext-' || external_wanted.id")
+        for r in self.db.execute(f"SELECT *, {ext_waits} AS waits FROM external_wanted WHERE playlist_id=? ORDER BY id",
+                                 pid).fetchall():
+            r = dict(r)
+            if r.pop("waits"):
+                kept += 1
+            elif r["status"] not in ("ok", "removed"):
+                wanted_removed.append(r)
+                self.set_external_status(f"ext-{r['id']}", "removed", "playlist deleted")
+        crate = self.db.execute("SELECT * FROM crates WHERE playlist_id=?", pid).fetchone()
+        out = {"dropped": dropped, "live": sum(t["status"] != "removed" for t in dropped), "kept": kept,
+               "crate": dict(crate) if crate else None, "imported_entries": [], "imported_playlist": None,
+               "wanted_removed": wanted_removed, "problems": None}
+        if kept:
+            if crate and (crate["enabled"] or crate["tier"] is not None):
+                self.db.execute("UPDATE crates SET enabled=0, tier=NULL, updated_at=? WHERE playlist_id=?",
+                                (time.time(), playlist_id))
+            else:
+                out["crate"] = None                     # unchanged
+            return out
+        out["imported_entries"] = sorted(self.imported(playlist_id))
+        r = self.db.execute("SELECT * FROM imported_playlists WHERE playlist_id=?", pid).fetchone()
+        out["imported_playlist"] = dict(r) if r else None
+        for table in ("crates", "imported_entries", "imported_playlists"):
+            self.db.execute(f"DELETE FROM {table} WHERE playlist_id=?", pid)
+        key = (f"problems:attrs_problem:{playlist_id}",)
+        r = self.db.execute("SELECT value FROM settings WHERE key=?", key).fetchone()
+        out["problems"] = r[0] if r else None             # note_problems' value (a JSON list) for that key
+        self.db.execute("DELETE FROM settings WHERE key=?", key)
+        return out
+
     def is_playlist_imported(self, playlist_id: str) -> bool:
         return self.db.execute("SELECT 1 FROM imported_playlists WHERE playlist_id=?", (playlist_id,)).fetchone() is not None
 

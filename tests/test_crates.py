@@ -234,3 +234,67 @@ def test_mark_playlist_imported_keeps_the_first_source_and_refreshes_the_name():
     assert rows[1]["imported_at"] == first
     ev = [(e["playlist_id"], e["detail"]) for e in s.events() if e["kind"] == "imported"]
     assert sorted(ev) == [("pl-0", "migrated from comment '#imported'"), ("pl-1", "made by import-playlist: a.csv")]
+
+
+# N3 (D43): a playlist deleted in Navidrome loses its crates.db rows at the next reconcile. These two scenarios run
+# under both owners: here (owner comment) and in test_app_owner.py (owner app).
+def vanish(srv, pid):
+    del srv.state.playlists[pid]
+    srv.state.sync()
+
+
+def gone_events(store):
+    return [e for e in store.events(1000) if e["kind"] == "playlist_gone"]
+
+
+def check_a_vanished_playlist_is_forgotten(env):
+    srv, client, store, rec = env
+    rec.set_crate("pl-2", True)
+    store.mark_playlist_imported("pl-2", "Chicago 86", "test.csv")
+    store.mark_imported("pl-2", ["s3", "s4"])
+    store.commit()
+    rec.run()
+    assert len(store.tracks("pl-2")) == 3
+    vanish(srv, "pl-2")
+    rep = rec.run()
+    assert store.get("pl-2") is None
+    assert store.tracks("pl-2", include_removed=True) == []
+    assert store.imported("pl-2") == set() and not store.is_playlist_imported("pl-2")
+    assert rep.errors == [] and rep.tracks_removed == 3
+    assert rep.playlists_gone == ["Chicago 86: playlist no longer exists in Navidrome; 3 rows dropped"]
+    [ev] = gone_events(store)
+    assert ev["playlist_id"] == "pl-2" and "Chicago 86" in ev["detail"] and "3 rows dropped" in ev["detail"]
+    rep = rec.run()
+    assert rep.playlists_gone == [] and rep.errors == [] and len(gone_events(store)) == 1
+
+
+def check_in_flight_rows_wait(env):
+    srv, client, store, rec = env
+    rec.set_crate("pl-2", True)
+    rec.run()
+    store.set_track_status("pl-2", "s3", "sourcing", "downloading")
+    vanish(srv, "pl-2")
+    rep = rec.run()
+    assert [t["song_id"] for t in store.tracks("pl-2", include_removed=True)] == ["s3"]
+    c = store.get("pl-2")
+    assert c is not None and not c.enabled and c.tier is None
+    assert "pl-2" not in store.playlists_holding(["s3"])            # fetch takes the "request withdrawn" path
+    assert rep.errors == [] and rep.tracks_removed == 2
+    [ev] = gone_events(store)
+    assert "2 rows dropped, 1 in flight kept" in ev["detail"]
+    rep = rec.run()                                                  # still waiting: listed, nothing logged
+    assert rep.playlists_gone == ["Chicago 86: playlist no longer exists in Navidrome; 0 rows dropped, 1 in flight kept"]
+    assert len(gone_events(store)) == 1 and rep.tracks_removed == 0
+    store.set_track_status("pl-2", "s3", "failed", "no file")
+    rep = rec.run()
+    assert store.get("pl-2") is None and store.tracks("pl-2", include_removed=True) == []
+    assert rep.playlists_gone == ["Chicago 86: playlist no longer exists in Navidrome; 1 row dropped"]
+    assert len(gone_events(store)) == 2
+
+
+def test_a_vanished_playlist_is_forgotten(env):
+    check_a_vanished_playlist_is_forgotten(env)
+
+
+def test_a_vanished_playlists_in_flight_rows_wait(env):
+    check_in_flight_rows_wait(env)
