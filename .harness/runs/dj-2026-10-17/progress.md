@@ -13,6 +13,16 @@ stop`; answers to the questions below go under `## Answers`. Every session reads
 
 ---
 
+### 2026-10-19 02:25 · H3-04 · passes
+- **Why again:** verify H3 un-passed H3-04 because step 2 didn't hold as written: H3-04's second deploy (crates + worker for H3-01's field) recreated them on purpose. This session re-ran only the Gatus deploy, from HEAD `a64ec80410`, which also ships H3-05's config (the alert descriptions) that was waiting for it. No code changed. Tests 1,379 → 1,379.
+- **Pre-flight (02:22):** `lib/check.sh` green (cached, 1,379). Tree clean and pushed. `systemctl show restic-backup.service -p ExecMainExitTimestamp -p ExecMainStatus` → 01:05:36 today, status 0; `is-active` → inactive; outside 03:15–04:30. Running: crates/worker `dj-crates:f4882ab85b`, gatus v5.37.0, navidrome 0.64.2. **Check** (`docker compose run --rm --no-deps worker sh -c '…export && …check'`) → exit 0, "ok: every playlist file matches Navidrome and every entry exists". Snapshots: `scripts/snapshot-crates-db.sh` → exit 0, both "integrity ok"; `cp /srv/docker/crates/crates.db.snap /srv/docker/crates/crates.db.pre-dj-2026-10-17-h3-04b.snap`; `sqlite3 /srv/docker/navidrome/navidrome.db ".backup /srv/docker/navidrome/navidrome.db.pre-dj-2026-10-17-h3-04b.snap"` → exit 0, `integrity_check` → `ok`.
+- **Deploy (02:23):** `flock -n /srv/docker/crates/live.lock scripts/deploy.sh gatus` → exit 0, "gatus config from a64ec80410 in /srv/docker/gatus/config", "Container dj-gatus-1 Recreate…Started", "gatus answers on http://127.0.0.1:4590/api/v1/endpoints/statuses". Installed config equals `git show HEAD:deploy/gatus/config.yaml`; the old one is `config.yaml.prev`. Gatus: 3 endpoints + 2 external validated, restarts=0.
+- **Step 2:** `docker inspect -f '{{.Id}} {{.State.StartedAt}}'` for navidrome, crates, worker, slskd, gluetun before and after (`/tmp/harness/…/h304-before.txt`, `-after.txt`): `diff` empty, the same again a minute later. Only dj-gatus-1 was recreated (StartedAt 06:23:01Z).
+- **Statuses (first results after the restart, 06:23:01Z):** `_navidrome success=True 200 [STATUS] == 200`; `_crates success=True 200 [STATUS] == 200, has([BODY].workerHeartbeatAge) == true, [BODY].workerHeartbeatAge < 180`; `_slskd success=True 200 [CONNECTED] == true, [STATUS] < 500`. backup/disk stay grey until Michael's H3-03 timer runs. Check after the deploy → exit 0, "ok".
+- **Rollback:** `docker compose --project-directory /srv/docker -f deploy/compose.yml stop gatus && docker compose --project-directory /srv/docker -f deploy/compose.yml rm -f gatus` (to the previous config instead: `mv /srv/docker/gatus/config/config.yaml.prev /srv/docker/gatus/config/config.yaml && docker compose --project-directory /srv/docker -f deploy/compose.yml up -d --force-recreate gatus`).
+- **Step 3:** INBOX's H3-04 section lists the spec's three one-time steps verbatim (compared with the spec's "Michael's one-time steps").
+- **Michael:** nothing new; the INBOX H3-03 lines (timer + `enable-linger`) are still yours. **Proposed change:** none.
+
 ### 2026-10-19 02:25 · verify H3
 
 | Feature | Step | What you ran or read | What you saw | Holds |
