@@ -13,6 +13,23 @@ stop`; answers to the questions below go under `## Answers`. Every session reads
 
 ---
 
+### 2026-10-19 06:25 · H3-05 · passes
+- **Review (Opus, `/tmp/…/h3-review.diff`, H3 diff 8d99309..HEAD plus restic-backup's push): 0 Critical, 3 Important, all fixed test-first.**
+  - **I-A:** `deploy.sh gatus` recreated nothing after a config-only change, so a broken config "deployed green" and crash-looped at the next restart. It now runs `up -d --build --force-recreate gatus`, keeps `config.yaml.prev`, and prints a rollback that restores it.
+  - **I-B:** `Linger=no`, so the user timer stops without a session. Michael's steps now include `loginctl enable-linger mh550` (polkit allows it, no sudo).
+  - **I-C / D42 (Michael's I3 answer):** `deploy/health-push.sh` also pushes `backup` from `systemctl show --timestamp=unix` every 10 min. It reports failure on a failed run or `Result`, on age ≥ 26 h, on uptime ≥ 26 h with no run, on an unknown unit, and when systemctl fails. It pushes nothing while a run is in progress or after a recent boot. Recorded in the pivot spec and the spec's table.
+  - **Minors fixed:** readable percent-encoded `error=`, alert `description`s (the ntfy text), `TimeoutStartSec=2min` and `timeout -k 5 20`, units installed as copies (not `link`), and two tests that passed on broken code.
+  - **Second Opus review of the fixes:** 0 Critical/Important; 8 of 9 Minors fixed. Left: a retried broken deploy overwrites `.prev` (`git show <old>:deploy/gatus/config.yaml` still recovers it).
+- **Docs:** new `docs/monitoring.md` covers the checks, alerts, adding a check and Michael's steps. New `tests/test_monitoring_doc.py` fails if its table drifts from `config.yaml`. INBOX H3-03 lines were updated. Tests 1,359 → 1,379.
+- **Verified:**
+  - Every new test was red first. 5 mutations (Result, uptime, systemctl-failure, `activ*` and urlencode rules) each turned a test red. A table edit turned the doc test red.
+  - `health-push.sh` ran on the real box with only curl stubbed: both pushes `success=true` (backup 01:05 today, exit 0).
+  - A throwaway `twinproduction/gatus:v5.37.0` (`gt7821-h305`, removed) loaded the config, stored the decoded `error=` and logged the description on the alert. **Slip:** that container posted one test alert to the public ntfy.sh topic `t-x` (no fake ntfy). Its text: "backup failed, or none for 26 h…". It contains no secrets.
+  - `lib/check.sh` green, 1,379 tests (496 s).
+- **Live:** nothing ran live. Running Gatus still has the H3-04 config. The new descriptions take effect at the next `flock -n /srv/docker/crates/live.lock scripts/deploy.sh gatus`, and the backup push once Michael installs the timer.
+- **Michael:** run INBOX's H3-03 lines after H3 merges, now with copied units and `loginctl enable-linger mh550`.
+- **Proposed change:** none.
+
 ### 2026-10-19 01:58 · H3-04 · passes
 - **Pre-flight (01:53):** the brief says the Gatus vars are set. `systemctl show restic-backup.service …` → `ExecMainStatus=0`, exit 01:05:36 today; `is-active` → `inactive`; outside 03:15–04:30. Tree clean and pushed at `f4882ab85b`, suite green (cached, 1,359 tests). Running: crates/worker `dj-crates:caef38ce9b` (rollback), navidrome 0.64.2. **Check** (`docker compose run --rm --no-deps worker sh -c '…export && …check'`) → exit 0, "ok: every playlist file matches Navidrome…". Snapshots: `scripts/snapshot-crates-db.sh` → exit 0, both "integrity ok"; `cp … /srv/docker/crates/crates.db.pre-dj-2026-10-17-h3-04.snap`; `sqlite3 /srv/docker/navidrome/navidrome.db ".backup /srv/docker/navidrome/navidrome.db.pre-dj-2026-10-17-h3-04.snap"` → exit 0, `integrity_check` → `ok`.
 - **Deploy (01:54):** `flock -n /srv/docker/crates/live.lock scripts/deploy.sh gatus` → exit 0, "gatus config from f4882ab85b in /srv/docker/gatus/config … gatus answers on http://127.0.0.1:4590/api/v1/endpoints/statuses". Gatus started, so both vars are set (it exits without them). `docker inspect … StartedAt` for navidrome, crates, worker, slskd and gluetun, before vs after: identical (`diff` empty), so the Gatus deploy recreated nothing.

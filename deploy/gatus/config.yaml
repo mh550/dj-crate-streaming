@@ -51,7 +51,8 @@ endpoints:
 # Pushed from outside: POST /api/v1/endpoints/_<name>/external?success=true|false with "Authorization: Bearer <token>"
 # (key `_<name>`: no group). A missed heartbeat is a failure; one failure alerts, one success resolves.
 external-endpoints:
-  - name: backup                             # deploy/restic-backup, after a nightly backup that fully succeeded
+  - name: backup                             # deploy/restic-backup, after a nightly backup that fully succeeded, and
+                                             # deploy/health-push.sh every 10 min from systemd (exit 0, < 26 h old)
     token: "${GATUS_BACKUP_TOKEN}"
     heartbeat:
       interval: 26h
@@ -60,6 +61,7 @@ external-endpoints:
         failure-threshold: 1
         success-threshold: 1
         send-on-resolved: true
+        description: "backup failed, or none for 26 h; see journalctl -u restic-backup"
 
   - name: disk                               # deploy/health-push.sh every 10 min: /srv < 85 %, /mnt/backup mounted and < 90 %
     token: "${GATUS_BACKUP_TOKEN}"
@@ -70,3 +72,4 @@ external-endpoints:
         failure-threshold: 1
         success-threshold: 1
         send-on-resolved: true
+        description: "/srv over 85 %, /mnt/backup unmounted or over 90 %, or no push for 30 min"

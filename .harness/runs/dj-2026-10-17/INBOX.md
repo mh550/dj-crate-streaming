@@ -49,11 +49,17 @@ Written and tested, not enabled. As mh550, from a checkout of main (no sudo):
     install -D -m 0755 deploy/health-push.sh ~/.local/lib/dj-crates/health-push.sh
     install -m 0600 /dev/null ~/.config/dj-health-push.env
     printf 'GATUS_BACKUP_URL=http://127.0.0.1:4590\nGATUS_BACKUP_TOKEN=<same token as /srv/docker/.env>\n' >> ~/.config/dj-health-push.env
-    systemctl --user link $PWD/deploy/systemd/dj-health-push.service $PWD/deploy/systemd/dj-health-push.timer
+    install -D -m 0644 -t ~/.config/systemd/user deploy/systemd/dj-health-push.service deploy/systemd/dj-health-push.timer
+    systemctl --user daemon-reload
     systemctl --user enable --now dj-health-push.timer
     systemctl --user start dj-health-push.service; journalctl --user -u dj-health-push -n 5
+    loginctl enable-linger mh550     # added by H3-05: without it the user timer stops whenever mh550 has no session (Linger=no today)
 
-Rollback: `systemctl --user disable --now dj-health-push.timer`.
+Rollback: `systemctl --user disable --now dj-health-push.timer` (and `loginctl disable-linger mh550`).
+
+H3-05 (2026-10-19): the timer now also reports the nightly backup from systemd to `backup` (your I3 answer, D42), so
+a failed or missing backup alerts within 10 min. The units are copied now, not linked from the checkout (a branch
+switch there would remove them), and `enable-linger` is new. Same lines: `docs/monitoring.md` → "Michael's one-time steps".
 
 ### H3-04 (2026-10-17): Michael's one-time steps for monitoring (docs/specs/2026-10-17-backup-lock-and-monitoring.md, verbatim)
 H3-04 deploys Gatus only after you write "gatus vars set" under Answers (step 1): without the two values Gatus

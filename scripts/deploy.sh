@@ -28,20 +28,26 @@ if [[ " ${services[*]} " == *" gatus "* ]]; then
         exit 1
     fi
     # Gatus reads a copy of this commit's checks, not the checkout: removing a worktree mustn't take monitoring down.
-    # mh550 creates the directory (Docker would make it root's) and the copy is renamed into place, so a running
-    # Gatus reloads a whole file. compose.yml mounts the same GATUS_DIR.
+    # mh550 creates the directory (Docker would make it root's) and the copy is renamed into place, so Gatus reads a
+    # whole file. The one it replaces stays as config.yaml.prev, the rollback. compose.yml mounts the same GATUS_DIR.
     export GATUS_DIR="${GATUS_DIR:-/srv/docker/gatus}"
-    mkdir -p "$GATUS_DIR/config"
+    mkdir -p "$GATUS_DIR/config" 2>/dev/null || true      # a failure is reported just below, with the fix
     if [ ! -w "$GATUS_DIR/config" ]; then
         echo "deploy: $GATUS_DIR/config is not writable (made by Docker as root?); Michael: sudo chown -R $(id -u):$(id -g) $GATUS_DIR" >&2
         exit 1
     fi
     git show HEAD:deploy/gatus/config.yaml > "$GATUS_DIR/config/config.yaml.new"
+    [ -f "$GATUS_DIR/config/config.yaml" ] && cp -p "$GATUS_DIR/config/config.yaml" "$GATUS_DIR/config/config.yaml.prev"
     mv -f "$GATUS_DIR/config/config.yaml.new" "$GATUS_DIR/config/config.yaml"
     echo "deploy: gatus config from $GIT_SHA in $GATUS_DIR/config"
 fi
 echo "deploy: building ${services[*]} from $GIT_SHA ($(git rev-parse --abbrev-ref HEAD)) in $root"
-docker compose --project-directory /srv/docker -f "$root/deploy/compose.yml" up -d --build "${services[@]}"
+# Gatus is always recreated: after a config-only change `up -d` would keep the old process, whose API answers at
+# once, and an invalid new file would only show at the next restart (as a crash loop). Recreated, it loads the file
+# now, and the wait below fails on a bad one.
+recreate=()
+[[ " ${services[*]} " == *" gatus "* ]] && recreate=(--force-recreate)
+docker compose --project-directory /srv/docker -f "$root/deploy/compose.yml" up -d --build ${recreate[@]+"${recreate[@]}"} "${services[@]}"
 docker compose --project-directory /srv/docker -f "$root/deploy/compose.yml" ps "${services[@]}"
 if [[ " ${services[*]} " == *" gatus "* ]]; then
     # `up -d` exits 0 even when Gatus exits at start (an unset GATUS_NTFY_TOPIC or GATUS_BACKUP_TOKEN), so wait for
@@ -56,7 +62,9 @@ if [[ " ${services[*]} " == *" gatus "* ]]; then
     done
     echo "deploy: gatus did not answer $url within ${GATUS_WAIT:-30} s; are GATUS_NTFY_TOPIC and GATUS_BACKUP_TOKEN" \
          "set in /srv/docker/.env? \`docker compose --project-directory /srv/docker -f $root/deploy/compose.yml logs gatus\`." >&2
-    echo "deploy: rollback: docker compose --project-directory /srv/docker -f $root/deploy/compose.yml stop gatus &&" \
+    echo "deploy: rollback to the last config: mv $GATUS_DIR/config/config.yaml.prev $GATUS_DIR/config/config.yaml &&" \
+         "docker compose --project-directory /srv/docker -f $root/deploy/compose.yml up -d --force-recreate gatus" >&2
+    echo "deploy: or remove Gatus: docker compose --project-directory /srv/docker -f $root/deploy/compose.yml stop gatus &&" \
          "docker compose --project-directory /srv/docker -f $root/deploy/compose.yml rm -f gatus" >&2
     exit 1
 fi

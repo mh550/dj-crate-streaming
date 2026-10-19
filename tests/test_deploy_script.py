@@ -59,16 +59,46 @@ def test_deploying_gatus_installs_the_commits_config_then_starts_only_gatus(repo
     assert out.returncode == 0, out.stderr
     assert out.config.read_bytes() == (repo / "deploy" / "gatus" / "config.yaml").read_bytes()
     assert sorted(p.name for p in out.config.parent.iterdir()) == ["config.yaml"]     # no temp file left behind
-    assert any(line.endswith(" up -d --build gatus") for line in out.docker), out.docker
+    assert any(line.endswith(" up -d --build --force-recreate gatus") for line in out.docker), out.docker
 
 
-def test_the_next_gatus_deploy_replaces_the_config_with_the_new_commits(repo):
+def test_the_next_gatus_deploy_replaces_the_config_and_keeps_the_previous_one(repo):
     assert _deploy(repo, "gatus").returncode == 0
+    first = (repo / "deploy" / "gatus" / "config.yaml").read_text()
     (repo / "deploy" / "gatus" / "config.yaml").write_text("endpoints: []\n")
     _git(repo, "commit", "-q", "-am", "second")
     out = _deploy(repo, "gatus")
     assert out.returncode == 0, out.stderr
     assert out.config.read_text() == "endpoints: []\n"
+    assert (out.config.parent / "config.yaml.prev").read_text() == first
+
+
+def test_a_config_only_change_still_restarts_gatus_so_a_broken_config_fails_the_deploy(repo):
+    # H3-05 review I-A: a plain `up -d` keeps the old process (same service definition), whose API answers at once,
+    # and a bad file only fails at the next restart. --force-recreate makes Gatus load the new file now
+    assert _deploy(repo, "gatus").returncode == 0
+    (repo / "deploy" / "gatus" / "config.yaml").write_text("not: [valid\n")
+    _git(repo, "commit", "-q", "-am", "broken")
+    out = _deploy(repo, "gatus", answers_after=None)
+    assert out.returncode == 1
+    assert any(line.endswith(" up -d --build --force-recreate gatus") for line in out.docker), out.docker
+    # how to put the last good one back: restore the copy, then recreate so Gatus loads it
+    assert f"mv {repo.parent / 'gatus'}/config/config.yaml.prev {repo.parent / 'gatus'}/config/config.yaml" in out.stderr
+    assert "up -d --force-recreate gatus" in out.stderr
+
+
+def test_an_unwritable_gatus_directory_gets_the_chown_hint_not_a_bare_mkdir_error(repo):
+    # Docker made /srv/docker/gatus root's before config/ existed: mkdir fails, the hint must still be printed
+    g = repo.parent / "gatus"
+    g.mkdir()
+    g.chmod(0o555)
+    try:
+        out = _deploy(repo, "gatus")
+    finally:
+        g.chmod(0o755)
+    assert out.returncode == 1
+    assert "is not writable" in out.stderr and "sudo chown -R" in out.stderr
+    assert out.docker == []
 
 
 def test_compose_gets_the_same_gatus_directory(repo):

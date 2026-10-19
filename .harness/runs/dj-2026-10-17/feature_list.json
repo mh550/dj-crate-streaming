@@ -275,7 +275,7 @@
         "docs/monitoring.md exists and matches deploy/gatus/config.yaml",
         "`.harness/check.sh` is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "N2-01",

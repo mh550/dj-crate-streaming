@@ -1,5 +1,5 @@
 [Unit]
-Description=Push disk health to Gatus (deploy/health-push.sh)
+Description=Push disk and backup health to Gatus (deploy/health-push.sh)
 
 [Service]
 Type=oneshot
@@ -7,3 +7,5 @@ Type=oneshot
 EnvironmentFile=-%h/.config/dj-health-push.env
 # The installed copy, so the unit survives a worktree being removed
 ExecStart=%h/.local/lib/dj-crates/health-push.sh
+# A df hung on a dying disk must not keep the oneshot running (the timer would never fire again)
+TimeoutStartSec=2min

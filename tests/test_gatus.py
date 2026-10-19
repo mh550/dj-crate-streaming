@@ -119,8 +119,11 @@ def test_the_backup_and_disk_external_endpoints_have_heartbeats_and_alert_at_onc
     assert ext["disk"]["heartbeat"] == {"interval": "30m"}
     for e in ext.values():
         assert "group" not in e                            # key `_<name>`, what the pushers POST to
-        assert e["alerts"] == [{"type": "ntfy", "failure-threshold": 1, "success-threshold": 1,
-                                "send-on-resolved": True}]
+        alert = dict(e["alerts"][0])
+        # pushed results carry no conditions, so the description is all the ntfy message says about the cause
+        assert len(alert.pop("description")) > 20
+        assert [alert] == [{"type": "ntfy", "failure-threshold": 1, "success-threshold": 1, "send-on-resolved": True}]
+        assert len(e["alerts"]) == 1
 
 
 def test_restic_backup_pushes_to_the_backup_endpoints_key():
