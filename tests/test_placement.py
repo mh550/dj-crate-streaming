@@ -129,6 +129,29 @@ def test_the_edit_is_one_update_that_only_inserts(srv, db, store):
     assert after[:1] == before[:1] and after[1] == "s9" and after[2:] == before[1:]      # nothing moved or removed
 
 
+def _is_subsequence(short, long):
+    it = iter(long)
+    return all(x in it for x in short)
+
+
+@pytest.mark.parametrize("now", [
+    ["s1", "s2", "s3"],
+    ["s3", "s2", "s1"],                                    # Michael reordered it
+    ["s2", "s3", "s4", "s5"],                              # s1 removed, s4/s5 appended by earlier re-runs
+    ["s4", "s1", "s4", "s3", "s1"],                        # duplicates, s2 removed
+    ["s5"],
+    [],
+])
+def test_insert_only_the_playlist_before_is_a_subsequence_of_after(srv, client, db, store, now):
+    """M9 §1 safety rule: no existing entry moves or is removed; exactly one entry (the placed song) is added."""
+    srv.state.playlists["pl-1"]["songs"] = list(now)
+    srv.state.sync()
+    assert _place(store, client, db).startswith("placed at ")
+    after = _songs(srv, "pl-1")
+    assert len(after) == len(now) + 1 and after.count("s9") == 1
+    assert _is_subsequence(now, after) and [s for s in after if s != "s9"] == now
+
+
 def test_with_the_earlier_neighbour_removed_it_goes_before_the_later_one(srv, client, db, store):
     srv.state.playlists["pl-1"]["songs"].remove("s1")                           # Michael removed s1
     srv.state.sync()

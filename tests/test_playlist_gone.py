@@ -398,3 +398,22 @@ def test_forget_playlist_drops_its_import_order_and_placements_and_keeps_a_share
     assert s.import_order("pl-2") and s.placement(shared, "pl-2")["state"] == "open"
     assert s.external(shared)["status"] == "needs_source"                  # pl-2 still wants it
     assert s.external(own)["status"] == "removed" and [f"ext-{r['id']}" for r in out["wanted_removed"]] == [own]
+
+
+def test_a_forgotten_playlist_leaves_no_due_placement():
+    # N4-05 (M9 §1): a playlist deleted while a filed track waits for it is not due any more; the other one still is.
+    s = CrateStore()
+    for pid in ("pl-1", "pl-2"):
+        s.mark_playlist_imported(pid, pid.upper(), "spotify")
+    shared = s.add_external_wanted("Chic", "Good Times", playlist_id="pl-1", position=2)
+    s.record_import_order("pl-1", [(1, "s1", None), (2, None, shared)])
+    s.record_import_order("pl-2", [(1, None, shared)])
+    s.set_library_song(shared, "s9")
+    s.set_external_status(shared, "ok", "filed")
+    s.note_placement(shared, "pl-1", "writing", "inserting at 1 into 1 entries (after s1)")
+    s.commit()
+    assert sorted(d["playlist_id"] for d in s.due_placements()) == ["pl-1", "pl-2"]
+    s.forget_playlist("pl-1")
+    s.commit()
+    assert [(d["wanted_id"], d["playlist_id"]) for d in s.due_placements()] == [(shared, "pl-2")]
+    assert s.placement(shared, "pl-1") is None
