@@ -369,6 +369,15 @@ and commands: `docs/worker.md`. What changed, and why:
   (`reconcile.lock`, 60 s, then the web answers 503 and the worker skips). A row in flight (`sourcing`, `verify`,
   `review`, or `failed` with a filed path) keeps its status whatever the verdict, and survives its playlist losing
   its tier.
+- **A deleted playlist's rows are dropped by the next reconcile** (N3, D43; `Reconciler._forget_vanished`,
+  `CrateStore.forget_playlist`). Only a playlist with a `crates` or `imported_playlists` row that a successful
+  getPlaylists does not list, and that getPlaylist answers with error 70 (not found), counts as gone; a failed
+  getPlaylists drops nothing, nor does an empty listing or more than 3 missing at once (an error instead). Its
+  `crate_tracks` rows go, except `sourcing`/`verify` ones and ones with an approval in progress, which wait (the
+  `crates` row stays, flag and tier cleared, until they finish); then the `crates`, `imported_entries` and
+  `imported_playlists` rows go too. Open wanted rows become `removed` ("playlist deleted"). One `playlist_gone`
+  event per run that changes something, and one reverse-log line in `playlists-gone.jsonl` beside `crates.db`
+  (replay newest first). It used to be the error "playlist no longer exists in Navidrome" on every run.
 - **Copy replacement** (`sourcing/replace.py`): a resumable job (`replacements` table: repoint, trash, scan, done,
   or blocked). It starts only when the stored verification has `replaceable` literally true and the old file is
   still the one compared; it repoints **every** playlist (not only crates), then moves the old copy to

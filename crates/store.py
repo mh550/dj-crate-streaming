@@ -694,7 +694,9 @@ class CrateStore:
         `removed` and keep playlist_id/position/tier as history. Returns every row it changed as it was before (the
         caller's reverse log) and `live`/`kept` counts; proposals and events are left alone."""
         pid = (playlist_id,)
-        waits = ("(status IN ('sourcing','verify') OR (status!='removed' AND EXISTS (SELECT 1 FROM approvals a "
+        if not self.db.in_transaction:      # fetch and the web write from other processes: lock before the first read
+            self.db.execute("BEGIN IMMEDIATE")
+        waits =("(status IN ('sourcing','verify') OR (status!='removed' AND EXISTS (SELECT 1 FROM approvals a "
                  "WHERE a.wanted_id={} AND (a.used_at IS NULL OR a.result='started'))))")
         crate_waits = waits.format("crate_tracks.song_id")
         dropped = [dict(r) for r in self.db.execute(

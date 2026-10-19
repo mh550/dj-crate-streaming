@@ -76,6 +76,19 @@ def test_another_error_than_70_is_not_gone(env, monkeypatch):
                           "Navidrome is starting; kept"]
 
 
+def test_a_garbled_getplaylist_answer_is_not_gone_and_the_run_finishes(env, monkeypatch):
+    srv, client, store, rec = env
+    rec.set_crate("pl-2", True)
+    before = snapshot(store, "pl-2")
+    vanish(srv, "pl-2")
+
+    def garbled(pid):
+        raise KeyError("playlist")                    # a response without "playlist", a truncated body, …
+    monkeypatch.setattr(client, "playlist", garbled)
+    rep = rec.run()
+    assert snapshot(store, "pl-2") == before and gone_events(store) == []
+    assert rep.errors == ["Chicago 86: missing from getPlaylists but getPlaylist says 'playlist'; kept"]
+
 def test_a_failing_listing_raises_and_changes_nothing(env, monkeypatch):
     srv, client, store, rec = env
     rec.set_crate("pl-2", True)
@@ -317,3 +330,48 @@ def test_a_wanted_row_with_an_approval_in_progress_waits(env):
     assert store.is_playlist_imported("pl-3")
     assert rep.playlists_gone == ["Sunday Listening: playlist no longer exists in Navidrome; 0 rows dropped, "
                                   "1 in flight kept"]
+
+
+def test_a_still_listed_playlists_hidden_rows_are_untouched(env):
+    srv, client, store, rec = env
+    rec.set_crate("pl-1", True)
+    rec.set_crate("pl-2", True)
+    gone = srv.state.playlists["pl-1"]["songs"].pop()          # a song taken out of pl-1: its row becomes `removed`
+    srv.state.sync()
+    rec.run()
+    rows = lambda: [{k: v for k, v in t.items() if k != "updated_at"} for t in store.tracks("pl-1", include_removed=True)]
+    before = rows()
+    assert [t["status"] for t in before if t["song_id"] == gone] == ["removed"]
+    vanish(srv, "pl-2")
+    rep = rec.run()
+    assert rep.playlists_gone and store.get("pl-2") is None
+    assert rows() == before and store.get("pl-1").enabled
+
+
+def test_a_row_finishing_while_forget_reads_is_logged_or_kept(tmp_path):
+    """Fetch and the web write from other processes: a row that leaves `sourcing` between forget_playlist's read and
+    its delete must not be deleted unlogged. The forget holds the write lock from its first read."""
+    import sqlite3
+    s = CrateStore(tmp_path / "crates.db")
+    s.set_enabled("pl-1", "PL-1", True)
+    s.upsert_track("pl-1", "s1", 0, {"title": "a"}, "ok", None)
+    s.upsert_track("pl-1", "s2", 1, {"title": "b"}, "sourcing", None)
+    s.commit()
+    other = sqlite3.connect(tmp_path / "crates.db", timeout=0)
+    raced = []
+
+    def finish_s2_meanwhile(sql):
+        if not raced and sql.lstrip().startswith("SELECT * FROM crate_tracks"):
+            try:
+                other.execute("UPDATE crate_tracks SET status='ok' WHERE song_id='s2'")
+                other.commit()
+                raced.append("committed")
+            except sqlite3.OperationalError:            # locked: the forget holds the write lock
+                raced.append("locked")
+    s.db.set_trace_callback(finish_s2_meanwhile)
+    out = s.forget_playlist("pl-1")
+    s.db.set_trace_callback(None)
+    s.commit()
+    left = [r[0] for r in s.db.execute("SELECT song_id FROM crate_tracks WHERE playlist_id='pl-1'")]
+    assert raced == ["locked"]
+    assert [t["song_id"] for t in out["dropped"]] == ["s1"] and left == ["s2"] and out["kept"] == 1

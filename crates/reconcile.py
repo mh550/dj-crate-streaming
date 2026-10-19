@@ -353,12 +353,12 @@ class Reconciler:
             if c.effective is None and c.playlist_id in present:
                 rep.tracks_removed += self._untier(c.playlist_id)
         self.store.commit()
-        self._forget_vanished(rep, playlists, known)
+        self._forget_vanished(rep, present, known)
         rep.external_tiers = self.store.derive_external_tiers()
         self.store.commit()
         return rep
 
-    def _forget_vanished(self, rep: ReconcileReport, playlists: list[Playlist], known: dict) -> None:
+    def _forget_vanished(self, rep: ReconcileReport, present: set[str], known: dict) -> None:
         """Playlists crates.db knows (a `crates` or `imported_playlists` row) that getPlaylists did not list lose
         their rows (CrateStore.forget_playlist, D43), each confirmed gone by getPlaylist's error 70. An empty listing,
         or more than VANISH_LIMIT missing at once among those worth guarding (tiered or imported: an untiered row is
@@ -366,27 +366,26 @@ class Reconciler:
         user, not deletions: nothing is dropped. An event and a reverse-log line are written only by a run that
         changes something, so a playlist whose rows wait for a download is listed in rep.playlists_gone every run
         but logged once."""
-        present = {p.id for p in playlists}
         imported = {r["playlist_id"]: r["name"] for r in self.store.imported_playlists()}
-        names = {**imported, **{pid: c.name for pid, c in known.items()}}
-        missing = sorted((pid for pid in names if pid not in present), key=lambda pid: (names[pid] or "", pid))
-        guarded = [names[pid] or pid for pid in missing if pid in imported or known[pid].effective is not None]
-        if missing and not playlists:
+        names = {pid: name or pid for pid, name in {**imported, **{pid: c.name for pid, c in known.items()}}.items()}
+        missing = sorted((pid for pid in names if pid not in present), key=lambda pid: (names[pid], pid))
+        guarded = [names[pid] for pid in missing if pid in imported or known[pid].effective is not None]
+        if missing and not present:
             rep.errors.append(f"getPlaylists listed no playlist; nothing dropped "
-                              f"({len(missing)} known: {', '.join(names[pid] or pid for pid in missing)})")
+                              f"({len(missing)} known: {', '.join(names[pid] for pid in missing)})")
             return
         if len(guarded) > VANISH_LIMIT:
             rep.errors.append(f"{len(guarded)} known playlists missing from Navidrome at once "
                               f"({', '.join(guarded)}); nothing dropped")
             return
         for pid in missing:
-            name = names[pid] or pid
+            name = names[pid]
             try:
                 self.client.playlist(pid)
                 why = "reads it"
             except SubsonicError as e:
                 why = None if e.code == 70 else f"says {e}"
-            except OSError as e:
+            except Exception as e:                      # anything else is not "gone" either
                 why = f"says {e}"
             if why:
                 rep.errors.append(f"{name}: missing from getPlaylists but getPlaylist {why}; kept")
@@ -417,7 +416,8 @@ class Reconciler:
     def _log_forgotten(self, pid: str, name: str, out: dict) -> None:
         """One JSON line per forget_playlist that changed something, beside crates.db (none for an in-memory
         store): every row as it was, so each can be put back. A playlist whose rows waited has several lines (the
-        first one holds its `crates` row before it was cleared): replay them newest first."""
+        first one holds its `crates` row before it was cleared): replay them newest first. A line whose commit then
+        failed describes a forget that did not happen; replaying it only re-inserts rows that are still there."""
         if self.store.path == ":memory:":
             return
         line = json.dumps({"ts": time.time(), "playlist_id": pid, "name": name, "forgotten": out}, ensure_ascii=False)
