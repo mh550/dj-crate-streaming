@@ -334,7 +334,7 @@
         "Commit `N2-04: review and simplify the imported marker move`.",
         ".harness/check.sh is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "N3-01",
