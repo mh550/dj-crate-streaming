@@ -82,6 +82,11 @@ def _checked(client, db: Path, playlist_id: str) -> tuple[str, list[str]]:
     return name, seen
 
 
+def checked_playlist(client, db: Path, playlist_id: str) -> tuple[str, list[str]]:
+    """(navidrome.db's name, checked_entries) in one read."""
+    return _checked(client, db, playlist_id)
+
+
 def checked_entries(client, db: Path, playlist_id: str) -> list[str]:
     """The visible song ids of a playlist, safe to edit by index: raises PlaylistSkew unless navidrome.db's
     playlist_tracks for it, in position order, holds the same ids and every one is a present media_file row;
