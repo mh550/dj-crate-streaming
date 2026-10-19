@@ -348,7 +348,7 @@
         "Commit `N3-01: plan for dropping a vanished playlist's rows`.",
         ".harness/check.sh is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "N3-02",

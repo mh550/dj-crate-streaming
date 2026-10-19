@@ -13,6 +13,13 @@ stop`; answers to the questions below go under `## Answers`. Every session reads
 
 ---
 
+### 2026-10-19 03:40 · N3-01 · passes
+- **What:** new `docs/plans/2026-10-17-n3-vanished-playlist.md` (149 lines) and `D43 *default*` in the pivot spec. Reconcile will drop the rows of a playlist deleted in Navidrome via `CrateStore.forget_playlist`: `crate_tracks` rows go at once except `sourcing`/`verify` (and a row with an approval in progress); once none waits, the `crates` row, `imported_entries`, `imported_playlists` and its problems setting go; open wanted rows become `removed` ("playlist deleted") but keep `playlist_id`/`position`/`tier`. One `playlist_gone` event per deleting run, a JSONL reverse log (`playlists-gone.jsonl` beside crates.db), `rep.playlists_gone` instead of `rep.errors`. Guards: each id is confirmed by getPlaylist error 70, and more than 3 missing at once (or an empty listing) drops nothing. Plan only: no code, tests 1,412 → 1,412.
+- **Verified:** an Opus review of the plan against the code (diff in scratch `n3-01.diff`) found 1 Critical (an empty listing would erase every crate), 5 Important (no reverse log; a `failed`-with-path or `review` row never finishes so the row would wait forever; a waiting `crates` row stayed tiered so fetch would replace a copy for a gone playlist; open wanted rows stayed downloadable; the 70 check also matches another user's playlist made private) and 7 Minor; I checked the cited lines (`fetch.py:262`, `store.py:458`, `compose.yml:97` 600 s, the `in_flight` SQL function) and folded all of them into the plan. `lib/check.sh` green: 506 s, 1,412 tests. Nothing live was run.
+- **Next (N3-02):** build it as the plan says; the test list is in the plan. The live effect after deploy is the worker dropping "sockseek / clouds" on its own (≤ 600 s).
+- **Questions for Michael:** D43 — OK that a vanished playlist's rows are deleted (reverse log kept), that more than 3 vanishing in one run drops nothing until you look, and that another user's playlist turning private counts as gone?
+- **Proposed changes:** N3-01 named the decision D38, which the snapshot decision already holds; I used D43. N3-02's step 3 should read "as the plan says" with `forget_playlist` returning a dict (not `int`), waiting rows narrowed to `sourcing`/`verify` (not all `in_flight`), and its in-flight step adding "the `crates` row is kept with `enabled=0`, no tier". N3-02 should also test the mass-vanish guard and the reverse log.
+
 ### 2026-10-19 · verify N2
 
 | Feature | Step | What you ran or read | What you saw | Holds |
