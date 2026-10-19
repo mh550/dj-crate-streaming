@@ -126,6 +126,12 @@ class CrateApp:
     def playlists(self) -> list[dict]:
         return [self.reconciler.crate_view(p) for p in self.api.playlists()]
 
+    def crates(self) -> list[dict]:
+        """The crates Navidrome still lists (one getPlaylists): a crate row whose playlist is gone waits for the
+        next reconcile to drop it (N3), and is not shown."""
+        on = {c.playlist_id for c in self.store.all(enabled_only=True)}
+        return [self.reconciler.crate_view(p) for p in self.api.playlists() if p.id in on]
+
     def playlist(self, pid: str) -> dict:
         pl = self.api.playlist(pid)
         view = self.reconciler.crate_view(pl)
@@ -410,7 +416,7 @@ def make_handler(app: CrateApp):
                 if head == "playlists" and len(p) == 2:
                     return self._json(app.playlist(p[1]))
                 if head == "crates":
-                    return self._json([app.reconciler.crate_view(app.api.playlist(c.playlist_id)) for c in app.store.all(enabled_only=True)])
+                    return self._json(app.crates())
                 if head == "wanted" and len(p) == 1:
                     return self._json(public(app.store.wanted()))
                 if head == "wanted" and len(p) == 2:

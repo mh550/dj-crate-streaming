@@ -25,6 +25,7 @@ gets ReconcileBusy (the web client answers 503, the worker skips that run) havin
 from __future__ import annotations
 
 import fcntl
+import json
 import os
 import threading
 import time
@@ -41,6 +42,9 @@ from .store import CrateStore, held_reason, in_flight
 # Name markers, for clients that can rename a playlist but not edit its comment
 # (most phone apps). "Disco Edits [crate]" or "🎛 Disco Edits" both count.
 NAME_MARKERS = ("[crate]", "🎛")
+
+# More known playlists than this missing from one getPlaylists is not Michael deleting them (D43): nothing is dropped.
+VANISH_LIMIT = 3
 
 
 def default_owner() -> str:
@@ -173,6 +177,7 @@ class ReconcileReport:
     attr_changes: list[str] = field(default_factory=list)   # "<name>: crate off→on (comment wins)"
     problems: list[str] = field(default_factory=list)       # attrs problems: "<name>: unknown tier …"
     external_tiers: list[str] = field(default_factory=list) # "ext-7: medium → high" (derive_external_tiers)
+    playlists_gone: list[str] = field(default_factory=list) # "<name>: playlist no longer exists …; 3 rows dropped"
 
     def as_dict(self) -> dict:
         return self.__dict__.copy()
@@ -347,13 +352,79 @@ class Reconciler:
         for c in self.store.all():
             if c.effective is None and c.playlist_id in present:
                 rep.tracks_removed += self._untier(c.playlist_id)
-        # Tiered playlists that vanished from Navidrome.
-        for pid, c in known.items():
-            if c.effective is not None and pid not in present:
-                rep.errors.append(f"{c.name}: playlist no longer exists in Navidrome")
+        self.store.commit()
+        self._forget_vanished(rep, present, known)
         rep.external_tiers = self.store.derive_external_tiers()
         self.store.commit()
         return rep
+
+    def _forget_vanished(self, rep: ReconcileReport, present: set[str], known: dict) -> None:
+        """Playlists crates.db knows (a `crates` or `imported_playlists` row) that getPlaylists did not list lose
+        their rows (CrateStore.forget_playlist, D43), each confirmed gone by getPlaylist's error 70. An empty listing,
+        or more than VANISH_LIMIT missing at once among those worth guarding (tiered or imported: an untiered row is
+        a switched-off crate, or one already cleared while its downloads finish), looks like the wrong Navidrome or
+        user, not deletions: nothing is dropped. An event and a reverse-log line are written only by a run that
+        changes something, so a playlist whose rows wait for a download is listed in rep.playlists_gone every run
+        but logged once."""
+        imported = {r["playlist_id"]: r["name"] for r in self.store.imported_playlists()}
+        names = {pid: name or pid for pid, name in {**imported, **{pid: c.name for pid, c in known.items()}}.items()}
+        missing = sorted((pid for pid in names if pid not in present), key=lambda pid: (names[pid], pid))
+        guarded = [names[pid] for pid in missing if pid in imported or known[pid].effective is not None]
+        if missing and not present:
+            rep.errors.append(f"getPlaylists listed no playlist; nothing dropped "
+                              f"({len(missing)} known: {', '.join(names[pid] for pid in missing)})")
+            return
+        if len(guarded) > VANISH_LIMIT:
+            rep.errors.append(f"{len(guarded)} known playlists missing from Navidrome at once "
+                              f"({', '.join(guarded)}); nothing dropped")
+            return
+        for pid in missing:
+            name = names[pid]
+            try:
+                self.client.playlist(pid)
+                why = "reads it"
+            except SubsonicError as e:
+                why = None if e.code == 70 else f"says {e}"
+            except Exception as e:                      # anything else is not "gone" either
+                why = f"says {e}"
+            if why:
+                rep.errors.append(f"{name}: missing from getPlaylists but getPlaylist {why}; kept")
+                continue
+            try:
+                out = self.store.forget_playlist(pid)
+                n = len(out["dropped"])
+                line = f"{name}: playlist no longer exists in Navidrome; {n} row{'' if n == 1 else 's'} dropped" \
+                    + (f", {out['kept']} in flight kept" if out["kept"] else "")
+                if any(out[k] for k in ("dropped", "crate", "imported_entries", "imported_playlist", "wanted_removed",
+                                        "problems")):
+                    self._log_forgotten(pid, name, out)
+                    c = out["crate"]                     # a tiered row's flag and tier (a cleared one was logged)
+                    self.store.log(pid, None, "playlist_gone", line + (
+                        f"; was crate={_onoff(bool(c['enabled']))} tier={c['tier'] or 'none'}"
+                        if c and (c["enabled"] or c["tier"] is not None) else ""))
+                    self.store.commit()
+            except OSError as e:                         # no reverse log, no delete
+                self.store.db.rollback()
+                rep.errors.append(f"{name}: playlist no longer exists in Navidrome; kept: reverse log not written ({e})")
+                continue
+            except Exception:                            # nothing half-done waits for someone else's commit
+                self.store.db.rollback()
+                raise
+            rep.playlists_gone.append(line)
+            rep.tracks_removed += out["live"]
+
+    def _log_forgotten(self, pid: str, name: str, out: dict) -> None:
+        """One JSON line per forget_playlist that changed something, beside crates.db (none for an in-memory
+        store): every row as it was, so each can be put back. A playlist whose rows waited has several lines (the
+        first one holds its `crates` row before it was cleared): replay them newest first. A line whose commit then
+        failed describes a forget that did not happen; replaying it only re-inserts rows that are still there."""
+        if self.store.path == ":memory:":
+            return
+        line = json.dumps({"ts": time.time(), "playlist_id": pid, "name": name, "forgotten": out}, ensure_ascii=False)
+        with open(Path(self.store.path).parent / "playlists-gone.jsonl", "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+            f.flush()
+            os.fsync(f.fileno())
 
     def policy_for(self, tier: str) -> QualityPolicy:
         """The crate tier is this reconciler's policy (a test or service may pass its own); the others are policy.toml's."""

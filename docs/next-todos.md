@@ -32,8 +32,9 @@ Anything that trashes files or writes tags needs a reviewed plan file and a reve
    `crates.db` (a table or column in `crates/store.py`, beside `imported_entries`), switch the checks to it, migrate the two
    marked playlists left ("Tea tent", "shakori (Spotify)"), then strip `#imported` from their comments with
    `crates.reconcile.write_comment`. Update tests (`tests/test_import_playlist.py` marker tests, `tests/test_app_owner.py`).
-3. **Drop the dead crate row** ("sockseek / clouds", playlist deleted): reconcile still reports "playlist no longer exists".
-   Make `Reconciler._run` (`crates/reconcile.py`) remove the rows of a playlist that vanished, with an event.
+3. **Drop the dead crate row** ("sockseek / clouds", playlist deleted). **Built (N3), not deployed:** the next reconcile
+   drops a deleted playlist's rows with a `playlist_gone` event and a reverse log (`docs/architecture.md` §9,
+   `docs/plans/2026-10-17-n3-vanished-playlist.md`) instead of reporting "playlist no longer exists". Before N3: make `Reconciler._run` (`crates/reconcile.py`) remove the rows of a playlist that vanished, with an event.
 4. **Insert a downloaded track at its Spotify position (M9 item 1, spec §1).** `fetch.finish` (`sourcing/fetch.py`),
    `external_wanted.position`, `crates/playlist_edit.py`. Also play-now.
 5. **Re-run the imports after the cleanup** so the 13 `review` rows (`external_wanted`, status `review`) and "shakori
