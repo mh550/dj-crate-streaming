@@ -5,6 +5,8 @@
   python -m crates.cli toggle <playlist-id> on|off   # writes #crate into the playlist comment (which owns it)
   python -m crates.cli tier <playlist-id> low|medium|high|crate|none   # writes #tier:<t> (none clears it)
   python -m crates.cli attrs migrate [--apply] [--out PATH]   # one-time: crates.db flags/import tiers into comments (dry run by default)
+  python -m crates.cli imported migrate [--apply]   # one-time: record #imported playlists in crates.db, strip the token (D33)
+  python -m crates.cli imported list             # playlists import-playlist made or adopted (crates.db)
   python -m crates.cli reconcile                 # sync crate state from Navidrome, re-judge every track
   python -m crates.cli wanted                    # the sourcing queue (feeds `sourcing.cli rank`)
   python -m crates.cli proposals [--all]         # open questions about one playlist slot (D23); --all: answered too
@@ -47,6 +49,9 @@ def main(argv: list[str] | None = None) -> int:
     at = sub.add_parser("attrs", help="playlist comment attributes").add_subparsers(dest="attrs_cmd", required=True)
     mg = at.add_parser("migrate", help="add #crate / #tier: to comments for what only crates.db knows (dry run unless --apply)")
     mg.add_argument("--apply", action="store_true"); mg.add_argument("--out", help="also write the report to this file")
+    im = sub.add_parser("imported", help="playlists import-playlist made (crates.db)").add_subparsers(dest="imported_cmd", required=True)
+    im.add_parser("migrate", help="record #imported playlists in crates.db and strip the token (dry run unless --apply)").add_argument("--apply", action="store_true")
+    im.add_parser("list")
     w = sub.add_parser("wanted"); w.add_argument("--json", action="store_true")
     pr = sub.add_parser("proposals", help="questions about one playlist slot (version swaps, unproven copies)")
     pr.add_argument("--all", action="store_true", help="answered ones too")
@@ -122,6 +127,23 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"- {r}")
                     print(f"refused: {r}", file=sys.stderr)
             return 1 if refused else 0
+    elif a.cmd == "imported":
+        from . import imported
+        if a.imported_cmd == "list":
+            print("\n".join(imported.list_lines(app.store)))
+            return 0
+        steps = imported.plan(app.api, app.store)
+        print(imported.report(steps))
+        todo = [s for s in steps if s.action != "skip"]
+        if not a.apply:
+            if todo:
+                print("\nDry run: nothing was written. Run again with --apply to record these and strip the token.")
+            return 0
+        done, failed = imported.apply(app.api, app.store, todo)
+        print(f"\nMigrated ({len(done)}): {', '.join(done) or 'none'}")
+        for f in failed:
+            print(f"failed: {f}"); print(f"imported migrate: {f}", file=sys.stderr)
+        return 1 if failed else 0
     elif a.cmd == "reconcile":
         try:
             print(json.dumps(app.reconcile(), indent=2))

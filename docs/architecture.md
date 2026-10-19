@@ -328,6 +328,7 @@ docker compose stop worker / start worker          # pause / resume (a stop mid-
 | Re-check a never-indexed row | web client **Re-check**, or approve it again |
 | Import a playlist | `docker compose exec -T crates python -m sourcing.cli import-playlist <url> [--name N] [--tier T] --dry-run`, then without `--dry-run` |
 | Toggle a crate | web client (the crate switch), or `docker compose exec -T crates python -m crates.cli toggle <playlist-id> on`; writes `crates.db` only. `tier` and `attrs migrate` are retired under `CRATES_OWNER=app` |
+| Record a hand-made import / strip old markers | `docker compose exec -T crates python -m crates.cli imported migrate` (dry run), then `--apply`: records each playlist of ours whose comment still says `#imported` in crates.db `imported_playlists`, then strips the token (read back; the `imported` event holds the old comment). `crates.cli imported list` shows the table. Runbook: `docs/plans/2026-10-17-n2-imported-marker.md` → "Live runbook" |
 | Reconcile now | web client, or `docker compose exec -T crates python -m crates.cli reconcile` (the worker does it every 600 s) |
 | Answer a version / copy question | Wanted tab (Swap / Keep), or `docker compose exec -T crates python -m crates.cli proposals [--all]`, `proposals accept\|decline <id>` |
 | Undo a trashed copy | run its reverse `mv` line from `/srv/_trash/<day>/MOVES.txt` on the host (`docs/worker.md`) |
