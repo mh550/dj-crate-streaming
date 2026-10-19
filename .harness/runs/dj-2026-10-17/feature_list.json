@@ -405,7 +405,7 @@
         "Run .harness/check.sh tests/test_import_playlist.py tests/test_crates.py tests/test_app_owner.py; commit `N4-02: import_order records the Spotify order`.",
         ".harness/check.sh is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "N4-03",
