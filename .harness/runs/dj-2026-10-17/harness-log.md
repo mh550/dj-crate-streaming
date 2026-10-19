@@ -100,3 +100,4 @@
 - 2026-10-19 09:53 · dependencies: N1F, H1, H2, H3, N2, N3, N4, N5 have no after list, so each waits on every earlier feature (one given up or parked there stops it)
 - 2026-10-19 09:54 · verify N5: N5-01 failed the re-check, back in the queue (one more attempt)
 - 2026-10-19 10:04 · N5-01 · claude-sonnet-5-5 · passes=true · 9 min · 33/33 passing
+- 2026-10-19 10:05 · N5 verified and tagged run/dj-2026-10-17/N5
