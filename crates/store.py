@@ -750,10 +750,11 @@ class CrateStore:
             self.db.executemany("INSERT INTO import_order(playlist_id, position, song_id, wanted_id) VALUES(?,?,?,?)",
                                 [(playlist_id, *r) for r in rows])
         except BaseException:
-            self.db.execute("ROLLBACK TO import_order")
+            if self.db.in_transaction:          # a disk-full or I/O error may have rolled it all back already
+                self.db.execute("ROLLBACK TO import_order")
+                self.db.execute("RELEASE import_order")
             raise
-        finally:
-            self.db.execute("RELEASE import_order")
+        self.db.execute("RELEASE import_order")
 
     def import_order(self, playlist_id: str) -> list[dict]:
         return [dict(r) for r in self.db.execute(

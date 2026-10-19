@@ -326,3 +326,37 @@ def test_record_import_order_is_one_transaction():
     with pytest.raises(sqlite3.IntegrityError):         # a bad row: the old record must survive, not half the new one
         s.record_import_order("pl-1", [(1, "s2", None), (1, "s3", None)])
     assert [r["song_id"] for r in s.import_order("pl-1")] == ["s1"]
+
+
+def test_record_import_order_inside_the_callers_transaction_commits_nothing_early():
+    # import_playlist calls it among its other writes and commits once at the end.
+    import sqlite3
+    s = CrateStore()
+    s.mark_imported("pl-1", ["s1"])
+    s.record_import_order("pl-1", [(1, "s1", None)])
+    with pytest.raises(sqlite3.IntegrityError):
+        s.record_import_order("pl-1", [(1, "s2", None), (1, "s3", None)])
+    assert s.db.in_transaction and s.imported("pl-1") == {"s1"}       # still pending, the failed record undone
+    assert [r["song_id"] for r in s.import_order("pl-1")] == ["s1"]
+    s.db.rollback()
+    assert s.imported("pl-1") == set() and s.import_order("pl-1") == []
+
+
+def test_record_import_order_keeps_the_real_error_when_sqlite_already_rolled_back(monkeypatch):
+    # A disk-full or I/O error rolls the whole transaction back, savepoint included: report that, not "no such savepoint".
+    import sqlite3
+    s = CrateStore()
+    real = s.db
+
+    class Full:
+        in_transaction = property(lambda self: real.in_transaction)
+
+        def execute(self, sql, *a):
+            return real.execute(sql, *a)
+
+        def executemany(self, sql, *a):
+            real.rollback()
+            raise sqlite3.OperationalError("database or disk is full")
+    monkeypatch.setattr(s, "db", Full())
+    with pytest.raises(sqlite3.OperationalError, match="disk is full"):
+        s.record_import_order("pl-1", [(1, "s1", None)])
