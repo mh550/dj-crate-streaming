@@ -362,7 +362,7 @@
         "Run .harness/check.sh tests/test_crates.py tests/test_app_owner.py tests/test_service.py tests/test_worker.py; commit `N3-02: reconcile drops a vanished playlist's rows`.",
         ".harness/check.sh is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "N3-03",
