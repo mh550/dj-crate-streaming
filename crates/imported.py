@@ -90,7 +90,10 @@ def apply(client: SubsonicClient, store: CrateStore, steps: list[Step]) -> tuple
             if s.action == "record + strip":
                 store.mark_playlist_imported(s.playlist_id, s.name, SOURCE,
                                              detail=f"migrated from comment {json.dumps(s.old, ensure_ascii=False)}")
-                store.commit()
+            else:                                    # recorded before (--merge, a failed strip): log what is overwritten
+                store.log(s.playlist_id, None, "imported",
+                          f"stripped the marker from comment {json.dumps(s.old, ensure_ascii=False)}")
+            store.commit()
             write_comment(client, pl, s.new)
             done.append(s.name)
         except CommentNotKept as e:                  # its message starts with the name already

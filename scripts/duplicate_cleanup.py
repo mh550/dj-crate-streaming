@@ -254,6 +254,16 @@ def _append(log_path: Path, line: dict) -> None:
         os.fsync(f.fileno())
 
 
+def _group_of(rows: list[dict]) -> dict[str, int]:
+    """song id → its duplicate group's index, from navidrome.db as it is now (groups are recomputed before acting)."""
+    return {r["id"]: i for i, grp in enumerate(duplicate_groups(rows)) for r in grp}
+
+
+def _restored(log_path: Path, extra: str, rel: str, dst: Path) -> None:
+    """The trash line of a put-back: that move is undone (a later run reads the extra as never moved)."""
+    _append(log_path, {"extra": extra, "path": rel, "keeper": None, "trash_path": str(dst), "restored": True})
+
+
 def _reverse(log_path: Path, extra: str, keeper: str, pid: str, name: str, before: list, after: list) -> None:
     """repoint_everywhere's before_write: the reverse line, on disk before the playlist's write."""
     _append(log_path, {"playlist_id": pid, "name": name, "extra": extra, "keeper": keeper, "before": before,
@@ -279,22 +289,25 @@ def _event(store, playlist_id: str | None, song_id: str, detail: str) -> None:
         print(f"event not logged ({detail}): {ex!r}", file=sys.stderr)
 
 
-def _repoint_store(store, navidrome_db: Path, extra: str, keeper: str) -> None:
+def _repoint_store(store, navidrome_db: Path, extra: str, keeper: str) -> str | None:
     """Once no playlist holds the extra (hidden rows included): crates.db's import orders, imported_entries, filed
     rows and unfinished placements name the keeper (CrateStore.repoint_song, review N4-05 I2), with a `cleanup`
     event naming both ids when anything changed. Called after each repoint and by trash right before the move (a
     trashed extra is no longer a duplicate, so no later repoint reaches it). The two are copies of one version, so a
-    playlist reverse-repointed later keeps a correct, if less exact, record. A failure (crates.db busy, navidrome.db
-    unreadable) is rolled back and noted on stderr like _event's, and never fails the repoint or the move."""
+    playlist reverse-repointed later keeps a correct, if less exact, record; the rows changed are in
+    songs-repointed.jsonl beside crates.db. A failure (crates.db busy, navidrome.db unreadable) is rolled back,
+    noted on stderr like _event's and returned: it never fails the repoint (trash repoints again before the move),
+    but trash then leaves the file (review N5-02 I1), since nothing reaches a trashed extra later."""
     if store is None:
-        return
+        return None
     try:
         if references(navidrome_db, extra):
-            return
+            return None
         n = store.repoint_song(extra, keeper)
         if any(n.values()):
             store.log(None, extra, "cleanup", f"crates.db now names {keeper}: {n['import_order']} import order, "
-                      f"{n['imported_entries']} imported, {n['external_wanted']} filed rows")
+                      f"{n['imported_entries']} imported, {n['external_wanted']} filed rows, "
+                      f"{n['placements']} placements")
         store.commit()
     except Exception as ex:
         try:
@@ -302,6 +315,15 @@ def _repoint_store(store, navidrome_db: Path, extra: str, keeper: str) -> None:
         except Exception:
             pass
         print(f"crates.db not repointed ({extra} -> {keeper}): {ex!r}", file=sys.stderr)
+        return repr(ex)
+    return None
+
+
+def _fresh_scan(client, timeout_s: float, poll_s: float) -> str:
+    """A scan that starts after now: one already running (Navidrome's hourly one, started mid-run, maybe before a
+    playlist write, a move or a put-back; reviews I3 and N5-02 M5) is waited out first, because startScan does
+    nothing while it runs, and its lastScan would pass trash's "scanned since the repoint" check."""
+    return wait_for_scan(client, timeout_s, poll_s) or scan_and_wait(client, timeout_s, poll_s)
 
 
 def repoint(plan: dict, client, navidrome_db: Path, log_path: Path, limit: int | None = None, dry_run: bool = False,
@@ -312,7 +334,7 @@ def repoint(plan: dict, client, navidrome_db: Path, log_path: Path, limit: int |
     repoint_everywhere (not on a dry run). `limit` counts the groups to act on (plan order). Each playlist written
     is an event in `store` (crates.db)."""
     rows, _ = load(navidrome_db)
-    group_of = {r["id"]: i for i, grp in enumerate(duplicate_groups(rows)) for r in grp}
+    group_of = _group_of(rows)
     out: dict[str, str] = {}
     scan = False
     for g in _in_scope(plan, limit):
@@ -338,7 +360,7 @@ def repoint(plan: dict, client, navidrome_db: Path, log_path: Path, limit: int |
             except Exception as ex:                          # recorded; the other groups and the scan still run
                 out[extra] = f"failed: {ex!r}"
     if scan:
-        problem = scan_and_wait(client, scan_timeout_s, poll_s)
+        problem = _fresh_scan(client, scan_timeout_s, poll_s)
         out["(scan)"] = f"failed: {problem}" if problem else "done"
     return out
 
@@ -490,7 +512,7 @@ def _trash(plan, client, navidrome_db, music_root, trash_root, forget, log_path,
            scan_timeout_s, poll_s) -> dict[str, str]:
     _scanned_since_repoint(_no_scan(client), log_path.parent)
     rows, _ = load(navidrome_db)
-    group_of = {r["id"]: i for i, grp in enumerate(duplicate_groups(rows)) for r in grp}
+    group_of = _group_of(rows)
     path_of = {r["id"]: r["path"] for r in rows}
     size_of = {r["id"]: r["size"] for r in rows}
     out: dict[str, str] = {}
@@ -516,8 +538,7 @@ def _trash(plan, client, navidrome_db, music_root, trash_root, forget, log_path,
                     return f"refused: still in {_entries(len(left))}; would put back from {at}"
                 forgot = _forgotten(log_path.parent, extra, rel)
                 restore(dst, rel, music_root)
-                _append(log_path, {"extra": extra, "path": rel, "keeper": None, "trash_path": str(dst),
-                                   "restored": True})
+                _restored(log_path, extra, rel, dst)
                 _event(store, None, extra, f"put back from {at}: in {_entries(len(left))} after an earlier run")
                 earlier.append(extra)
                 return f"refused: still in {_entries(len(left))}; put back from {at}; {_beets(forgot)}"
@@ -538,7 +559,7 @@ def _trash(plan, client, navidrome_db, music_root, trash_root, forget, log_path,
         if says:
             return f"refused: {rel} is {on_disk} bytes on disk, {', '.join(says)}: not the planned file"
         if not dry_run:
-            _no_scan(client)
+            _scanned_since_repoint(_no_scan(client), log_path.parent)     # a repoint since the start (N5-02 M4)
         left = references(navidrome_db, extra)
         if left:
             return f"refused: still in {_entries(len(left))}"
@@ -547,7 +568,9 @@ def _trash(plan, client, navidrome_db, music_root, trash_root, forget, log_path,
             return f"refused: in use by {busy}"
         if dry_run:
             return "dry run: would move"
-        _repoint_store(store, navidrome_db, extra, keeper)
+        failed = _repoint_store(store, navidrome_db, extra, keeper)
+        if failed:
+            return f"refused: crates.db not repointed ({failed}); run again"
         dst = move_to_trash(rel, music_root, trash_root)
         moved[extra] = (rel, dst, None)
         try:                         # every file that stays moved gets its trash line, so a later run can put it back
@@ -575,25 +598,19 @@ def _trash(plan, client, navidrome_db, music_root, trash_root, forget, log_path,
                 back = f"failed: re-checking its playlists after the move: {ex!r}"
             if back:
                 if back.startswith("refused"):
-                    _append(log_path, {"extra": extra, "path": rel, "keeper": None, "trash_path": str(dst),
-                                       "restored": True})
+                    _restored(log_path, extra, rel, dst)
                     back += f"; {_beets(forgotten)}; Navidrome lists it again after the next scan"
                     put = True
                     del moved[extra]
                 out[extra] = back
         return put
 
-    def fresh_scan() -> str:
-        """A scan that starts after now: one already running (Navidrome's hourly one, started mid-run, maybe before
-        a move or a put-back; review I3) is waited out first, because startScan does nothing while it runs."""
-        return wait_for_scan(client, scan_timeout_s, poll_s) or scan_and_wait(client, scan_timeout_s, poll_s)
-
     def closing_scan() -> None:
         """A scan that sees every move, then the re-read of each moved file; a put-back gets one more scan, because
         that scan marked it missing: hidden until the next one."""
-        problem = fresh_scan()
+        problem = _fresh_scan(client, scan_timeout_s, poll_s)
         if recheck_moved() and not problem:
-            problem = fresh_scan()
+            problem = _fresh_scan(client, scan_timeout_s, poll_s)
         out["(scan)"] = f"failed: {problem}" if problem else "done"
 
     try:

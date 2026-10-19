@@ -1,7 +1,9 @@
 """scripts/duplicate_cleanup (N1, D31): plan reads navidrome.db and music_root only and writes plan.json + report.md;
 repoint moves every playlist from each extra to its keeper through crates.playlist_edit, logging the reverse first."""
 import json
+import os
 import sqlite3
+import time
 from contextlib import closing
 
 import pytest
@@ -894,7 +896,7 @@ def test_a_repointed_extra_is_repointed_in_crates_db_too_once_no_playlist_holds_
     assert store.import_order("pl-1")[0]["song_id"] == "s9" and not store.db.in_transaction
     store.db.close()
     assert cleanup_events(tmp_path / "crates.db")[-1] == (
-        None, "s3", "crates.db now names s9: 1 import order, 0 imported, 0 filed rows")
+        None, "s3", "crates.db now names s9: 1 import order, 0 imported, 0 filed rows, 0 placements")
 
 
 def test_a_dry_run_repoint_is_no_event(lib, tmp_path):
@@ -987,6 +989,9 @@ class LockedStore:
 
     def song_in_use(self, song_id):
         return None
+
+    def repoint_song(self, old, new):
+        return {"import_order": 0, "imported_entries": 0, "external_wanted": 0, "placements": 0}
 
 
 def test_an_event_that_cannot_be_written_never_fails_the_repoint_or_the_move(tr, lib, tmp_path, monkeypatch, capsys):
@@ -1370,3 +1375,58 @@ def test_the_scan_after_a_put_back_also_waits_out_a_running_one(tr, monkeypatch)
     out = tr.run()
     assert out["s3"].startswith("refused: added to 1 playlist entry after the move; put back")
     assert out["(scan)"] == "done" and seen == [False, False] and (tr.music / S3).is_file()
+
+
+def test_trash_does_not_move_an_extra_whose_crates_db_repoint_failed(tr, tmp_path, monkeypatch):
+    # N5-02 review I1: nothing repoints a trashed extra later (it is no longer a duplicate), so a busy crates.db at
+    # the move would leave import orders and placements on the gone id for good. The move waits for a re-run.
+    real = CrateStore.repoint_song
+
+    def locked(self, old, new):
+        raise sqlite3.OperationalError("database is locked")
+    monkeypatch.setattr(CrateStore, "repoint_song", locked)
+    out = tr.run(crates_db=tmp_path / "crates.db")
+    assert out["s3"].startswith("refused: crates.db not repointed") and dc.failed(out)
+    assert (tr.music / S3).is_file() and not list(tr.trash_root.rglob("*.mp3"))
+    monkeypatch.setattr(CrateStore, "repoint_song", real)
+    assert tr.run(crates_db=tmp_path / "crates.db")["s3"].startswith("moved to ")
+
+
+def test_repoints_closing_scan_waits_out_one_already_running(lib, tmp_path, monkeypatch):
+    # N5-02 review M5: the hourly scan, started before the last playlist write, may not see it, yet its lastScan is
+    # later than the repoint log, so trash's "scanned since the repoint" would pass on it. Wait it out, then scan.
+    srv, db, music = lib
+    plan = dc.build_plan(db, music)
+    real_rewrite, real_scan, seen = dc.repoint_everywhere, dc.scan_and_wait, []
+
+    def rewrite(*a, **kw):
+        out = real_rewrite(*a, **kw)
+        srv.state.scanning, srv.state.scan_polls = True, 2              # started mid-write, ends by itself
+        return out
+
+    def scan(client, timeout_s, poll_s):
+        seen.append(srv.state.scanning)
+        return real_scan(client, timeout_s, poll_s)
+    monkeypatch.setattr(dc, "repoint_everywhere", rewrite)
+    monkeypatch.setattr(dc, "scan_and_wait", scan)
+    assert run(srv, db, plan, tmp_path / "r.jsonl") == {"s3": "repointed 2 playlists", "(scan)": "done"}
+    assert seen == [False] and len(scans(srv)) == 1
+
+
+def test_a_repoint_written_mid_trash_stops_the_next_move_until_a_scan_sees_it(tr, tmp_path):
+    # N5-02 review M4: repoint runs beside the daemon, without the worker lock; a repoint log newer than the last scan
+    # means navidrome.db may not show it yet, so no further file moves (I1, re-checked before every move).
+    second_group(tr.srv, tr.music)
+    plan = dc.build_plan(tr.db, tr.music)
+    dc.repoint(plan, _client(tr.srv), tr.db, tr.log.parent / "repoint-1.jsonl", poll_s=0)
+    CrateStore(tmp_path / "crates.db").db.close()
+
+    def forget(path):
+        tr.forgot.append(path)
+        log = tr.log.parent / "repoint-2.jsonl"
+        log.write_text("{}\n")
+        os.utime(log, (time.time() + 5, time.time() + 5))               # written after the last scan
+        return True
+    with pytest.raises(dc.CleanupRefused, match="no Navidrome scan finished after the newest repoint log") as e:
+        tr.run(plan, forget=forget, crates_db=tmp_path / "crates.db")
+    assert [v for v in e.value.results.values() if v.startswith("moved to ")] and len(tr.forgot) == 1

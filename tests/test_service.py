@@ -163,3 +163,15 @@ def test_a_gone_playlists_crate_row_does_not_break_the_views(svc):
         assert s == 200
     assert wanted == [["s3", "s4"], ["s3"]]               # s4 queued until the reconcile drops it; s3 is downloading
     assert r["playlists_gone"] == ["Chicago 86: playlist no longer exists in Navidrome; 0 rows dropped, 1 in flight kept"]
+
+
+def test_events_show_no_absolute_path(svc):
+    # N5-02 review M7: an import from a file names it in its `imported` event, and a replacement names /trash and
+    # /music; /api/events goes through public() like the wanted rows, so only the file name is shown.
+    fake, app, srv = svc
+    app.store.mark_playlist_imported("pl-9", "Tea", "/home/mh550/exports/tea tent.csv")
+    app.store.log(None, "s1", "replace", "old copy moved to /trash/2026-10-19/a/b.mp3")
+    app.store.commit()
+    s, _, ev = get(srv.url + "/api/events")
+    assert s == 200
+    assert [e["detail"] for e in ev[:2]] == ["old copy moved to b.mp3", "made by import-playlist: tea tent.csv"]

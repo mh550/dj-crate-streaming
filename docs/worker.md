@@ -303,7 +303,8 @@ D44, M9 §1). The code is `crates/placement.py`; the plan is `docs/plans/2026-10
   an old copy to its new one, crates.db follows (`CrateStore.repoint_song`): import orders and filed rows name the
   new song, and a playlist that ever had the old one added counts the new one as added too. The duplicate cleanup
   does it after `repoint` and again right before `trash` moves a file, and logs a `cleanup` event "crates.db now
-  names <keeper>: …".
+  names <keeper>: …". Each repoint that changed rows appends one line `{ts, old, new, rows}` to
+  `songs-repointed.jsonl` beside crates.db; `CrateStore.unrepoint_song(line)` undoes it (lines newest first).
 - **Deleted playlist.** The reconcile that drops a deleted playlist's rows (N3) drops its `import_order` and
   `placements` too, so nothing stays due for it.
 
@@ -442,7 +443,8 @@ docker compose exec -T crates python3 -m crates.cli reconcile
   was.
 - Before each write, one reverse line goes to `repoint-<time>.jsonl`. Each written playlist is also a `cleanup`
   event in crates.db.
-- Each run ends with a Navidrome scan and waits for it (the scan between repoint and trash).
+- Each run ends with a Navidrome scan and waits for it (the scan between repoint and trash). A scan already
+  running is waited out first: it may have started before the last write and not see it.
 - `--dry-run` runs the same checks without writing and names every playlist the real run would refuse, with why:
   "dry run: would refuse Chicago 86: skipped: smart playlist; Theirs: owned by other; would repoint Disco
   Edits". It
@@ -473,7 +475,8 @@ docker compose start worker
   wait for. `--dry-run` refuses the same way, so the dry run shows it first.
 - Per file, it moves nothing unless all of these hold:
   - no playlist row names the extra in navidrome.db (hidden rows and other users' playlists included);
-  - nothing in crates.db is still working with it;
+  - nothing in crates.db is still working with it, and crates.db's rows were repointed to the keeper just before
+    (a busy crates.db leaves the file: "refused: crates.db not repointed (…); run again");
   - the keeper is on disk and still one recording with it;
   - the file on disk is still the planned file: its size equals navidrome.db's `media_file.size` and the size in
     `plan.json`. A file filed at that path since the plan is refused with its path and the sizes that differ
@@ -484,7 +487,8 @@ docker compose start worker
 - If a playlist takes the song during the move, or before the closing scan ends, the file is put back.
 - The closing scan, and the one after a put-back, first wait out a scan that is already running (Navidrome's hourly
   one may start during the last move and not see it), then start their own and wait for it.
-- A scan that starts mid-run stops the run before the next move: "refused: a Navidrome scan is running", exit 1.
+- A scan that starts mid-run, or a repoint log written mid-run with no scan since, stops the run before the next
+  move ("refused: a Navidrome scan is running" / "no Navidrome scan finished after …"), exit 1.
   If files had moved, it first waits for that scan to end, starts one more and waits for it, then puts back any
   moved file a playlist took meanwhile (a `restored` line in `trash-<time>.jsonl`, a `cleanup` event). Run trash
   again for the rest. Each wait lasts up to 10 minutes, so such a run can hold the live lock for about 30: start
@@ -516,6 +520,7 @@ Every line trash can print, and what to do (N is "1 playlist entry" or "N playli
 | `refused: <path> is N bytes on disk, … says M: not the planned file` | A new file at that path. Look at it first. |
 | `refused: still in N` | A playlist (any user's, hidden rows included) holds it: repoint again, or leave it. |
 | `refused: in use by <ext-N \| approval of <id> \| replacement #N>` | crates.db is still working with it. Run again when that is done. |
+| `refused: crates.db not repointed (<error>); run again` | crates.db was busy; the file stays. Run trash again. |
 | `refused: added to N during the move; put back` / `… after the move; put back; …` | A playlist took it; the file is back. |
 | `refused: still in N; put back from <day>/<path>; …` (dry run: `would put back from`) | An earlier run's scan did not finish and a playlist took it; the file is back. |
 | `failed: added to N during/after the move, not put back (<error>); the file is at <trash path>` | A playlist holds it and it is in the trash. `FileExistsError`: a new file is at its library path, so neither `mv -n` nor a re-run puts it back: compare the two files first. Any other error: run its `MOVES.txt` line with `mv -n` and scan, or run trash again (it puts it back from the trash log). |
@@ -534,6 +539,8 @@ come back under a new id.
 **Undo.**
 - **A trashed file:** run its `MOVES.txt` line with `mv -n` (it never overwrites), or use `crates.trash.restore`.
   Then scan. It comes back under its old id only while Navidrome still has its missing row, that is, before a purge.
+- **crates.db's rows of a repointed song:** replay its lines of `/srv/docker/crates/songs-repointed.jsonl` newest
+  first, each as `store.unrepoint_song(line)` then `store.commit()` (worker stopped, crates.db snapshot first).
 - **A repointed playlist:** first get its files back and scanned. Then replay its lines of `repoint-<time>.jsonl`
   **newest first**, each as `playlist_edit.rewrite(client, db, playlist_id, after, before)`. The oldest line's
   `before` is the playlist as it was.

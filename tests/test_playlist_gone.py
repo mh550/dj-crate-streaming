@@ -417,3 +417,25 @@ def test_a_forgotten_playlist_leaves_no_due_placement():
     s.commit()
     assert [(d["wanted_id"], d["playlist_id"]) for d in s.due_placements()] == [(shared, "pl-2")]
     assert s.placement(shared, "pl-1") is None
+
+
+def test_a_forget_that_changes_nothing_holds_no_write_lock_over_the_next_lookup(env, monkeypatch):
+    # N5-02 review M6: forget_playlist takes BEGIN IMMEDIATE; while a gone playlist's rows wait, a run changes
+    # nothing and must not keep crates.db locked across the next missing playlist's getPlaylist call.
+    srv, client, store, rec = env
+    for pid, name in (("pl-3", "Sunday Listening"), ("pl-x0", "Zz old")):
+        store.mark_playlist_imported(pid, name, "sunday.csv")
+        busy = store.add_external_wanted("Sade", f"Cherish the Day ({name})", playlist_id=pid, position=1)
+        store.set_external_status(busy, "sourcing", "downloading")
+    store.commit()
+    vanish(srv, "pl-3")
+    rec.run()                                                          # the first run logs and commits
+    seen = []
+    real = client.playlist
+
+    def lookup(pid):
+        seen.append((pid, store.db.in_transaction))
+        return real(pid)
+    monkeypatch.setattr(client, "playlist", lookup)
+    rec.run()
+    assert seen == [("pl-3", False), ("pl-x0", False)]

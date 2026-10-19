@@ -67,7 +67,7 @@ long (2026-10-17: 03:39–03:41, snapshot `da26a815` of /srv/music, /srv/docker,
   `GIT_SHA=<old> CRATES_SRC=$PWD docker compose --project-directory /srv/docker -f deploy/compose.yml up -d --no-build crates worker`
 
 ### Staged runbooks
-- Duplicate cleanup: `docs/worker.md` → "Duplicate cleanup" (on `harness/dj-2026-10-17`, PR #3, until merged).
+- Duplicate cleanup: `docs/worker.md` → "Duplicate cleanup" (merged into `main` with N1, PR #5).
   Reverse logs in `/srv/docker/crates/duplicate-cleanup/` (`repoint-<time>.jsonl`, `trash-<time>.jsonl`) and
   `/srv/_trash/<day>/MOVES.txt`. `plan` and every `repoint` stage may run.
 - **`duplicate_cleanup trash` must not run beyond `--dry-run` until review findings I1 (trash must refuse unless a

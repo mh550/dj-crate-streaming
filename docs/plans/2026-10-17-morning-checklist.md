@@ -21,7 +21,7 @@ Pass: exit 0 and "ok: every playlist file matches Navidrome…".
    `/srv/docker/crates/crates.db.pre-morning.snap` and `/srv/docker/navidrome/navidrome.db.pre-morning.snap`, each
    checked with `integrity_check`).
    *Undo:* restore a database by stopping `crates`/`worker` (Navidrome for its file) and copying the snapshot over it.
-4. Merge `harness/dj-2026-10-17` (PR #3) into `main` and pull `~/projects/dj-crate-streaming`, so the checkout that
+4. N1–N4 are merged into `main` (PRs #5–#12); merge the N5 PR too, then pull `~/projects/dj-crate-streaming`, so the checkout that
    `/srv/docker/compose.yml` follows matches what you deploy. Don't pass `--remove-orphans` before that (it would
    delete Gatus).
 

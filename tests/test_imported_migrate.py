@@ -134,14 +134,15 @@ def test_a_comment_not_kept_leaves_the_row_recorded_and_names_the_playlist(env):
     _, failed = imp.apply(client, store, imp.plan(client, store))
     assert len(failed) == 2 and "Disco Edits" in failed[0] and "Sunday Listening" in failed[1]
     assert store.is_playlist_imported("pl-1") and store.is_playlist_imported("pl-3")   # committed before the write
-    # a re-run (Navidrome fixed) strips only: no second event
+    # a re-run (Navidrome fixed) strips only: no second record, one event naming the comment it overwrites
     real = SubsonicClient(srv.url, "demo", "demo")
     steps = imp.plan(real, store)
     assert [s.action for s in steps] == ["strip", "strip"]
     assert "would strip: Disco Edits (pl-1)" in imp.report(steps)
     assert imp.apply(real, store, steps)[1] == []
     assert comment(srv, "pl-1") == "Tea notes" and comment(srv, "pl-3") == "mine"
-    assert len([e for e in store.events() if e["kind"] == "imported"]) == 2
+    details = [e["detail"] for e in store.events() if e["kind"] == "imported"]
+    assert sorted(d.split(" ")[0] for d in details) == ["migrated", "migrated", "stripped", "stripped"]
 
 
 def test_the_row_is_committed_before_the_comment_write(env, tmp_path):
@@ -241,3 +242,18 @@ def test_a_comment_changed_since_the_plan_is_refused_before_anything_is_recorded
     assert done == [] and len(failed) == 1 and "Disco Edits" in failed[0] and "changed" in failed[0]
     assert updates(srv) == [] and not store.is_playlist_imported("pl-1")
     assert comment(srv, "pl-1") == "Tea #imported notes, edited meanwhile"
+
+
+def test_a_strip_of_an_already_recorded_playlist_logs_its_old_comment_first(env):
+    # N5-02 review I3: a playlist adopted with --merge (or one whose strip failed and was edited since) already has
+    # its row, so "strip" writes no `imported` event; the comment it overwrites must still be in an event.
+    srv, client, store = env
+    store.mark_playlist_imported("pl-1", "Disco Edits", "spotify:playlist:x", detail="adopted with --merge")
+    store.commit()
+    set_comment(srv, "pl-1", "Tea #imported notes")
+    steps = imp.plan(client, store)
+    assert [s.action for s in steps] == ["strip"]
+    assert imp.apply(client, store, steps) == (["Disco Edits"], [])
+    assert comment(srv, "pl-1") == "Tea notes"
+    ev = [e for e in store.events() if e["kind"] == "imported"]
+    assert ev[0]["detail"] == 'stripped the marker from comment "Tea #imported notes"' and not store.db.in_transaction

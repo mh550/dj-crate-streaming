@@ -229,6 +229,19 @@ never moved (Q2); a refused placement retries at most every `recheck_s` (N4-05: 
   finds the neighbour under its new id; before is a subsequence of after for six playlist shapes; a forgotten playlist
   leaves no due pair.
 
+## As built (checked in N5-02)
+
+Where the code differs from the text above, the code is right:
+- `note_placement(wanted_id, playlist_id, state, detail, *, song_id=None, count=True, now=None)`; `count` defaults
+  to true.
+- `place(store, client, db, playlist_id, wanted_id, song_id, before_write=None, after_write=None)` reads the
+  playlist with `playlist_edit.checked_playlist` (name and entries), not `checked_entries`.
+- Uncounted errors are `OSError` and a *locked/busy* `sqlite3.OperationalError` (`placement.transient`); any other
+  sqlite error is counted.
+- The worker runs `place_due` in the same step as replacements (`advance_replacements(...) + self.place_due()`),
+  after a None check on `navidrome_db`.
+- `repoint_song` also moves `open`/`writing` placements; the duplicate cleanup's `cleanup` event names all four counts.
+
 ## Live effect and runbook (after N4 is merged and deployed)
 
 Nothing is placed until a playlist has an `import_order`: existing playlists get one only on their next re-run of

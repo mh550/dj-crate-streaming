@@ -432,6 +432,41 @@ def test_repoint_song_moves_what_crates_db_says_about_a_song_to_its_new_copy():
                                           "placements": 0}
 
 
+def test_repoint_song_logs_the_rows_it_changed_beside_crates_db_and_unrepoint_puts_them_back(tmp_path):
+    # N5-02 review I2: the repoint is destructive (old ids overwritten); its reverse is a JSON line naming each row.
+    # Rows that already named the new copy (pl-2's import order, its imported entry) are not in it, so the undo
+    # leaves them alone.
+    import json
+    s = CrateStore(tmp_path / "crates.db")
+    filed = _filed_ext(s, song="s4")
+    s.record_import_order("pl-1", [(1, "s4", None), (2, None, filed)])
+    s.record_import_order("pl-2", [(1, "s9", None), (2, "s4", None)])
+    s.mark_imported("pl-1", ["s4"])
+    s.mark_imported("pl-2", ["s4", "s9"])
+    s.note_placement("ext-1", "pl-1", "open", None, song_id="s4")
+    s.commit()
+    s.repoint_song("s4", "s9")
+    s.commit()
+    lines = [json.loads(x) for x in (tmp_path / "songs-repointed.jsonl").read_text().splitlines()]
+    assert len(lines) == 1 and (lines[0]["old"], lines[0]["new"]) == ("s4", "s9")
+    assert lines[0]["rows"] == {"import_order": [["pl-1", 1], ["pl-2", 2]], "imported_entries": ["pl-1"],
+                                "external_wanted": [int(filed.split("-")[1])], "placements": [["ext-1", "pl-1"]]}
+    s.repoint_song("s4", "s9")                                          # nothing left to change: no line
+    assert len((tmp_path / "songs-repointed.jsonl").read_text().splitlines()) == 1
+    s.unrepoint_song(lines[0])
+    s.commit()
+    assert [r["song_id"] for r in s.import_order("pl-1")] == ["s4", None]
+    assert [r["song_id"] for r in s.import_order("pl-2")] == ["s9", "s4"]
+    assert s.imported("pl-1") == {"s4"} and s.imported("pl-2") == {"s4", "s9"}
+    assert s.external(filed)["library_song_id"] == "s4" and s.placement("ext-1", "pl-1")["song_id"] == "s4"
+
+
+def test_an_in_memory_store_writes_no_repoint_log():
+    s = CrateStore()
+    s.record_import_order("pl-1", [(1, "s4", None)])
+    assert s.repoint_song("s4", "s9")["import_order"] == 1
+
+
 def test_repoint_song_moves_an_unfinished_placement_so_the_look_finds_the_new_song():
     # second review of N4-05 M-a: a `writing` row's look reads placements.song_id; after a repoint the playlist holds
     # the new song, so looking for the old one would say "not placed" although it is there.
