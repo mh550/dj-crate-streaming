@@ -72,3 +72,15 @@ Start Gatus only that way, never with a plain `docker compose up` from /srv/dock
 `/srv/docker/gatus` as you, and Docker would create it as root (deploy.sh then refuses and prints the `chown`).
 
 ## Answers
+
+### 2026-10-19 01:53 (local)
+- 2026-10-19 · D35 (two lossless copies): trash the extras. These are Soulseek files from a
+  Spotify-playlist download script, so the duplication is just the script re-fetching; the copies
+  are effectively identical. Override the hold default — apply D31 literally. (Low risk: trash is
+  a move to /srv/_trash with MOVES.txt, reversible, not a hard delete.)
+- 2026-10-19 · D36 (trash runs with worker stopped): approved, keep the default.
+- 2026-10-19 · D38 (one failing DB keeps both at last good pair): keep the default.
+- 2026-10-19 · D39 (failed DB snapshot fails the nightly run): keep the default.
+- 2026-10-19 · D41 (Gatus config copied from git): keep the default. (Confirmed: Gatus not yet deployed.)
+- 2026-10-19 · I3 (backup heartbeat resets on Gatus restart): approved — have the disk-pusher also
+  report real backup status from systemctl so a missed backup alerts reliably.
