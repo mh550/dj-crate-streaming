@@ -94,3 +94,5 @@
 - 2026-10-19 07:09 · N4 merged into main · https://github.com/mh550/dj-crate-streaming/pull/12
 - 2026-10-19 07:20 · N5-01 · claude-sonnet-5-5 · passes=true · 10 min · 32/33 passing
 - 2026-10-19 08:06 · N5-02 · claude-opus-5-5 · passes=true · 45 min · 33/33 passing
+- 2026-10-19 08:06 · deadline reached
+- 2026-10-19 08:06 · run ended (deadline): 33/33 passing · 75 sessions (48 real) · 33 features passed · $103.74 · 10.9 h · by kind: init 1 ($6.25), coding 64 ($95.25), verify 9 ($2.10), retro 1 ($0.14) · by model: claude-fable-5-1 1 ($6.25), claude-opus-5-5 59 ($94.23), claude-sonnet-5-5 15 ($3.26)
