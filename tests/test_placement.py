@@ -5,7 +5,7 @@ import pytest
 from crates import placement as pl
 from crates import playlist_edit as pe
 from crates.store import CrateStore
-from subsonic.client import SubsonicClient
+from subsonic.client import SubsonicClient, SubsonicError
 from subsonic.fake_server import FakeSubsonicServer
 
 
@@ -267,3 +267,49 @@ def test_before_write_runs_once_checks_pass_and_can_stop_the_write(srv, client, 
         pl.place(store, client, db, "pl-1", store.ext, "s9", before_write=stop)
     assert seen == [(1, "after s1", 3)]
     assert _updates(srv) == []
+
+
+def test_a_playlist_deleted_between_the_reads_is_gone_not_an_error(srv, db, store):
+    class Deleting(SubsonicClient):
+        reads = 0
+
+        def playlist(self, playlist_id):
+            Deleting.reads += 1
+            if Deleting.reads == 2:                                             # rewrite's own read
+                del srv.state.playlists["pl-1"]
+                srv.state.sync()
+            return super().playlist(playlist_id)
+
+    assert _place(store, Deleting(srv.url, "demo", "demo"), db) == "skipped: playlist gone"
+    assert _updates(srv) == [] and "s9" not in store.imported("pl-1")
+
+
+def test_another_subsonic_error_propagates(srv, db, store):
+    class Failing(SubsonicClient):
+        def playlist(self, playlist_id):
+            raise SubsonicError(0, "boom")
+
+    with pytest.raises(SubsonicError, match="boom"):
+        _place(store, Failing(srv.url, "demo", "demo"), db)
+    assert _updates(srv) == []
+
+
+def test_an_unconfirmed_edit_propagates_and_marks_nothing(srv, db, store):
+    """The write was sent but the readback differs: the caller must look, never retry blind (N4-04)."""
+    class Racing(SubsonicClient):
+        def update_playlist(self, playlist_id, **kw):
+            super().update_playlist(playlist_id, **kw)
+            srv.state.playlists[playlist_id]["songs"].append("s5")
+            srv.state.sync()
+
+    with pytest.raises(pe.EditNotKept):
+        _place(store, Racing(srv.url, "demo", "demo"), db)
+    assert "s9" not in store.imported("pl-1") and _placed(store) == []
+
+
+def test_a_song_at_two_spotify_positions_is_a_neighbour_at_either(srv, client, db, store):
+    """import-playlist deduplicates matched songs, so s2 at Spotify 3 and 6 sits once, near 3: it still counts."""
+    store.record_import_order("pl-1", [(1, "s1", None), (3, "s2", None), (5, None, store.ext), (6, "s2", None)])
+    srv.state.playlists["pl-1"]["songs"] = ["s3", "s2"]
+    srv.state.sync()
+    assert _place(store, client, db) == "placed at 2 (after s2)"

@@ -101,11 +101,12 @@ replaces the playlist's record: the newest import is the order.
 - `insert_index(order: list[tuple[int, str | None]], entries: list[str], position: int) -> tuple[int, str]`, pure.
   `order` is the playlist's import_order as `(position, song)` where song is the row's song now (below), sorted by
   position (positions may have gaps). Walk the rows before `position`, nearest first: the first usable one →
-  `(its index in entries + 1, "after <song>")`. None → the rows after `position`, nearest first: the first usable one
-  → `(its index in entries, "before <song>")`. None → `(len(entries), "append")`. A row is usable when its song is
-  not `None` (still wanted), occurs exactly once in `entries` (not removed by Michael, no second copy he added) and
-  exactly once in `order` (the import deduplicates matched songs, so a song at Spotify 2 and 9 sits near 2 only).
-  Skipping the rest is M9 §1's "a neighbour Michael removed is skipped and the next one is used".
+  `(the index after its last occurrence in entries, "after <song>")`. None → the rows after `position`, nearest
+  first: the first usable one → `(its first occurrence's index, "before <song>")`. None → `(len(entries),
+  "append")`. A row is usable when its song is not `None` (still wanted) and is in `entries` (not removed by
+  Michael): M9 §1's "a neighbour Michael removed is skipped and the next one is used". As built (N4-03, the feature
+  step binds): a song in `entries` twice, or at two Spotify positions, is still a neighbour (last/first occurrence),
+  not skipped as this plan first said.
 - `place(store, client, db, playlist_id, wanted_id, song_id) -> str`, recomputing everything right before acting:
   1. `not store.is_playlist_imported(playlist_id)` → `"skipped: not an imported playlist"`;
   2. `(playlist_id, song_id)` in `store.imported(...)` → `"skipped: added before (removed stays removed)"`;
@@ -197,7 +198,10 @@ never moved (Q2); a refused placement retries at most every `recheck_s`, gives u
   1:s1, 2:ext-7, 3:s2, 4:s3, ext-7 filed as s9 → `[s1, s9, s2, s3]`; s1 removed → before s2; alone → append; hidden
   missing row → `PlaylistSkew`, nothing written; already present → no `updatePlaylist`; one `updatePlaylist`; a
   second `place()` → "skipped: added before"; not imported; playlist gone; no longer in the import; song not in the
-  library; a neighbour duplicated in the order or in entries is skipped; positions with gaps).
+  library; a neighbour at two Spotify positions; positions with gaps; a playlist deleted between place's read and
+  rewrite's → "skipped: playlist gone"). Built: `place(..., before_write=None)` is the hook for step 8's intent row.
+  rewrite re-reads after it, so an `EditRefused` can follow a committed `writing` row with nothing written: N4-04
+  must treat that as `open` (counted), not "look and give up" (test: PlaylistChanged after the intent).
 - **N4-04** worker: `placements`, `due_placements`, `note_placement`, `advance_all`, the tick step; tests with
   `tests/test_worker.worker` and `tests/test_fetch.world` (filed → placed in one tick with a `placed` event; legacy
   provisional copy not due; refusal → open, attempts 1, no retry inside `recheck_s`, `given_up` + `not_placed` after

@@ -14,6 +14,9 @@ from scripts.export_playlists import open_ro
 from subsonic.client import SubsonicError
 
 
+GONE = "skipped: playlist gone"
+
+
 def insert_index(order: list[tuple[int, str | None]], entries: list[str], position: int) -> tuple[int, str]:
     """Where a track at Spotify `position` goes in `entries` (the playlist now). `order` is the import's rows as
     (position, song id or None while still wanted). The nearest earlier row whose song is in `entries` → after that
@@ -49,8 +52,9 @@ def place(store, client, db: Path, playlist_id: str, wanted_id: str, song_id: st
     Returns "placed at <index> (<how>)" or "skipped: <why>" (nothing written). playlist_edit's refusals
     (PlaylistSkew, PlaylistChanged, NotOwned, NotEditable, all EditRefused) propagate for the caller to retry; so
     does EditNotKept (the write was sent, the caller must look, never retry blind). `before_write(index, how, n)`,
-    when given, runs after every check and right before the write (the caller's intent row); if it raises, nothing
-    is written. On success the song is marked imported (removed stays removed, D13) and a `placed` event is logged;
+    when given, runs after place's checks and right before rewrite (the caller's intent row); if it raises, nothing
+    is written. rewrite re-reads the playlist, so an EditRefused (or "skipped: playlist gone") can still follow
+    before_write: then nothing was written either. On success the song is marked imported (removed stays removed, D13) and a `placed` event is logged;
     the caller commits."""
     if not store.is_playlist_imported(playlist_id):
         return "skipped: not an imported playlist"
@@ -64,7 +68,7 @@ def place(store, client, db: Path, playlist_id: str, wanted_id: str, song_id: st
         name, entries = pe.checked_playlist(client, db, playlist_id)
     except SubsonicError as e:
         if e.code == 70:
-            return "skipped: playlist gone"
+            return GONE
         raise
     if song_id in entries:
         store.mark_imported(playlist_id, [song_id])
@@ -75,7 +79,12 @@ def place(store, client, db: Path, playlist_id: str, wanted_id: str, song_id: st
     i, how = insert_index(order, entries, min(mine))
     if before_write is not None:
         before_write(i, how, len(entries))
-    pe.rewrite(client, db, playlist_id, entries, entries[:i] + [song_id] + entries[i:])
+    try:
+        pe.rewrite(client, db, playlist_id, entries, entries[:i] + [song_id] + entries[i:])
+    except SubsonicError as e:                # only rewrite's first read raises it (after the write: EditNotKept)
+        if e.code == 70:
+            return GONE
+        raise
     store.mark_imported(playlist_id, [song_id])
     ext = store.external(wanted_id)
     what = f"{ext['artist']} – {ext['title']}" if ext else song_id
