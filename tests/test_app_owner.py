@@ -82,15 +82,26 @@ def test_a_crate_keeps_an_acceptable_lossy_file_and_queues_one_below_the_floor()
     assert status == "needs_source" and "floor" in why
 
 
-def test_import_leaves_no_tier_in_the_comment(monkeypatch):
+def test_import_writes_no_comment(monkeypatch):
+    # D33: "made by import-playlist" is a crates.db row; under app this system leaves playlist comments empty.
     monkeypatch.delenv("CRATES_OWNER", raising=False)
     with FakeSubsonicServer() as srv:
         _lib(srv)
         c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
         rows = [Row(1, "The Weasil", "Donald Byrd", 541, "sp1"), Row(2, "Piano Joint", "Michael Kiwanuka", 232, "sp2")]
         rep = ip.import_playlist("Tea tent", rows, c, store, source="x")
-        comment = c.playlist(rep.playlist_id).comment
-        assert comment == ip.MARKER and "#tier" not in comment
+        assert c.playlist(rep.playlist_id).comment == ""
+        assert store.is_playlist_imported(rep.playlist_id) and c.playlist(rep.playlist_id).public is True
         assert store.get(rep.playlist_id) is None                           # not a crate until Michael switches it on
-        again = ip.import_playlist("Tea tent", rows[:1], c, store, source="x")
-        assert c.playlist(again.playlist_id).comment == ip.MARKER
+        again = ip.import_playlist("Tea tent", rows[:1], c, store, source="x", tier="high")
+        assert again.playlist_id == rep.playlist_id and c.playlist(again.playlist_id).comment == ""
+        existing = c.create_playlist("Garden", ["k1"])                      # a foreign playlist, adopted with --merge
+        c.update_playlist(existing.id, comment="mine")
+        srv.state.requests.clear()
+        ip.import_playlist("Garden", rows, c, store, source="x", merge=True)
+        assert c.playlist(existing.id).comment == "mine" and store.is_playlist_imported(existing.id)
+        ip.import_playlist("Tea tent 2", rows, c, store, source="x")
+        ip.import_playlist("Tea tent 2", rows, c, store, source="x")
+        ip.import_playlist("Garden", rows, c, store, source="x", tier="high")
+        updates = [q for path, q in srv.state.requests if path.endswith("updatePlaylist")]
+        assert updates and not [q for q in updates if "comment" in q]      # create, re-run, merge: no comment param

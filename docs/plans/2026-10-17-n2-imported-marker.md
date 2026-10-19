@@ -11,7 +11,7 @@ import-playlist decides "ours" (re-run vs `NameCollision`) from that table and w
 comments are left empty by this system"). A one-time command records the playlists whose comment still carries the
 marker and then strips it.
 
-**Facts (2026-10-17):** two live playlists still carry the marker: "Tea tent" and "shakori (Spotify)" (`docs/next-todos.md`
+**Checked against the code 2026-10-19** (after N1F and H1–H3; the line numbers below hold at `73c6d96`). **Facts (2026-10-17):** two live playlists still carry the marker: "Tea tent" and "shakori (Spotify)" (`docs/next-todos.md`
 item 2). Navidrome playlist ids are UUIDs that are never reused, so a row whose playlist was deleted can never match
 a new playlist; dropping such rows is N3's housekeeping (`forget_playlist`), not a correctness need here. The test
 suite runs with `CRATES_OWNER=comment` (`tests/conftest.py`), so most import tests exercise the retired D21 path;
@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS imported_playlists (   -- playlists import-playlist m
 
 | Method | Behaviour |
 |---|---|
-| `mark_playlist_imported(playlist_id, name, source) -> bool` | `INSERT … ON CONFLICT(playlist_id) DO UPDATE SET name=excluded.name`: `source` and `imported_at` stay those of the first record. Returns True when the row is new; then logs one event, kind `imported`, detail `made by import-playlist: <source>` (the migration passes its own detail, see N2-03). Does not commit (like `mark_imported`); the caller commits. |
+| `mark_playlist_imported(playlist_id, name, source, detail=None) -> bool` | `INSERT … ON CONFLICT(playlist_id) DO UPDATE SET name=excluded.name`: `source` and `imported_at` stay those of the first record. Returns True when the row is new; then logs one event (`self.log(playlist_id, None, "imported", …)`), detail `detail or f"made by import-playlist: {source}"` (the migration passes its own, see N2-03). Does not commit (like `mark_imported`); the caller commits. |
 | `is_playlist_imported(playlist_id) -> bool` | the row exists |
 | `imported_playlists() -> list[dict]` | every row, `ORDER BY name, playlist_id` |
 | `forget_playlist` (N3) | N3-01's `forget_playlist(playlist_id)` also deletes the `imported_playlists` row, in the same "no rows in flight" branch that deletes `imported_entries`. N2 adds no deleter. |
@@ -132,6 +132,10 @@ crates.db `imported_playlists`, D33, built), the "Playlist comment" bullet (left
 and 4, `docs/next-todos.md` item 2 ("built (N2); live migration pending"), the pivot spec's "Consequences in the code"
 bullet for `import_playlist`. `_rerun_comment` and `_write_comment_and_cache` may shrink to the owner-comment tier write.
 
+**Done (N2-04, 2026-10-19):** both helpers inlined (one caller each, owner comment only); `--merge` never adopts
+another user's playlist (`NameCollision` names the owner); a re-run of ours refreshes the row's name; an adoption's
+event says `adopted with --merge: <source>`. Tests: the re-created playlist (new id) is foreign until `--merge`.
+
 ## Invariants (each is a test)
 
 1. Every path that decides "ours" reads the store; no code path writes `#imported` (a grep in N2-04, plus the
@@ -152,6 +156,7 @@ bullet for `import_playlist`. `_rerun_comment` and `_write_comment_and_cache` ma
 | `…::test_marker_is_a_token_not_a_substring` | unchanged: it tests the legacy reader `is_imported` only |
 | `…::test_a_lookalike_marker_is_a_foreign_playlist_for_import` | renamed `test_a_comment_marker_without_a_row_is_a_foreign_playlist`: a hand-made playlist with comment `old #imported` (a *real* token) raises `NameCollision`; `merge=True` records the row and leaves `old #imported` byte for byte |
 | `…::test_a_comment_write_error_after_the_add_still_records_our_facts_and_reports` | kept (owner comment: the `#tier:` write on creation); adds `store.is_playlist_imported(pid)` |
+| `tests/test_attrs_owner.py::test_import_create_whose_comment_is_not_kept_raises_but_keeps_our_own_facts` | the lossy fake drops `#tier:` from the creation's `#tier:medium`, so `CommentNotKept` is still raised; expect `comment(srv, pid) == ""` (was `#imported`) and add `store.is_playlist_imported(pid)` (the row is committed before the comment write) |
 | `tests/test_app_owner.py::test_import_leaves_no_tier_in_the_comment` | renamed `test_import_writes_no_comment`: comment `== ""` after the create and after a re-run; no `("updatePlaylist", q)` in `srv.state.requests` with `"comment" in q`; plus a `merge=True` case on a foreign playlist with comment `mine`, which stays `mine` |
 | `tests/test_attrs_owner.py::test_import_creates_the_playlist_with_imported_and_tier` | renamed `…_with_its_tier`: `#tier:medium`, `#tier:high`, `#crate`, `#tier:medium` |
 | `…::test_import_rerun_with_tier_keeps_michaels_text` | hand-set comment `sunset only\n#tier:medium` (no marker); expectations drop `#imported` |

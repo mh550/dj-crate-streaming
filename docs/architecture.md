@@ -89,7 +89,7 @@ derived or a mirror.
 | Where a file lives | `deploy/beets.yaml` paths | beets in the worker | one convention |
 | Which songs exist, their ids | Navidrome (`navidrome.db`) | Navidrome's scan | every client asks it |
 | Playlist membership + order | Navidrome | you in any client; our logged commands | you edit in Amperfy |
-| Made by import-playlist | the `#imported` comment marker today; `crates.db` (D33, planned) | import | D33 |
+| Made by import-playlist | `crates.db` `imported_playlists`, one row per playlist id (D33, built in N2); no comment is read | import (`--merge` adopts), `crates.cli imported migrate` | D33, D37 |
 | Is a crate | `crates.db` (`crates.enabled`, source `app`); no comment or name is read | you, in the crates web client (`crates.cli toggle`) | D27 (was D21) |
 | Quality a file must reach | one rule: lossless or lossy ≥ 256 kbps | `deploy/policy.toml` | D24 |
 | Version preferences | none: the exact track is sourced | `deploy/policy.toml` (no `[versions.*]`) | D26 (was D16) |
@@ -126,8 +126,8 @@ Other stores:
 - **beets `library.db`**: a disposable index of the library. Rebuild with `beet update -M` (file → DB, no
   moves). Nothing reads a fact from it in preference to the file. The filer reads it read-only to find what an
   import just added (`filer.py:238-254`).
-- **Playlist comment**: since the pivot it carries only `#imported` (import-playlist's marker; D33 moves that into
-  `crates.db` too, so comments end up empty); under the retired
+- **Playlist comment**: left empty by this system (D33). Nothing reads it to decide anything; import-playlist
+  writes none, and `crates.cli imported migrate` strips the old `#imported` marker (N2). Under the retired
   `CRATES_OWNER=comment` it owned the playlist's attributes (M8): `#crate`, `#tier:<t>`, plus `#imported`. Whitespace-delimited tokens, any case; `#crates` or `x#crate` are not tokens. Name markers `[crate]` / `🎛`
   also flag a crate. Only `crates/attrs.py` writes our tokens; the rest of your comment is never touched.
 - **Trash**: `/srv/_trash/<date>/<path>` with `MOVES.txt` of reverse `mv`s. Never emptied by code.
@@ -149,9 +149,12 @@ Other stores:
    an **accepted other version** (same lead artist and base title, every version word on the tier's `accept`
    list). Otherwise `ambiguous` (why: several versions / other version / length differs / title differs) or
    `missing`.
-3. A same-named playlist without `#imported` raises `NameCollision` unless `--merge`.
+3. A same-named playlist with no `imported_playlists` row in crates.db raises `NameCollision` unless `--merge`,
+   which adopts it (records the row, leaves its comment alone). The comment is not read: `#imported` there means nothing.
+   Another user's playlist of that name is refused even with `--merge` (rename one of them).
 4. Matched songs are appended unless already there or added by an earlier run (so a track you removed stays
-   removed, D13); a new playlist is made public with comment `#imported`. Missing rows →
+   removed, D13); a new playlist is recorded in `imported_playlists` at once, then made public; its comment stays
+   empty (under the retired owner `comment` it gets `#tier:<t>`). Missing rows →
    `add_external_wanted` (tier `medium` by default, D15). Ambiguous rows → status `review` with the candidate ids. Stand-ins are listed as "matched with another version".
 5. A re-run appends new matches **at the end** and closes wanted rows whose track is now matched.
 
@@ -328,6 +331,7 @@ docker compose stop worker / start worker          # pause / resume (a stop mid-
 | Re-check a never-indexed row | web client **Re-check**, or approve it again |
 | Import a playlist | `docker compose exec -T crates python -m sourcing.cli import-playlist <url> [--name N] [--tier T] --dry-run`, then without `--dry-run` |
 | Toggle a crate | web client (the crate switch), or `docker compose exec -T crates python -m crates.cli toggle <playlist-id> on`; writes `crates.db` only. `tier` and `attrs migrate` are retired under `CRATES_OWNER=app` |
+| Record a hand-made import / strip old markers | `docker compose exec -T crates python -m crates.cli imported migrate` (dry run), then `--apply`: records each playlist of ours whose comment still says `#imported` in crates.db `imported_playlists`, then strips the token (read back; the `imported` event holds the old comment). `crates.cli imported list` shows the table. Runbook: `docs/plans/2026-10-17-n2-imported-marker.md` → "Live runbook" |
 | Reconcile now | web client, or `docker compose exec -T crates python -m crates.cli reconcile` (the worker does it every 600 s) |
 | Answer a version / copy question | Wanted tab (Swap / Keep), or `docker compose exec -T crates python -m crates.cli proposals [--all]`, `proposals accept\|decline <id>` |
 | Undo a trashed copy | run its reverse `mv` line from `/srv/_trash/<day>/MOVES.txt` on the host (`docs/worker.md`) |

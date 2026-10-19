@@ -165,7 +165,7 @@ phone browser ──/api/*──▶ crates.service ──Subsonic──▶ Navid
 
 - **A crate is a playlist plus a promise.** Since 2026-10-17 (D27) the crates app owns it: you switch a playlist on in the
   crates web client (or `crates.cli toggle`), `crates.db` holds the answer, and nothing is written to the playlist's
-  name or comment (the comment keeps only the import marker `#imported`). Every track of a crate must have a
+  name or comment (D33: "made by import-playlist" is a crates.db row too). Every track of a crate must have a
   DJ-quality file: lossless, or lossy at 256 kbps or more. The earlier comment-owned design (`#crate`, `#tier:`; set
   `CRATES_OWNER=comment`) is retired but still in the code.
 - **Judging** uses only what Subsonic reports (suffix, bitRate, samplingRate,

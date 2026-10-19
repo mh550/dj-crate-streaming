@@ -236,11 +236,11 @@ ROWS2 = [Row(1, "Good Times", "Chic", None, "sp1"), Row(2, "Nope", "Nobody", Non
 def test_import_rerun_without_tier_queues_new_rows_at_the_comments_tier(env):
     srv, client, store, rec = env
     a = ip.import_playlist("Tea tent", ROWS2, client, store, source="s")
-    client.update_playlist(a.playlist_id, comment="#imported #tier:high")
+    client.update_playlist(a.playlist_id, comment="#tier:high")
     ip.import_playlist("Tea tent", ROWS2 + [Row(3, "Also Nope", "Nobody", None, "sp3")], client, store, source="s")
     by_title = {r["title"]: r for r in store.external_for_playlist(a.playlist_id)}
     assert by_title["Also Nope"]["tier"] == "high"
-    assert srv.state.playlists[a.playlist_id]["comment"] == "#imported #tier:high"     # a plain re-run writes no tier
+    assert srv.state.playlists[a.playlist_id]["comment"] == "#tier:high"     # a plain re-run writes no tier
 
 
 def test_import_rerun_without_tier_matches_at_the_comments_tier(env):
@@ -249,7 +249,7 @@ def test_import_rerun_without_tier_matches_at_the_comments_tier(env):
     srv.state.songs["s1"]["title"] = "Good Times (Club Mix)"
     a = ip.import_playlist("Tea tent", ROWS2, client, store, source="s")
     assert [m.status for m in a.matches] == ["ambiguous", "missing"]
-    client.update_playlist(a.playlist_id, comment="#imported #crate")
+    client.update_playlist(a.playlist_id, comment="#crate")
     b = ip.import_playlist("Tea tent", ROWS2, client, store, source="s")
     assert b.matches[0].status == "matched" and b.matches[0].song_id == "s1"
 
@@ -436,9 +436,8 @@ def test_worker_skips_a_busy_reconcile_and_ticks_on():
 def test_import_into_a_playlist_named_as_a_crate_matches_and_queues_at_crate(env):
     srv, client, store, rec = env
     srv.state.songs["s1"]["title"] = "Good Times (Club Mix)"
-    pl = client.create_playlist("Tea tent [crate]", [])
-    client.update_playlist(pl.id, comment="#imported")
-    rep = ip.import_playlist("Tea tent [crate]", ROWS2, client, store, source="s")
+    pl = client.create_playlist("Tea tent [crate]", [])                 # made by hand: adopted with --merge
+    rep = ip.import_playlist("Tea tent [crate]", ROWS2, client, store, source="s", merge=True)
     assert rep.matches[0].status == "matched" and rep.matches[0].song_id == "s1"
     assert [r["tier"] for r in store.external_for_playlist(pl.id)] == ["crate"]
 

@@ -69,3 +69,10 @@
 - 2026-10-19 02:20 · H3-05 · claude-opus-5-5 · passes=true · 23 min · 19/33 passing
 - 2026-10-19 02:22 · verify H3: H3-04 failed the re-check, back in the queue (one more attempt)
 - 2026-10-19 02:23 · H3-04 · claude-opus-5-5 · passes=true · 1 min · 19/33 passing
+- 2026-10-19 02:24 · H3 verified and tagged run/dj-2026-10-17/H3
+- 2026-10-19 02:25 · H3 merged into main · https://github.com/mh550/dj-crate-streaming/pull/9
+- 2026-10-19 02:34 · N2-01 · claude-opus-5-5 · passes=true · 9 min · 20/33 passing
+- 2026-10-19 02:55 · N2-02 · claude-opus-5-5 · passes=true · 20 min · 21/33 passing
+- 2026-10-19 03:16 · N2-03 · claude-opus-5-5 · passes=true · 20 min · 22/33 passing
+- 2026-10-19 03:32 · N2-04 · claude-opus-5-5 · passes=true · 16 min · 23/33 passing
+- 2026-10-19 03:33 · merged main into harness/dj-2026-10-17

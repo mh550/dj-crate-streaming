@@ -77,6 +77,11 @@ CREATE TABLE IF NOT EXISTS imported_entries (     -- every song import-playlist 
   playlist_id TEXT NOT NULL, song_id TEXT NOT NULL, -- so a track Michael removes by hand is never re-added
   PRIMARY KEY (playlist_id, song_id)
 );
+CREATE TABLE IF NOT EXISTS imported_playlists (   -- playlists import-playlist made or adopted (D33; was #imported)
+  playlist_id TEXT PRIMARY KEY, name TEXT,        -- name: as last imported (for `imported list` only)
+  source TEXT,                                    -- the import's source text, or 'migrated' (N2-03)
+  imported_at REAL                                -- first recorded
+);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS verifications (        -- the last download check per wanted id (spec §3a): JSON of
   song_id TEXT PRIMARY KEY, result TEXT NOT NULL, -- ok, tier, problems, warnings, measurements, file
@@ -666,6 +671,24 @@ class CrateStore:
     def mark_imported(self, playlist_id: str, song_ids) -> None:
         self.db.executemany("INSERT OR IGNORE INTO imported_entries(playlist_id, song_id) VALUES(?,?)",
                             [(playlist_id, s) for s in song_ids])
+
+    def mark_playlist_imported(self, playlist_id: str, name: str, source: str, detail: str | None = None) -> bool:
+        """Record that import-playlist made (or adopted) this playlist (D33). The first record's source and time
+        stay; a later call only refreshes the name. True when the row is new (then one `imported` event). The
+        caller commits, like mark_imported."""
+        new = not self.is_playlist_imported(playlist_id)
+        self.db.execute("INSERT INTO imported_playlists(playlist_id, name, source, imported_at) VALUES(?,?,?,?) "
+                        "ON CONFLICT(playlist_id) DO UPDATE SET name=excluded.name",
+                        (playlist_id, name, source, time.time()))
+        if new:
+            self.log(playlist_id, None, "imported", detail or f"made by import-playlist: {source}")
+        return new
+
+    def is_playlist_imported(self, playlist_id: str) -> bool:
+        return self.db.execute("SELECT 1 FROM imported_playlists WHERE playlist_id=?", (playlist_id,)).fetchone() is not None
+
+    def imported_playlists(self) -> list[dict]:
+        return [dict(r) for r in self.db.execute("SELECT * FROM imported_playlists ORDER BY name, playlist_id")]
 
     def external_for_playlist(self, playlist_id: str) -> list[dict]:
         return [self._ext_row(r) for r in self.db.execute(

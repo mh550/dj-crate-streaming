@@ -35,22 +35,29 @@ from .playlist_sources import Row, lead_artist, track_lead
 from .policy import IMPORT_TIER, TIERS
 
 TOLERANCE_S = 4
-MARKER = "#imported"          # in the playlist comment: "this playlist is managed by import-playlist"
+MARKER = "#imported"          # legacy (before D33): the comment said "made by import-playlist"; now crates.db
+                              # `imported_playlists` does. Read only by crates.migrate_attrs and the N2-03 migration.
 _MARKER_TOKEN = re.compile(r"(?<!\S)" + re.escape(MARKER) + r"(?!\S)", re.IGNORECASE)   # same boundary rule as crates.attrs
 
 
 def is_imported(comment: str | None) -> bool:
     """True when the comment carries MARKER as a whole token: "x#imported" and "#imported-old" are not ours."""
     return bool(_MARKER_TOKEN.search(comment or ""))
+
+
 PAGE = 20                     # Navidrome search3 page size we ask for; a full page means "ask for more"
 MAX_PAGES = 5
 
 
 class NameCollision(Exception):
-    """A playlist with this name exists and was not created by import-playlist (pass merge=True to adopt it)."""
+    """A playlist with this name exists and was not created by import-playlist (pass merge=True to adopt it), or it
+    is another user's (`owner` set), which merge never adopts."""
 
-    def __init__(self, name: str, playlist_id: str):
-        super().__init__(f"playlist {name!r} already exists ({playlist_id}) and is not marked {MARKER}")
+    def __init__(self, name: str, playlist_id: str, owner: str | None = None, user: str | None = None):
+        super().__init__(f"playlist {name!r} ({playlist_id}) belongs to {owner}, not {user}; rename it in Navidrome"
+                         if owner else
+                         f"playlist {name!r} already exists ({playlist_id}) and is not recorded as imported in "
+                         f"crates.db (re-run with --merge to adopt it)")
         self.name, self.playlist_id = name, playlist_id
 
 
@@ -253,46 +260,34 @@ class Report:
         return "\n".join(lines)
 
 
-def _rerun_comment(existing_comment: str | None, ours: bool, tier: str | None) -> str | None:
-    """The comment a re-run writes, None to leave it alone: adopting (merge) appends MARKER; a given `tier`
-    rewrites `#tier:` (D15: a plain re-run never changes the tier). Every other byte stays."""
-    old = existing_comment or ""
-    new = old if ours else old + ("" if not old or old.endswith("\n") else " ") + MARKER
-    if tier is not None:
-        new = attrs.write(new, tier=tier)
-    return None if new == old else new
-
-
-def _write_comment_and_cache(client: SubsonicClient, store: CrateStore, pl, comment: str) -> None:
-    """D21: the comment owns #crate/#tier; write it with the one comment writer (which reads it back and raises
-    CommentNotKept on a mismatch) and only then cache what it says."""
-    Reconciler(client, store).refresh_cache(write_comment(client, pl, comment))
-
-
 def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: CrateStore,
                     source: str, dry_run: bool = False, merge: bool = False, resolve=track_lead, tier: str | None = None) -> Report:
     """Create or update the playlist `name`: matched tracks in row order (appending only what is
     missing on a re-run, never removing), public; everything else becomes an external_wanted row
     that remembers the playlist and position. Ambiguous rows are parked as `verify` with the ids.
 
-    A same-named playlist that this tool did not create (no `#imported` in its comment) raises
-    NameCollision unless `merge=True`, which adopts it (adds the marker, leaves its visibility alone).
+    "Made by import-playlist" is a crates.db row (`imported_playlists`, D33), recorded and committed right after
+    the create; no comment ever carries `#imported`. A same-named playlist without that row raises NameCollision
+    unless `merge=True`, which adopts it (records the row, leaves its comment and visibility alone); another user's
+    playlist raises NameCollision even then.
 
-    The tier lives in the comment (D21): a created playlist gets `#imported #tier:<tier or IMPORT_TIER>`; a re-run
-    rewrites `#tier:` only when `tier` is given. Without `tier`, rows are matched and queued at the playlist's
-    effective tier (reconcile.effective_tier: its comment's #crate / #tier:, or a crate name marker), else
-    IMPORT_TIER. A written comment is read back before crates.db caches it; if
-    Navidrome did not keep it, the playlist edit and the wanted rows are still recorded, then CommentNotKept is
+    Under owner app (live) no comment is written at all. Under owner comment the tier lives in the comment (D21): a
+    created playlist gets `#tier:<tier or IMPORT_TIER>`; a re-run rewrites `#tier:` only when `tier` is given.
+    Without `tier`, rows are matched and queued at the playlist's effective tier (reconcile.effective_tier: its
+    comment's #crate / #tier:, or a crate name marker), else IMPORT_TIER. A written comment is read back before
+    crates.db caches it; if Navidrome did not keep it, the playlist edit and the wanted rows are still recorded, then CommentNotKept is
     raised with `.report` set."""
     existing = next((p for p in client.playlists() if p.name == name), None)
-    app_owned = default_owner() == "app"        # 2026-10-17: the crates app owns the flag; the comment only says #imported
+    app_owned = default_owner() == "app"        # 2026-10-17: the crates app owns the flag; no comment is written (D33)
     if app_owned:
         at = tier or (store.playlist_tier(existing.id) if existing else None) or IMPORT_TIER
     else:
         at = tier or effective_tier(name, existing.comment if existing else None) or IMPORT_TIER   # D21: the comment's (or name's)
     accept = frozenset(TIERS[at].accept_versions)
     matches = [match(client, r, accept) for r in rows]
-    ours = existing is not None and is_imported(existing.comment)
+    ours = existing is not None and store.is_playlist_imported(existing.id)
+    if existing is not None and existing.owner and existing.owner != client.user:   # getPlaylists lists others' public ones
+        raise NameCollision(name, existing.id, existing.owner, client.user)
     if existing is not None and not ours and not merge:
         raise NameCollision(name, existing.id)
     have = {e.id for e in client.playlist(existing.id).entries} if existing else set()
@@ -324,16 +319,23 @@ def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: C
         if existing is None:
             target = client.create_playlist(name, new_ids)
             playlist_id = target.id
-            comment = MARKER if app_owned else attrs.write(MARKER, tier=tier or IMPORT_TIER)   # D15 (comment owner only)
+            store.mark_playlist_imported(playlist_id, name, source)       # at once: a later failure leaves it ours
+            store.commit()
+            comment = None if app_owned else attrs.write("", tier=tier or IMPORT_TIER)   # D15 (comment owner only)
             client.update_playlist(playlist_id, public=True)                      # spec §2a: visible to every user
         else:                                       # visibility is set once, at creation: Michael may change it
-            target = existing
-            comment = _rerun_comment(existing.comment, ours, None if app_owned else tier)
+            target = existing                       # merge adopts it at once, as asked; its comment is left as it is
+            store.mark_playlist_imported(existing.id, name, source,           # ours: refreshes the row's name only
+                                         detail=None if ours else f"adopted with --merge: {source}")
+            store.commit()
+            old = existing.comment or ""            # D15 (owner comment only): a given tier rewrites #tier:, else alone
+            comment = None if app_owned or tier is None else attrs.write(old, tier=tier)
+            comment = None if comment == old else comment
             client.update_playlist(existing.id, add_song_ids=new_ids)
         not_kept = None
         if comment is not None:
             try:
-                _write_comment_and_cache(client, store, target, comment)
+                Reconciler(client, store).refresh_cache(write_comment(client, target, comment))   # read back, then cache
             except CommentNotKept as e:          # the songs are in: still record our own facts, then raise
                 not_kept = e
             except Exception as e:               # SubsonicError, URLError...: the same, so the CLI prints the report, exit 1
