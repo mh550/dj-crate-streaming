@@ -13,6 +13,38 @@ stop`; answers to the questions below go under `## Answers`. Every session reads
 
 ---
 
+### 2026-10-19 · verify N4
+
+| Feature | Step | What you ran or read | What you saw | Holds |
+|---|---|---|---|---|
+| N4-01 | 1 | read docs/plans/2026-10-17-n4-placement.md sources | plan cites next-todos item 4, M9 §1, import_playlist, fetch, replace, worker, playlist_edit | yes |
+| N4-01 | 2 | read docs/plans/2026-10-17-n4-placement.md | has import_order/placements DDL, insert_index, place, due_placements, advance_all, worker step 3b, safety rules | yes |
+| N4-01 | 3 | grep D44 in pivot spec | recorded as `D44 *default*` (D39 was already the backup decision); Q1/Q2 referenced in M9 spec. Name differs from the step, content as asked | yes |
+| N4-01 | 4 | read progress.md N4-01 entry | questions for Michael and the re-run-only note present | yes |
+| N4-01 | 5 | git log | 31c0132 `N4-01: plan for placing downloads at their Spotify position` | yes |
+| N4-01 | 6 | lib/check.sh green (1515 tests, cached); subset run of the 8 named test files: 271 passed | green | yes |
+| N4-02 | 1 | tests/test_crates.py:303-372 (import_order_is_replaced_per_playlist…, one_transaction) | replace per playlist, ordered, import_order_for across playlists; ran green | yes |
+| N4-02 | 2 | tests test_a_real_import_records… and dry-run test in test_import_playlist.py | order built after queueing, recorded on real runs only | yes |
+| N4-02 | 3 | tests/test_import_playlist.py:412,427,453 | asserts (1,w1),(2,ext),(3,k1); rerun 4 rows; dry run 0 rows; two playlists have a row each | yes |
+| N4-02 | 4 | ran the three named files (part of 271 passed); git log | passed; 0a48025 `N4-02: import_order records the Spotify order` | yes |
+| N4-02 | 5 | lib/check.sh green (1515 tests, cached); subset run of the 8 named test files: 271 passed | green | yes |
+| N4-03 | 1 | tests/test_placement.py:16-48 pure rule tests | after earlier, skipped removed neighbour, before later, append, wanted-skipped, how strings; pass | yes |
+| N4-03 | 2 | crates/placement.py:22-124 and tests :257-333 | return strings 'placed at', 'skipped: already in playlist/added before/not an imported playlist/playlist gone'; EditRefused propagates; mark_imported + `placed` event | yes |
+| N4-03 | 3 | test_placement.py:108-146,168-266 | [s1,s9,s2,s3]; before-s2; append; hidden missing raises, no write; one updatePlaylist; second place is 'added before' | yes |
+| N4-03 | 4 | git log | cfbdd1e `N4-03: placement rule and place()` | yes |
+| N4-03 | 5 | lib/check.sh green (1515 tests, cached); subset run of the 8 named test files: 271 passed | green | yes |
+| N4-04 | 1 | tests/test_crates.py:372-435, test_placement.py advance tests | placements in SCHEMA; due_placements derived from state; note_placement counts attempts | yes |
+| N4-04 | 2 | crates/placement.py:130-217; test_placement.py:371-465 | done on success; open on refusal; given_up after 12 with `not_placed` event; other exceptions logged | yes |
+| N4-04 | 3 | sourcing/worker.py:24-30,53,180 | advance_all called after replacements, before export; docstring updated | yes |
+| N4-04 | 4 | tests/test_worker.py:622-682 | places ext-1 at index 1 with event; provisional not due; hidden row: attempts 1, no retry inside recheck_s, given_up at 12 with event, playlist untouched; imported pair not due | yes |
+| N4-04 | 5 | ran named files (271 passed); git log | passed; 840cf80 `N4-04: worker places filed tracks at their Spotify position` | yes |
+| N4-04 | 6 | lib/check.sh green (1515 tests, cached); subset run of the 8 named test files: 271 passed | green | yes |
+| N4-05 | 1 | ls scratch; test_placement.py:147 subsequence test; forgotten-playlist tests | n4.diff exists; 6-shape subsequence test; vanished playlist forgotten tests pass | yes |
+| N4-05 | 2 | git log ee4d714, 056e464; progress N4-05 entry | fixes and tests committed; is_playlist_imported already shared | yes |
+| N4-05 | 3 | grep architecture.md, worker.md, M9 spec, next-todos | §3 tables, §4 steps, quirk 18 closed, worker.md tick step 6 + Placement section, M9 item 1 built, next-todos item 4 built | yes |
+| N4-05 | 4 | git log | 5753979 `N4-05: review and simplify placement` | yes |
+| N4-05 | 5 | lib/check.sh green (1515 tests, cached); subset run of the 8 named test files: 271 passed | green | yes |
+
 ### 2026-10-19 07:05 · N4-05 · passes
 - **What:** I reviewed the N4 diff (scratch `n4.diff`, b7b8b87..404fa37) against the M9 §1 safety rules. Then an Opus review of my fixes (`n4-05-fixes.diff`). Fixed test-first:
   - **Retry wait.** 12 refusals 300 s apart gave a placement up within an hour, while a hidden missing row lasts until a scan or cleanup. New `placement.retry_wait`: the wait doubles from `recheck_s` up to a day, so the 12 tries span ~3.8 days.
