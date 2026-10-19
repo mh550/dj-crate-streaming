@@ -448,7 +448,7 @@
         "Commit `N4-05: review and simplify placement`.",
         ".harness/check.sh is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "N5-01",
