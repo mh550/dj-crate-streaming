@@ -37,6 +37,10 @@ def updates(srv):
     ("x#imported #IMPORTED", "x#imported"),
     ("a\t#imported\tb", "a b"),
     ("#imported-old keep", "#imported-old keep"),
+    ("a #imported #imported b", "a b"),
+    ("a #imported  #IMPORTED b", "a b"),
+    ("mine #imported\r\nx", "mine\r\nx"),
+    ("a\xa0#imported b", "a b"),
 ])
 def test_strip_marker_removes_whole_tokens_only(old, new):
     assert imp.strip_marker(old) == new

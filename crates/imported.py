@@ -16,11 +16,13 @@ from dataclasses import dataclass
 
 from sourcing.import_playlist import _MARKER_TOKEN, is_imported
 from subsonic.client import SubsonicClient
-from .reconcile import write_comment
+from .reconcile import CommentNotKept, write_comment
 from .store import CrateStore
 
 SOURCE = "migrated"
-_TOKEN_AND_SPACES = re.compile(r"[ \t]*" + _MARKER_TOKEN.pattern + r"[ \t]*", re.IGNORECASE)
+_SP = r"[^\S\r\n]*"                                  # whitespace within a line (spaces, tabs, NBSP; not CR/LF)
+_TOKEN_AND_SPACES = re.compile(rf"(?:{_SP}{_MARKER_TOKEN.pattern})+{_SP}", re.IGNORECASE)   # a run of tokens
+_EDGE_SPACES = re.compile(rf"^{_SP}|{_SP}$")
 
 
 @dataclass(frozen=True)
@@ -34,12 +36,14 @@ class Step:
 
 
 def strip_marker(comment: str) -> str:
-    """Each whole `#imported` token, with the spaces/tabs around it, becomes one space; a line that lost a token
-    drops the space left at its start or end. Other lines stay byte for byte. A bare marker becomes ""."""
+    """Each run of whole `#imported` tokens, with the whitespace around it, becomes one space; a line that lost a
+    token drops the whitespace left at its start or end (a CRLF line keeps its CR). Other lines stay byte for byte.
+    A bare marker becomes ""."""
     out = []
     for line in comment.split("\n"):
-        new, n = _TOKEN_AND_SPACES.subn(" ", line)
-        out.append(new.strip(" ") if n else line)
+        body, cr = (line[:-1], "\r") if line.endswith("\r") else (line, "")
+        new, n = _TOKEN_AND_SPACES.subn(" ", body)
+        out.append(_EDGE_SPACES.sub("", new) + cr if n else line)
     return "\n".join(out)
 
 
@@ -89,7 +93,9 @@ def apply(client: SubsonicClient, store: CrateStore, steps: list[Step]) -> tuple
                 store.commit()
             write_comment(client, pl, s.new)
             done.append(s.name)
-        except Exception as e:                       # CommentNotKept, a SubsonicError, a gone playlist: report, go on
+        except CommentNotKept as e:                  # its message starts with the name already
+            failed.append(f"({s.playlist_id}) {e}")
+        except Exception as e:                       # a SubsonicError, a gone playlist: report, go on
             failed.append(f"{s.name} ({s.playlist_id}): {e}")
     return done, failed
 
