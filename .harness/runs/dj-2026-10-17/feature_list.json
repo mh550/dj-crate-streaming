@@ -305,7 +305,7 @@
         "Run .harness/check.sh tests/test_import_playlist.py tests/test_app_owner.py tests/test_crates.py tests/test_migrate_attrs.py tests/test_sourcing_cli.py; commit `N2-02: import-playlist records its playlists in crates.db`.",
         ".harness/check.sh is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "N2-03",
