@@ -434,7 +434,7 @@
         "Run .harness/check.sh tests/test_worker.py tests/test_placement.py tests/test_play_now.py tests/test_replace.py tests/test_fetch.py; commit `N4-04: worker places filed tracks at their Spotify position`.",
         ".harness/check.sh is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "N4-05",
