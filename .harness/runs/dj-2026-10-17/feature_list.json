@@ -376,7 +376,7 @@
         "Commit `N3-03: review and simplify the vanished-playlist cleanup`.",
         ".harness/check.sh is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "N4-01",
