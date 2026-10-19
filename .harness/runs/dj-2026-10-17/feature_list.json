@@ -391,7 +391,7 @@
         "Commit `N4-01: plan for placing downloads at their Spotify position`.",
         ".harness/check.sh is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "N4-02",
