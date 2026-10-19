@@ -1,6 +1,7 @@
 # Next todos for the music server (hand-off list)
 
-Written 2026-10-17. Michael approved this plan; **none of it is built yet** except where marked done. Read first:
+Written 2026-10-17. Michael approved this plan; items 1-4 are built on branch `harness/dj-2026-10-17` (not live), the rest
+is not built. Read first:
 [`specs/2026-10-17-amperfy-pivot.md`](specs/2026-10-17-amperfy-pivot.md) (decisions D24–D34),
 [`hard-won-facts.md`](hard-won-facts.md), [`architecture.md`](architecture.md). Deploy with `scripts/deploy.sh`.
 Anything that trashes files or writes tags needs a reviewed plan file and a reverse log, as in M3/M8.
@@ -13,6 +14,13 @@ Anything that trashes files or writes tags needs a reviewed plan file and a reve
   ambiguous 89, conflict 38, none 203 (output in `/srv/docker/crates/identity/`, the previous one in `identity/previous-2026-10-16/`).
   The 16 `search` rows were applied as a trial (revert logs `apply-20261017T051634.jsonl`, `apply-20261017T051653.jsonl`);
   Navidrome shows the ids, song ids unchanged, exports match. **The 485 default-class rows are not applied yet.**
+- **2026-10-19, run `dj-2026-10-17` (branch `harness/dj-2026-10-17`, milestones N1-N4):** built and tested against the
+  fakes, **none of it run live and not deployed**. (1) Duplicate cleanup `plan | repoint | trash` (N1); its trash step
+  stays at `--dry-run` until Michael lifts it. (2) The imported marker moved into crates.db, with `crates.cli imported
+  migrate` (dry run first, then `--apply`) still pending on the two old playlists (N2). (3) Cleanup of a vanished
+  playlist's rows at reconcile (N3). (4) Placement of filed downloads at their Spotify position by the worker (N4).
+  Also on the branch: snapshots, heartbeat and healthchecks (H1), the backup job in git (H2), Gatus and the disk timer
+  (H3). The live steps in order, each with its undo: [`plans/2026-10-17-morning-checklist.md`](plans/2026-10-17-morning-checklist.md).
 
 ## In order
 
@@ -42,7 +50,9 @@ Anything that trashes files or writes tags needs a reviewed plan file and a reve
    Before N4: `fetch.finish` (`sourcing/fetch.py`), `external_wanted.position`, `crates/playlist_edit.py`. Also play-now.
 5. **Re-run the imports after the cleanup** so the 13 `review` rows (`external_wanted`, status `review`) and "shakori
    (Spotify)"'s 2 ambiguous rows are re-matched against a library without duplicates (`sourcing.cli import-playlist`;
-   M9 spec §5b picker only for what is left).
+   M9 spec §5b picker only for what is left). **Not started** (needs items 1 and 4 live). Since N4 a real re-run also
+   records `import_order`, which the worker needs to place a playlist's downloads, so this re-run is also what
+   switches placement on for playlists imported before N4.
 6. **Id backfill:** after Michael has looked at `identity-backfill-report.md`, apply the default classes (`confirmed`, `isrc`,
    `acoustid`; 485 files): dry run, then `--limit 5`, then all, as in `docs/worker.md`; scan and check after each stage
    (the trial's checks: ids appear in `navidrome.db`, song ids unchanged, `scripts.export_playlists check`). Then the

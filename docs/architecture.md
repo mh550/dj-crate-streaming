@@ -16,6 +16,7 @@ Legend: **built** = in the code; **live** = also running on the box; **planned**
 | M7 review (Task 11) | running now |
 | M7 live proposal (Task 12), gated apply (Task 13) | not done; Task 13 waits for you |
 | M8 lifecycle (Parts A–D: replacement, proposals, play-now; ownership changed by the pivot) | **built, live** since 2026-10-17; the trash-move probe in §9 has not been run (it needs the first real replacement) |
+| N1-N4 (run `dj-2026-10-17`: duplicate cleanup, imported marker in crates.db, vanished-playlist cleanup, placement) | built, **not live** (branch `harness/dj-2026-10-17`; the live steps are in `docs/plans/2026-10-17-morning-checklist.md`) |
 | M9 | [`docs/specs/2026-10-17-m9-remaining-ownership.md`](specs/2026-10-17-m9-remaining-ownership.md): item 3 built (N1, not run live), item 1 placement built (N4, not deployed); the rest not built |
 
 Checked live (read-only) when this was written: the worker image has no `deploy/policy.toml` and no
@@ -322,6 +323,7 @@ the test fixture `tests/fixtures/policy-legacy.toml` holds.
 | Other tags untouched | `write_minimal` sets only named fields; `apply` re-reads all others |
 | Peer names never in UI/logs/events | `explain(peers=False)`, basenames only in events and worker stdout |
 | Duplicate cleanup never trashes a file a playlist holds (built N1, not run live) | `scripts/duplicate_cleanup.py`: groups recomputed from navidrome.db right before each repoint and move; `repoint` only via `playlist_edit.repoint_everywhere`, reverse line before each write, then a waited scan; `trash` under `worker.lock`, no scan running, `references()` empty (hidden rows, other owners) before and after each move and after the closing scan (else put back), `CrateStore.song_in_use` empty, `MOVES.txt` before each move; every repoint and move a `cleanup` event |
+| Placement only inserts, only in our imported playlists, once per track (built N4, not deployed) | `crates/placement.py`: the playlist needs an `imported_playlists` row (D37); a track already in `imported_entries` is never due, so a removed one stays removed; every edit is one `playlist_edit.rewrite` (refuses on hidden missing rows, another owner, a smart playlist or a concurrent edit); an unconfirmed edit is looked at, never resent; `given_up` after 12 refusals, with a `not_placed` event |
 | Navidrome DB read-only | `open_ro` (`mode=ro`) and a `:ro` mount |
 | Policy typos stop the start | `load_policy` raises naming the key (`policy.py:95`) |
 
@@ -355,7 +357,7 @@ docker compose stop worker / start worker          # pause / resume (a stop mid-
 | Identity apply | `… identity_backfill apply /data/identity/identity-proposal.json --dry-run`, then `--yes [--limit 5] [--classes …] [--only GLOB]` |
 | Undo apply | `… identity_backfill revert /data/identity/apply-<time>.jsonl` |
 | Duplicate cleanup | `docker compose exec -T worker python3 -m scripts.duplicate_cleanup plan`, then `repoint [--dry-run] [--limit N]`; with the worker stopped `docker compose run --rm --no-deps worker python3 -m scripts.duplicate_cleanup trash [--dry-run] [--limit N]`; staged runbook and undo in `docs/worker.md` "Duplicate cleanup" |
-| Tests | `cd ~/projects/dj-crate-streaming && ~/.local/bin/pytest -q` (about 1,100 tests, a few minutes) |
+| Tests | `cd ~/projects/dj-crate-streaming && ~/.local/bin/pytest -q` (1,515 tests, about 7 minutes) |
 | Offline demo | `python3 -m crates.cli demo` → http://127.0.0.1:4580 |
 
 Where to look: worker stdout (`docker compose logs worker`), the web client's log tab (`events`), approvals'
@@ -507,11 +509,14 @@ Each: what, **impact**, *mitigation*.
 16. **Import `review` rows have no picker.** Since M8 the Wanted tab lists `review` rows with their reason, and the
     retryable ones from copy replacement (kept beside, declined, not made, filed beside) offer Preview and Approve.
     The 11 live import `review` rows (several versions fit) are visible but still cannot be resolved. **Medium.**
-    (Question 15.)
+    (Question 15.) The re-run of the imports after the duplicate cleanup (next-todos item 5) re-matches them against
+    a library without duplicates, which may clear some; the picker is for what is left.
 17. **Failed rows duplicate on re-import.** `find_external` skips failed unfiled rows (`store.py:367`), so a re-run
     of the import queues a second row for the same track. **Low.**
 18. **Closed (N4).** Filed external rows were not put in their playlist; the worker now places them at their Spotify
-    position ((b) step 7). Still: a playlist imported before N4 has no `import_order` until its next re-run.
+    position ((b) step 7), from state each tick, so a worker restart loses nothing. Built, not deployed. Still: a
+    playlist imported before N4 has no `import_order` until its next re-run (next-todos item 5), and a placement
+    refused 12 times is given up (event `not_placed`; the re-run appends it).
 19. **Exports.** Since M8 the worker rewrites changed `.m3u8` files every 300 s (`WORKER_EXPORT_S`), so repoints and
     your edits reach them. A restore from them still needs `ND_AUTOIMPORTPLAYLISTS` on for one scan.
 20. **crates.db backup.** WAL mode: the main file is 4 KB and the WAL ~900 KB; restic copies them live. It now

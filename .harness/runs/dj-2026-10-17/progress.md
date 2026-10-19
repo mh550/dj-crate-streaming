@@ -13,6 +13,12 @@ stop`; answers to the questions below go under `## Answers`. Every session reads
 
 ---
 
+### 2026-10-19 · N5-01 · passes
+- **What:** docs only. `docs/next-todos.md` (dated hand-off paragraph; items 1-4 say built with N1-N4; item 5 notes re-runs record `import_order`), `docs/architecture.md` (N1-N4 milestone row, placement safety row, quirks 16 and 18, test count in §8), `README.md` and `docs/hard-won-facts.md` (count 1,515; new "Learned in the N1-N4 run" section: fake-DB columns, trash needs the worker stopped, scan between repoint and trash, placement is state-driven, repoint_song, marker is a row). `docs/specs/2026-10-17-amperfy-pivot.md`: D37-D39 cut to one sentence each (9 `*default*` rows; D35-D44 have no gaps). New `docs/plans/2026-10-17-morning-checklist.md` (deploy, imported migrate, cleanup stages with checks, reconcile, import re-runs, each with undo).
+- **Verified:** `grep -c '\*default\*'` on the pivot spec gives 9; `lib/check.sh` green, 559 s, 1,515 tests (unchanged; no code touched). No live commands were run.
+- **Next session must know:** the checklist keeps `duplicate_cleanup trash` at `--dry-run` per CLAUDE.md, even though Michael's 2026-10-19 answer applies D31 to the two-lossless groups.
+- **Questions for Michael:** none new. **Proposed changes:** none.
+
 ### 2026-10-19 · verify N4
 
 | Feature | Step | What you ran or read | What you saw | Holds |

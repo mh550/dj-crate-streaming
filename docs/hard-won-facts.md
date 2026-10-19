@@ -14,7 +14,7 @@ on this system.
   allowed the rebuild, read-only SQLite (`mode=ro`) on `navidrome.db` and `crates.db`.
 - **`git add -A` sweeps scratch files in.** Write scratch output elsewhere, check `git show --stat HEAD` before pushing.
   Soulseek peer names stay out of logs and UI (p1, p2, …).
-- **Tests:** `~/.local/bin/pytest -q` (about 1,120 tests, 7 minutes). Fakes must mirror captured live responses
+- **Tests:** `~/.local/bin/pytest -q` (1,515 tests, 7-9 minutes). Fakes must mirror captured live responses
   (`fixtures/`). The suite reads a frozen old policy (`tests/fixtures/policy-legacy.toml`) and runs the older
   comment-owned mode (`CRATES_OWNER=comment`) by default via `tests/conftest.py`; new-mode tests are in `tests/test_app_owner.py`.
 
@@ -49,3 +49,22 @@ on this system.
   only with `scripts/snapshot-crates-db.sh` (`sqlite3 .backup`, both databases since H1); `--suffix <run>` gives a
   run its own restore point. The nightly restic job runs it first, from `~/projects/dj-crate-streaming`, so
   `navidrome.db.snap` exists only once that checkout has this version (H2 installs a fixed copy instead).
+
+## Learned in the N1-N4 run (2026-10-19)
+- **The fake `navidrome.db` mirror must carry every column a script SELECTs.** `subsonic/fake_server.py`
+  `NAVIDROME_SCHEMA` lists only what earlier code read; `duplicate_report.load` SELECTs `bit_rate`, which the mirror
+  lacked, so the test failed on the fake, not on the code. When a script reads a new column, add it to the schema and
+  to the fake's INSERT in the same commit.
+- **The cleanup's trash step needs the worker stopped.** Only the worker container has `DJ_WORKER=1`, so only it can
+  make beets forget a trashed path, and beets has one writer (D18, D36). `trash` refuses while the worker holds
+  `worker.lock`; run it with `docker compose run --rm --no-deps worker …` after `docker compose stop worker`.
+  `repoint` and `plan` run beside the daemon.
+- **Scan between repoint and trash.** Navidrome still lists a trashed song until a scan finishes, and Amperfy can add
+  it to a playlist meanwhile. `trash` refuses unless a scan finished after the newest `repoint-<time>.jsonl`.
+- **Placement is state-driven, so a restart loses nothing.** What is due comes from `import_order`, `imported_entries`
+  and `placements` each tick, not from a queue in memory. An unconfirmed edit is looked at on the next tick, never
+  resent. It only works for playlists imported (or re-run) since N4: older ones have no `import_order`.
+- **A copy replacement or a repoint changes the song id,** so crates.db rows that name it (`import_order`,
+  `imported_entries`, filed `external_wanted`, unfinished `placements`) follow through `CrateStore.repoint_song`.
+- **The marker for "ours" is a crates.db row, not the comment** (`imported_playlists`, D37): `#imported` in a comment
+  means nothing to the code now.
