@@ -13,6 +13,19 @@ stop`; answers to the questions below go under `## Answers`. Every session reads
 
 ---
 
+### 2026-10-19 07:55 · N5-02 · passes
+- **What:** an Opus reviewer read the whole run diff (scratch `run.diff`, `e4bf623..HEAD` without `.harness/runs`, 10k lines) against the four invariants. No Critical. Fixed test-first, RED → GREEN each:
+  - **I1:** trash moved a file even when crates.db's repoint failed (busy), stranding import orders and placements on the trashed id. It now refuses: "refused: crates.db not repointed (…); run again".
+  - **I2:** `CrateStore.repoint_song` had no reverse. It now logs the exact rows (RETURNING) to `songs-repointed.jsonl` beside crates.db, and `unrepoint_song(line)` undoes them.
+  - **I3:** `imported migrate`'s strip-only step overwrote a comment unrecorded. It now logs an `imported` event with the old comment first.
+  - **Minor:** trash re-checks "scanned since the newest repoint log" before every move; repoint's closing scan waits out a running scan (shared `_fresh_scan`); reconcile frees `forget_playlist`'s write lock when nothing changed; `/api/events` goes through `public()` (no absolute paths); the cleanup event counts placements.
+  - **Simplified:** `_group_of`, `_restored`, `store.append_line` (also used by reconcile).
+- **Docs:** N1/N2 plans fixed in place; N3/N4 plans gained "As built" notes. worker.md has the new refusal, `songs-repointed.jsonl` and its undo. The morning checklist and CLAUDE.md no longer point at closed PR #3. Hygiene greps: no test writes outside tmp, no new beets import. A second Opus review of the fixes (`n5-02-fixes.diff`) found no Critical or Important issues; its doc and docstring minors are fixed. Tests 1,515 → 1,523. `lib/check.sh` green on c44011b: 563 s, 1,523 tests. No live commands were run.
+- **Built, not run live:** the duplicate cleanup (N1, N1F), the imported marker move (`imported migrate --apply`), vanished-playlist cleanup (N3), placement (N4), this review's fixes. A trash put-back leaves crates.db repointed until the next `repoint` (noted in worker.md).
+- **Open questions for Michael:** (1) lift `duplicate_cleanup trash` beyond `--dry-run`? I1/I2 are fixed; CLAUDE.md still wants `lastScan` confirmed on live Navidrome. (2) N4-05: OK that a refused placement retries over ~4 days (D44)? (3) the H3-03 disk timer steps in INBOX are still yours.
+- **First command of the morning checklist:** `systemctl show restic-backup.service -p ExecMainExitTimestamp -p ExecMainStatus` (`ExecMainStatus=0`, under 26 h).
+- **Proposed change:** step 1's `git diff main...HEAD` is docs-only now that N1–N4 are merged; I diffed from the pre-run main `e4bf623`.
+
 ### 2026-10-19 · N5-01 · passes
 - **What:** docs only. `docs/next-todos.md` (dated hand-off paragraph; items 1-4 say built with N1-N4; item 5 notes re-runs record `import_order`), `docs/architecture.md` (N1-N4 milestone row, placement safety row, quirks 16 and 18, test count in §8), `README.md` and `docs/hard-won-facts.md` (count 1,515; new "Learned in the N1-N4 run" section: fake-DB columns, trash needs the worker stopped, scan between repoint and trash, placement is state-driven, repoint_song, marker is a row). `docs/specs/2026-10-17-amperfy-pivot.md`: D37-D39 cut to one sentence each (9 `*default*` rows; D35-D44 have no gaps). New `docs/plans/2026-10-17-morning-checklist.md` (deploy, imported migrate, cleanup stages with checks, reconcile, import re-runs, each with undo).
 - **Verified:** `grep -c '\*default\*'` on the pivot spec gives 9; `lib/check.sh` green, 559 s, 1,515 tests (unchanged; no code touched). No live commands were run.
