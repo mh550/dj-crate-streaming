@@ -120,12 +120,16 @@ def test_import_refuses_a_foreign_playlist_unless_merge_and_never_publishes_it()
             ip.import_playlist("Tea tent", ROWS, c, store, source="s")
         assert e.value.playlist_id == existing.id
         assert [x.id for x in c.playlist(existing.id).entries] == ["k1"] and store.external_count() == 0
+        assert not store.is_playlist_imported(existing.id)
+        assert "not recorded as imported in crates.db (re-run with --merge to adopt it)" in str(e.value)
         dry = ip.import_playlist("Tea tent", ROWS, c, store, source="s", dry_run=True, merge=True)
         assert dry.playlist_id == existing.id and dry.matched == 2 and dry.added == 1   # what it *would* add
         assert [x.id for x in c.playlist(existing.id).entries] == ["k1"] and store.external_count() == 0
+        assert not store.is_playlist_imported(existing.id)                   # a dry run records nothing
         rep = ip.import_playlist("Tea tent", ROWS, c, store, source="s", merge=True)
         assert rep.playlist_id == existing.id and [x.id for x in c.playlist(existing.id).entries] == ["k1", "w1"]
         assert c.playlist(existing.id).public is False                   # not ours: visibility is left alone
+        assert store.is_playlist_imported(existing.id)                       # adopted: recorded in crates.db
 
 
 def test_import_marks_its_playlists_so_reruns_need_no_merge_flag():
@@ -133,9 +137,12 @@ def test_import_marks_its_playlists_so_reruns_need_no_merge_flag():
         _lib(srv)
         c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
         first = ip.import_playlist("Tea tent", ROWS, c, store, source="s")
-        assert "#imported" in (c.playlist(first.playlist_id).comment or "") and c.playlist(first.playlist_id).public is True
+        # D33: the flag is a crates.db row; no comment ever carries #imported
+        assert store.is_playlist_imported(first.playlist_id) and c.playlist(first.playlist_id).public is True
+        assert "#imported" not in (c.playlist(first.playlist_id).comment or "")
         again = ip.import_playlist("Tea tent", ROWS, c, store, source="s")       # no merge flag needed
         assert again.playlist_id == first.playlist_id and again.added == 0
+        assert "#imported" not in (c.playlist(first.playlist_id).comment or "")
 
 
 def test_rerun_does_not_reset_an_ambiguous_row_michael_resolved():
@@ -303,17 +310,19 @@ def test_marker_is_a_token_not_a_substring():
         assert not ip.is_imported(no), no
 
 
-def test_a_lookalike_marker_is_a_foreign_playlist_for_import():
+def test_a_comment_marker_without_a_row_is_a_foreign_playlist():
+    # D33: only crates.db says "ours"; a real #imported token in the comment (not yet migrated, N2-03) is not enough.
     import pytest
     with FakeSubsonicServer() as srv:
         _lib(srv)
         c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
         existing = c.create_playlist("Tea tent", ["k1"])
-        c.update_playlist(existing.id, comment="old #imported-old")
+        c.update_playlist(existing.id, comment="old #imported")
         with pytest.raises(ip.NameCollision):
             ip.import_playlist("Tea tent", ROWS, c, store, source="s")
         ip.import_playlist("Tea tent", ROWS, c, store, source="s", merge=True)
-        assert c.playlist(existing.id).comment == "old #imported-old #imported"      # adopted: a real marker is appended
+        assert store.is_playlist_imported(existing.id)
+        assert c.playlist(existing.id).comment == "old #imported"            # adopted: the comment is left byte for byte
 
 
 def _comment_update_raises(monkeypatch, exc):
@@ -342,5 +351,6 @@ def test_a_comment_write_error_after_the_add_still_records_our_facts_and_reports
             pid = e.value.report.playlist_id
             assert [x.id for x in c.playlist(pid).entries] == ["w1", "k1"]             # the songs are in
             assert store.imported(pid) == {"w1", "k1"}                                  # removed-stays-removed still works
+            assert store.is_playlist_imported(pid)                                      # recorded before the comment write
             assert {x["title"] for x in store.external_for_playlist(pid)} == {"Piano Joint (This Kind Of Love)", "The Magician"}
             assert type(exc).__name__ in str(e.value) and e.value.report.table()

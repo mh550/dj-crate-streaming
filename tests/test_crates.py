@@ -206,3 +206,31 @@ def test_find_external_compares_lead_artists():
     new = s2.add_external_wanted("Chic", "Le Freak")
     assert s2.find_external("Chic feat. Nile Rodgers", "Le Freak")["song_id"] == new
     assert s2.find_external("Sister Sledge", "Le Freak") is None
+
+
+def test_imported_playlists_table_survives_reopening(tmp_path):
+    # N2 (D33): "made by import-playlist" is a crates.db row, not `#imported` in the playlist comment.
+    p = tmp_path / "c.db"
+    s = CrateStore(p)
+    assert s.imported_playlists() == [] and not s.is_playlist_imported("pl-1")
+    assert s.mark_playlist_imported("pl-1", "Tea tent", "spotify:abc") is True
+    s.commit()
+    s2 = CrateStore(p)
+    assert s2.is_playlist_imported("pl-1") and not s2.is_playlist_imported("pl-2")
+    [row] = s2.imported_playlists()
+    assert (row["playlist_id"], row["name"], row["source"]) == ("pl-1", "Tea tent", "spotify:abc")
+    assert row["imported_at"] > 0
+
+
+def test_mark_playlist_imported_keeps_the_first_source_and_refreshes_the_name():
+    s = CrateStore()
+    assert s.mark_playlist_imported("pl-1", "Tea", "a.csv") is True
+    first = s.imported_playlists()[0]["imported_at"]
+    assert s.mark_playlist_imported("pl-1", "Tea tent", "b.csv") is False
+    s.mark_playlist_imported("pl-0", "Alpha", "migrated", detail="migrated from comment '#imported'")
+    rows = s.imported_playlists()
+    assert [(r["playlist_id"], r["name"], r["source"]) for r in rows] == [
+        ("pl-0", "Alpha", "migrated"), ("pl-1", "Tea tent", "a.csv")]
+    assert rows[1]["imported_at"] == first
+    ev = [(e["playlist_id"], e["detail"]) for e in s.events() if e["kind"] == "imported"]
+    assert sorted(ev) == [("pl-0", "migrated from comment '#imported'"), ("pl-1", "made by import-playlist: a.csv")]

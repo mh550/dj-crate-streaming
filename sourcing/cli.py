@@ -212,7 +212,7 @@ def main(argv: list[str] | None = None) -> int:
             rep = import_playlist(name, rows, SubsonicClient(cfg.subsonic_url, cfg.username, cfg.password), store,
                                   source=" ".join(a.sources), dry_run=a.dry_run, merge=a.merge, tier=a.tier)
         except NameCollision as e:
-            print(f"{e}; re-run with --merge to add to it, or pick another --name", file=sys.stderr); return 1
+            print(f"{e}, or pick another --name", file=sys.stderr); return 1
         except CommentNotKept as e:                     # the songs and wanted rows were recorded; the comment was not
             print(e.report.table())
             print(f"{e}; the tier is not cached: fix the comment in Navidrome, or re-run", file=sys.stderr); return 1

@@ -196,39 +196,38 @@ def _import(c, store, name, **kw):
     return ip.import_playlist(name, ROWS, c, store, source="s", **kw)
 
 
-def test_import_creates_the_playlist_with_imported_and_tier(env):
+def test_import_creates_the_playlist_with_its_tier(env):
     srv, c, store, _ = env
     a = _import(c, store, "Tea tent")
-    assert comment(srv, a.playlist_id) == "#imported #tier:medium"
+    assert comment(srv, a.playlist_id) == "#tier:medium"
     assert store.get(a.playlist_id).tier == "medium" and not store.get(a.playlist_id).enabled
     b = _import(c, store, "Garden", tier="high")
-    assert comment(srv, b.playlist_id) == "#imported #tier:high"
+    assert comment(srv, b.playlist_id) == "#tier:high"
     _import(c, store, "Garden", tier="crate")
-    assert comment(srv, b.playlist_id) == "#imported #crate"
+    assert comment(srv, b.playlist_id) == "#crate"
     assert store.get(b.playlist_id).enabled
     _import(c, store, "Tea tent")
-    assert comment(srv, a.playlist_id) == "#imported #tier:medium"
+    assert comment(srv, a.playlist_id) == "#tier:medium"
 
 
 def test_import_rerun_with_tier_keeps_michaels_text(env):
     srv, c, store, _ = env
     a = _import(c, store, "Tea tent")
-    c.update_playlist(a.playlist_id, comment="sunset only\n#imported #tier:medium")
+    c.update_playlist(a.playlist_id, comment="sunset only\n#tier:medium")
     _import(c, store, "Tea tent", tier="medium")
-    assert comment(srv, a.playlist_id) == "sunset only\n#imported #tier:medium"
+    assert comment(srv, a.playlist_id) == "sunset only\n#tier:medium"
     _import(c, store, "Tea tent", tier="low")
-    assert comment(srv, a.playlist_id) == "sunset only\n#imported #tier:low"
+    assert comment(srv, a.playlist_id) == "sunset only\n#tier:low"
 
 
-def test_import_adopting_with_merge_adds_the_marker_and_the_tier(env):
+def test_import_adopting_with_merge_records_the_row_and_adds_only_the_tier(env):
     srv, c, store, _ = env
     existing = c.create_playlist("Tea tent", [])
     c.update_playlist(existing.id, comment="mine")
     _import(c, store, "Tea tent", merge=True)
-    assert comment(srv, existing.id) == "mine #imported"
-    c.update_playlist(existing.id, comment="mine")
-    _import(c, store, "Tea tent", merge=True, tier="high")
-    assert comment(srv, existing.id) == "mine #imported #tier:high"
+    assert comment(srv, existing.id) == "mine" and store.is_playlist_imported(existing.id)
+    _import(c, store, "Tea tent", tier="high")                      # ours now: no --merge needed
+    assert comment(srv, existing.id) == "mine #tier:high"
 
 
 # ---- Task 3 review
@@ -254,7 +253,8 @@ def test_import_create_whose_comment_is_not_kept_raises_but_keeps_our_own_facts(
     with pytest.raises(CommentNotKept) as e:
         ip.import_playlist("Tea tent", ROWS2, c, store, source="s")
     pid = e.value.report.playlist_id
-    assert comment(srv, pid) == "#imported" and store.get(pid) is None            # nothing cached
+    assert comment(srv, pid) == "" and store.get(pid) is None                     # nothing cached
+    assert store.is_playlist_imported(pid)                                         # committed before the comment write
     assert store.imported(pid) == {"s1"}                                           # our own DB facts are recorded
     assert [(x["title"], x["position"]) for x in store.external_for_playlist(pid)] == [("Nope", 2)]
 
