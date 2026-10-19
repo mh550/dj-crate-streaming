@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import sqlite3
 import time
@@ -208,6 +209,14 @@ def pick_token(candidate: dict) -> str:
 # go through public(), which drops every `username` key and every reference's `path`, and cuts the directories off
 # any absolute path inside a string (a path in an error text keeps its basename). Relative library paths stay.
 _ABS = re.compile(r"(?<![\w.:/\\])/(?:[^\s/'\"]+/)+")
+
+
+def append_line(path: Path, obj: dict) -> None:
+    """One JSON line, fsynced: a reverse log beside crates.db, on disk before the change it undoes is committed."""
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(obj, ensure_ascii=False) + "\n")
+        f.flush()
+        os.fsync(f.fileno())
 
 
 def public(v):
@@ -817,18 +826,45 @@ class CrateStore:
         name `new`, a playlist that ever had `old` added has `new` added too (removed stays removed; the old row
         stays), filed external rows (`ok`, not provisional) and unfinished placements name it, so placement finds
         its neighbours, never inserts the old copy and looks for the right song (review N4-05 I2). Rows still in
-        flight are their own flow's. Returns the counts
+        flight are their own flow's. The rows changed go, as one JSON line, to songs-repointed.jsonl beside
+        crates.db (none for an in-memory store), the reverse for unrepoint_song (review N5-02 I2). Returns the counts
         of rows changed; the caller commits."""
-        n = {"import_order": self.db.execute("UPDATE import_order SET song_id=? WHERE song_id=?", (new, old)).rowcount}
-        n["imported_entries"] = self.db.execute(
-            "INSERT OR IGNORE INTO imported_entries(playlist_id, song_id) "
-            "SELECT playlist_id, ? FROM imported_entries WHERE song_id=?", (new, old)).rowcount
-        n["external_wanted"] = self.db.execute(
-            "UPDATE external_wanted SET library_song_id=? WHERE library_song_id=? AND status='ok' AND provisional=0",
-            (new, old)).rowcount
-        n["placements"] = self.db.execute(       # an unfinished one: the look reads its song_id
-            "UPDATE placements SET song_id=? WHERE song_id=? AND state IN ('open','writing')", (new, old)).rowcount
-        return n
+        rows = {
+            "import_order": self.db.execute("UPDATE import_order SET song_id=? WHERE song_id=? "
+                                            "RETURNING playlist_id, position", (new, old)).fetchall(),
+            "imported_entries": self.db.execute(
+                "INSERT OR IGNORE INTO imported_entries(playlist_id, song_id) "
+                "SELECT playlist_id, ? FROM imported_entries WHERE song_id=? RETURNING playlist_id", (new, old)).fetchall(),
+            "external_wanted": self.db.execute(
+                "UPDATE external_wanted SET library_song_id=? WHERE library_song_id=? AND status='ok' AND provisional=0 "
+                "RETURNING id", (new, old)).fetchall(),
+            "placements": self.db.execute(       # an unfinished one: the look reads its song_id
+                "UPDATE placements SET song_id=? WHERE song_id=? AND state IN ('open','writing') "
+                "RETURNING wanted_id, playlist_id", (new, old)).fetchall(),
+        }
+        rows = {k: sorted(list(r) if len(r) > 1 else r[0] for r in v) for k, v in rows.items()}
+        if any(rows.values()) and self.path != ":memory:":
+            append_line(Path(self.path).parent / "songs-repointed.jsonl",
+                        {"ts": time.time(), "old": old, "new": new, "rows": rows})
+        return {k: len(v) for k, v in rows.items()}
+
+    def unrepoint_song(self, line: dict) -> None:
+        """Undo one songs-repointed.jsonl line: each row it names that still names `new` names `old` again, and the
+        imported_entries rows it added go. Replay lines newest first; the caller commits. A line whose commit then
+        failed describes a repoint that did not happen; replaying it changes only rows that name `new` since, but
+        deletes the listed playlists' imported_entries row for `new` even if an import added it since."""
+        old, new, rows = line["old"], line["new"], line["rows"]
+        for pid, pos in rows["import_order"]:
+            self.db.execute("UPDATE import_order SET song_id=? WHERE playlist_id=? AND position=? AND song_id=?",
+                            (old, pid, pos, new))
+        for pid in rows["imported_entries"]:
+            self.db.execute("DELETE FROM imported_entries WHERE playlist_id=? AND song_id=?", (pid, new))
+        for ext in rows["external_wanted"]:
+            self.db.execute("UPDATE external_wanted SET library_song_id=? WHERE id=? AND library_song_id=?",
+                            (old, ext, new))
+        for wid, pid in rows["placements"]:
+            self.db.execute("UPDATE placements SET song_id=? WHERE wanted_id=? AND playlist_id=? AND song_id=?",
+                            (old, wid, pid, new))
 
     def is_playlist_imported(self, playlist_id: str) -> bool:
         return self.db.execute("SELECT 1 FROM imported_playlists WHERE playlist_id=?", (playlist_id,)).fetchone() is not None

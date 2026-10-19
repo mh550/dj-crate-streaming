@@ -37,7 +37,7 @@ from sourcing.policy import DEFAULT_POLICY, DEFAULT_TIER, TIERS, QualityPolicy, 
 from sourcing.scorer import Wanted
 from subsonic.client import Playlist, Song, SubsonicClient, SubsonicError
 from . import attrs
-from .store import CrateStore, held_reason, in_flight
+from .store import CrateStore, append_line, held_reason, in_flight
 
 # Name markers, for clients that can rename a playlist but not edit its comment
 # (most phone apps). "Disco Edits [crate]" or "🎛 Disco Edits" both count.
@@ -403,6 +403,8 @@ class Reconciler:
                         f"; was crate={_onoff(bool(c['enabled']))} tier={c['tier'] or 'none'}"
                         if c and (c["enabled"] or c["tier"] is not None) else ""))
                     self.store.commit()
+                else:                                    # nothing changed: free BEGIN IMMEDIATE's lock (N5-02 M6)
+                    self.store.db.rollback()
             except OSError as e:                         # no reverse log, no delete
                 self.store.db.rollback()
                 rep.errors.append(f"{name}: playlist no longer exists in Navidrome; kept: reverse log not written ({e})")
@@ -420,11 +422,8 @@ class Reconciler:
         failed describes a forget that did not happen; replaying it only re-inserts rows that are still there."""
         if self.store.path == ":memory:":
             return
-        line = json.dumps({"ts": time.time(), "playlist_id": pid, "name": name, "forgotten": out}, ensure_ascii=False)
-        with open(Path(self.store.path).parent / "playlists-gone.jsonl", "a", encoding="utf-8") as f:
-            f.write(line + "\n")
-            f.flush()
-            os.fsync(f.fileno())
+        append_line(Path(self.store.path).parent / "playlists-gone.jsonl",
+                    {"ts": time.time(), "playlist_id": pid, "name": name, "forgotten": out})
 
     def policy_for(self, tier: str) -> QualityPolicy:
         """The crate tier is this reconciler's policy (a test or service may pass its own); the others are policy.toml's."""

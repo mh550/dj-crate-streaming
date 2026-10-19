@@ -32,7 +32,7 @@ i.e. `/srv/docker/crates/duplicate-cleanup/` on the host, inside the existing `/
 |---|---|---|---|
 | `plan` | worker image (needs `/srv/music` to see the keeper on disk), beside the daemon | navidrome.db (`open_ro`), `MUSIC_ROOT` | `plan.json`, `report.md` |
 | `repoint` | crates or worker container, beside the daemon | plan, navidrome.db, Subsonic | playlists (only via `playlist_edit`), `repoint-<ts>.jsonl`, one `startScan` |
-| `trash` | `docker compose run --rm worker …` **with the worker stopped** (D36) | plan, navidrome.db, Subsonic `getScanStatus` | `/srv/_trash/<day>/…` + `MOVES.txt`, `trash-<ts>.jsonl`, `beet remove`, one `startScan` |
+| `trash` | `docker compose run --rm --no-deps worker …` **with the worker stopped** (D36) | plan, navidrome.db, Subsonic `getScanStatus` | `/srv/_trash/<day>/…` + `MOVES.txt`, `trash-<ts>.jsonl`, `beet remove`, one `startScan` |
 
 ### `plan` (N1-02) — read-only
 
@@ -93,9 +93,9 @@ Result per extra: `repointed N playlists` | `skipped: …` | `refused: <playlist
 `repoint_everywhere(dry_run=True)`, the same read-only `checked_entries` checks; exit 1 as the real run would). Any
 value from `repoint_everywhere` other than `repointed` is reported and makes the exit code 1; the other
 groups still run. After the loop, if anything was repointed (and not `--dry-run`), **one scan, waited for**: the
-scan between repoint and trash. Reuse `scripts/identity_backfill._scan` (start, then poll `getScanStatus` until
-`scanning` is false *and* `lastScan` has moved; a timeout or error is reported and exits 1) — lift it to a shared
-helper rather than copy it. So a `repoint` that exits 0 has had its scan; one that exits 1 tells the runbook to stop.
+scan between repoint and trash. As built: `subsonic.client.scan_and_wait`, lifted from `scripts/identity_backfill._scan`
+(now a thin wrapper over it): start, then poll `getScanStatus` until `scanning` is false *and* `lastScan` has moved;
+a timeout or error is reported and exits 1. So a `repoint` that exits 0 has had its scan; one that exits 1 tells the runbook to stop.
 
 **Reverse log** `repoint-<UTC ts>.jsonl` beside the plan (as built in N1-03): one line per playlist
 `{ts, playlist_id, name, extra, keeper, before, after}`, written by `repoint_everywhere`'s `before_write` hook once
@@ -103,8 +103,9 @@ that playlist passed its checks and **right before its own write**, fsynced. So 
 replaces (even if Amperfy edited the playlist since the plan), and a refused playlist gets no line. No second line is
 needed: `repointed` means `rewrite` read the playlist back equal to `after` (else `EditNotKept`, reported as
 `failed`). The happy-path test counts two lines (pl-1, pl-2). Every run that is not a dry run and reached a playlist
-check ends with the waited scan, so a re-run after a scan timeout cannot exit 0 unscanned. `--dry-run` writes no log,
-sends no `updatePlaylist` and opens no crates.db.
+check ends with the waited scan, so a re-run after a scan timeout cannot exit 0 unscanned. `repoint --dry-run` writes
+no log, sends no `updatePlaylist` and opens no crates.db (`trash --dry-run` opens it, read-only use: the worker lock
+and `song_in_use`).
 
 Each playlist written is also a crates.db event (`after_write` hook, below). The worker's own reconcile
 (`WORKER_RECONCILE_S`, 600 s) re-reads the repointed playlists and refreshes `crate_tracks`; the runbook also runs
@@ -142,7 +143,9 @@ be different files (`os.path.samefile` false, as `replace.proof` refuses `old_pa
    back and the extra is `refused: added to <n> playlist entries during the move` (no `forget`, no trash line);
 3. `forget(music_root / extra.path)` (`BeetsFiler.forget`, i.e. `beet remove -f path:<abs>`; a failure is logged,
    not fatal: beets' index is a cache);
-4. one line `{ts, extra, path, keeper, trash_path}` to `trash-<UTC ts>.jsonl`, written **after** `forget`.
+4. one line `{ts, extra, path, keeper, trash_path, forgotten}` to `trash-<UTC ts>.jsonl`, written **after** `forget`
+   (`forgotten`: true, false when `beet remove` failed, null with no beets). As built, a put-back adds a
+   `restored: true` line, and a run that heals a crash between the move and `forget` adds one with `trash_path: null`.
 
 An extra whose file is already gone is `already gone`; `forget` is called for it only when no `trash-*.jsonl` line
 names it (a crash between the move and `forget` is healed by the next run; a finished one is not forgotten twice).
@@ -167,6 +170,13 @@ from `repoint_everywhere(after_write=…)`, after the readback), `trashed to <da
 held over a scan). The jsonl logs and `MOVES.txt` stay the record: an event that cannot be written (crates.db busy)
 is noted on stderr and never fails the action. `CRATES_DB` must be set and name an existing file (exit 2): never
 `Config.from_env`'s `./data/crates.db` default, whose folder would hold the wrong `worker.lock`.
+
+As built (review N4-05 I2), crates.db rows are repointed too: after each repoint, and in `trash` right before the
+move, once no playlist holds the extra, `_repoint_store` calls `CrateStore.repoint_song(extra, keeper)` (import
+orders, `imported_entries`, filed `external_wanted` rows, open placements) and logs one `cleanup` event
+"crates.db now names <keeper>: …", and the rows changed go to `songs-repointed.jsonl` beside crates.db (N5-02). A
+failure is rolled back and noted on stderr; it never fails a repoint, but trash then leaves that file: "refused:
+crates.db not repointed (…); run again" (N5-02 I1).
 
 ### Undo
 
@@ -218,23 +228,26 @@ is noted on stderr and never fails the action. `CRATES_DB` must be set and name 
 
 ## Live runbook (for Michael, morning; N1-05 copies it into `docs/worker.md`)
 
+As built, `docs/worker.md` → "Duplicate cleanup" is the runbook (it also has the trash gates added by N1F); this copy
+is the plan's.
+
 All from `/srv/docker`, image deployed from this branch with `scripts/deploy.sh` (note the previous image tag for
 rollback). One live writer at a time. Stop at the first surprise and undo from the logs.
 
-**check** below means `docker compose run --rm worker sh -c 'python3 -m scripts.export_playlists export &&
+**check** below means `docker compose run --rm --no-deps worker sh -c 'python3 -m scripts.export_playlists export &&
 python3 -m scripts.export_playlists check'`: only the worker image mounts `/srv/music` (the crates container has no
 library, so its `check` finds no `.m3u8` files), the worker's own export runs only every 300 s and not at all while
 it is stopped, and a check without a fresh export reports "stale" by design. The re-export overwrites the `.m3u8`
 mirror, which is why the repoint jsonl, not the exports, is the playlist undo.
 
-1. **Before:** `scripts/snapshot-crates-db.sh`; `sqlite3 /srv/docker/navidrome/navidrome.db ".backup …/navidrome.db.pre-n1.snap"`;
+1. **Before:** `scripts/snapshot-crates-db.sh --suffix pre-<run>` (crates.db and navidrome.db, each integrity-checked);
    note the last restic run and the running image; **check** is green.
 2. `docker compose exec -T worker python3 -m scripts.duplicate_cleanup plan` → read `duplicate-cleanup/report.md`;
    clear any `both lossless` hold you want acted on by setting it to `null` in `plan.json`.
 3. `docker compose exec -T worker python3 -m scripts.duplicate_cleanup repoint --dry-run`, then `repoint --limit 5`
    (it waits for its scan), **check**; `--limit 50`, check; all, check. Then
    `docker compose exec -T crates python3 -m crates.cli reconcile`.
-4. `docker compose stop worker`; `docker compose run --rm worker python3 -m scripts.duplicate_cleanup trash --dry-run`;
+4. `docker compose stop worker`; `docker compose run --rm --no-deps worker python3 -m scripts.duplicate_cleanup trash --dry-run`;
    `trash --limit 5` (it waits for its scan), **check**; `--limit 50`, check; all, check. Every refusal is read before
    going on.
 5. `docker compose up -d worker`. Expected end state: 831 − 115 + the extras of held groups songs listed (**730** if

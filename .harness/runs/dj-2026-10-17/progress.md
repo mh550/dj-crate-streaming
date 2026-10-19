@@ -13,6 +13,70 @@ stop`; answers to the questions below go under `## Answers`. Every session reads
 
 ---
 
+### 2026-10-19 · verify N5
+
+| Feature | Step | What you ran or read | What you saw | Holds |
+|---|---|---|---|---|
+| N5-01 | 1 | read docs/next-todos.md 17-60 | hand-off paragraph dated 2026-10-19 names the branch, duplicate cleanup, imported migrate pending, vanished-playlist, placement, all not live; items 1-4 say Built (N1..N4); item 5 says re-runs record import_order | yes |
+| N5-01 | 2 | read docs/architecture.md rows 19, 325-326, quirks 16/18, line 360; README.md:39; `pytest --collect-only -q` | N1-N4 row 'built, not live'; §7 cleanup and placement rows; quirk 16 updated, 18 'Closed (N4)'; 1,523 in §8 and README = 1523 collected | yes |
+| N5-01 | 3 | read docs/hard-won-facts.md 52-70 | has fake navidrome.db columns, trash needs worker stopped, placement state-driven restart loses nothing | yes |
+| N5-01 | 4 | `grep -c '\*default\*'` and read pivot spec rows D35-D39 | 9 matches (includes older defaults); D35-D39 contiguous after D34, each one sentence | yes |
+| N5-01 | 5 | read docs/plans/2026-10-17-morning-checklist.md | order: deploy (prev image noted) → imported migrate dry run/--apply → cleanup stages → reconcile → re-run imports; each has an Undo | yes |
+| N5-01 | 6 | `git log` | 0972ecb 'N5-01: docs for the dj-2026-10-17 run (…)' present | yes |
+| N5-01 | 7 | init output: check green, 1523 tests (cached for this tree) | green | yes |
+| N5-02 | 1 | wrote `git diff main...HEAD -- . ':!.harness/runs'` to scratch run.diff (5787 lines); read scripts/duplicate_cleanup.py trash/repoint, grepped move_to_trash callers; read tests test_hidden_rows_and_other_owners_count, test_trash_refuses_unless_a_scan_finished_after_the_newest_repoint_log, test_a_running_scan_refuses_before_anything, test_each_move_and_put_back_is_a_cleanup_event…, test_the_reverse_line_is_written_before_a_write_that_fails, test_a_strip_of_an_already_recorded_playlist_logs_its_old_comment_first, test_a_gone_playlist_is_skipped | only callers of move_to_trash are replace.py and duplicate_cleanup (both check references() before/after); trash refuses on scan/no lastScan; groups reloaded via load() before acting; reverse logs/MOVES.txt/old comment in event; tests assert these | yes |
+| N5-02 | 2 | grepped new test lines for '/srv' and 'docs/'; grepped added code for beets imports; read store.public and _ABS | '/srv' hits only in gatus/disk tests as string literals asserting compose content, fixtures use tmp; no beets imports added; public() strips abs paths, username, reference path; no peer names in new event code | yes |
+| N5-02 | 3 | git log: 6e57475, c44011b review/simplify commits; docs/plans read | review fix commits (e.g. 'second review', M4 note in trash) present; plan docs updated with built rules | yes |
+| N5-02 | 4 | read progress.md top entries | N5-02 entry present (committed 765ff88 'progress entry; passes (1,523 tests)') | yes |
+| N5-02 | 5 | `git log` | 6e57475 'N5-02: whole-run review and simplify' present | yes |
+| N5-02 | 6 | init output; collect-only | check green, 1523 tests | yes |
+
+Result: 2 hold, 0 fail. Note: check.sh was given a stray `true` arg (error), relied on the harness's green init.
+
+### 2026-10-19 · N5-01 · passes
+- **What:** fixed the two verify failures. Test count 1,515 → 1,523 in `README.md`, `docs/architecture.md` §8 and `docs/hard-won-facts.md`; D35 in the pivot spec is one sentence now.
+- **Verified:** `grep -c '\*default\*'` on the pivot spec gives 9; `lib/check.sh` green, 562 s, 1,523 tests. Docs only; no live commands were run.
+- **Questions for Michael:** none. **Proposed changes:** none.
+
+### 2026-10-19 · verify N5
+
+N5-01 flipped to false (stale test count 1,515 vs 1523 in README and architecture §8; D35 not one sentence). N5-02 holds.
+
+| Feature | Step | What you ran or read | What you saw | Holds |
+|---|---|---|---|---|
+| N5-01 | 1 | read docs/next-todos.md hand-off + items 1-5 | dated 2026-10-19 paragraph with branch, N1-N4 built-not-live, migrate pending; items 1-4 say Built (N1..N4); item 5 notes import_order | yes |
+| N5-01 | 2 | grep docs/architecture.md and README.md for test count; read table, §7, quirks 16/18 | N1-N4 row 'built, not live', safety rows, quirks 16/18 updated, BUT §8 and README say 1,515 tests while check.sh now reports 1523 | no |
+| N5-01 | 3 | read tail of docs/hard-won-facts.md | 'Learned in the N1-N4 run' has fake mirror columns, trash needs worker stopped, placement state-driven | yes |
+| N5-01 | 4 | grep -c '\*default\*' pivot spec; read D35-D44 rows | 9 rows, D35-D41 and D43-D44, no gap among D35-D39; D35 is two sentences, not one | no |
+| N5-01 | 5 | read docs/plans/2026-10-17-morning-checklist.md | deploy w/ previous image, imported migrate dry run then --apply, cleanup stages, reconcile, import re-runs, each with undo | yes |
+| N5-01 | 6 | git log main..HEAD | 9c12cb1 'N5-01: docs for the dj-2026-10-17 run' exists | yes |
+| N5-01 | 7 | lib/check.sh | green, 1523 tests (cached) | yes |
+| N5-02 | 1 | git diff main...HEAD to scratch run.diff (5784 lines); read references() uses in replace.py/duplicate_cleanup.py, scan checks, load()/duplicate_groups recompute, MOVES/repoint logs, tests test_trash_refuses_unless_a_scan_finished..., test_repoint_song_logs..., test_a_strip_of_an_already_recorded... | references() checked before/after each move, trash refuses during scan or without scan since repoint, groups recomputed from navidrome.db, reverse logs present | yes |
+| N5-02 | 2 | grep new tests for /srv, docs/; grep new non-test .py for beets imports; read store.public | /srv hits are strings/mocks only; no beets import; public drops username and absolute paths | yes |
+| N5-02 | 3 | read progress N5-02 entry; git log c44011b 6e57475; plans diffstat | I1-I3 fixes with tests named; N1-N4 plans updated | yes |
+| N5-02 | 4 | read top progress entry | built/not live/open questions/first command all present | yes |
+| N5-02 | 5 | git log | 765ff88/6e57475 N5-02 commits present | yes |
+| N5-02 | 6 | lib/check.sh | green, 1523 tests | yes |
+
+### 2026-10-19 07:55 · N5-02 · passes
+- **What:** an Opus reviewer read the whole run diff (scratch `run.diff`, `e4bf623..HEAD` without `.harness/runs`, 10k lines) against the four invariants. No Critical. Fixed test-first, RED → GREEN each:
+  - **I1:** trash moved a file even when crates.db's repoint failed (busy), stranding import orders and placements on the trashed id. It now refuses: "refused: crates.db not repointed (…); run again".
+  - **I2:** `CrateStore.repoint_song` had no reverse. It now logs the exact rows (RETURNING) to `songs-repointed.jsonl` beside crates.db, and `unrepoint_song(line)` undoes them.
+  - **I3:** `imported migrate`'s strip-only step overwrote a comment unrecorded. It now logs an `imported` event with the old comment first.
+  - **Minor:** trash re-checks "scanned since the newest repoint log" before every move; repoint's closing scan waits out a running scan (shared `_fresh_scan`); reconcile frees `forget_playlist`'s write lock when nothing changed; `/api/events` goes through `public()` (no absolute paths); the cleanup event counts placements.
+  - **Simplified:** `_group_of`, `_restored`, `store.append_line` (also used by reconcile).
+- **Docs:** N1/N2 plans fixed in place; N3/N4 plans gained "As built" notes. worker.md has the new refusal, `songs-repointed.jsonl` and its undo. The morning checklist and CLAUDE.md no longer point at closed PR #3. Hygiene greps: no test writes outside tmp, no new beets import. A second Opus review of the fixes (`n5-02-fixes.diff`) found no Critical or Important issues; its doc and docstring minors are fixed. Tests 1,515 → 1,523. `lib/check.sh` green on c44011b: 563 s, 1,523 tests. No live commands were run.
+- **Built, not run live:** the duplicate cleanup (N1, N1F), the imported marker move (`imported migrate --apply`), vanished-playlist cleanup (N3), placement (N4), this review's fixes. A trash put-back leaves crates.db repointed until the next `repoint` (noted in worker.md).
+- **Open questions for Michael:** (1) lift `duplicate_cleanup trash` beyond `--dry-run`? I1/I2 are fixed; CLAUDE.md still wants `lastScan` confirmed on live Navidrome. (2) N4-05: OK that a refused placement retries over ~4 days (D44)? (3) the H3-03 disk timer steps in INBOX are still yours.
+- **First command of the morning checklist:** `systemctl show restic-backup.service -p ExecMainExitTimestamp -p ExecMainStatus` (`ExecMainStatus=0`, under 26 h).
+- **Proposed change:** step 1's `git diff main...HEAD` is docs-only now that N1–N4 are merged; I diffed from the pre-run main `e4bf623`.
+
+### 2026-10-19 · N5-01 · passes
+- **What:** docs only. `docs/next-todos.md` (dated hand-off paragraph; items 1-4 say built with N1-N4; item 5 notes re-runs record `import_order`), `docs/architecture.md` (N1-N4 milestone row, placement safety row, quirks 16 and 18, test count in §8), `README.md` and `docs/hard-won-facts.md` (count 1,515; new "Learned in the N1-N4 run" section: fake-DB columns, trash needs the worker stopped, scan between repoint and trash, placement is state-driven, repoint_song, marker is a row). `docs/specs/2026-10-17-amperfy-pivot.md`: D37-D39 cut to one sentence each (9 `*default*` rows; D35-D44 have no gaps). New `docs/plans/2026-10-17-morning-checklist.md` (deploy, imported migrate, cleanup stages with checks, reconcile, import re-runs, each with undo).
+- **Verified:** `grep -c '\*default\*'` on the pivot spec gives 9; `lib/check.sh` green, 559 s, 1,515 tests (unchanged; no code touched). No live commands were run.
+- **Next session must know:** the checklist keeps `duplicate_cleanup trash` at `--dry-run` per CLAUDE.md, even though Michael's 2026-10-19 answer applies D31 to the two-lossless groups.
+- **Questions for Michael:** none new. **Proposed changes:** none.
+
 ### 2026-10-19 · verify N4
 
 | Feature | Step | What you ran or read | What you saw | Holds |

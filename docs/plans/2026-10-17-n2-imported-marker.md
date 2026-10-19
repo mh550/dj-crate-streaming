@@ -72,7 +72,8 @@ never merge into a playlist we did not make).
   ours (today that window is the comment write). Then `update_playlist(public=True)`.
   - owner `app`: no comment write at all (no `updatePlaylist` with a `comment` parameter); `comment` stays `""`.
   - owner `comment`: the comment is `attrs.write("", tier=tier or IMPORT_TIER)` → `#tier:medium`, written with
-    `_write_comment_and_cache` (read back, `CommentNotKept` handled as today).
+    `write_comment` (read back, `CommentNotKept` handled as today), then `Reconciler.refresh_cache` (as built, the
+    two helpers named here and below are inlined).
 - **Existing playlist, ours:** append as today. `_rerun_comment(old, tier)` loses `ours` and never appends `MARKER`;
   it returns a new comment only when `tier` is given under owner comment (D15), else `None`. Under app it is never
   called (`tier` has no effect on the comment, as today).
@@ -87,15 +88,17 @@ never merge into a playlist we did not make).
 ### The migration (N2-03) — `python -m crates.cli imported migrate [--apply]`, `imported list`
 
 New module `crates/imported.py` (small, testable without the CLI): `plan(client, store) -> list[Step]`,
-`apply(client, store, steps) -> list[str]` (failures), `strip_marker(comment) -> str`.
+`apply(client, store, steps) -> (migrated names, failures)`, `strip_marker(comment) -> str`. As built, `--apply`
+re-reads each playlist first and refuses one whose comment changed since the plan ("comment changed since the plan;
+run again"), and the dry run ends with "Dry run: nothing was written…".
 
 For every playlist in `client.playlists()` whose comment `is_imported()` (whole token; `x#imported` is not):
 
 | Case | Dry run (default) prints | `--apply` does |
 |---|---|---|
-| owner is not `client.user` | `skipped: owned by <owner>` | nothing (never written) |
+| owner is not `client.user` | `skipped: owned by <owner>: <name> (<id>)` | nothing (never written) |
 | ours, no row yet | `would record + strip: <name> (<id>): <old>  →  <new>` | 1. `mark_playlist_imported(id, name, "migrated")` with event detail `migrated from comment <old>` (the old comment verbatim: the event is the reverse log), `commit()`. 2. `write_comment(client, pl, strip_marker(old))` (sends, reads back). |
-| ours, row already there (an earlier strip failed) | `would strip: …` | step 2 only; no second event |
+| ours, row already there (an earlier strip failed) | `would strip: …` | step 2 only, after an `imported` event `stripped the marker from comment <old>` (committed; as built in N5-02, so a row adopted with `--merge` keeps its old comment too) |
 
 - Order is the safety rule: the row is committed **before** the comment loses the token, so at no moment is the
   playlist foreign to import. A `CommentNotKept` (or any `update_playlist` error) leaves the row recorded, names the

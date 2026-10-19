@@ -133,6 +133,18 @@ Replace the "Tiered playlists that vanished" loop:
 (in-flight rows wait; wanted rows keep their history; reverse log `playlists-gone.jsonl`). `docs/next-todos.md` item
 3: "Built (N3)". `crates/migrate_attrs.py:orphans` docstring stays true.
 
+## As built (checked in N5-02)
+
+Where the code differs from the text above, the code is right:
+- **Rows that wait** (`store.py` `forget_playlist`): `sourcing`/`verify` rows, plus any row not `removed` whose wanted
+  id has an unused or started approval (not only `needs_source`). An `external_wanted` row in flight counts into `kept`.
+- **Return value** also has `problems`, `import_order` and `placements` (N4). A wanted row that another playlist's
+  `import_order` still names is kept, not set `removed`.
+- **Reconcile:** the loop is `Reconciler._forget_vanished`, called from `_run`. The guard counts only *guarded* missing
+  ids (imported, or with an effective tier), and an empty listing says "getPlaylists listed no playlist; nothing
+  dropped (<n> known: …)". The reverse-log line is `{ts, playlist_id, name, forgotten}`. The event is written when
+  any part of the return value is non-empty, not only when rows were deleted.
+
 ## Live
 
 No runbook: no command to run by hand. After N3 deploys, the worker's next reconcile (≤ 600 s) drops "sockseek /

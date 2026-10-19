@@ -424,7 +424,7 @@ def make_handler(app: CrateApp):
                 if head == "proposals" and len(p) == 1:
                     return self._json(app.proposals(include_decided=q.get("all") in ("1", "true")))
                 if head == "events":
-                    return self._json(app.store.events(int(q.get("limit", 50))))
+                    return self._json(public(app.store.events(int(q.get("limit", 50)))))
                 if head == "search":
                     return self._json(app.search(q.get("q", ""), int(q.get("count", 25))))
                 if head == "stream-tier":

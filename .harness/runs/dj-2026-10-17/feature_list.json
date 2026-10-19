@@ -464,7 +464,7 @@
         "Commit `N5-01: docs for the dj-2026-10-17 run`.",
         ".harness/check.sh is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "N5-02",
@@ -479,7 +479,7 @@
         "Commit `N5-02: whole-run review and simplify`.",
         ".harness/check.sh is green"
       ],
-      "passes": false
+      "passes": true
     }
   ]
 }
