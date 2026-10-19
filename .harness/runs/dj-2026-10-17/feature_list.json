@@ -290,7 +290,7 @@
         "Commit `N2-01: plan for the imported marker in crates.db`.",
         ".harness/check.sh is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "N2-02",

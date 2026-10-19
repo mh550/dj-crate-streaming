@@ -13,6 +13,12 @@ stop`; answers to the questions below go under `## Answers`. Every session reads
 
 ---
 
+### 2026-10-19 02:45 · N2-01 · passes
+- **What:** `docs/plans/2026-10-17-n2-imported-marker.md` (plan only, no code). An interrupted session wrote it on 2026-10-17 (WIP `3ebf66e`), along with `D37 *default*` in the pivot spec. This session checked it against the code at `73c6d96`: every line reference, function and test name still holds, and `client.url` drops `None` params, so `comment=""` is sent. Two additions: `mark_playlist_imported(..., detail=None)`, so the migration logs its own event detail, and one test the plan had missed, `test_attrs_owner::test_import_create_whose_comment_is_not_kept_raises_but_keeps_our_own_facts` (expects `""`, not `#imported`). Tests 1,379 → 1,379.
+- **Verified:** `lib/check.sh` green, 498 s, 1,379 tests. Grep for `MARKER|is_imported|#imported` in crates/sourcing/scripts/web shows only import_playlist and migrate_attrs, as the plan's "Today" table says.
+- **Next (N2-02):** build the store table and the import switch from the plan's "Tests that change" table. Nothing in N2 writes live. The test suite runs with `CRATES_OWNER=comment`; the live (app) path is in `tests/test_app_owner.py`.
+- **Question for Michael:** may I run `crates.cli imported migrate --apply` live for "Tea tent" and "shakori (Spotify)" (after N2-03 deploys)? It records both in crates.db, then strips `#imported` from their comments. That is a live comment write, so I'm not doing it tonight. Default: wait for your yes. The runbook is at the end of the plan.
+
 ### 2026-10-19 02:30 · verify H3
 
 | Feature | Step | What you ran or read | What you saw | Holds |
