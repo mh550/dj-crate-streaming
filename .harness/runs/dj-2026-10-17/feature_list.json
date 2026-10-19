@@ -320,7 +320,7 @@
         "Commit `N2-03: imported migrate and list`.",
         ".harness/check.sh is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "N2-04",
