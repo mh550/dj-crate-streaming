@@ -91,3 +91,4 @@
 - 2026-10-19 07:05 · N4-05 · claude-opus-5-5 · passes=true · 33 min · 31/33 passing
 - 2026-10-19 07:05 · merged main into harness/dj-2026-10-17
 - 2026-10-19 07:09 · N4 verified and tagged run/dj-2026-10-17/N4
+- 2026-10-19 07:09 · N4 merged into main · https://github.com/mh550/dj-crate-streaming/pull/12
