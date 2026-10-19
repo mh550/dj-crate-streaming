@@ -357,7 +357,7 @@ docker compose stop worker / start worker          # pause / resume (a stop mid-
 | Identity apply | `… identity_backfill apply /data/identity/identity-proposal.json --dry-run`, then `--yes [--limit 5] [--classes …] [--only GLOB]` |
 | Undo apply | `… identity_backfill revert /data/identity/apply-<time>.jsonl` |
 | Duplicate cleanup | `docker compose exec -T worker python3 -m scripts.duplicate_cleanup plan`, then `repoint [--dry-run] [--limit N]`; with the worker stopped `docker compose run --rm --no-deps worker python3 -m scripts.duplicate_cleanup trash [--dry-run] [--limit N]`; staged runbook and undo in `docs/worker.md` "Duplicate cleanup" |
-| Tests | `cd ~/projects/dj-crate-streaming && ~/.local/bin/pytest -q` (1,515 tests, about 7 minutes) |
+| Tests | `cd ~/projects/dj-crate-streaming && ~/.local/bin/pytest -q` (1,523 tests, about 7 minutes) |
 | Offline demo | `python3 -m crates.cli demo` → http://127.0.0.1:4580 |
 
 Where to look: worker stdout (`docker compose logs worker`), the web client's log tab (`events`), approvals'

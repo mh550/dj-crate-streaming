@@ -14,7 +14,7 @@ on this system.
   allowed the rebuild, read-only SQLite (`mode=ro`) on `navidrome.db` and `crates.db`.
 - **`git add -A` sweeps scratch files in.** Write scratch output elsewhere, check `git show --stat HEAD` before pushing.
   Soulseek peer names stay out of logs and UI (p1, p2, …).
-- **Tests:** `~/.local/bin/pytest -q` (1,515 tests, 7-9 minutes). Fakes must mirror captured live responses
+- **Tests:** `~/.local/bin/pytest -q` (1,523 tests, 7-9 minutes). Fakes must mirror captured live responses
   (`fixtures/`). The suite reads a frozen old policy (`tests/fixtures/policy-legacy.toml`) and runs the older
   comment-owned mode (`CRATES_OWNER=comment`) by default via `tests/conftest.py`; new-mode tests are in `tests/test_app_owner.py`.
 

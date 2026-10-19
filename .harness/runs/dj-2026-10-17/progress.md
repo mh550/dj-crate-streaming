@@ -13,6 +13,11 @@ stop`; answers to the questions below go under `## Answers`. Every session reads
 
 ---
 
+### 2026-10-19 · N5-01 · passes
+- **What:** fixed the two verify failures. Test count 1,515 → 1,523 in `README.md`, `docs/architecture.md` §8 and `docs/hard-won-facts.md`; D35 in the pivot spec is one sentence now.
+- **Verified:** `grep -c '\*default\*'` on the pivot spec gives 9; `lib/check.sh` green, 562 s, 1,523 tests. Docs only; no live commands were run.
+- **Questions for Michael:** none. **Proposed changes:** none.
+
 ### 2026-10-19 · verify N5
 
 N5-01 flipped to false (stale test count 1,515 vs 1523 in README and architecture §8; D35 not one sentence). N5-02 holds.
