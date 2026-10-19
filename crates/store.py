@@ -82,6 +82,12 @@ CREATE TABLE IF NOT EXISTS imported_playlists (   -- playlists import-playlist m
   source TEXT,                                    -- the import's source text, or 'migrated' (N2-03)
   imported_at REAL                                -- first recorded
 );
+CREATE TABLE IF NOT EXISTS import_order (         -- every row of a playlist's last real import, Spotify order (N4)
+  playlist_id TEXT NOT NULL, position INTEGER NOT NULL,   -- Row.position (1-based)
+  song_id TEXT,                                   -- the Navidrome song the row matched, or NULL
+  wanted_id TEXT,                                 -- the ext-N row it queued (missing / ambiguous), or NULL
+  PRIMARY KEY (playlist_id, position)
+);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS verifications (        -- the last download check per wanted id (spec §3a): JSON of
   song_id TEXT PRIMARY KEY, result TEXT NOT NULL, -- ok, tier, problems, warnings, measurements, file
@@ -734,6 +740,29 @@ class CrateStore:
         out["problems"] = r[0] if r else None             # note_problems' value (a JSON list) for that key
         self.db.execute("DELETE FROM settings WHERE key=?", key)
         return out
+
+    def record_import_order(self, playlist_id: str, rows: list[tuple[int, str | None, str | None]]) -> None:
+        """Replace the playlist's import_order with `rows` of (position, song_id, wanted_id): all or nothing (a
+        savepoint). Inside the caller's transaction the caller commits; outside one, this commits."""
+        self.db.execute("SAVEPOINT import_order")
+        try:
+            self.db.execute("DELETE FROM import_order WHERE playlist_id=?", (playlist_id,))
+            self.db.executemany("INSERT INTO import_order(playlist_id, position, song_id, wanted_id) VALUES(?,?,?,?)",
+                                [(playlist_id, *r) for r in rows])
+        except BaseException:
+            self.db.execute("ROLLBACK TO import_order")
+            raise
+        finally:
+            self.db.execute("RELEASE import_order")
+
+    def import_order(self, playlist_id: str) -> list[dict]:
+        return [dict(r) for r in self.db.execute(
+            "SELECT * FROM import_order WHERE playlist_id=? ORDER BY position", (playlist_id,))]
+
+    def import_order_for(self, wanted_id: str) -> list[dict]:
+        """Every playlist slot that queued this wanted row (a track wanted by two playlists has a row in each)."""
+        return [dict(r) for r in self.db.execute(
+            "SELECT * FROM import_order WHERE wanted_id=? ORDER BY playlist_id, position", (wanted_id,))]
 
     def is_playlist_imported(self, playlist_id: str) -> bool:
         return self.db.execute("SELECT 1 FROM imported_playlists WHERE playlist_id=?", (playlist_id,)).fetchone() is not None

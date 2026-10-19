@@ -298,3 +298,31 @@ def test_a_vanished_playlist_is_forgotten(env):
 
 def test_a_vanished_playlists_in_flight_rows_wait(env):
     check_in_flight_rows_wait(env)
+
+
+def test_import_order_is_replaced_per_playlist_and_found_by_wanted_id(tmp_path):
+    # N4-02 (M9 §1): the last real import's Spotify order, one row per position; a wanted id may sit in several.
+    p = tmp_path / "c.db"
+    s = CrateStore(p)
+    assert s.import_order("pl-1") == [] and s.import_order_for("ext-1") == []
+    s.record_import_order("pl-1", [(2, None, "ext-1"), (1, "s1", None), (3, "s2", None)])
+    s.record_import_order("pl-2", [(1, None, "ext-1")])
+    s.commit()
+    s = CrateStore(p)                                   # the table is in SCHEMA: it survives reopening
+    assert [(r["position"], r["song_id"], r["wanted_id"]) for r in s.import_order("pl-1")] == [
+        (1, "s1", None), (2, None, "ext-1"), (3, "s2", None)]
+    assert [(r["playlist_id"], r["position"]) for r in s.import_order_for("ext-1")] == [("pl-1", 2), ("pl-2", 1)]
+    s.record_import_order("pl-1", [(1, "s1", None), (2, "s9", None)])          # a re-run replaces the record
+    assert [(r["position"], r["song_id"], r["wanted_id"]) for r in s.import_order("pl-1")] == [
+        (1, "s1", None), (2, "s9", None)]
+    assert [r["playlist_id"] for r in s.import_order_for("ext-1")] == ["pl-2"]  # other playlists untouched
+
+
+def test_record_import_order_is_one_transaction():
+    import sqlite3
+    s = CrateStore()
+    s.record_import_order("pl-1", [(1, "s1", None)])
+    s.commit()
+    with pytest.raises(sqlite3.IntegrityError):         # a bad row: the old record must survive, not half the new one
+        s.record_import_order("pl-1", [(1, "s2", None), (1, "s3", None)])
+    assert [r["song_id"] for r in s.import_order("pl-1")] == ["s1"]
