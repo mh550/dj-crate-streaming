@@ -26,8 +26,8 @@ Each tick:
   3b. every filed external row whose imported playlist does not hold it yet is placed at its Spotify position
      (crates.placement.advance_all, N4, D44; skipped without a navidrome_db): a pair is derived from state, so a
      fetch, a copy upgrade, play-now or the app's accept need no call of their own, and a crash loses nothing. A
-     refusal (a hidden row, an edit meanwhile) is retried at most every `recheck_s`, the 12th gives up with a
-     `not_placed` event; an error of the step is logged and the tick goes on;
+     refusal (a hidden row, an edit meanwhile) is retried after `recheck_s`, then each wait doubles up to a day
+     (placement.retry_wait), the 12th gives up with a `not_placed` event; an error of the step is logged and the tick goes on;
   4. every `export_s` seconds (WORKER_EXPORT_S, 300 in the CLI; 0 = never) the playlists are exported as `.m3u8`
      into <music>/_playlists (scripts.export_playlists rewrites only changed files), so repoints, proposal swaps and
      Michael's own edits reach the files.

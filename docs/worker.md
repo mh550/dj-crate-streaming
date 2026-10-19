@@ -30,7 +30,7 @@ of at most one second and ends early when a play-now approval is waiting (see "P
 5. **Replacements.** Every copy replacement that was left unfinished when the tick began is advanced one more time
    (a playlist that could not be repointed yet, Navidrome not yet showing the old copy gone, a crash in between).
 6. **Placement.** Every filed track an imported playlist still waits for is inserted at its Spotify position (see
-   "Placement"): one guarded edit per playlist and track, a refusal retried at most every `WORKER_RECHECK_S`.
+   "Placement"): one guarded edit per playlist and track; a refused one is retried later, less often each time.
 7. **Export.** At most once every `WORKER_EXPORT_S` seconds (300 by default; 0 turns it off) the playlists are
    written as `.m3u8` into `/srv/music/_playlists`, changed files only, so repoints, swaps and your own edits reach
    the backup files.
@@ -288,7 +288,9 @@ D44, M9 §1). The code is `crates/placement.py`; the plan is `docs/plans/2026-10
   after an unconfirmed edit)". `not_placed`: "<playlist>: not placed after 12 tries: <why>; re-run the import to
   append it", or "edit not confirmed, look at the playlist; re-run the import to append it".
 - **Retries.** A refusal (hidden missing rows, a concurrent edit, another owner, the song no longer in the library)
-  is counted and tried again at most every `WORKER_RECHECK_S`; the 12th gives up with `not_placed`. Navidrome
+  is counted and tried again after `WORKER_RECHECK_S`, then each wait doubles up to a day (5 min, 5, 10, 20 min…
+  ~21 h, a day), so the 12 tries span about four days: long enough for a scan or a cleanup to clear a hidden row.
+  The 12th gives up with `not_placed`. Navidrome
   unreachable or crates.db locked is not counted, so an outage never gives a placement up.
 - **An edit not confirmed** (Navidrome did not show it on read-back, or the worker stopped mid-write) is never sent
   again. The next tick only looks: the song there → `done`, absent → `given_up` with `not_placed`. That way an entry
@@ -297,6 +299,10 @@ D44, M9 §1). The code is `crates/placement.py`; the plan is `docs/plans/2026-10
   `import-playlist` for that playlist appends it at the end (and records a fresh `import_order`).
 - **Older imports.** A playlist imported before N4 has no `import_order`, so nothing is placed into it until its next
   real re-run of `import-playlist` records one.
+- **A repointed song.** When a copy replacement or the duplicate cleanup's `repoint` has moved every playlist from
+  an old copy to its new one, crates.db follows (`CrateStore.repoint_song`): import orders and filed rows name the
+  new song, and a playlist that ever had the old one added counts the new one as added too. The duplicate cleanup
+  logs it as a `cleanup` event "crates.db now names <keeper>: …".
 - **Deleted playlist.** The reconcile that drops a deleted playlist's rows (N3) drops its `import_order` and
   `placements` too, so nothing stays due for it.
 
@@ -308,7 +314,7 @@ from that clean checkout (see "Deploying, and what healthy means"; not `docker c
 | Variable | Default | What it does |
 |---|---|---|
 | `WORKER_POLL_S` | 30 | seconds between ticks (a waiting play-now ends the wait early) |
-| `WORKER_RECHECK_S` | 300 | a `verify` row is re-checked (one Navidrome scan) at most this often; also the scan interval of a replacement and the retry interval of a placement |
+| `WORKER_RECHECK_S` | 300 | a `verify` row is re-checked (one Navidrome scan) at most this often; also the scan interval of a replacement and the first retry wait of a placement (it doubles after each refusal, up to a day) |
 | `WORKER_RECONCILE_S` | 600 | playlist comments re-read and tiers re-derived; 0 = never |
 | `WORKER_EXPORT_S` | 300 | `.m3u8` export into `/srv/music/_playlists`; 0 = never |
 | `TRASH_ROOT` | `/srv/_trash` | where a replaced copy goes (mounted read-write in the worker) |

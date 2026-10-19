@@ -854,6 +854,29 @@ def test_each_repointed_playlist_is_a_cleanup_event(lib, tmp_path):
     assert cleanup_events(tmp_path / "crates.db") == [("pl-2", "s3", "repointed Chicago 86 to s9")]
 
 
+def test_a_repointed_extra_is_repointed_in_crates_db_too_once_no_playlist_holds_it(lib, tmp_path):
+    # review N4-05 I2: import_order / imported_entries / filed rows follow the keeper, so placement keeps its
+    # neighbours; not while a refused playlist still holds the extra, and not on a dry run.
+    srv, db, music = lib
+    store = CrateStore(tmp_path / "crates.db")
+    store.record_import_order("pl-1", [(1, "s3", None)])
+    store.commit()
+    plan = dc.build_plan(db, music)
+    dc.repoint(plan, _client(srv), db, tmp_path / "r.jsonl", dry_run=True, poll_s=0, store=store)
+    assert store.import_order("pl-1")[0]["song_id"] == "s3"
+    srv.state.missing.add("s2")                                         # pl-1 refused: it still holds s3
+    srv.state.sync()
+    dc.repoint(plan, _client(srv), db, tmp_path / "r.jsonl", poll_s=0, store=store)
+    assert store.import_order("pl-1")[0]["song_id"] == "s3"
+    srv.state.missing.discard("s2")
+    srv.state.sync()
+    assert dc.repoint(plan, _client(srv), db, tmp_path / "r.jsonl", poll_s=0, store=store)["s3"].startswith("repointed")
+    assert store.import_order("pl-1")[0]["song_id"] == "s9" and not store.db.in_transaction
+    store.db.close()
+    assert cleanup_events(tmp_path / "crates.db")[-1] == (
+        None, "s3", "crates.db now names s9: 1 import order, 0 imported, 0 filed rows")
+
+
 def test_a_dry_run_repoint_is_no_event(lib, tmp_path):
     srv, db, music = lib
     store = CrateStore(tmp_path / "crates.db")

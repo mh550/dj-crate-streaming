@@ -3,8 +3,8 @@
 `insert_index` is the rule: after the nearest earlier Spotify neighbour still in the playlist, else before the nearest
 later one, else at the end. `place` applies it to one (wanted row, playlist) pair, insert-only, through
 `playlist_edit.rewrite`, recomputing everything right before it writes. `advance_all` is the worker's step (N4-04):
-it places every due pair (CrateStore.due_placements, derived from state), retries a refusal at most every recheck_s
-and gives up after PLACE_LIMIT counted failures with a `not_placed` event. An edit that was sent but not confirmed is
+it places every due pair (CrateStore.due_placements, derived from state), retries a refusal after recheck_s, then
+ever less often (retry_wait), and gives up after PLACE_LIMIT counted failures with a `not_placed` event. An edit that was sent but not confirmed is
 never retried blind: it is looked at (the song present → done; absent → given up), so an entry is never doubled and a
 track Michael removed in that moment is never put back.
 """
@@ -21,8 +21,22 @@ from subsonic.client import SubsonicError
 
 GONE = "skipped: playlist gone"
 PLACE_LIMIT = 12                       # counted failures before a pair is given up (fetch's RECHECK_LIMIT habit)
-TRANSIENT = (OSError, sqlite3.OperationalError)     # Navidrome unreachable (URLError, timeouts), crates.db locked
+RETRY_MAX_S = 86400                    # the longest wait between two tries (retry_wait)
 CONFIRMED = "confirmed after an unconfirmed edit"
+
+
+def transient(e: Exception) -> bool:
+    """An outage, not counted toward PLACE_LIMIT: Navidrome unreachable (OSError: URLError, timeouts) or a database
+    locked or busy. Any other sqlite3 error (no such table, unable to open) is permanent and counted."""
+    if isinstance(e, sqlite3.OperationalError):
+        return any(w in str(e).lower() for w in ("locked", "busy"))
+    return isinstance(e, OSError)
+
+
+def retry_wait(recheck_s: float, attempts: int) -> float:
+    """Seconds an `open` pair waits after its `attempts`-th counted failure: recheck_s, then doubling, at most a day.
+    A refusal such as a hidden missing row lasts until a scan or a cleanup, so the 12 tries span days, not an hour."""
+    return min(recheck_s * 2 ** max(attempts - 1, 0), RETRY_MAX_S)
 
 
 def insert_index(order: list[tuple[int, str | None]], entries: list[str], position: int) -> tuple[int, str]:
@@ -97,24 +111,30 @@ def place(store, client, db: Path, playlist_id: str, wanted_id: str, song_id: st
         raise
     if after_write is not None:
         after_write()
+    _record_placed(store, playlist_id, wanted_id, song_id, name, f"{i + 1} ({how})")
+    return f"placed at {i} ({how})"
+
+
+def _record_placed(store, playlist_id: str, wanted_id: str, song_id: str, name: str, where: str) -> None:
+    """The song is in the playlist: removed stays removed (D13), and a `placed` event
+    "<playlist>: <artist> – <title> at <where>"."""
     store.mark_imported(playlist_id, [song_id])
     ext = store.external(wanted_id)
     what = f"{ext['artist']} – {ext['title']}" if ext else song_id
-    store.log(playlist_id, wanted_id, "placed", f"{name}: {what} at {i + 1} ({how})")
-    return f"placed at {i} ({how})"
+    store.log(playlist_id, wanted_id, "placed", f"{name}: {what} at {where}")
 
 
 def advance_all(store, client, db: Path, recheck_s: float, now: float) -> list[str]:
     """The worker's placement step: every due pair whose placement is new, `writing` (an edit sent, not confirmed:
-    only looked at, whatever its age) or `open` and last tried at least `recheck_s` ago. One line per pair tried,
-    "<wanted_id> → <playlist_id>: <result>"; each pair is committed on its own, and one failing pair never stops the
-    others. A placed or skipped pair is `done`; a refusal or an unexpected error is `open` and counted, the
-    PLACE_LIMIT-th gives up with a `not_placed` event; a TRANSIENT error is `open` and not counted, so an outage
+    only looked at, whatever its age) or `open` and last tried at least retry_wait(recheck_s, attempts) ago. One
+    line per pair tried, "<wanted_id> → <playlist_id>: <result>"; each pair is committed on its own, and one failing
+    pair never stops the others. A placed or skipped pair is `done`; a refusal or an unexpected error is `open` and counted, the
+    PLACE_LIMIT-th gives up with a `not_placed` event; a transient() error is `open` and not counted, so an outage
     never gives a placement up. Call it with no transaction open: a failed pair is rolled back."""
     out = []
     for d in store.due_placements():
         row = store.placement(d["wanted_id"], d["playlist_id"])
-        if row and row["state"] == "open" and row["updated_at"] > now - recheck_s:
+        if row and row["state"] == "open" and row["updated_at"] > now - retry_wait(recheck_s, row["attempts"]):
             continue
         try:
             result = (_look(store, client, d, row, now) if row and row["state"] == "writing"
@@ -145,7 +165,7 @@ def _advance(store, client, db: Path, d: dict, row: dict | None, now: float) -> 
         why = f"{type(e).__name__}: {e}"
         if sent or isinstance(e, pe.EditNotKept):  # the edit was sent: the committed `writing` row stays, and the
             return f"edit sent, not confirmed: {why}; looked at next tick"   # next tick looks (Navidrome may lag)
-        if isinstance(e, TRANSIENT):              # rewrite raises EditNotKept once the write is sent: none was
+        if transient(e):                          # rewrite raises EditNotKept once the write is sent: none was
             _note(store, d, "open", why, now)
             store.commit()
             return f"error (not counted): {why}"
@@ -188,10 +208,7 @@ def _look(store, client, d: dict, row: dict, now: float) -> str:
     entries = [e.id for e in playlist.entries]
     name = playlist.name or d["name"] or pid
     if song_id in entries:
-        store.mark_imported(pid, [song_id])
-        ext = store.external(wanted_id)
-        what = f"{ext['artist']} – {ext['title']}" if ext else song_id
-        store.log(pid, wanted_id, "placed", f"{name}: {what} at {entries.index(song_id) + 1} ({CONFIRMED})")
+        _record_placed(store, pid, wanted_id, song_id, name, f"{entries.index(song_id) + 1} ({CONFIRMED})")
         _note(store, d, "done", f"placed ({CONFIRMED})", now)
         store.commit()
         return f"placed ({CONFIRMED})"

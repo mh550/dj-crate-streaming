@@ -812,6 +812,21 @@ class CrateStore:
             "detail=excluded.detail, updated_at=excluded.updated_at",
             (wanted_id, playlist_id, song_id, state, int(count), detail, time.time() if now is None else now))
 
+    def repoint_song(self, old: str, new: str) -> dict:
+        """Every playlist now holds `new` instead of `old` (a copy replacement, the duplicate cleanup): import orders
+        name `new`, a playlist that ever had `old` added has `new` added too (removed stays removed; the old row
+        stays), and filed external rows (`ok`, not provisional) name it, so placement finds its neighbours and
+        never inserts the old copy (review N4-05 I2). Rows still in flight are their own flow's. Returns the counts
+        of rows changed; the caller commits."""
+        n = {"import_order": self.db.execute("UPDATE import_order SET song_id=? WHERE song_id=?", (new, old)).rowcount}
+        n["imported_entries"] = self.db.execute(
+            "INSERT OR IGNORE INTO imported_entries(playlist_id, song_id) "
+            "SELECT playlist_id, ? FROM imported_entries WHERE song_id=?", (new, old)).rowcount
+        n["external_wanted"] = self.db.execute(
+            "UPDATE external_wanted SET library_song_id=? WHERE library_song_id=? AND status='ok' AND provisional=0",
+            (new, old)).rowcount
+        return n
+
     def is_playlist_imported(self, playlist_id: str) -> bool:
         return self.db.execute("SELECT 1 FROM imported_playlists WHERE playlist_id=?", (playlist_id,)).fetchone() is not None
 

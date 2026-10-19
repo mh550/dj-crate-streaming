@@ -204,8 +204,8 @@ Other stores:
    placement (play-now's copy, once `ok`, is due the same way). For each, `place` re-reads the playlist and inserts
    the song after its nearest earlier Spotify neighbour still there, else before the nearest later one, else at
    the end: one `playlist_edit.rewrite`, insert only. Then `imported_entries` and a `placed` event. Refusals retry
-   at most every `WORKER_RECHECK_S`; the 12th gives up with `not_placed` ("re-run the import to append it"). An
-   edit Navidrome did not confirm is only looked at next tick, never sent again. `docs/worker.md` → "Placement".
+   after `WORKER_RECHECK_S`, each wait doubling up to a day; the 12th gives up with `not_placed` ("re-run the
+   import to append it"). An edit Navidrome did not confirm is only looked at next tick, never sent again. `docs/worker.md` → "Placement".
 8. **Not found yet**: row stays `verify` "filed as <rel> but Navidrome has not picked it up yet". Each tick
    re-checks rows idle ≥300 s (`WORKER_RECHECK_S`; each re-check starts a scan) and counts `(check N)`; at 12
    (about an hour) the row fails "Navidrome never indexed <rel>; file is in the library", and the web client

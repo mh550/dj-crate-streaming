@@ -407,3 +407,24 @@ def test_due_placements_are_derived_from_state():
     for state, due in (("open", True), ("writing", True), ("done", False), ("given_up", False)):
         s.note_placement(ok, "pl-1", state, None)
         assert bool(s.due_placements()) is due, state
+
+
+def test_repoint_song_moves_what_crates_db_says_about_a_song_to_its_new_copy():
+    # review N4-05 I2: a copy replacement or the duplicate cleanup repoints old -> new in every playlist; the import
+    # order, removed-stays-removed and filed rows must follow, or placement loses neighbours / re-inserts the old copy.
+    s = CrateStore()
+    filed = _filed_ext(s, song="s4")                                    # filed as the old copy, not placed yet
+    waiting = _filed_ext(s, position=3, song="s4", status="verify")     # still in flight: left to its own flow
+    legacy = _filed_ext(s, position=4, song="s4", provisional=True)     # play-now's copy: its upgrade replaces it
+    s.record_import_order("pl-1", [(1, "s4", None), (2, None, filed), (3, "s2", None)])
+    s.record_import_order("pl-2", [(1, "s4", None)])
+    s.mark_imported("pl-1", ["s4", "s2"])
+    s.mark_imported("pl-2", ["s9"])                                     # already holds the new copy
+    assert s.repoint_song("s4", "s9") == {"import_order": 2, "imported_entries": 1, "external_wanted": 1}
+    s.commit()
+    assert [r["song_id"] for r in s.import_order("pl-1")] == ["s9", None, "s2"]
+    assert [r["song_id"] for r in s.import_order("pl-2")] == ["s9"]
+    assert s.imported("pl-1") == {"s4", "s9", "s2"} and s.imported("pl-2") == {"s9"}    # the old id stays too
+    assert s.external(filed)["library_song_id"] == "s9"
+    assert s.external(waiting)["library_song_id"] == "s4" and s.external(legacy)["library_song_id"] == "s4"
+    assert s.repoint_song("s4", "s9") == {"import_order": 0, "imported_entries": 0, "external_wanted": 0}

@@ -1,5 +1,7 @@
 """N4: a filed external row goes into its imported playlist at its Spotify position (M9 item 1, D44). The pure
 rule first, then place() against the fake Navidrome with its navidrome.db mirror (hidden rows are real there)."""
+import sqlite3
+
 import pytest
 
 from crates import placement as pl
@@ -378,17 +380,38 @@ def test_a_refusal_retries_after_recheck_s_and_gives_up_after_12(srv, client, db
     assert line.startswith(f"{store.ext} → pl-1: refused: PlaylistSkew")
     assert (_row(store)["state"], _row(store)["attempts"]) == ("open", 1)
     assert _advance(store, client, db, now=T0 + 299) == [] and _row(store)["attempts"] == 1   # inside recheck_s
+    now = T0
     for k in range(2, 13):
-        assert len(_advance(store, client, db, now=T0 + 300 * k)) == 1
+        now += pl.retry_wait(300, k - 1)
+        assert len(_advance(store, client, db, now=now)) == 1
     r = _row(store)
     assert (r["state"], r["attempts"]) == ("given_up", 12)
     [ev] = _not_placed(store)
     assert ev["playlist_id"] == "pl-1" and ev["song_id"] == store.ext
     assert ev["detail"].startswith("Disco Edits: not placed after 12 tries: PlaylistSkew")
     assert ev["detail"].endswith("; re-run the import to append it")
-    assert _advance(store, client, db, now=T0 + 300 * 20) == [] and store.due_placements() == []
+    assert _advance(store, client, db, now=now + 10 ** 7) == [] and store.due_placements() == []
     assert _updates(srv) == [] and _songs(srv, "pl-1") == ["s1", "s2", "s3"]
     assert "s9" not in store.imported("pl-1")                                   # a re-run can still append it
+
+
+def test_the_retry_wait_doubles_up_to_a_day_so_twelve_refusals_take_days_not_an_hour():
+    # review N4-05 I1: a hidden missing row (PlaylistSkew) lasts until a scan or a cleanup; 12 tries 300 s apart gave
+    # the Spotify position up after 55 minutes.
+    assert [pl.retry_wait(300, n) for n in (0, 1, 2, 3)] == [300, 300, 600, 1200]
+    assert pl.retry_wait(300, 11) == pl.RETRY_MAX_S == 86400
+    assert pl.retry_wait(0, 5) == 0
+    assert sum(pl.retry_wait(300, n) for n in range(1, pl.PLACE_LIMIT)) > 3 * 86400
+
+
+def test_a_refusal_waits_longer_after_each_try(srv, client, db, store):
+    srv.state.missing.add("s2")
+    srv.state.sync()
+    _advance(store, client, db)
+    _advance(store, client, db, now=T0 + 300)
+    assert _row(store)["attempts"] == 2
+    assert _advance(store, client, db, now=T0 + 300 + 599) == []                # the third waits 600 s
+    assert len(_advance(store, client, db, now=T0 + 300 + 600)) == 1 and _row(store)["attempts"] == 3
 
 
 def test_a_transient_error_is_not_counted_and_a_bug_is(srv, db, store):
@@ -403,9 +426,15 @@ def test_a_transient_error_is_not_counted_and_a_bug_is(srv, db, store):
     client = Down(srv.url, "demo", "demo")
     [line] = _advance(store, client, db)
     assert "URLError" in line and (_row(store)["state"], _row(store)["attempts"]) == ("open", 0)
-    Down.error = KeyError("playlist")
+    Down.error = sqlite3.OperationalError("database is locked")
     [line] = _advance(store, client, db, now=T0 + 300)
+    assert "locked" in line and (_row(store)["state"], _row(store)["attempts"]) == ("open", 0)
+    Down.error = KeyError("playlist")
+    [line] = _advance(store, client, db, now=T0 + 600)
     assert "KeyError" in line and (_row(store)["state"], _row(store)["attempts"]) == ("open", 1)
+    Down.error = sqlite3.OperationalError("no such table: media_file")      # review N4-05 M6: not an outage
+    [line] = _advance(store, client, db, now=T0 + 900)
+    assert "no such table" in line and (_row(store)["state"], _row(store)["attempts"]) == ("open", 2)
 
 
 def test_one_failing_pair_does_not_stop_the_others(srv, client, db, store):

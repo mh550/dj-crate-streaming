@@ -117,6 +117,18 @@ def test_replaceable_copy_repoints_every_playlist_then_trashes_the_old_file(worl
     assert (world["music"] / NEW_REL).exists()
 
 
+def test_a_finished_repoint_moves_crates_db_to_the_new_copy(world, tmp_path, scan_sees_trash):
+    # review N4-05 I2: placement reads import_order and imported_entries by song id; after the repoint they name s9.
+    store = world["store"]
+    store.mark_playlist_imported("pl-2", "Chicago 86", "spotify:playlist:x")
+    store.record_import_order("pl-2", [(1, "s3", None), (2, "s4", None), (3, "s5", None)])
+    store.mark_imported("pl-2", ["s4"])
+    store.commit()
+    fetch_copy(world, tmp_path)
+    assert [r["song_id"] for r in store.import_order("pl-2")] == ["s3", "s9", "s5"]
+    assert "s9" in store.imported("pl-2")
+
+
 def test_replacement_rows_and_events(world, tmp_path, scan_sees_trash):
     fetch_copy(world, tmp_path)
     st = world["store"].track_status_map("pl-2")

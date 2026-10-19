@@ -187,7 +187,7 @@ was the deleted playlist is still wanted by the other one.
 
 `D44 *default*` (pivot spec): placement is a worker step driven by state; insert after the nearest earlier Spotify
 neighbour still present, else before the nearest later one, else append (Q1); tracks an earlier re-run appended are
-never moved (Q2); a refused placement retries at most every `recheck_s`, gives up after 12 refusals with a
+never moved (Q2); a refused placement retries at most every `recheck_s` (N4-05: each wait doubles, up to a day), gives up after 12 refusals with a
 `not_placed` event; imported playlists only. (The feature list said D39, which the backup decision holds.)
 
 ## Tasks
@@ -218,6 +218,14 @@ never moved (Q2); a refused placement retries at most every `recheck_s`, gives u
   playlist's order names.
 - **N4-05** review the N4 diff from a file against the rules above; docs (`docs/architecture.md` §3, §4, quirk 18;
   `docs/worker.md` tick list + "Placement"; M9 spec item 1 built; `docs/next-todos.md` item 4).
+  **Built (review fixes, Opus review of `n4.diff`):** (I1) 12 refusals 300 s apart gave a placement up within an
+  hour, while a hidden missing row lasts until a scan or cleanup: `placement.retry_wait` doubles the wait after each
+  counted failure, from `recheck_s` up to a day, so the 12 tries span about four days. (I2) a copy replacement
+  (`replace._settle`) or the duplicate cleanup (`repoint`, once no playlist holds the extra) repoints old → new in
+  Navidrome, but `import_order`, `imported_entries` and filed `external_wanted` rows kept the old id: neighbours were
+  lost and the old copy could be inserted. `CrateStore.repoint_song(old, new)` moves them (a `cleanup` event in the
+  duplicate cleanup). New tests: before is a subsequence of after for six playlist shapes; a forgotten playlist
+  leaves no due pair.
 
 ## Live effect and runbook (after N4 is merged and deployed)
 
