@@ -82,3 +82,4 @@
 - 2026-10-19 04:32 · N3-02 · claude-opus-5-5 · passes=true · 37 min · 25/33 passing
 - 2026-10-19 04:48 · N3-03 · claude-opus-5-5 · passes=true · 15 min · 26/33 passing
 - 2026-10-19 04:48 · merged main into harness/dj-2026-10-17
+- 2026-10-19 04:50 · N3 verified and tagged run/dj-2026-10-17/N3
