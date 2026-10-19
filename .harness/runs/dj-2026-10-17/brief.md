@@ -1,2 +1,5 @@
 ## 2026-10-17 16:17
 N1 is merged into main. Order: N1F (the 2026-10-17 review findings I1–I4 on scripts/duplicate_cleanup.py; details in ~/projects/agent-harness/journal/runs/dj-2026-10-17.md §1), then H1 (snapshots incl. navidrome.db, worker heartbeat and healthchecks, compose healthchecks deployed live), then H2 (deploy/restic-backup in git, taking the live lock; Michael installs it with sudo, never an agent) and H3 (Gatus dashboard and ntfy alerts, deployed live), both per docs/specs/2026-10-17-backup-lock-and-monitoring.md, then N2–N5. The project is POLICY=live-staged: CLAUDE.md's Live system section (backup window 03:15–04:30, lock, snapshots, stages) decides what may run live; duplicate_cleanup trash stays at --dry-run until Michael lifts it. Anything only Michael can do (sudo, /srv/docker/.env, enabling user timers, tailscale serve) goes into INBOX as exact commands.
+
+## 2026-10-19 01:53
+N2–N5; gatus vars and config from INBOX.md has been completed

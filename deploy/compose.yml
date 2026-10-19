@@ -116,6 +116,20 @@ services:
       gluetun: {condition: service_started}
     restart: unless-stopped
 
+  gatus:                                     # H3: dashboard + ntfy alerts; the checks are deploy/gatus/config.yaml
+    image: twinproduction/gatus:v5.37.0      # pinned 2026-10-17 (released 2026-09-24); bump on purpose, after reading the release notes
+    user: "1000:1000"                        # the image runs as root by default; /srv/docker/gatus stays mh550's
+    ports: ["127.0.0.1:4590:8080"]
+    environment:                             # expanded by Gatus inside config.yaml. Unset → Gatus exits (no token), the
+      GATUS_NTFY_TOPIC: ${GATUS_NTFY_TOPIC:-}      # rest of the stack is unaffected (`:?` would break every compose command)
+      GATUS_BACKUP_TOKEN: ${GATUS_BACKUP_TOKEN:-}  # Bearer token for the pushed endpoints (backup, disk)
+    volumes:
+      # the deployed commit's config.yaml, copied by `scripts/deploy.sh gatus` (never the checkout, which a removed
+      # worktree would take away). The directory, read-only: Gatus reloads config.yaml when a deploy replaces it
+      - ${GATUS_DIR:-/srv/docker/gatus}/config:/config:ro
+      - ${GATUS_DIR:-/srv/docker/gatus}:/data      # history (sqlite)
+    restart: unless-stopped                  # no depends_on: `scripts/deploy.sh gatus` recreates nothing else
+
   # --- Phase 1: Soulseek, only ever through the VPN (brought up in M4) ---
   gluetun:
     image: qmcgaw/gluetun

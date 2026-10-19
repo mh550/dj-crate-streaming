@@ -126,3 +126,18 @@ def test_config_reads_crates_trash(monkeypatch):
     from crates.service import Config
     monkeypatch.setenv("CRATES_TRASH", "/trash")
     assert Config.from_env().trash_dir == "/trash"
+
+
+def test_status_reports_the_worker_heartbeat_age(tmp_path):
+    import os
+    import time
+    with FakeSubsonicServer() as fake:
+        cfg = Config(subsonic_url=fake.url, username="demo", password="demo", db_path=str(tmp_path / "crates.db"), port=0)
+        with CrateServer(CrateApp(cfg, store=CrateStore())) as srv:
+            assert get(srv.url + "/api/status")[2]["workerHeartbeatAge"] is None          # no heartbeat yet
+            hb = tmp_path / "worker.heartbeat"
+            hb.touch()
+            assert 0 <= get(srv.url + "/api/status")[2]["workerHeartbeatAge"] < 10
+            old = time.time() - 300
+            os.utime(hb, (old, old))
+            assert 295 < get(srv.url + "/api/status")[2]["workerHeartbeatAge"] < 320

@@ -13,6 +13,130 @@ stop`; answers to the questions below go under `## Answers`. Every session reads
 
 ---
 
+### 2026-10-19 02:30 · verify H3
+
+| Feature | Step | What you ran or read | What you saw | Holds |
+|---|---|---|---|---|
+| H3-01 | 1 | read tests/test_service.py l.131-143; ran it; `curl 127.0.0.1:4580/api/status` live | asserts None with no file, <10 fresh, 295–320 for mtime −300 s; live workerHeartbeatAge 5.6 | yes |
+| H3-01 | 2 | pytest tests/test_service.py + `lib/check.sh` | pass; check green (cached, 1379 tests) | yes |
+| H3-02 | 1 | ran tests/test_gatus.py; read compose gatus block | image twinproduction/gatus:v5.37.0, ports 127.0.0.1:4590:8080, config dir mount :ro; tests pass | yes |
+| H3-02 | 2 | read config.yaml and test_gatus http/secret tests | navidrome/crates/slskd 60s, failure-threshold 3; backup+disk external; only ${GATUS_*} refs; pass | yes |
+| H3-02 | 3 | read deploy/.env.example | GATUS_NTFY_TOPIC and GATUS_BACKUP_TOKEN listed | yes |
+| H3-02 | 4 | live Gatus v5.37.0 loaded config | external-endpoints supported (2 validated, running); no alternative needed | yes |
+| H3-02 | 5 | `lib/check.sh` | green | yes |
+| H3-03 | 1 | ran tests/test_health_push.py (28 tests) and read healthy/full/unmounted/unset tests | healthy success=true; full/unmounted false with reason; unset URL/token warn, no request | yes |
+| H3-03 | 2 | `systemd-analyze --user verify` on repo units; read test_the_units_pass_systemd_analyze_verify | repo units fail only because ExecStart is the not-yet-installed ~/.local/lib copy; test points it at the script and passes (reason documented) | yes |
+| H3-03 | 3 | `lib/check.sh` | green | yes |
+| H3-04 | 1 | read progress 02:25 H3-04 entry; live `curl :4590/api/v1/endpoints/statuses`; diff HEAD config vs /srv/docker/gatus/config | entry quotes deploy cmd, 3 statuses, rollback; live navidrome/crates/slskd success=True; deployed config identical | yes |
+| H3-04 | 2 | `docker inspect StartedAt` now; diff h304-before.txt h304-after.txt | navidrome/slskd/gluetun predate; crates/worker 05:55Z predate Gatus deploy 06:23Z; before/after identical; only gatus recreated | yes |
+| H3-04 | 3 | diffed INBOX H3-04 steps against spec 'Michael's one-time steps' | 3 steps verbatim | yes |
+| H3-05 | 1 | read progress H3-05 entry | I-A/I-B/I-C Important findings with fixes; no Critical | yes |
+| H3-05 | 2 | ran tests/test_monitoring_doc.py; read docs/monitoring.md vs config | table matches config (URLs, intervals, thresholds, 180 s); has checked/how often/alerts/add a check/one-time steps | yes |
+| H3-05 | 3 | `lib/check.sh` | green | yes |
+
+15 hold, 0 fail. Earlier H3-04 failure (step 2) is resolved by the Gatus-only redeploy.
+
+### 2026-10-19 02:25 · H3-04 · passes
+- **Why again:** verify H3 un-passed H3-04 because step 2 didn't hold as written: H3-04's second deploy (crates + worker for H3-01's field) recreated them on purpose. This session re-ran only the Gatus deploy, from HEAD `a64ec80410`, which also ships H3-05's config (the alert descriptions) that was waiting for it. No code changed. Tests 1,379 → 1,379.
+- **Pre-flight (02:22):** `lib/check.sh` green (cached, 1,379). Tree clean and pushed. `systemctl show restic-backup.service -p ExecMainExitTimestamp -p ExecMainStatus` → 01:05:36 today, status 0; `is-active` → inactive; outside 03:15–04:30. Running: crates/worker `dj-crates:f4882ab85b`, gatus v5.37.0, navidrome 0.64.2. **Check** (`docker compose run --rm --no-deps worker sh -c '…export && …check'`) → exit 0, "ok: every playlist file matches Navidrome and every entry exists". Snapshots: `scripts/snapshot-crates-db.sh` → exit 0, both "integrity ok"; `cp /srv/docker/crates/crates.db.snap /srv/docker/crates/crates.db.pre-dj-2026-10-17-h3-04b.snap`; `sqlite3 /srv/docker/navidrome/navidrome.db ".backup /srv/docker/navidrome/navidrome.db.pre-dj-2026-10-17-h3-04b.snap"` → exit 0, `integrity_check` → `ok`.
+- **Deploy (02:23):** `flock -n /srv/docker/crates/live.lock scripts/deploy.sh gatus` → exit 0, "gatus config from a64ec80410 in /srv/docker/gatus/config", "Container dj-gatus-1 Recreate…Started", "gatus answers on http://127.0.0.1:4590/api/v1/endpoints/statuses". Installed config equals `git show HEAD:deploy/gatus/config.yaml`; the old one is `config.yaml.prev`. Gatus: 3 endpoints + 2 external validated, restarts=0.
+- **Step 2:** `docker inspect -f '{{.Id}} {{.State.StartedAt}}'` for navidrome, crates, worker, slskd, gluetun before and after (`/tmp/harness/…/h304-before.txt`, `-after.txt`): `diff` empty, the same again a minute later. Only dj-gatus-1 was recreated (StartedAt 06:23:01Z).
+- **Statuses (first results after the restart, 06:23:01Z):** `_navidrome success=True 200 [STATUS] == 200`; `_crates success=True 200 [STATUS] == 200, has([BODY].workerHeartbeatAge) == true, [BODY].workerHeartbeatAge < 180`; `_slskd success=True 200 [CONNECTED] == true, [STATUS] < 500`. backup/disk stay grey until Michael's H3-03 timer runs. Check after the deploy → exit 0, "ok".
+- **Rollback:** `docker compose --project-directory /srv/docker -f deploy/compose.yml stop gatus && docker compose --project-directory /srv/docker -f deploy/compose.yml rm -f gatus` (to the previous config instead: `mv /srv/docker/gatus/config/config.yaml.prev /srv/docker/gatus/config/config.yaml && docker compose --project-directory /srv/docker -f deploy/compose.yml up -d --force-recreate gatus`).
+- **Step 3:** INBOX's H3-04 section lists the spec's three one-time steps verbatim (compared with the spec's "Michael's one-time steps").
+- **Michael:** nothing new; the INBOX H3-03 lines (timer + `enable-linger`) are still yours. **Proposed change:** none.
+
+### 2026-10-19 02:25 · verify H3
+
+| Feature | Step | What you ran or read | What you saw | Holds |
+|---|---|---|---|---|
+| H3-01 | 1 | read `tests/test_service.py::test_status_reports_the_worker_heartbeat_age` (l.131-); `crates/service.py` l.107-121; ran test_service.py | asserts workerHeartbeatAge None with no file, <10 fresh, ~300 for mtime 300 s old; 73 tests in the subset pass | yes |
+| H3-01 | 2 | `/home/mh550/projects/agent-harness/lib/check.sh` | green (cached for this tree, 1379 tests) | yes |
+| H3-02 | 1 | read `tests/test_gatus.py` pinned/localhost/read-only tests; ran file | v5.37.0 (not latest), `127.0.0.1:4590:8080`, config mount `:ro`; pass | yes |
+| H3-02 | 2 | read `test_the_http_checks_are_the_specs_table`, `..._60_s_..._3_failures`, `test_no_secret_literals_only_variable_names`, read config.yaml | navidrome/crates/slskd interval 60s, failure-threshold 3, backup+disk external; secrets only `${...}`; pass | yes |
+| H3-02 | 3 | `grep GATUS deploy/.env.example`; read `test_env_example_lists_the_gatus_variables` | GATUS_NTFY_TOPIC and GATUS_BACKUP_TOKEN listed, test asserts it | yes |
+| H3-02 | 4 | read progress H3-02 entry; Gatus v5.37.0 runs live and `_backup` external endpoint is configured | external-endpoints supported (verified by earlier session against real image); no improvisation needed, nothing contradicted live | yes |
+| H3-02 | 5 | `.harness/check.sh` via agent-harness check.sh | green | yes |
+| H3-03 | 1 | read `tests/test_health_push.py` healthy/full/unmounted/unset-URL tests; ran file | success=true healthy; false with reason for full, unmounted; unset URL/token warns, no request; pass | yes |
+| H3-03 | 2 | read `test_the_units_pass_systemd_analyze_verify`; ran | passes (verify run on a copy pointing at the script, reason noted in progress) | yes |
+| H3-03 | 3 | `lib/check.sh` | green | yes |
+| H3-04 | 1 | read progress H3-04 (01:58) entry; live `curl :4590/api/v1/endpoints/statuses` | entry quotes the deploy command, the three statuses and rollback; live now: crates, navidrome, slskd all success=True | yes |
+| H3-04 | 2 | `docker inspect -f StartedAt` for all containers; read progress | navidrome/slskd/gluetun predate the Gatus deploy (unchanged), but crates and worker started 05:55:56Z, recreated by a second deploy. Step says crates and worker uptimes unchanged: does not hold as written | NO |
+| H3-04 | 3 | compared INBOX H3-04 section with spec 'Michael's one-time steps' | 3 steps verbatim | yes |
+| H3-05 | 1 | read progress H3-05 entry | 3 Important findings I-A/I-B/I-C with fixes listed; 0 Critical | yes |
+| H3-05 | 2 | read docs/monitoring.md vs deploy/gatus/config.yaml; ran tests/test_monitoring_doc.py | table endpoints, URLs, intervals, thresholds, worker limit 180 match; test passes; covers checks, alerts, adding a check, one-time steps | yes |
+| H3-05 | 3 | `lib/check.sh` | green | yes |
+
+H3-04 flipped to passes=false: step 2 as written conflicts with the deliberate crates/worker redeploy (its own progress entry proposes rewording the step).
+
+### 2026-10-19 06:25 · H3-05 · passes
+- **Review (Opus, `/tmp/…/h3-review.diff`, H3 diff 8d99309..HEAD plus restic-backup's push): 0 Critical, 3 Important, all fixed test-first.**
+  - **I-A:** `deploy.sh gatus` recreated nothing after a config-only change, so a broken config "deployed green" and crash-looped at the next restart. It now runs `up -d --build --force-recreate gatus`, keeps `config.yaml.prev`, and prints a rollback that restores it.
+  - **I-B:** `Linger=no`, so the user timer stops without a session. Michael's steps now include `loginctl enable-linger mh550` (polkit allows it, no sudo).
+  - **I-C / D42 (Michael's I3 answer):** `deploy/health-push.sh` also pushes `backup` from `systemctl show --timestamp=unix` every 10 min. It reports failure on a failed run or `Result`, on age ≥ 26 h, on uptime ≥ 26 h with no run, on an unknown unit, and when systemctl fails. It pushes nothing while a run is in progress or after a recent boot. Recorded in the pivot spec and the spec's table.
+  - **Minors fixed:** readable percent-encoded `error=`, alert `description`s (the ntfy text), `TimeoutStartSec=2min` and `timeout -k 5 20`, units installed as copies (not `link`), and two tests that passed on broken code.
+  - **Second Opus review of the fixes:** 0 Critical/Important; 8 of 9 Minors fixed. Left: a retried broken deploy overwrites `.prev` (`git show <old>:deploy/gatus/config.yaml` still recovers it).
+- **Docs:** new `docs/monitoring.md` covers the checks, alerts, adding a check and Michael's steps. New `tests/test_monitoring_doc.py` fails if its table drifts from `config.yaml`. INBOX H3-03 lines were updated. Tests 1,359 → 1,379.
+- **Verified:**
+  - Every new test was red first. 5 mutations (Result, uptime, systemctl-failure, `activ*` and urlencode rules) each turned a test red. A table edit turned the doc test red.
+  - `health-push.sh` ran on the real box with only curl stubbed: both pushes `success=true` (backup 01:05 today, exit 0).
+  - A throwaway `twinproduction/gatus:v5.37.0` (`gt7821-h305`, removed) loaded the config, stored the decoded `error=` and logged the description on the alert. **Slip:** that container posted one test alert to the public ntfy.sh topic `t-x` (no fake ntfy). Its text: "backup failed, or none for 26 h…". It contains no secrets.
+  - `lib/check.sh` green, 1,379 tests (496 s).
+- **Live:** nothing ran live. Running Gatus still has the H3-04 config. The new descriptions take effect at the next `flock -n /srv/docker/crates/live.lock scripts/deploy.sh gatus`, and the backup push once Michael installs the timer.
+- **Michael:** run INBOX's H3-03 lines after H3 merges, now with copied units and `loginctl enable-linger mh550`.
+- **Proposed change:** none.
+
+### 2026-10-19 01:58 · H3-04 · passes
+- **Pre-flight (01:53):** the brief says the Gatus vars are set. `systemctl show restic-backup.service …` → `ExecMainStatus=0`, exit 01:05:36 today; `is-active` → `inactive`; outside 03:15–04:30. Tree clean and pushed at `f4882ab85b`, suite green (cached, 1,359 tests). Running: crates/worker `dj-crates:caef38ce9b` (rollback), navidrome 0.64.2. **Check** (`docker compose run --rm --no-deps worker sh -c '…export && …check'`) → exit 0, "ok: every playlist file matches Navidrome…". Snapshots: `scripts/snapshot-crates-db.sh` → exit 0, both "integrity ok"; `cp … /srv/docker/crates/crates.db.pre-dj-2026-10-17-h3-04.snap`; `sqlite3 /srv/docker/navidrome/navidrome.db ".backup /srv/docker/navidrome/navidrome.db.pre-dj-2026-10-17-h3-04.snap"` → exit 0, `integrity_check` → `ok`.
+- **Deploy (01:54):** `flock -n /srv/docker/crates/live.lock scripts/deploy.sh gatus` → exit 0, "gatus config from f4882ab85b in /srv/docker/gatus/config … gatus answers on http://127.0.0.1:4590/api/v1/endpoints/statuses". Gatus started, so both vars are set (it exits without them). `docker inspect … StartedAt` for navidrome, crates, worker, slskd and gluetun, before vs after: identical (`diff` empty), so the Gatus deploy recreated nothing.
+- **Then crates was red:** `has([BODY].workerHeartbeatAge) (false)`. The running `caef38ce9b` predates H3-01 (`7356e77`, never deployed). I deployed crates + worker from the same pushed commit: `flock -n /srv/docker/crates/live.lock scripts/deploy.sh` → exit 0, `dj-crates:f4882ab85b`, both healthy. Image delta: H3-01's status field plus `healthcheck.py` catching `HTTPException`. navidrome, slskd and gluetun StartedAt were still unchanged; **crates and worker were recreated on purpose, by this second deploy**. Crates failed 2 checks (threshold 3), so no ntfy alert fired. Check after both deploys → exit 0, "ok".
+- **Statuses (05:56:37Z):** `_navidrome success=True 200 [STATUS]==200`; `_crates success=True 200 [STATUS]==200, has(workerHeartbeatAge), workerHeartbeatAge<180`; `_slskd success=True 200 [CONNECTED]==true, [STATUS]<500`. backup/disk have no results yet (no push yet).
+- **Rollback:** Gatus: `docker compose --project-directory /srv/docker -f deploy/compose.yml stop gatus && docker compose --project-directory /srv/docker -f deploy/compose.yml rm -f gatus`. crates/worker: `GIT_SHA=caef38ce9b CRATES_SRC=$PWD docker compose --project-directory /srv/docker -f deploy/compose.yml up -d --no-build crates worker`.
+- **Know:** `/srv/docker/compose.yml` follows `~/projects`, which doesn't define gatus yet, so compose there warns "orphan containers ([dj-gatus-1])". Never pass `--remove-orphans` until H3 is merged and pulled (INBOX says so). No code changed this session; INBOX's H3-04 section has a done note. Tests stay at 1,359.
+- **Michael:** the H3-03 disk timer (INBOX) can be enabled now. Until then `disk` goes red about 30–60 min after Gatus started and alerts once (D40).
+- **Proposed change:** step 2 ("crates, worker … uptimes unchanged") conflicts with "crates reads green" whenever H3-01 isn't live yet. Reword it as "the `deploy.sh gatus` run recreated no other container".
+
+### 2026-10-17 21:10 · H3-04 · not yet
+- **Still blocked:** INBOX Answers still has no "gatus vars set" (fetched 21:09), so no deploy. **Live:** none. No live command was run.
+- **Changed:** after `up -d gatus`, `scripts/deploy.sh gatus` now waits up to `GATUS_WAIT` (default 30 s) for `http://127.0.0.1:4590/api/v1/endpoints/statuses`. If Gatus never answers, it exits 1, names the two vars and prints the `logs` and rollback (`stop gatus && rm -f gatus`) commands. This closes the last session's review leftover: `up -d` exits 0 even when Gatus exits at start. Crates/worker deploys don't wait. `tests/test_deploy_script.py` +3 tests (stub `curl`). Tests 1,356 → 1,359.
+- **Verified:** the new tests were red first. Making the curl check always succeed turns the failure test red. `lib/check.sh` green, 1,359 tests (492 s). No Opus review: the change is 17 lines of bash.
+- **Next session (H3-04 again):** unchanged from the 20:50 entry. Once INBOX says "gatus vars set": `flock -n /srv/docker/crates/live.lock scripts/deploy.sh gatus`. Exit 0 now means Gatus answered. Exit 1 means roll back with the printed command and stop.
+- **Question for Michael:** please set the Gatus vars and write "gatus vars set" under Answers (INBOX, H3-02 section). Until you do, every H3-04 session can only wait.
+- **Proposed change:** the harness could skip H3-04 (and move on to H3-05/N2) while INBOX lacks "gatus vars set", instead of rerunning a blocked session.
+
+### 2026-10-17 20:50 · H3-04 · not yet
+- **Blocked:** no "gatus vars set" under INBOX Answers (fetched 20:47), and Gatus exits at start without `GATUS_NTFY_TOPIC`/`GATUS_BACKUP_TOKEN`. Agents can't check `/srv/docker/.env`, so I didn't deploy. Step 3 (INBOX has the spec's one-time steps verbatim) is done; steps 1–2 need the deploy.
+- **Changed (build prep for the deploy, fixes H3-02 review I1/I2):** `scripts/deploy.sh gatus` now copies `git show HEAD:deploy/gatus/config.yaml` to `${GATUS_DIR:-/srv/docker/gatus}/config/` (mkdir as mh550, rename into place). It refuses `gatus` together with other services, and refuses a config dir it can't write (printing the `sudo chown`). `deploy/compose.yml` mounts `${GATUS_DIR}/config:/config:ro` and `${GATUS_DIR}:/data`, so the mount no longer follows `CRATES_SRC`. Recorded as **D41 *default*** in the pivot spec. New `tests/test_deploy_script.py` (8 tests, stub docker, temp repo); `tests/test_gatus.py` mount test updated, plus 1 test for `GATUS_DIR`. INBOX: the H3-03 section had landed inside the header's HTML comment (hidden on GitHub); I moved it out and added the H3-04 section. Tests 1,347 → 1,356.
+- **Verified:** new tests were red first. Changing the rename to `cp` turns a test red. `lib/check.sh` green, 1,356 tests (487 s).
+- **Review (Opus, `/tmp/…/h3-04.diff`):** 0 Critical. It checked the image (`GATUS_CONFIG_PATH` empty, WorkingDir `/`), so Gatus reads `/config/config.yaml` and reloads it when the rename changes its mtime. Fixed: Important 1 (a root-owned dir made by Docker; now a clear refusal, and INBOX says to start Gatus only through deploy.sh), Minor 2 (a combined deploy could copy the checks and then fail the build), Minor 5 (the stub now records `GATUS_DIR`). Left: `up -d` exits 0 even when Gatus exits at start, so the deploy's status check is the real gate; a `GATUS_DIR` in .env would be overridden by deploy.sh's; `/data` exposes the config read-write.
+- **Live:** none. Read-only `docker ps` (crates/worker `dj-crates:caef38ce9b`, up 2 h; navidrome 2 h; slskd 42 h; gluetun 4 days) and `ls /srv/docker/gatus` (doesn't exist yet).
+- **Next session (H3-04 again):** once INBOX says "gatus vars set": record `docker ps`, check backup status and the window, run `flock -n /srv/docker/crates/live.lock scripts/deploy.sh gatus`, then `curl -s http://127.0.0.1:4590/api/v1/endpoints/statuses`, and confirm the other containers' uptimes didn't change. Rollback: `docker compose --project-directory /srv/docker -f deploy/compose.yml stop gatus && docker compose --project-directory /srv/docker -f deploy/compose.yml rm -f gatus`.
+- **Questions for Michael:** (1) Please set the Gatus vars and write "gatus vars set" (INBOX, H3-02 section). (2) D41: should Gatus read a deployed copy of the config (my default), or mount `~/projects/dj-crate-streaming/deploy/gatus`?
+- **Proposed changes:** H3-04's step "backup and disk may stay grey" → "disk may be red until H3-03's timer is enabled" (D40, as H3-02 said).
+
+### 2026-10-18 00:50 · H3-03 · passes
+- **Changed:** new `deploy/health-push.sh` (POSTs to Gatus `_disk`/external: `/srv` < 85 %, `/mnt/backup` mounted and < 90 %; failure carries the reason in `?error=`; token on stdin; unset URL/token → warning, exit 0, no request; failed push exits 1; `GATUS_DISK_KEY` overrides the key) and `deploy/systemd/dj-health-push.{service,timer}` (user units, oneshot, every 10 min, `EnvironmentFile=-%h/.config/dj-health-push.env`, ExecStart is an installed copy `~/.local/lib/dj-crates/health-push.sh` so it survives a removed worktree). New `tests/test_health_push.py` (14, stub df/mountpoint/curl). INBOX has Michael's install/enable lines. Tests 1,333 → 1,347.
+- **Verified:** 14/14 pass; `systemd-analyze --user verify` passes in a test on a copy whose ExecStart points at the script (on the real unit it only complains the installed copy doesn't exist yet); `lib/check.sh` green, 1,347 tests (486 s).
+- **Live:** none. Nothing installed or enabled.
+- **Next session (H3-04):** still blocked on Michael's Gatus vars. `disk` stays red until he enables the timer.
+- **Questions / proposed changes:** none. (Not done: no mutation run on the 85/90 boundaries beyond the exact-limit tests.)
+
+### 2026-10-18 00:20 · H3-02 · passes
+- **Changed:** `deploy/compose.yml` adds `gatus`: `twinproduction/gatus:v5.37.0` (released 2026-09-24), uid 1000, `127.0.0.1:4590:8080`, `${CRATES_SRC}/deploy/gatus:/config:ro` (the directory, so a checkout's new file is reloaded), `/srv/docker/gatus:/data`, `unless-stopped`, no `depends_on`. The vars are passed with `:-`, so the rest of the stack works while they're unset. New `deploy/gatus/config.yaml`: navidrome `/ping`, crates `/api/status` (200, `has(workerHeartbeatAge)`, `< 180`), slskd `gluetun:5030` (connected, `< 500`), each every 60 s, ntfy after 3 failures, sent on resolve. External `backup` (26 h heartbeat) and `disk` (30 m heartbeat, **D40 *default***), each alerting after 1 failure and resolving on 1 success. sqlite history, `skip-invalid-config-update: true`. Also `deploy/.env.example` (+2 vars), D40 in the pivot spec, INBOX. New `tests/test_gatus.py`. Tests 1,316 → 1,333.
+- **Verified:** v5.37.0's source and README support `external-endpoints[].heartbeat`. Real image, throwaway network `gtest-7821` with fakes: the config loads as uid 1000. `workerHeartbeatAge: null` fails, but **only because of `has()`**: without it, null reads as 0 and passes `< 180`. An age of 200 alerts and then resolves (fake ntfy got both). A push to `_backup` returns 200, and 401 with a wrong token. The disk heartbeat goes red when it lapses. With the vars unset, Gatus exits 2. Mutations (`:latest`, no `:ro`, `4590:8080`, a commented-out env var) each turn a test red. `lib/check.sh` green, 1,333 tests (487 s).
+- **Review (Opus):** 0 Critical. Fixed: a broken config edit would stop Gatus, so `skip-invalid-config-update` is now set; the env test accepted `#` lines; D40's timing is corrected. Open, for H3-04/05: **(I1)** the config mount follows `CRATES_SRC`. A deploy from this worktree mounts the worktree, so after the worktree is removed a restart crash-loops. Proposal: `deploy.sh gatus` copies `git show HEAD:deploy/gatus/config.yaml` to `/srv/docker/gatus/config/`, or Gatus is re-upped from `/srv/docker` after the merge. **(I2)** `/srv/docker/gatus` doesn't exist. H3-04 must `mkdir -p` it as mh550 first, or Docker creates it root-owned and Gatus can't write. **(I3)** The heartbeat ticker starts with Gatus, so a missed backup alerts 26–52 h after the last one, and every Gatus restart resets the clock.
+- **Live:** none. Only a pull of the Gatus image and throwaway `gt7821-*` containers, all removed. Nothing in `dj` was touched.
+- **Next session (H3-03):** push to `_disk` with `GATUS_BACKUP_TOKEN`. **H3-04 is blocked until Michael sets the two vars** (INBOX). `disk` will go red 30–60 min after the deploy until the H3-03 timer runs, so "may stay grey" won't hold for it.
+- **Questions for Michael:** (1) D40: should `disk` alert when its pushes stop (my default), or keep its last result? (2) Please set the Gatus vars (INBOX).
+- **Proposed changes:** H3-04's step "backup and disk may stay grey" → "backup may stay grey; disk may be red until H3-03's timer is enabled". To fix I3, H3-03's push could also report `backup` from `systemctl show restic-backup.service -p ExecMainExitTimestamp -p ExecMainStatus` (a spec change; Michael's call).
+
+### 2026-10-17 23:00 · H3-01 · passes
+- **Changed:** `crates/service.py`: `/api/status` now has `workerHeartbeatAge` (seconds since `worker.heartbeat` beside the crates db was touched; `null` if missing or the db is `:memory:`). New `test_status_reports_the_worker_heartbeat_age` in `tests/test_service.py` (none → null, fresh → under 10, mtime 300 s ago → ~300). Tests 1,315 → 1,316.
+- **Verified:** replacing the field with `None` turns the new test red; `lib/check.sh` green, 1,316 tests (488 s).
+- **Live:** none (not deployed; H3's later features deploy).
+- **Next session:** Gatus can check `[BODY].workerHeartbeatAge` is a number and `< 90` (same limit as `healthcheck.py worker`); null means no heartbeat.
+- **Questions / proposed changes:** none.
+
 ### 2026-10-17 22:00 · verify H2
 
 | Feature | Step | What you ran or read | What you saw | Holds |

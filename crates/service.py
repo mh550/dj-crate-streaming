@@ -104,12 +104,21 @@ class CrateApp:
         self._lock = threading.Lock()
 
     # --- read
+    def worker_heartbeat_age(self) -> float | None:
+        """Seconds since the worker touched worker.heartbeat (beside the crates db); None if it never did."""
+        if self.cfg.db_path == ":memory:":
+            return None
+        try:
+            return max(0.0, time.time() - (Path(self.cfg.db_path).parent / "worker.heartbeat").stat().st_mtime)
+        except OSError:
+            return None
+
     def status(self) -> dict:
         info = self.api.ping()
         return {"server": self.cfg.subsonic_url, "publicServer": self.cfg.public_url or self.cfg.subsonic_url,
                 "user": self.cfg.username, "serverType": info.get("type"), "serverVersion": info.get("serverVersion"),
                 "openSubsonic": info.get("openSubsonic"), "crates": len(self.store.all(enabled_only=True)),
-                "wanted": len(self.store.wanted()),
+                "wanted": len(self.store.wanted()), "workerHeartbeatAge": self.worker_heartbeat_age(),
                 "trash": trash.summary(self.cfg.trash_dir),
                 "policy": {"preferred": self.policy.preferred, "allow": self.policy.allow, "deny": self.policy.deny,
                            "minLossyBitrate": self.policy.min_lossy_bitrate}}

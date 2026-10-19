@@ -1,0 +1,75 @@
+# Gatus (deploy/compose.yml → gatus): what is checked, how often, and how Michael hears about it.
+# Design: docs/specs/2026-10-17-backup-lock-and-monitoring.md §H3. `scripts/deploy.sh gatus` copies this file to
+# /srv/docker/gatus/config/ (D41); Gatus re-reads it there.
+# The two variables below are expanded by Gatus from its container environment (compose passes them from
+# /srv/docker/.env); no secret is written here. Gatus expands every dollar sign in this file, comments too.
+skip-invalid-config-update: true             # a broken edit keeps the old checks running (logged), instead of
+                                             # stopping Gatus, which would stop every alert with it
+storage:
+  type: sqlite
+  path: /data/data.db                        # /srv/docker/gatus: history survives a recreate
+
+alerting:
+  ntfy:                                      # ntfy.sh; Michael subscribes to the topic in the ntfy app
+    topic: "${GATUS_NTFY_TOPIC}"
+
+# HTTP checks: every 60 s, alert after 3 failures in a row (a deploy's restart doesn't page), say when it's fixed.
+endpoints:
+  - name: navidrome
+    url: http://navidrome:4533/ping
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+    alerts:
+      - type: ntfy
+        failure-threshold: 3
+        send-on-resolved: true
+
+  - name: crates                             # /api/status: 502 while Navidrome is down; also reports the worker (H3-01)
+    url: http://crates:4580/api/status
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+      - "has([BODY].workerHeartbeatAge) == true"   # null (no heartbeat file) fails here; `<` alone reads null as 0
+      - "[BODY].workerHeartbeatAge < 180"          # seconds since the worker's last tick
+    alerts:
+      - type: ntfy
+        failure-threshold: 3
+        send-on-resolved: true
+
+  - name: slskd                              # slskd shares gluetun's network, so it answers on gluetun's name
+    url: http://gluetun:5030/
+    interval: 60s
+    conditions:
+      - "[CONNECTED] == true"
+      - "[STATUS] < 500"
+    alerts:
+      - type: ntfy
+        failure-threshold: 3
+        send-on-resolved: true
+
+# Pushed from outside: POST /api/v1/endpoints/_<name>/external?success=true|false with "Authorization: Bearer <token>"
+# (key `_<name>`: no group). A missed heartbeat is a failure; one failure alerts, one success resolves.
+external-endpoints:
+  - name: backup                             # deploy/restic-backup, after a nightly backup that fully succeeded, and
+                                             # deploy/health-push.sh every 10 min from systemd (exit 0, < 26 h old)
+    token: "${GATUS_BACKUP_TOKEN}"
+    heartbeat:
+      interval: 26h
+    alerts:
+      - type: ntfy
+        failure-threshold: 1
+        success-threshold: 1
+        send-on-resolved: true
+        description: "backup failed, or none for 26 h; see journalctl -u restic-backup"
+
+  - name: disk                               # deploy/health-push.sh every 10 min: /srv < 85 %, /mnt/backup mounted and < 90 %
+    token: "${GATUS_BACKUP_TOKEN}"
+    heartbeat:
+      interval: 30m                          # D40 *default*: a stopped timer alerts too (30–60 min after the last push)
+    alerts:
+      - type: ntfy
+        failure-threshold: 1
+        success-threshold: 1
+        send-on-resolved: true
+        description: "/srv over 85 %, /mnt/backup unmounted or over 90 %, or no push for 30 min"

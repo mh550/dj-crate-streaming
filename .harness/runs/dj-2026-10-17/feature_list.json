@@ -221,7 +221,7 @@
         "A test with a fresh heartbeat file sees a small age; with none it sees null; with an old mtime it sees that age",
         "The existing status tests still pass; `.harness/check.sh` is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "H3-02",
@@ -236,7 +236,7 @@
         "If the pinned Gatus doesn't support external-endpoint heartbeats, INBOX says so and proposes an alternative; nothing is improvised",
         "`.harness/check.sh` is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "H3-03",
@@ -249,7 +249,7 @@
         "The unit files pass `systemd-analyze --user verify` (or the session says why it couldn't run it)",
         "`.harness/check.sh` is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "H3-04",
@@ -262,7 +262,7 @@
         "No other container was recreated (`docker ps` uptimes for navidrome, crates, worker, slskd, gluetun unchanged)",
         "INBOX lists Michael's one-time steps from the spec, verbatim"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "H3-05",
@@ -275,7 +275,7 @@
         "docs/monitoring.md exists and matches deploy/gatus/config.yaml",
         "`.harness/check.sh` is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "N2-01",

@@ -73,7 +73,7 @@ row (so a deploy doesn't page) and sends on resolved:
 | navidrome | `http://navidrome:4533/ping` | status 200 |
 | crates | `http://crates:4580/api/status` | status 200, and the worker heartbeat age it reports < 180 s (H3-01) |
 | slskd (via gluetun) | `http://gluetun:5030/` | connected, status < 500 |
-| backup | external endpoint, pushed by `restic-backup` (H2) | a success within 26 h (use Gatus' external-endpoint heartbeat; check the pinned version supports it, and if it doesn't, say so in INBOX instead of improvising) |
+| backup | external endpoint, pushed by `restic-backup` (H2), and by `deploy/health-push.sh` every 10 min from systemd (D42, H3-05) | a success within 26 h (use Gatus' external-endpoint heartbeat; check the pinned version supports it, and if it doesn't, say so in INBOX instead of improvising) |
 | disk | external endpoint, pushed every 10 min by `deploy/health-push.sh` | `/srv` < 85 % used and `/mnt/backup` mounted and < 90 %; alert at once |
 
 **Alerts:** ntfy, with the topic from `${GATUS_NTFY_TOPIC}` and the external-endpoint token from
