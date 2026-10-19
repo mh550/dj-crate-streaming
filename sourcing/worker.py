@@ -23,6 +23,11 @@ Each tick:
      and finally marked with the outcome;
   3. every copy replacement left unfinished before this tick (sourcing.replace: a playlist that could not be
      repointed yet, a crash between steps) is advanced; an error is logged and the job keeps its state;
+  3b. every filed external row whose imported playlist does not hold it yet is placed at its Spotify position
+     (crates.placement.advance_all, N4, D44; skipped without a navidrome_db): a pair is derived from state, so a
+     fetch, a copy upgrade, play-now or the app's accept need no call of their own, and a crash loses nothing. A
+     refusal (a hidden row, an edit meanwhile) is retried after `recheck_s`, then each wait doubles up to a day
+     (placement.retry_wait), the 12th gives up with a `not_placed` event; an error of the step is logged and the tick goes on;
   4. every `export_s` seconds (WORKER_EXPORT_S, 300 in the CLI; 0 = never) the playlists are exported as `.m3u8`
      into <music>/_playlists (scripts.export_playlists rewrites only changed files), so repoints, proposal swaps and
      Michael's own edits reach the files.
@@ -45,6 +50,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from crates import placement
 from crates.reconcile import ReconcileBusy
 from scripts.export_playlists import export
 from . import replace
@@ -165,9 +171,23 @@ class Worker:
                 job = self.store.replacement(jid)
                 out.append(f"replacement #{jid}: {state}: {job['detail'] or ''}")
             except Exception as e:                         # e.g. Navidrome down: the job keeps its state
+                self.store.db.rollback()                   # nothing half-done rides along with a later commit
                 out.append(f"replacement #{jid}: error: {type(e).__name__}: {e}")
                 self.log(f"replacement #{jid} failed: {type(e).__name__}: {e}")
         return out
+
+    def place_due(self) -> list[str]:
+        """Step 3b: after the replacements (one may just have settled an external row `ok`), before the export (so
+        it sees the edit). One line per pair tried; a failure of the step itself is logged."""
+        c = self.common
+        if c.get("navidrome_db") is None:                  # no checked edit without navidrome.db
+            return []
+        try:
+            return placement.advance_all(self.store, c["navidrome"], c["navidrome_db"], self.recheck_s, time.time())
+        except Exception as e:                             # e.g. crates.db locked: the next tick derives the same pairs
+            self.store.db.rollback()
+            self.log(f"placement failed: {type(e).__name__}: {e}")
+            return []
 
     def export_due(self) -> None:
         """Step 4: the `.m3u8` export when `export_s` has passed since the last one (the first tick always runs)."""
@@ -232,7 +252,7 @@ class Worker:
                     self.log(f"recheck {wanted_id}: could not restart its clock: {type(e2).__name__}: {e2}")
             rechecked += 1
         claimed += self._spend(self.store.pending_approvals(), results)     # play-now ones that arrived meanwhile first
-        for line in self.advance_replacements(open_jobs):
+        for line in self.advance_replacements(open_jobs) + self.place_due():
             results.append(line)
             self.log(line)
         self.export_due()

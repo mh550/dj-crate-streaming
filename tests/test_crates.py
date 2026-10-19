@@ -298,3 +298,145 @@ def test_a_vanished_playlist_is_forgotten(env):
 
 def test_a_vanished_playlists_in_flight_rows_wait(env):
     check_in_flight_rows_wait(env)
+
+
+def test_import_order_is_replaced_per_playlist_and_found_by_wanted_id(tmp_path):
+    # N4-02 (M9 §1): the last real import's Spotify order, one row per position; a wanted id may sit in several.
+    p = tmp_path / "c.db"
+    s = CrateStore(p)
+    assert s.import_order("pl-1") == [] and s.import_order_for("ext-1") == []
+    s.record_import_order("pl-1", [(2, None, "ext-1"), (1, "s1", None), (3, "s2", None)])
+    s.record_import_order("pl-2", [(1, None, "ext-1")])
+    s.commit()
+    s = CrateStore(p)                                   # the table is in SCHEMA: it survives reopening
+    assert [(r["position"], r["song_id"], r["wanted_id"]) for r in s.import_order("pl-1")] == [
+        (1, "s1", None), (2, None, "ext-1"), (3, "s2", None)]
+    assert [(r["playlist_id"], r["position"]) for r in s.import_order_for("ext-1")] == [("pl-1", 2), ("pl-2", 1)]
+    s.record_import_order("pl-1", [(1, "s1", None), (2, "s9", None)])          # a re-run replaces the record
+    assert [(r["position"], r["song_id"], r["wanted_id"]) for r in s.import_order("pl-1")] == [
+        (1, "s1", None), (2, "s9", None)]
+    assert [r["playlist_id"] for r in s.import_order_for("ext-1")] == ["pl-2"]  # other playlists untouched
+
+
+def test_record_import_order_is_one_transaction():
+    import sqlite3
+    s = CrateStore()
+    s.record_import_order("pl-1", [(1, "s1", None)])
+    s.commit()
+    with pytest.raises(sqlite3.IntegrityError):         # a bad row: the old record must survive, not half the new one
+        s.record_import_order("pl-1", [(1, "s2", None), (1, "s3", None)])
+    assert [r["song_id"] for r in s.import_order("pl-1")] == ["s1"]
+
+
+def test_record_import_order_inside_the_callers_transaction_commits_nothing_early():
+    # import_playlist calls it among its other writes and commits once at the end.
+    import sqlite3
+    s = CrateStore()
+    s.mark_imported("pl-1", ["s1"])
+    s.record_import_order("pl-1", [(1, "s1", None)])
+    with pytest.raises(sqlite3.IntegrityError):
+        s.record_import_order("pl-1", [(1, "s2", None), (1, "s3", None)])
+    assert s.db.in_transaction and s.imported("pl-1") == {"s1"}       # still pending, the failed record undone
+    assert [r["song_id"] for r in s.import_order("pl-1")] == ["s1"]
+    s.db.rollback()
+    assert s.imported("pl-1") == set() and s.import_order("pl-1") == []
+
+
+def test_record_import_order_keeps_the_real_error_when_sqlite_already_rolled_back(monkeypatch):
+    # A disk-full or I/O error rolls the whole transaction back, savepoint included: report that, not "no such savepoint".
+    import sqlite3
+    s = CrateStore()
+    real = s.db
+
+    class Full:
+        in_transaction = property(lambda self: real.in_transaction)
+
+        def execute(self, sql, *a):
+            return real.execute(sql, *a)
+
+        def executemany(self, sql, *a):
+            real.rollback()
+            raise sqlite3.OperationalError("database or disk is full")
+    monkeypatch.setattr(s, "db", Full())
+    with pytest.raises(sqlite3.OperationalError, match="disk is full"):
+        s.record_import_order("pl-1", [(1, "s1", None)])
+
+
+def _filed_ext(s, pid="pl-1", position=2, song="s9", status="ok", provisional=False):
+    ext = s.add_external_wanted("MFSB", f"Track {position}", playlist_id=pid, position=position)
+    s.set_external_song(ext, song, provisional)
+    s.set_external_status(ext, status)
+    return ext
+
+
+def test_placements_table_survives_reopening_and_note_placement_counts(tmp_path):
+    # N4-04: one row per (wanted, playlist); attempts counts the failures toward the limit, updated_at always moves.
+    p = tmp_path / "c.db"
+    s = CrateStore(p)
+    assert s.placement("ext-1", "pl-1") is None
+    s.note_placement("ext-1", "pl-1", "open", "refused: hidden row", song_id="s9", now=100.0)
+    s.commit()
+    s = CrateStore(p)
+    r = s.placement("ext-1", "pl-1")
+    assert (r["state"], r["attempts"], r["detail"], r["song_id"], r["updated_at"]) == (
+        "open", 1, "refused: hidden row", "s9", 100.0)
+    s.note_placement("ext-1", "pl-1", "open", "Navidrome down", count=False, now=200.0)
+    s.note_placement("ext-1", "pl-1", "given_up", "still refused", now=300.0)
+    r = s.placement("ext-1", "pl-1")
+    assert (r["state"], r["attempts"], r["detail"], r["song_id"], r["updated_at"]) == (
+        "given_up", 2, "still refused", "s9", 300.0)                               # the song id stays when not given
+    assert s.placement("ext-1", "pl-2") is None
+
+
+def test_due_placements_are_derived_from_state():
+    s = CrateStore()
+    ok = _filed_ext(s)                                                  # filed, in pl-1's order: due
+    sourcing = _filed_ext(s, position=3, song="s7", status="sourcing")  # still being fetched
+    legacy = _filed_ext(s, position=4, song="s6", provisional=True)     # play-now's copy, its upgrade pending
+    nosong = s.add_external_wanted("MFSB", "Track 5", playlist_id="pl-1", position=5)
+    s.set_external_status(nosong, "ok", "in library: s5")               # a re-run matched it: no library_song_id
+    elsewhere = _filed_ext(s, pid="pl-2", position=1, song="s8")        # wanted row whose order is not recorded
+    s.record_import_order("pl-1", [(1, "s1", None), (2, None, ok), (3, None, sourcing), (4, None, legacy),
+                                   (5, None, nosong), (6, None, ok)])   # the same wanted row twice: one pair
+    s.record_import_order("pl-3", [(7, None, ok)])                      # wanted by a second playlist too
+    assert [(d["wanted_id"], d["playlist_id"], d["song_id"], d["position"]) for d in s.due_placements()] == [
+        (ok, "pl-1", "s9", 2), (ok, "pl-3", "s9", 7)]
+    assert elsewhere not in {d["wanted_id"] for d in s.due_placements()}
+    s.mark_imported("pl-3", ["s9"])                                     # appended by a re-run, or removed after
+    assert [d["playlist_id"] for d in s.due_placements()] == ["pl-1"]
+    for state, due in (("open", True), ("writing", True), ("done", False), ("given_up", False)):
+        s.note_placement(ok, "pl-1", state, None)
+        assert bool(s.due_placements()) is due, state
+
+
+def test_repoint_song_moves_what_crates_db_says_about_a_song_to_its_new_copy():
+    # review N4-05 I2: a copy replacement or the duplicate cleanup repoints old -> new in every playlist; the import
+    # order, removed-stays-removed and filed rows must follow, or placement loses neighbours / re-inserts the old copy.
+    s = CrateStore()
+    filed = _filed_ext(s, song="s4")                                    # filed as the old copy, not placed yet
+    waiting = _filed_ext(s, position=3, song="s4", status="verify")     # still in flight: left to its own flow
+    legacy = _filed_ext(s, position=4, song="s4", provisional=True)     # play-now's copy: its upgrade replaces it
+    s.record_import_order("pl-1", [(1, "s4", None), (2, None, filed), (3, "s2", None)])
+    s.record_import_order("pl-2", [(1, "s4", None)])
+    s.mark_imported("pl-1", ["s4", "s2"])
+    s.mark_imported("pl-2", ["s9"])                                     # already holds the new copy
+    assert s.repoint_song("s4", "s9") == {"import_order": 2, "imported_entries": 1, "external_wanted": 1,
+                                          "placements": 0}
+    s.commit()
+    assert [r["song_id"] for r in s.import_order("pl-1")] == ["s9", None, "s2"]
+    assert [r["song_id"] for r in s.import_order("pl-2")] == ["s9"]
+    assert s.imported("pl-1") == {"s4", "s9", "s2"} and s.imported("pl-2") == {"s9"}    # the old id stays too
+    assert s.external(filed)["library_song_id"] == "s9"
+    assert s.external(waiting)["library_song_id"] == "s4" and s.external(legacy)["library_song_id"] == "s4"
+    assert s.repoint_song("s4", "s9") == {"import_order": 0, "imported_entries": 0, "external_wanted": 0,
+                                          "placements": 0}
+
+
+def test_repoint_song_moves_an_unfinished_placement_so_the_look_finds_the_new_song():
+    # second review of N4-05 M-a: a `writing` row's look reads placements.song_id; after a repoint the playlist holds
+    # the new song, so looking for the old one would say "not placed" although it is there.
+    s = CrateStore()
+    for state, wid in (("writing", "ext-1"), ("open", "ext-2"), ("done", "ext-3")):
+        s.note_placement(wid, "pl-1", state, None, song_id="s4")
+    assert s.repoint_song("s4", "s9")["placements"] == 2
+    assert [s.placement(w, "pl-1")["song_id"] for w in ("ext-1", "ext-2", "ext-3")] == ["s9", "s9", "s4"]

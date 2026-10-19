@@ -82,3 +82,11 @@
 - 2026-10-19 04:32 · N3-02 · claude-opus-5-5 · passes=true · 37 min · 25/33 passing
 - 2026-10-19 04:48 · N3-03 · claude-opus-5-5 · passes=true · 15 min · 26/33 passing
 - 2026-10-19 04:48 · merged main into harness/dj-2026-10-17
+- 2026-10-19 04:50 · N3 verified and tagged run/dj-2026-10-17/N3
+- 2026-10-19 04:50 · N3 merged into main · https://github.com/mh550/dj-crate-streaming/pull/11
+- 2026-10-19 05:08 · N4-01 · claude-opus-5-5 · passes=true · 17 min · 27/33 passing
+- 2026-10-19 05:41 · N4-02 · claude-opus-5-5 · passes=true · 32 min · 28/33 passing
+- 2026-10-19 05:58 · N4-03 · claude-opus-5-5 · passes=true · 16 min · 29/33 passing
+- 2026-10-19 06:31 · N4-04 · claude-opus-5-5 · passes=true · 33 min · 30/33 passing
+- 2026-10-19 07:05 · N4-05 · claude-opus-5-5 · passes=true · 33 min · 31/33 passing
+- 2026-10-19 07:05 · merged main into harness/dj-2026-10-17

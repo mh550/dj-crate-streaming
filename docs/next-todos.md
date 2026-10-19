@@ -35,8 +35,11 @@ Anything that trashes files or writes tags needs a reviewed plan file and a reve
 3. **Drop the dead crate row** ("sockseek / clouds", playlist deleted). **Built (N3), not deployed:** the next reconcile
    drops a deleted playlist's rows with a `playlist_gone` event and a reverse log (`docs/architecture.md` §9,
    `docs/plans/2026-10-17-n3-vanished-playlist.md`) instead of reporting "playlist no longer exists". Before N3: make `Reconciler._run` (`crates/reconcile.py`) remove the rows of a playlist that vanished, with an event.
-4. **Insert a downloaded track at its Spotify position (M9 item 1, spec §1).** `fetch.finish` (`sourcing/fetch.py`),
-   `external_wanted.position`, `crates/playlist_edit.py`. Also play-now.
+4. **Insert a downloaded track at its Spotify position (M9 item 1, spec §1).** **Built (N4), not deployed:** each
+   real import records `import_order`; the worker places every filed external row (play-now's final copy included)
+   into its imported playlists through `playlist_edit.rewrite`, insert only (`crates/placement.py`, D44,
+   `docs/worker.md` → "Placement"). Playlists imported before N4 are placed into only after their next re-run (item 5).
+   Before N4: `fetch.finish` (`sourcing/fetch.py`), `external_wanted.position`, `crates/playlist_edit.py`. Also play-now.
 5. **Re-run the imports after the cleanup** so the 13 `review` rows (`external_wanted`, status `review`) and "shakori
    (Spotify)"'s 2 ambiguous rows are re-matched against a library without duplicates (`sourcing.cli import-playlist`;
    M9 spec §5b picker only for what is left).

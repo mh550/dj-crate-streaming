@@ -82,6 +82,20 @@ CREATE TABLE IF NOT EXISTS imported_playlists (   -- playlists import-playlist m
   source TEXT,                                    -- the import's source text, or 'migrated' (N2-03)
   imported_at REAL                                -- first recorded
 );
+CREATE TABLE IF NOT EXISTS import_order (         -- every row of a playlist's last real import, Spotify order (N4)
+  playlist_id TEXT NOT NULL, position INTEGER NOT NULL,   -- Row.position (1-based)
+  song_id TEXT,                                   -- the Navidrome song the row matched, or NULL
+  wanted_id TEXT,                                 -- the ext-N row it queued (missing / ambiguous), or NULL
+  PRIMARY KEY (playlist_id, position)
+);
+CREATE TABLE IF NOT EXISTS placements (           -- one per (wanted row, playlist), ever (N4, M9 §1; crates.placement)
+  wanted_id TEXT NOT NULL, playlist_id TEXT NOT NULL,
+  song_id TEXT,                                   -- the song placed (or tried)
+  state TEXT NOT NULL,                            -- open | writing (edit sent, not yet confirmed) | done | given_up
+  attempts INTEGER NOT NULL DEFAULT 0,            -- counted failures toward crates.placement.PLACE_LIMIT
+  detail TEXT, updated_at REAL NOT NULL,
+  PRIMARY KEY (wanted_id, playlist_id)
+);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS verifications (        -- the last download check per wanted id (spec §3a): JSON of
   song_id TEXT PRIMARY KEY, result TEXT NOT NULL, -- ok, tier, problems, warnings, measurements, file
@@ -690,8 +704,9 @@ class CrateStore:
         in crate_tracks or external_wanted (a `review` question or a `failed` filed row never ends on its own, so it
         does not wait). Every other crate_tracks row is deleted. While some wait, the `crates` row stays (fetch
         reaches its rows through it) but loses its flag and tier, so nothing counts the playlist as tiered; once none
-        waits, it goes with the import rows and the problems setting. Open wanted rows become
-        `removed` and keep playlist_id/position/tier as history. Returns every row it changed as it was before (the
+        waits, it goes with the import rows (import_order and placements too, N4) and the problems setting. Open
+        wanted rows become `removed` and keep playlist_id/position/tier as history, except one another playlist's
+        import_order still names (N4: that playlist still wants it). Returns every row it changed as it was before (the
         caller's reverse log) and `live`/`kept` counts; proposals and events are left alone."""
         pid = (playlist_id,)
         if not self.db.in_transaction:      # fetch and the web write from other processes: lock before the first read
@@ -710,13 +725,15 @@ class CrateStore:
             r = dict(r)
             if r.pop("waits"):
                 kept += 1
-            elif r["status"] not in ("ok", "removed"):
+            elif r["status"] not in ("ok", "removed") and not any(
+                    o["playlist_id"] != playlist_id for o in self.import_order_for(f"ext-{r['id']}")):
                 wanted_removed.append(r)
                 self.set_external_status(f"ext-{r['id']}", "removed", "playlist deleted")
         crate = self.db.execute("SELECT * FROM crates WHERE playlist_id=?", pid).fetchone()
         out = {"dropped": dropped, "live": sum(t["status"] != "removed" for t in dropped), "kept": kept,
                "crate": dict(crate) if crate else None, "imported_entries": [], "imported_playlist": None,
-               "wanted_removed": wanted_removed, "problems": None}
+               "wanted_removed": wanted_removed, "problems": None,
+               "import_order": [], "placements": []}
         if kept:
             if crate and (crate["enabled"] or crate["tier"] is not None):
                 self.db.execute("UPDATE crates SET enabled=0, tier=NULL, updated_at=? WHERE playlist_id=?",
@@ -727,13 +744,91 @@ class CrateStore:
         out["imported_entries"] = sorted(self.imported(playlist_id))
         r = self.db.execute("SELECT * FROM imported_playlists WHERE playlist_id=?", pid).fetchone()
         out["imported_playlist"] = dict(r) if r else None
-        for table in ("crates", "imported_entries", "imported_playlists"):
+        out["import_order"] = self.import_order(playlist_id)
+        out["placements"] = [dict(r) for r in self.db.execute(
+            "SELECT * FROM placements WHERE playlist_id=? ORDER BY wanted_id", pid)]
+        for table in ("crates", "imported_entries", "imported_playlists", "import_order", "placements"):
             self.db.execute(f"DELETE FROM {table} WHERE playlist_id=?", pid)
         key = (f"problems:attrs_problem:{playlist_id}",)
         r = self.db.execute("SELECT value FROM settings WHERE key=?", key).fetchone()
         out["problems"] = r[0] if r else None             # note_problems' value (a JSON list) for that key
         self.db.execute("DELETE FROM settings WHERE key=?", key)
         return out
+
+    def record_import_order(self, playlist_id: str, rows: list[tuple[int, str | None, str | None]]) -> None:
+        """Replace the playlist's import_order with `rows` of (position, song_id, wanted_id): all or nothing (a
+        savepoint). Inside the caller's transaction the caller commits; outside one, this commits."""
+        self.db.execute("SAVEPOINT import_order")
+        try:
+            self.db.execute("DELETE FROM import_order WHERE playlist_id=?", (playlist_id,))
+            self.db.executemany("INSERT INTO import_order(playlist_id, position, song_id, wanted_id) VALUES(?,?,?,?)",
+                                [(playlist_id, *r) for r in rows])
+        except BaseException:
+            if self.db.in_transaction:          # a disk-full or I/O error may have rolled it all back already
+                self.db.execute("ROLLBACK TO import_order")
+                self.db.execute("RELEASE import_order")
+            raise
+        self.db.execute("RELEASE import_order")
+
+    def import_order(self, playlist_id: str) -> list[dict]:
+        return [dict(r) for r in self.db.execute(
+            "SELECT * FROM import_order WHERE playlist_id=? ORDER BY position", (playlist_id,))]
+
+    def import_order_for(self, wanted_id: str) -> list[dict]:
+        """Every playlist slot that queued this wanted row (a track wanted by two playlists has a row in each)."""
+        return [dict(r) for r in self.db.execute(
+            "SELECT * FROM import_order WHERE wanted_id=? ORDER BY playlist_id, position", (wanted_id,))]
+
+    def due_placements(self) -> list[dict]:
+        """The (wanted row, playlist) pairs placement still has to do, derived from state alone (N4): an import_order
+        row names the wanted row; that row is `ok` with its library song and not provisional; the song is not in the
+        playlist's imported_entries (added, or removed after, already); no `done`/`given_up` placement. One per pair
+        (its smallest position), in (playlist, position) order, with the playlist's imported name."""
+        return [dict(r) for r in self.db.execute(
+            "SELECT o.wanted_id, o.playlist_id, e.library_song_id AS song_id, MIN(o.position) AS position, ip.name "
+            "FROM import_order o JOIN external_wanted e ON o.wanted_id = 'ext-' || e.id "
+            "LEFT JOIN imported_playlists ip ON ip.playlist_id = o.playlist_id "
+            "WHERE e.status='ok' AND e.library_song_id IS NOT NULL AND e.provisional=0 "
+            "AND NOT EXISTS (SELECT 1 FROM imported_entries i WHERE i.playlist_id=o.playlist_id "
+            "AND i.song_id=e.library_song_id) "
+            "AND NOT EXISTS (SELECT 1 FROM placements p WHERE p.wanted_id=o.wanted_id AND p.playlist_id=o.playlist_id "
+            "AND p.state IN ('done','given_up')) "
+            "GROUP BY o.playlist_id, o.wanted_id ORDER BY o.playlist_id, MIN(o.position)")]
+
+    def placement(self, wanted_id: str, playlist_id: str) -> dict | None:
+        r = self.db.execute("SELECT * FROM placements WHERE wanted_id=? AND playlist_id=?",
+                            (wanted_id, playlist_id)).fetchone()
+        return dict(r) if r else None
+
+    def note_placement(self, wanted_id: str, playlist_id: str, state: str, detail: str | None, *,
+                       song_id: str | None = None, count: bool = True, now: float | None = None) -> None:
+        """Upsert a placement's state; `attempts += 1` only when `count` (a transient error is not counted). The
+        caller commits."""
+        assert state in ("open", "writing", "done", "given_up"), state
+        self.db.execute(
+            "INSERT INTO placements(wanted_id, playlist_id, song_id, state, attempts, detail, updated_at) "
+            "VALUES(?,?,?,?,?,?,?) ON CONFLICT(wanted_id, playlist_id) DO UPDATE SET "
+            "song_id=COALESCE(excluded.song_id, song_id), state=excluded.state, attempts=attempts+excluded.attempts, "
+            "detail=excluded.detail, updated_at=excluded.updated_at",
+            (wanted_id, playlist_id, song_id, state, int(count), detail, time.time() if now is None else now))
+
+    def repoint_song(self, old: str, new: str) -> dict:
+        """Every playlist now holds `new` instead of `old` (a copy replacement, the duplicate cleanup): import orders
+        name `new`, a playlist that ever had `old` added has `new` added too (removed stays removed; the old row
+        stays), filed external rows (`ok`, not provisional) and unfinished placements name it, so placement finds
+        its neighbours, never inserts the old copy and looks for the right song (review N4-05 I2). Rows still in
+        flight are their own flow's. Returns the counts
+        of rows changed; the caller commits."""
+        n = {"import_order": self.db.execute("UPDATE import_order SET song_id=? WHERE song_id=?", (new, old)).rowcount}
+        n["imported_entries"] = self.db.execute(
+            "INSERT OR IGNORE INTO imported_entries(playlist_id, song_id) "
+            "SELECT playlist_id, ? FROM imported_entries WHERE song_id=?", (new, old)).rowcount
+        n["external_wanted"] = self.db.execute(
+            "UPDATE external_wanted SET library_song_id=? WHERE library_song_id=? AND status='ok' AND provisional=0",
+            (new, old)).rowcount
+        n["placements"] = self.db.execute(       # an unfinished one: the look reads its song_id
+            "UPDATE placements SET song_id=? WHERE song_id=? AND state IN ('open','writing')", (new, old)).rowcount
+        return n
 
     def is_playlist_imported(self, playlist_id: str) -> bool:
         return self.db.execute("SELECT 1 FROM imported_playlists WHERE playlist_id=?", (playlist_id,)).fetchone() is not None

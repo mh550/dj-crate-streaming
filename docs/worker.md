@@ -29,7 +29,9 @@ of at most one second and ends early when a play-now approval is waiting (see "P
    back on the approval.
 5. **Replacements.** Every copy replacement that was left unfinished when the tick began is advanced one more time
    (a playlist that could not be repointed yet, Navidrome not yet showing the old copy gone, a crash in between).
-6. **Export.** At most once every `WORKER_EXPORT_S` seconds (300 by default; 0 turns it off) the playlists are
+6. **Placement.** Every filed track an imported playlist still waits for is inserted at its Spotify position (see
+   "Placement"): one guarded edit per playlist and track; a refused one is retried later, less often each time.
+7. **Export.** At most once every `WORKER_EXPORT_S` seconds (300 by default; 0 turns it off) the playlists are
    written as `.m3u8` into `/srv/music/_playlists`, changed files only, so repoints, swaps and your own edits reach
    the backup files.
 
@@ -255,11 +257,55 @@ queued, downloading, checking, filed, playing.
   library song, an `ok` row, a row in progress (`sourcing`, `verify`, filed but not indexed), a `review` row (pick a
   version first), and a row with an approval waiting or already claimed (a double tap, a second device). Preview and
   Approve of a row whose play-now approval is claimed also answer 409.
-- **Not placed in a playlist.** The provisional file is in the library but not in the playlist that wanted it; only
-  its upgrade may take a slot, through a replacement.
+- **Placed only once final.** A provisional file is in the library but not in the playlist that wanted it. When the
+  row ends `ok` (the exception above, or its upgrade filed), the worker places the final song like any other
+  ("Placement").
 - **iOS.** A phone lets a page start audio only from a tap, and the file lands seconds later. The tap itself primes
   the audio player, then the page starts it when the file is listed. If the browser still blocks it the row says
   "tap play". This has not been tried on a real phone yet.
+
+## Placement
+
+A track you queued from an imported playlist goes into that playlist **where Spotify had it**, not at the end (N4,
+D44, M9 §1). The code is `crates/placement.py`; the plan is `docs/plans/2026-10-17-n4-placement.md`.
+
+- **What is due** is read from state each tick (`CrateStore.due_placements`), so filing, a copy replacement and
+  play-now need no extra step: an external row that is `ok` with its library song (not provisional), named by the
+  playlist's `import_order`, not yet in `imported_entries` for that playlist, with no finished placement. A track
+  wanted by two imported playlists is placed in each.
+- **Where it goes.** `import_order` is the playlist's last real import, row by row. The track goes right after the
+  nearest earlier Spotify neighbour still in the playlist (its last occurrence), else right before the nearest later
+  one (its first occurrence), else at the end. A neighbour you removed, or one still wanted, is skipped and the next
+  one used. A neighbour that was itself filed and placed counts.
+- **What it never does.** It edits only playlists import-playlist made or adopted (`imported_playlists`), owned by
+  our user (`NotOwned` otherwise), never a smart playlist. It only inserts: no entry moves or goes, so a track an
+  earlier re-run appended at the end stays there. One placement per track and playlist, ever: a track you remove
+  afterwards stays removed (it is in `imported_entries`, D13). Every edit is one `playlist_edit.rewrite`, which
+  refuses on hidden missing rows or a concurrent edit, and reads the result back.
+- **States** (`placements` in crates.db): `open` (refused, retried), `writing` (the edit was sent, not yet
+  confirmed), `done` (placed, or skipped: already there, playlist gone, not imported), `given_up`.
+- **Events.** `placed`: "<playlist>: <artist> – <title> at <n> (after <song>|before <song>|append)", or "(confirmed
+  after an unconfirmed edit)". `not_placed`: "<playlist>: not placed after 12 tries: <why>; re-run the import to
+  append it", or "edit not confirmed, look at the playlist; re-run the import to append it".
+- **Retries.** A refusal (hidden missing rows, a concurrent edit, another owner, the song no longer in the library)
+  is counted and tried again after `WORKER_RECHECK_S`, then each wait doubles up to a day (5 min, 5, 10, 20 min…
+  ~21 h, a day), so the 12 tries span about four days: long enough for a scan or a cleanup to clear a hidden row.
+  The 12th gives up with `not_placed`. Navidrome
+  unreachable or crates.db locked is not counted, so an outage never gives a placement up.
+- **An edit not confirmed** (Navidrome did not show it on read-back, or the worker stopped mid-write) is never sent
+  again. The next tick only looks: the song there → `done`, absent → `given_up` with `not_placed`. That way an entry
+  is never doubled, and a track you removed in that moment is never put back.
+- **Fallback: re-run the import.** A track that was not placed is not in `imported_entries`, so the next real run of
+  `import-playlist` for that playlist appends it at the end (and records a fresh `import_order`).
+- **Older imports.** A playlist imported before N4 has no `import_order`, so nothing is placed into it until its next
+  real re-run of `import-playlist` records one.
+- **A repointed song.** When a copy replacement or the duplicate cleanup's `repoint` has moved every playlist from
+  an old copy to its new one, crates.db follows (`CrateStore.repoint_song`): import orders and filed rows name the
+  new song, and a playlist that ever had the old one added counts the new one as added too. The duplicate cleanup
+  does it after `repoint` and again right before `trash` moves a file, and logs a `cleanup` event "crates.db now
+  names <keeper>: …".
+- **Deleted playlist.** The reconcile that drops a deleted playlist's rows (N3) drops its `import_order` and
+  `placements` too, so nothing stays due for it.
 
 ## Settings the worker reads
 
@@ -269,7 +315,7 @@ from that clean checkout (see "Deploying, and what healthy means"; not `docker c
 | Variable | Default | What it does |
 |---|---|---|
 | `WORKER_POLL_S` | 30 | seconds between ticks (a waiting play-now ends the wait early) |
-| `WORKER_RECHECK_S` | 300 | a `verify` row is re-checked (one Navidrome scan) at most this often; also the scan interval of a replacement |
+| `WORKER_RECHECK_S` | 300 | a `verify` row is re-checked (one Navidrome scan) at most this often; also the scan interval of a replacement and the first retry wait of a placement (it doubles after each refusal, up to a day) |
 | `WORKER_RECONCILE_S` | 600 | playlist comments re-read and tiers re-derived; 0 = never |
 | `WORKER_EXPORT_S` | 300 | `.m3u8` export into `/srv/music/_playlists`; 0 = never |
 | `TRASH_ROOT` | `/srv/_trash` | where a replaced copy goes (mounted read-write in the worker) |

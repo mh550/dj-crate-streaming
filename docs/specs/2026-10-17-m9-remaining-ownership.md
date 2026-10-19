@@ -26,7 +26,7 @@ owner's intent once (a placement, a reviewed tag write, a reviewed trash) and ch
 
 | # | Item | Size | Michael decides |
 |---|---|---|---|
-| 1 | A downloaded track goes into its playlist at its Spotify position | M | yes (Q1, Q2) |
+| 1 | A downloaded track goes into its playlist at its Spotify position | M | Q1, Q2 by default (D44); **built (N4)** |
 | 2 | Proposals for playlists tiered later, and for filings made blind | S | yes (Q3) |
 | 3 | Garbage-collect the 102 "copies of one version" groups | L | yes (Q4, Q5) |
 | 4 | Write the version label into `VERSION`/`TIT3` | M | yes (Q6) |
@@ -38,6 +38,14 @@ owner's intent once (a placement, a reviewed tag write, a reviewed trash) and ch
 ---
 
 ## 1. Place a downloaded track at its Spotify position
+
+**Built (N4), not deployed.** As below, with Q1/Q2 answered by their defaults (D44 *default* in the pivot spec):
+insert after the nearest earlier Spotify neighbour still in the playlist, else before the nearest later one, else
+append; a track an earlier re-run appended stays. Differences from this draft: `import_order` is written by real runs
+only (a dry run records nothing); "`#imported`" is now `imported_playlists` (D33); placement is a worker step driven
+by state (`CrateStore.due_placements`), not a call from `finish`; N = 12 attempts, an outage not counted; an edit
+Navidrome did not confirm is looked at next tick, never re-sent. Code `crates/placement.py`, plan
+`docs/plans/2026-10-17-n4-placement.md`, operator view `docs/worker.md` → "Placement".
 
 **Problem.** A filed external row is in the library but not in the playlist that wanted it. `fetch.finish` sets the
 row `ok` and stops *(checked, `sourcing/fetch.py:216-222`)*; the column comment "where a later fetch inserts the

@@ -16,7 +16,7 @@ Legend: **built** = in the code; **live** = also running on the box; **planned**
 | M7 review (Task 11) | running now |
 | M7 live proposal (Task 12), gated apply (Task 13) | not done; Task 13 waits for you |
 | M8 lifecycle (Parts A–D: replacement, proposals, play-now; ownership changed by the pivot) | **built, live** since 2026-10-17; the trash-move probe in §9 has not been run (it needs the first real replacement) |
-| M9 | draft spec, nothing built: [`docs/specs/2026-10-17-m9-remaining-ownership.md`](specs/2026-10-17-m9-remaining-ownership.md) |
+| M9 | [`docs/specs/2026-10-17-m9-remaining-ownership.md`](specs/2026-10-17-m9-remaining-ownership.md): item 3 built (N1, not run live), item 1 placement built (N4, not deployed); the rest not built |
 
 Checked live (read-only) when this was written: the worker image has no `deploy/policy.toml` and no
 `scripts/identity_backfill.py`, so every M7 and M8 command below needs a rebuild first. The M8 rebuild has a required
@@ -109,7 +109,10 @@ song id for a crate row, or `ext-N` for an external row.
 | `proposals` | one question per playlist slot (`version_swap`/`unproven_copy`), decision, who decided | fetch, Wanted tab / CLI |
 | `crate_tracks` | per crate × song: facts, `status`, `reason` | reconcile, fetch |
 | `external_wanted` | tracks not in the library: names, length, tier, playlist + position, `asked_*` | import, seed, fetch |
-| `imported_entries` | every song import-playlist added (D13: removed stays removed) | import |
+| `imported_entries` | every song import-playlist added or the worker placed (D13: removed stays removed) | import, placement |
+| `imported_playlists` | playlists import-playlist made or adopted (D33; was the `#imported` comment) | import, `imported migrate` |
+| `import_order` | every row of a playlist's last real import in Spotify order: position, matched song or queued `ext-N` (N4) | import (replaced per run), `forget_playlist` |
+| `placements` | one per (wanted row, playlist): `open`/`writing`/`done`/`given_up`, `attempts`, `detail` (N4) | worker (`crates/placement.py`), `forget_playlist` |
 | `approvals` | `approved_by`, candidate JSON, tier, `used_at`, `result` | Approve, worker |
 | `previews` | last search-and-rank per wanted id | Preview |
 | `verifications` | last `verify` result per wanted id | worker |
@@ -156,7 +159,11 @@ Other stores:
    removed, D13); a new playlist is recorded in `imported_playlists` at once, then made public; its comment stays
    empty (under the retired owner `comment` it gets `#tier:<t>`). Missing rows →
    `add_external_wanted` (tier `medium` by default, D15). Ambiguous rows → status `review` with the candidate ids. Stand-ins are listed as "matched with another version".
-5. A re-run appends new matches **at the end** and closes wanted rows whose track is now matched.
+5. A real run (never `--dry-run`) records the whole Spotify order in `import_order`, replacing the previous record
+   for that playlist: song id for matched rows, `ext-N` for missing and review rows. A re-run appends new matches
+   **at the end** and closes wanted rows whose track is now matched. A wanted row filed later is not appended: the
+   worker places it at its Spotify position ((b) step 7, D44). Playlists imported before N4 get an order on their
+   next re-run; until then their filed rows are not placed.
 
 `seed-spotify <url>` only queues wanted rows. Crate flag: web toggle or `crates.cli toggle` →
 `Reconciler.set_crate` → `store.set_enabled` + best-effort `#crate` mirror → `reconcile_playlist` → `judge`
@@ -191,6 +198,14 @@ Other stores:
    (`renamed` event; the Spotify names stay in `asked_*`). External row → `ok`. A copy upgrade of a
    playlist row → a **copy replacement** (§9): proof, then repoint every playlist through `playlist_edit`, then the old
    file to the trash. No proof → both files stay and the row is `review`.
+   **Placement** (N4, D44, `crates/placement.py`): no call from here. Each tick the worker asks
+   `due_placements()` for external rows that are `ok`, filed (`library_song_id`), not provisional, named by an
+   `import_order` row of an imported playlist, not yet in `imported_entries` and with no `done`/`given_up`
+   placement (play-now's copy, once `ok`, is due the same way). For each, `place` re-reads the playlist and inserts
+   the song after its nearest earlier Spotify neighbour still there, else before the nearest later one, else at
+   the end: one `playlist_edit.rewrite`, insert only. Then `imported_entries` and a `placed` event. Refusals retry
+   after `WORKER_RECHECK_S`, each wait doubling up to a day; the 12th gives up with `not_placed` ("re-run the
+   import to append it"). An edit Navidrome did not confirm is only looked at next tick, never sent again. `docs/worker.md` → "Placement".
 8. **Not found yet**: row stays `verify` "filed as <rel> but Navidrome has not picked it up yet". Each tick
    re-checks rows idle ≥300 s (`WORKER_RECHECK_S`; each re-check starts a scan) and counts `(check N)`; at 12
    (about an hour) the row fails "Navidrome never indexed <rel>; file is in the library", and the web client
@@ -495,8 +510,8 @@ Each: what, **impact**, *mitigation*.
     (Question 15.)
 17. **Failed rows duplicate on re-import.** `find_external` skips failed unfiled rows (`store.py:367`), so a re-run
     of the import queues a second row for the same track. **Low.**
-18. **Filed external rows are not put in their playlist** (re-run the import to append them at the end). **Medium**
-    for DJ order. (Question 11.)
+18. **Closed (N4).** Filed external rows were not put in their playlist; the worker now places them at their Spotify
+    position ((b) step 7). Still: a playlist imported before N4 has no `import_order` until its next re-run.
 19. **Exports.** Since M8 the worker rewrites changed `.m3u8` files every 300 s (`WORKER_EXPORT_S`), so repoints and
     your edits reach them. A restore from them still needs `ND_AUTOIMPORTPLAYLISTS` on for one scan.
 20. **crates.db backup.** WAL mode: the main file is 4 KB and the WAL ~900 KB; restic copies them live. It now

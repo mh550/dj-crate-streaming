@@ -391,7 +391,7 @@
         "Commit `N4-01: plan for placing downloads at their Spotify position`.",
         ".harness/check.sh is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "N4-02",
@@ -405,7 +405,7 @@
         "Run .harness/check.sh tests/test_import_playlist.py tests/test_crates.py tests/test_app_owner.py; commit `N4-02: import_order records the Spotify order`.",
         ".harness/check.sh is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "N4-03",
@@ -419,7 +419,7 @@
         "Commit `N4-03: placement rule and place()`.",
         ".harness/check.sh is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "N4-04",
@@ -434,7 +434,7 @@
         "Run .harness/check.sh tests/test_worker.py tests/test_placement.py tests/test_play_now.py tests/test_replace.py tests/test_fetch.py; commit `N4-04: worker places filed tracks at their Spotify position`.",
         ".harness/check.sh is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "N4-05",
@@ -448,7 +448,7 @@
         "Commit `N4-05: review and simplify placement`.",
         ".harness/check.sh is green"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "N5-01",

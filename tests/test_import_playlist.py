@@ -400,5 +400,83 @@ def test_a_comment_write_error_after_the_add_still_records_our_facts_and_reports
             assert [x.id for x in c.playlist(pid).entries] == ["w1", "k1"]             # the songs are in
             assert store.imported(pid) == {"w1", "k1"}                                  # removed-stays-removed still works
             assert store.is_playlist_imported(pid)                                      # recorded before the comment write
+            assert len(store.import_order(pid)) == 4                                    # and the order (N4)
             assert {x["title"] for x in store.external_for_playlist(pid)} == {"Piano Joint (This Kind Of Love)", "The Magician"}
             assert type(exc).__name__ in str(e.value) and e.value.report.table()
+
+
+def _order(store, pid):
+    return [(r["position"], r["song_id"], r["wanted_id"]) for r in store.import_order(pid)]
+
+
+def test_a_real_import_records_the_spotify_order_and_a_rerun_replaces_it():
+    # N4-02: song id for a matched row, the wanted id for a queued one; the newest real import is the order.
+    with FakeSubsonicServer() as srv:
+        _lib(srv)
+        c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
+        rep = ip.import_playlist("Tea tent", ROWS[:3], c, store, source="s")     # matched, missing, matched
+        [kiwanuka] = store.external_for_playlist(rep.playlist_id)
+        assert _order(store, rep.playlist_id) == [(1, "w1", None), (2, None, kiwanuka["song_id"]), (3, "k1", None)]
+        again = ip.import_playlist("Tea tent", ROWS, c, store, source="s")      # one more row (ambiguous → review)
+        twain = next(r for r in store.external_for_playlist(rep.playlist_id) if r["artist"] == "Twain")
+        assert again.playlist_id == rep.playlist_id
+        assert _order(store, rep.playlist_id) == [(1, "w1", None), (2, None, kiwanuka["song_id"]), (3, "k1", None),
+                                                  (4, None, twain["song_id"])]
+
+
+def test_a_dry_run_records_no_order():
+    with FakeSubsonicServer() as srv:
+        _lib(srv)
+        c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
+        ip.import_playlist("Tea tent", ROWS, c, store, source="s", dry_run=True)
+        assert store.db.execute("SELECT COUNT(*) FROM import_order").fetchone()[0] == 0
+        rep = ip.import_playlist("Tea tent", ROWS[:3], c, store, source="s")
+        ip.import_playlist("Tea tent", ROWS, c, store, source="s", dry_run=True)    # nor replaces one
+        assert len(_order(store, rep.playlist_id)) == 3
+
+
+def test_the_order_records_the_copy_already_in_the_playlist():
+    # A matched row switched to a copy that is already there (the `present` switch) names that copy.
+    with FakeSubsonicServer() as srv:
+        s = srv.state.songs
+        s["c3"] = dict(s["s1"], id="c3", title="Peace Of Mind", artist="Wendell Harrison", duration=439, path="Compilations/Le Top/04.mp3")
+        c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
+        rows = [Row(1, "Peace of Mind", "Wendell Harrison", None, sep="; ")]
+        first = ip.import_playlist("PoM", rows, c, store, source="s")
+        s["f1"] = dict(s["s1"], id="f1", title="Peace of Mind", artist="Wendell Harrison", duration=439,
+                       path="Wendell Harrison/Organic Dream (1981)/04.flac")      # a better-filed copy appears
+        assert ip.match(c, rows[0]).song_id == "f1"
+        ip.import_playlist("PoM", rows, c, store, source="s")
+        assert _order(store, first.playlist_id) == [(1, "c3", None)]
+
+
+def test_a_track_wanted_by_two_playlists_has_an_order_row_in_each():
+    # M9 §1: wanted row × playlist is many-to-many; the wanted row itself keeps only the last slot.
+    with FakeSubsonicServer() as srv:
+        _lib(srv)
+        c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
+        a = ip.import_playlist("Tea tent", ROWS[:3], c, store, source="a")
+        b = ip.import_playlist("Late set", [Row(1, "Bag Lady", "Erykah Badu", 347, "sp3"),
+                                            Row(2, "Piano Joint (This Kind Of Love)", "Michael Kiwanuka", 232, "sp2")],
+                               c, store, source="b")
+        [ext] = {r["wanted_id"] for r in store.import_order(a.playlist_id) if r["wanted_id"]}
+        assert store.external_count() == 1
+        assert _order(store, b.playlist_id) == [(1, "k1", None), (2, None, ext)]
+        assert [(r["playlist_id"], r["position"]) for r in store.import_order_for(ext)] == sorted(
+            [(a.playlist_id, 2), (b.playlist_id, 2)])
+
+
+def test_a_filed_track_wanted_by_two_imports_is_due_in_both():
+    # N4-04: find_external hands the second import the same wanted row; once filed it is placed in each playlist.
+    with FakeSubsonicServer() as srv:
+        _lib(srv)
+        c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
+        a = ip.import_playlist("Tea tent", ROWS[:3], c, store, source="a")
+        b = ip.import_playlist("Late set", [Row(1, "Bag Lady", "Erykah Badu", 347, "sp3"),
+                                            Row(2, "Piano Joint (This Kind Of Love)", "Michael Kiwanuka", 232, "sp2")],
+                               c, store, source="b")
+        [ext] = {r["wanted_id"] for r in store.import_order(a.playlist_id) if r["wanted_id"]}
+        store.set_external_song(ext, "k9", False)
+        store.set_external_status(ext, "ok", "filed")
+        assert sorted((d["playlist_id"], d["wanted_id"], d["song_id"]) for d in store.due_placements()) == sorted(
+            [(a.playlist_id, ext, "k9"), (b.playlist_id, ext, "k9")])

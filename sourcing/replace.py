@@ -316,7 +316,10 @@ _STEPS = {"repoint": _repoint, "trash": _trash, "scan": _scan}
 
 def _settle(ctx: Ctx, job: dict) -> None:
     """Every playlist now holds the new song: an external row (the upgrade of play-now's provisional copy, D20) is
-    done and names it, no longer provisional; a playlist row's old rows were removed by the reconcile."""
+    done and names it, no longer provisional; a playlist row's old rows were removed by the reconcile. Import orders,
+    imported_entries and other filed rows name the new song too (CrateStore.repoint_song, for placement); the
+    caller's _set commits."""
+    ctx.store.repoint_song(job["old_song_id"], job["new_song_id"])
     wid = job["wanted_id"]
     if wid.startswith("ext-") and ctx.store.external(wid) is not None:
         ctx.store.set_external_song(wid, job["new_song_id"], False)
