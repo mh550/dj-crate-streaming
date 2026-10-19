@@ -279,20 +279,28 @@ def _event(store, playlist_id: str | None, song_id: str, detail: str) -> None:
         print(f"event not logged ({detail}): {ex!r}", file=sys.stderr)
 
 
-def _repoint_store(store, extra: str, keeper: str) -> None:
-    """No playlist holds the extra any more: crates.db's import orders, imported_entries and filed rows name the
-    keeper (CrateStore.repoint_song, review N4-05 I2), with a `cleanup` event naming both ids when anything changed.
-    The two are copies of one version, so a playlist reverse-repointed later keeps a correct, if less exact, record.
-    A failure (crates.db busy) is noted on stderr like _event's; the next repoint run retries it."""
+def _repoint_store(store, navidrome_db: Path, extra: str, keeper: str) -> None:
+    """Once no playlist holds the extra (hidden rows included): crates.db's import orders, imported_entries, filed
+    rows and unfinished placements name the keeper (CrateStore.repoint_song, review N4-05 I2), with a `cleanup`
+    event naming both ids when anything changed. Called after each repoint and by trash right before the move (a
+    trashed extra is no longer a duplicate, so no later repoint reaches it). The two are copies of one version, so a
+    playlist reverse-repointed later keeps a correct, if less exact, record. A failure (crates.db busy, navidrome.db
+    unreadable) is rolled back and noted on stderr like _event's, and never fails the repoint or the move."""
     if store is None:
         return
     try:
+        if references(navidrome_db, extra):
+            return
         n = store.repoint_song(extra, keeper)
         if any(n.values()):
             store.log(None, extra, "cleanup", f"crates.db now names {keeper}: {n['import_order']} import order, "
                       f"{n['imported_entries']} imported, {n['external_wanted']} filed rows")
         store.commit()
-    except Exception as ex:                  # each statement is right on its own, so a part done may be committed later
+    except Exception as ex:
+        try:
+            store.db.rollback()                  # never hold crates.db's write lock over the scan that follows
+        except Exception:
+            pass
         print(f"crates.db not repointed ({extra} -> {keeper}): {ex!r}", file=sys.stderr)
 
 
@@ -326,8 +334,7 @@ def repoint(plan: dict, client, navidrome_db: Path, log_path: Path, limit: int |
                 out[extra] = _summary(repoint_everywhere(
                     client, navidrome_db, extra, keeper, before_write=partial(_reverse, log_path, extra, keeper),
                     after_write=lambda pid, name: _event(store, pid, extra, f"repointed {name} to {keeper}")))
-                if not references(navidrome_db, extra):
-                    _repoint_store(store, extra, keeper)
+                _repoint_store(store, navidrome_db, extra, keeper)
             except Exception as ex:                          # recorded; the other groups and the scan still run
                 out[extra] = f"failed: {ex!r}"
     if scan:
@@ -540,6 +547,7 @@ def _trash(plan, client, navidrome_db, music_root, trash_root, forget, log_path,
             return f"refused: in use by {busy}"
         if dry_run:
             return "dry run: would move"
+        _repoint_store(store, navidrome_db, extra, keeper)
         dst = move_to_trash(rel, music_root, trash_root)
         moved[extra] = (rel, dst, None)
         try:                         # every file that stays moved gets its trash line, so a later run can put it back

@@ -302,7 +302,8 @@ D44, M9 §1). The code is `crates/placement.py`; the plan is `docs/plans/2026-10
 - **A repointed song.** When a copy replacement or the duplicate cleanup's `repoint` has moved every playlist from
   an old copy to its new one, crates.db follows (`CrateStore.repoint_song`): import orders and filed rows name the
   new song, and a playlist that ever had the old one added counts the new one as added too. The duplicate cleanup
-  logs it as a `cleanup` event "crates.db now names <keeper>: …".
+  does it after `repoint` and again right before `trash` moves a file, and logs a `cleanup` event "crates.db now
+  names <keeper>: …".
 - **Deleted playlist.** The reconcile that drops a deleted playlist's rows (N3) drops its `import_order` and
   `placements` too, so nothing stays due for it.
 

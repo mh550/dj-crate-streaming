@@ -815,8 +815,9 @@ class CrateStore:
     def repoint_song(self, old: str, new: str) -> dict:
         """Every playlist now holds `new` instead of `old` (a copy replacement, the duplicate cleanup): import orders
         name `new`, a playlist that ever had `old` added has `new` added too (removed stays removed; the old row
-        stays), and filed external rows (`ok`, not provisional) name it, so placement finds its neighbours and
-        never inserts the old copy (review N4-05 I2). Rows still in flight are their own flow's. Returns the counts
+        stays), filed external rows (`ok`, not provisional) and unfinished placements name it, so placement finds
+        its neighbours, never inserts the old copy and looks for the right song (review N4-05 I2). Rows still in
+        flight are their own flow's. Returns the counts
         of rows changed; the caller commits."""
         n = {"import_order": self.db.execute("UPDATE import_order SET song_id=? WHERE song_id=?", (new, old)).rowcount}
         n["imported_entries"] = self.db.execute(
@@ -825,6 +826,8 @@ class CrateStore:
         n["external_wanted"] = self.db.execute(
             "UPDATE external_wanted SET library_song_id=? WHERE library_song_id=? AND status='ok' AND provisional=0",
             (new, old)).rowcount
+        n["placements"] = self.db.execute(       # an unfinished one: the look reads its song_id
+            "UPDATE placements SET song_id=? WHERE song_id=? AND state IN ('open','writing')", (new, old)).rowcount
         return n
 
     def is_playlist_imported(self, playlist_id: str) -> bool:

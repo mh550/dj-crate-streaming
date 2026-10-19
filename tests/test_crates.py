@@ -420,11 +420,23 @@ def test_repoint_song_moves_what_crates_db_says_about_a_song_to_its_new_copy():
     s.record_import_order("pl-2", [(1, "s4", None)])
     s.mark_imported("pl-1", ["s4", "s2"])
     s.mark_imported("pl-2", ["s9"])                                     # already holds the new copy
-    assert s.repoint_song("s4", "s9") == {"import_order": 2, "imported_entries": 1, "external_wanted": 1}
+    assert s.repoint_song("s4", "s9") == {"import_order": 2, "imported_entries": 1, "external_wanted": 1,
+                                          "placements": 0}
     s.commit()
     assert [r["song_id"] for r in s.import_order("pl-1")] == ["s9", None, "s2"]
     assert [r["song_id"] for r in s.import_order("pl-2")] == ["s9"]
     assert s.imported("pl-1") == {"s4", "s9", "s2"} and s.imported("pl-2") == {"s9"}    # the old id stays too
     assert s.external(filed)["library_song_id"] == "s9"
     assert s.external(waiting)["library_song_id"] == "s4" and s.external(legacy)["library_song_id"] == "s4"
-    assert s.repoint_song("s4", "s9") == {"import_order": 0, "imported_entries": 0, "external_wanted": 0}
+    assert s.repoint_song("s4", "s9") == {"import_order": 0, "imported_entries": 0, "external_wanted": 0,
+                                          "placements": 0}
+
+
+def test_repoint_song_moves_an_unfinished_placement_so_the_look_finds_the_new_song():
+    # second review of N4-05 M-a: a `writing` row's look reads placements.song_id; after a repoint the playlist holds
+    # the new song, so looking for the old one would say "not placed" although it is there.
+    s = CrateStore()
+    for state, wid in (("writing", "ext-1"), ("open", "ext-2"), ("done", "ext-3")):
+        s.note_placement(wid, "pl-1", state, None, song_id="s4")
+    assert s.repoint_song("s4", "s9")["placements"] == 2
+    assert [s.placement(w, "pl-1")["song_id"] for w in ("ext-1", "ext-2", "ext-3")] == ["s9", "s9", "s4"]

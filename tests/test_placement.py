@@ -154,6 +154,17 @@ def test_insert_only_the_playlist_before_is_a_subsequence_of_after(srv, client, 
     assert _is_subsequence(now, after) and [s for s in after if s != "s9"] == now
 
 
+def test_after_a_repoint_the_neighbour_is_found_under_its_new_id(srv, client, db, store):
+    # review N4-05 I2: a copy replacement / duplicate cleanup turned s1 into s5 in the playlist; Michael has added s4
+    # after it since. With crates.db repointed the track goes right after s5, not before s2 (one slot later).
+    srv.state.playlists["pl-1"]["songs"] = ["s5", "s4", "s2", "s3"]
+    srv.state.sync()
+    store.repoint_song("s1", "s5")
+    store.commit()
+    assert _place(store, client, db) == "placed at 1 (after s5)"
+    assert _songs(srv, "pl-1") == ["s5", "s9", "s4", "s2", "s3"]
+
+
 def test_with_the_earlier_neighbour_removed_it_goes_before_the_later_one(srv, client, db, store):
     srv.state.playlists["pl-1"]["songs"].remove("s1")                           # Michael removed s1
     srv.state.sync()

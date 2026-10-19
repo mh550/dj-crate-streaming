@@ -224,7 +224,9 @@ never moved (Q2); a refused placement retries at most every `recheck_s` (N4-05: 
   (`replace._settle`) or the duplicate cleanup (`repoint`, once no playlist holds the extra) repoints old → new in
   Navidrome, but `import_order`, `imported_entries` and filed `external_wanted` rows kept the old id: neighbours were
   lost and the old copy could be inserted. `CrateStore.repoint_song(old, new)` moves them (a `cleanup` event in the
-  duplicate cleanup). New tests: before is a subsequence of after for six playlist shapes; a forgotten playlist
+  duplicate cleanup; also right before `trash` moves the extra, since a trashed extra is no longer a duplicate and
+  no later repoint reaches it; unfinished placements' `song_id` follows too). New tests: placement after a repoint
+  finds the neighbour under its new id; before is a subsequence of after for six playlist shapes; a forgotten playlist
   leaves no due pair.
 
 ## Live effect and runbook (after N4 is merged and deployed)
