@@ -13,6 +13,27 @@ stop`; answers to the questions below go under `## Answers`. Every session reads
 
 ---
 
+### 2026-10-19 verify N3
+Re-ran `lib/check.sh` (green, 1,438 tests, cached) and the N3 subset `.harness/check.sh tests/test_playlist_gone.py tests/test_crates.py tests/test_app_owner.py tests/test_service.py tests/test_worker.py` (103 passed). No live commands run.
+
+| Feature | Step | What you ran or read | What you saw | Holds |
+|---|---|---|---|---|
+| N3-01 | 1 | read the plan's "Today" section against crates/reconcile.py, store.py | plan cites _run, _untier, in_flight, the tables and fixtures accurately | yes |
+| N3-01 | 2 | read docs/plans/2026-10-17-n3-vanished-playlist.md | names forget_playlist, tables losing rows (crate_tracks, crates, imported_entries, imported_playlists, N4 import_order later), wanted rows keep playlist_id/position, event `playlist_gone`, rep.tracks_removed, no rep.errors. Deviation: waiting rows are only sourcing/verify (review and filed failures are dropped), narrower than the step's "not in_flight", justified in the plan | yes |
+| N3-01 | 3 | `grep` pivot spec | decision recorded as `D43 *default*` (line 38), not D38, because D38 is already the snapshot decision; one sentence-level content matches | yes |
+| N3-01 | 4 | `git log` | commit `31837bd N3-01: plan for dropping a vanished playlist's rows` | yes |
+| N3-01 | 5 | `lib/check.sh` | green, 1,438 tests | yes |
+| N3-02 | 1 | read tests/test_crates.py `check_a_vanished_playlist_is_forgotten` (also run from tests/test_app_owner.py) | asserts store.get None, tracks(include_removed)==[], imported==set(), errors==[], one playlist_gone event with 'Chicago 86' and '3 rows dropped'; third run adds no event; passes | yes |
+| N3-02 | 2 | read `check_in_flight_rows_wait` | s3 sourcing stays, crates row stays, event '2 rows dropped, 1 in flight kept'; after failed the next run drops rest and crates row; passes | yes |
+| N3-02 | 3 | read forget_playlist (store.py) and _forget_vanished; tests/test_service.py::test_a_gone_playlists_crate_row_does_not_break_the_views | implementation present; status/playlists/crates/wanted return 200 before and after reconcile | yes |
+| N3-02 | 4 | ran the subset above; `git log` | 103 passed; commit `N3-02: reconcile drops a vanished playlist's rows` | yes |
+| N3-02 | 5 | `lib/check.sh` | green | yes |
+| N3-03 | 1 | `ls` scratch n3.diff; tests test_a_failing_listing_raises_and_changes_nothing, test_a_still_listed_playlists_hidden_rows_are_untouched, check_in_flight_rows_wait | diff file exists (49 KB); failed getPlaylists raises before writes; hidden rows of a listed playlist untouched; event once while waiting | yes |
+| N3-03 | 2 | read tests test_a_row_finishing_while_forget_reads_is_logged_or_kept, test_a_garbled_getplaylist_answer_is_not_gone...; `grep BEGIN IMMEDIATE` crates/store.py | fixes present with RED->GREEN tests; BEGIN IMMEDIATE at store.py:698 | yes |
+| N3-03 | 3 | `grep` docs/architecture.md, docs/next-todos.md | architecture.md:372 "A deleted playlist's rows are dropped by the next reconcile"; next-todos.md:35 "Built (N3), not deployed" | yes |
+| N3-03 | 4 | `git log` | commit `N3-03: review and simplify the vanished-playlist cleanup` | yes |
+| N3-03 | 5 | `lib/check.sh` | green | yes |
+
 ### 2026-10-19 04:47 · N3-03 · passes
 - **What:** an Opus review of the N3 diff (scratch `n3.diff`, ea2282e..0f151d9) found 1 Important and 4 Minor issues. Fixed test-first: (Important) `CrateStore.forget_playlist` read the rows to drop before taking the write lock, so a row that fetch or the web finished in between (they run in other processes) could be deleted without a reverse-log line. It now starts with `BEGIN IMMEDIATE` (crates/store.py). (Minor) a getPlaylist failure other than SubsonicError/OSError (a garbled body, no `playlist` key) used to crash the whole reconcile; now the playlist is kept with an error line. Also simpler: `present` and the display names are computed once, and the `_log_forgotten` docstring explains a line whose commit failed. Docs: `docs/architecture.md` §9 bullet "A deleted playlist's rows are dropped by the next reconcile", `docs/next-todos.md` item 3 "Built (N3), not deployed". Tests 1,435 → 1,438 in tests/test_playlist_gone.py: the race (a second connection commits during the SELECT; it was `committed` before the fix, `locked` after), the garbled answer, and hidden rows of a still-listed playlist left untouched.
 - **Verified:** the review's three checks hold. A failed getPlaylists raises before any write (existing test); a still-listed playlist's `removed` rows are unchanged (new test); a waiting run logs no event. Subset (playlist_gone, crates, app_owner, service, worker): 103 passed. `lib/check.sh` green on 157c135: 521 s, 1,438 tests.
