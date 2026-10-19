@@ -2,10 +2,15 @@
 
 `insert_index` is the rule: after the nearest earlier Spotify neighbour still in the playlist, else before the nearest
 later one, else at the end. `place` applies it to one (wanted row, playlist) pair, insert-only, through
-`playlist_edit.rewrite`, recomputing everything right before it writes. The worker decides when (N4-04).
+`playlist_edit.rewrite`, recomputing everything right before it writes. `advance_all` is the worker's step (N4-04):
+it places every due pair (CrateStore.due_placements, derived from state), retries a refusal at most every recheck_s
+and gives up after PLACE_LIMIT counted failures with a `not_placed` event. An edit that was sent but not confirmed is
+never retried blind: it is looked at (the song present → done; absent → given up), so an entry is never doubled and a
+track Michael removed in that moment is never put back.
 """
 from __future__ import annotations
 
+import sqlite3
 from contextlib import closing
 from pathlib import Path
 
@@ -15,6 +20,9 @@ from subsonic.client import SubsonicError
 
 
 GONE = "skipped: playlist gone"
+PLACE_LIMIT = 12                       # counted failures before a pair is given up (fetch's RECHECK_LIMIT habit)
+TRANSIENT = (OSError, sqlite3.OperationalError)     # Navidrome unreachable (URLError, timeouts), crates.db locked
+CONFIRMED = "confirmed after an unconfirmed edit"
 
 
 def insert_index(order: list[tuple[int, str | None]], entries: list[str], position: int) -> tuple[int, str]:
@@ -90,3 +98,98 @@ def place(store, client, db: Path, playlist_id: str, wanted_id: str, song_id: st
     what = f"{ext['artist']} – {ext['title']}" if ext else song_id
     store.log(playlist_id, wanted_id, "placed", f"{name}: {what} at {i + 1} ({how})")
     return f"placed at {i} ({how})"
+
+
+def advance_all(store, client, db: Path, recheck_s: float, now: float) -> list[str]:
+    """The worker's placement step: every due pair whose placement is new, `writing` (an edit sent, not confirmed:
+    only looked at, whatever its age) or `open` and last tried at least `recheck_s` ago. One line per pair tried,
+    "<wanted_id> → <playlist_id>: <result>"; each pair is committed on its own, and one failing pair never stops the
+    others. A placed or skipped pair is `done`; a refusal or an unexpected error is `open` and counted, the
+    PLACE_LIMIT-th gives up with a `not_placed` event; a TRANSIENT error is `open` and not counted, so an outage
+    never gives a placement up. Call it with no transaction open: a failed pair is rolled back."""
+    out = []
+    for d in store.due_placements():
+        row = store.placement(d["wanted_id"], d["playlist_id"])
+        if row and row["state"] == "open" and row["updated_at"] > now - recheck_s:
+            continue
+        try:
+            result = (_look(store, client, d, now) if row and row["state"] == "writing"
+                      else _advance(store, client, db, d, row, now))
+        except Exception as e:                    # recording the outcome failed (e.g. crates.db locked): state kept
+            store.db.rollback()
+            result = f"error: {type(e).__name__}: {e}"
+        out.append(f"{d['wanted_id']} → {d['playlist_id']}: {result}")
+    return out
+
+
+def _note(store, d: dict, state: str, detail: str, now: float, count: bool = False) -> None:
+    store.note_placement(d["wanted_id"], d["playlist_id"], state, detail, song_id=d["song_id"], count=count, now=now)
+
+
+def _advance(store, client, db: Path, d: dict, row: dict | None, now: float) -> str:
+    def intent(i, how, n):                        # committed before the write: a crash after it is looked at
+        _note(store, d, "writing", f"inserting at {i} into {n} entries ({how})", now)
+        store.commit()
+
+    try:
+        result = place(store, client, db, d["playlist_id"], d["wanted_id"], d["song_id"], before_write=intent)
+    except pe.EditNotKept:                        # sent, not confirmed: look, never retry blind
+        store.db.rollback()
+        return _look(store, client, d, now)
+    except TRANSIENT as e:                        # rewrite raises EditNotKept once the write is sent: none was
+        store.db.rollback()
+        why = f"{type(e).__name__}: {e}"
+        _note(store, d, "open", why, now)
+        store.commit()
+        return f"error (not counted): {why}"
+    except Exception as e:                        # a refusal (nothing written), a non-70 SubsonicError, a bug
+        store.db.rollback()
+        return _failed(store, d, row, e, now)
+    if result != "skipped: no longer in the import":   # a re-run since due_placements: simply not due any more
+        _note(store, d, "done", result, now)
+    store.commit()
+    return result
+
+
+def _failed(store, d: dict, row: dict | None, e: Exception, now: float) -> str:
+    why = f"{type(e).__name__}: {e}"
+    if (row["attempts"] if row else 0) + 1 < PLACE_LIMIT:
+        _note(store, d, "open", why, now, count=True)
+        store.commit()
+        return f"{'refused' if isinstance(e, pe.EditRefused) else 'error'}: {why}"
+    _note(store, d, "given_up", why, now, count=True)
+    store.log(d["playlist_id"], d["wanted_id"], "not_placed", f"{d['name'] or d['playlist_id']}: not placed after "
+              f"{PLACE_LIMIT} tries: {why}; re-run the import to append it")
+    store.commit()
+    return f"given up: not placed after {PLACE_LIMIT} tries: {why}"
+
+
+def _look(store, client, d: dict, now: float) -> str:
+    """An edit was sent and not confirmed (EditNotKept, or a `writing` row a crash left): read the playlist and
+    decide from what is there. A failed read keeps the row `writing` for the next tick."""
+    pid, wanted_id, song_id = d["playlist_id"], d["wanted_id"], d["song_id"]
+    try:
+        playlist = client.playlist(pid)
+    except SubsonicError as e:
+        if e.code != 70:
+            return f"could not look: {type(e).__name__}: {e}"
+        _note(store, d, "done", GONE, now)
+        store.commit()
+        return GONE
+    except Exception as e:
+        return f"could not look: {type(e).__name__}: {e}"
+    entries = [e.id for e in playlist.entries]
+    name = playlist.name or d["name"] or pid
+    if song_id in entries:
+        store.mark_imported(pid, [song_id])
+        ext = store.external(wanted_id)
+        what = f"{ext['artist']} – {ext['title']}" if ext else song_id
+        store.log(pid, wanted_id, "placed", f"{name}: {what} at {entries.index(song_id) + 1} ({CONFIRMED})")
+        _note(store, d, "done", f"placed ({CONFIRMED})", now)
+        store.commit()
+        return f"placed ({CONFIRMED})"
+    why = "edit not confirmed, look at the playlist"      # not marked imported: a re-run can append it
+    _note(store, d, "given_up", why, now)
+    store.log(pid, wanted_id, "not_placed", f"{name}: {why}; re-run the import to append it")
+    store.commit()
+    return f"given up: {why}"

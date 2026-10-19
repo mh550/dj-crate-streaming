@@ -396,7 +396,7 @@ class Reconciler:
                 line = f"{name}: playlist no longer exists in Navidrome; {n} row{'' if n == 1 else 's'} dropped" \
                     + (f", {out['kept']} in flight kept" if out["kept"] else "")
                 if any(out[k] for k in ("dropped", "crate", "imported_entries", "imported_playlist", "wanted_removed",
-                                        "problems")):
+                                        "problems", "import_order", "placements")):
                     self._log_forgotten(pid, name, out)
                     c = out["crate"]                     # a tiered row's flag and tier (a cleared one was logged)
                     self.store.log(pid, None, "playlist_gone", line + (

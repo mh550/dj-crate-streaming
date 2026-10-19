@@ -588,3 +588,103 @@ def test_a_heartbeat_that_cannot_be_written_is_logged_once_and_the_tick_goes_on(
         w.tick()                                                        # fails again: logged again
     assert len([l for l in lines if l.startswith("heartbeat failed:")]) == 2
     assert lines.count("tick: 0 approvals, 0 rechecked") == 4                # every tick went on
+
+
+# --- placement (N4-04): a filed external row goes into its imported playlist at its Spotify position
+
+def _imported_pl1(store, **ext_kw):
+    """pl-1 "Disco Edits" = [s1, s2, s3] was imported from Spotify as s1, <Chic – Good Times>, s2, s3."""
+    store.mark_playlist_imported("pl-1", "Disco Edits", "spotify:playlist:abc")
+    store.mark_imported("pl-1", ["s1", "s2", "s3"])
+    ext = store.add_external_wanted("Chic", "Good Times", album="Risqué", duration_s=501, year=1979,
+                                    playlist_id="pl-1", position=2, **ext_kw)
+    store.record_import_order("pl-1", [(1, "s1", None), (2, None, ext), (3, "s2", None), (4, "s3", None)])
+    store.commit()
+    return ext
+
+
+def _filed_as_s9(world, ext, provisional=False):
+    new_song(world["nd"], 1234)
+    world["nd"].state.sync()
+    world["store"].set_external_song(ext, "s9", provisional)
+    world["store"].set_external_status(ext, "ok", "filed")
+    world["store"].commit()
+
+
+def _pl1(world):
+    return [e.id for e in world["client"].playlist("pl-1").entries]
+
+
+def _kinds(world, kind):
+    return [e for e in world["store"].events(limit=1000) if e["kind"] == kind]
+
+
+def test_a_fetched_external_row_is_placed_in_the_same_tick(world, tmp_path):
+    store, lines = world["store"], []
+    ext = _imported_pl1(store)
+    assert ext == "ext-1"
+    store.approve(ext, "michael", None, "crate"); store.commit()
+    flac = good_flac_bytes(tmp_path)
+    with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: flac}) as srv:
+        new_song(world["nd"], len(flac))
+        report = worker(world, srv, lines, recheck_s=300).tick()
+    assert store.external(ext)["library_song_id"] == "s9"
+    assert _pl1(world) == ["s1", "s9", "s2", "s3"]
+    assert "ext-1 → pl-1: placed at 1 (after s1)" in report.results and "ext-1 → pl-1: placed at 1 (after s1)" in lines
+    [ev] = _kinds(world, "placed")
+    assert ev["detail"] == "Disco Edits: Chic – Good Times at 2 (after s1)"
+    assert store.placement(ext, "pl-1")["state"] == "done"
+    assert lines[-1] == "tick: 1 approvals, 0 rechecked"
+
+
+def test_a_provisional_copy_is_not_placed(world):
+    ext = _imported_pl1(world["store"])
+    _filed_as_s9(world, ext, provisional=True)                       # legacy play-now copy: its upgrade is pending
+    with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
+        report = worker(world, srv).tick()
+    assert _pl1(world) == ["s1", "s2", "s3"] and not any("→" in r for r in report.results)
+    assert world["store"].placement(ext, "pl-1") is None
+
+
+def test_a_refused_placement_waits_recheck_s_and_gives_up_after_12_ticks(world):
+    store = world["store"]
+    ext = _imported_pl1(store)
+    _filed_as_s9(world, ext)
+    world["nd"].state.missing.add("s2")                              # a hidden missing row: PlaylistSkew
+    world["nd"].state.sync()
+    with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
+        w = worker(world, srv, recheck_s=300)
+        w.tick()
+        assert (store.placement(ext, "pl-1")["state"], store.placement(ext, "pl-1")["attempts"]) == ("open", 1)
+        w.tick()                                                     # inside recheck_s: not retried
+        assert store.placement(ext, "pl-1")["attempts"] == 1
+        w = worker(world, srv, recheck_s=0)
+        for _ in range(11):
+            w.tick()
+    r = store.placement(ext, "pl-1")
+    assert (r["state"], r["attempts"]) == ("given_up", 12)
+    [ev] = _kinds(world, "not_placed")
+    assert ev["detail"].startswith("Disco Edits: not placed after 12 tries: PlaylistSkew")
+    assert ev["detail"].endswith("re-run the import to append it")
+    assert [q for m, q in world["nd"].state.requests if m == "updatePlaylist"] == []
+    assert world["nd"].state.playlists["pl-1"]["songs"] == ["s1", "s2", "s3"]
+
+
+def test_a_pair_already_imported_is_never_due(world):
+    store = world["store"]
+    ext = _imported_pl1(store)
+    _filed_as_s9(world, ext)
+    store.mark_imported("pl-1", ["s9"]); store.commit()             # appended by a re-run, then removed by Michael
+    with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
+        worker(world, srv).tick()
+    assert _pl1(world) == ["s1", "s2", "s3"] and store.placement(ext, "pl-1") is None
+
+
+def test_a_failing_placement_step_does_not_stop_the_tick(world, monkeypatch):
+    from crates import placement
+    lines = []
+    monkeypatch.setattr(placement, "advance_all", lambda *a: (_ for _ in ()).throw(RuntimeError("db locked")))
+    exported = []
+    with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
+        worker(world, srv, lines, export_s=300, exporter=lambda *a: exported.append(a)).tick()
+    assert "placement failed: RuntimeError: db locked" in lines and exported and lines[-1].startswith("tick:")

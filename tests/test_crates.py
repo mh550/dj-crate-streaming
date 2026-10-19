@@ -360,3 +360,50 @@ def test_record_import_order_keeps_the_real_error_when_sqlite_already_rolled_bac
     monkeypatch.setattr(s, "db", Full())
     with pytest.raises(sqlite3.OperationalError, match="disk is full"):
         s.record_import_order("pl-1", [(1, "s1", None)])
+
+
+def _filed_ext(s, pid="pl-1", position=2, song="s9", status="ok", provisional=False):
+    ext = s.add_external_wanted("MFSB", f"Track {position}", playlist_id=pid, position=position)
+    s.set_external_song(ext, song, provisional)
+    s.set_external_status(ext, status)
+    return ext
+
+
+def test_placements_table_survives_reopening_and_note_placement_counts(tmp_path):
+    # N4-04: one row per (wanted, playlist); attempts counts the failures toward the limit, updated_at always moves.
+    p = tmp_path / "c.db"
+    s = CrateStore(p)
+    assert s.placement("ext-1", "pl-1") is None
+    s.note_placement("ext-1", "pl-1", "open", "refused: hidden row", song_id="s9", now=100.0)
+    s.commit()
+    s = CrateStore(p)
+    r = s.placement("ext-1", "pl-1")
+    assert (r["state"], r["attempts"], r["detail"], r["song_id"], r["updated_at"]) == (
+        "open", 1, "refused: hidden row", "s9", 100.0)
+    s.note_placement("ext-1", "pl-1", "open", "Navidrome down", count=False, now=200.0)
+    s.note_placement("ext-1", "pl-1", "given_up", "still refused", now=300.0)
+    r = s.placement("ext-1", "pl-1")
+    assert (r["state"], r["attempts"], r["detail"], r["song_id"], r["updated_at"]) == (
+        "given_up", 2, "still refused", "s9", 300.0)                               # the song id stays when not given
+    assert s.placement("ext-1", "pl-2") is None
+
+
+def test_due_placements_are_derived_from_state():
+    s = CrateStore()
+    ok = _filed_ext(s)                                                  # filed, in pl-1's order: due
+    sourcing = _filed_ext(s, position=3, song="s7", status="sourcing")  # still being fetched
+    legacy = _filed_ext(s, position=4, song="s6", provisional=True)     # play-now's copy, its upgrade pending
+    nosong = s.add_external_wanted("MFSB", "Track 5", playlist_id="pl-1", position=5)
+    s.set_external_status(nosong, "ok", "in library: s5")               # a re-run matched it: no library_song_id
+    elsewhere = _filed_ext(s, pid="pl-2", position=1, song="s8")        # wanted row whose order is not recorded
+    s.record_import_order("pl-1", [(1, "s1", None), (2, None, ok), (3, None, sourcing), (4, None, legacy),
+                                   (5, None, nosong), (6, None, ok)])   # the same wanted row twice: one pair
+    s.record_import_order("pl-3", [(7, None, ok)])                      # wanted by a second playlist too
+    assert [(d["wanted_id"], d["playlist_id"], d["song_id"], d["position"]) for d in s.due_placements()] == [
+        (ok, "pl-1", "s9", 2), (ok, "pl-3", "s9", 7)]
+    assert elsewhere not in {d["wanted_id"] for d in s.due_placements()}
+    s.mark_imported("pl-3", ["s9"])                                     # appended by a re-run, or removed after
+    assert [d["playlist_id"] for d in s.due_placements()] == ["pl-1"]
+    for state, due in (("open", True), ("writing", True), ("done", False), ("given_up", False)):
+        s.note_placement(ok, "pl-1", state, None)
+        assert bool(s.due_placements()) is due, state

@@ -313,3 +313,200 @@ def test_a_song_at_two_spotify_positions_is_a_neighbour_at_either(srv, client, d
     srv.state.playlists["pl-1"]["songs"] = ["s3", "s2"]
     srv.state.sync()
     assert _place(store, client, db) == "placed at 2 (after s2)"
+
+
+# --- advance_all (the worker's step, N4-04)
+
+T0 = 1_000_000.0
+
+
+def _advance(store, client, db, now=T0, recheck_s=300):
+    return pl.advance_all(store, client, db, recheck_s, now)
+
+
+def _row(store, pid="pl-1"):
+    return store.placement(store.ext, pid)
+
+
+def _not_placed(store):
+    return [e for e in store.events(500) if e["kind"] == "not_placed"]
+
+
+def test_advance_places_a_due_pair_and_marks_it_done(srv, client, db, store):
+    assert _advance(store, client, db) == [f"{store.ext} → pl-1: placed at 1 (after s1)"]
+    assert _songs(srv, "pl-1") == ["s1", "s9", "s2", "s3"]
+    r = _row(store)
+    assert (r["state"], r["attempts"], r["song_id"], r["detail"]) == ("done", 0, "s9", "placed at 1 (after s1)")
+    assert not store.db.in_transaction and store.due_placements() == []
+    assert _advance(store, client, db, now=T0 + 1000) == [] and len(_updates(srv)) == 1
+
+
+def test_a_skip_is_final_too(srv, client, db, store):
+    del srv.state.playlists["pl-1"]
+    srv.state.sync()
+    assert _advance(store, client, db) == [f"{store.ext} → pl-1: skipped: playlist gone"]
+    assert _row(store)["state"] == "done" and store.due_placements() == []
+
+
+def test_a_refusal_retries_after_recheck_s_and_gives_up_after_12(srv, client, db, store):
+    srv.state.missing.add("s2")                                                 # a hidden row: PlaylistSkew
+    srv.state.sync()
+    [line] = _advance(store, client, db)
+    assert line.startswith(f"{store.ext} → pl-1: refused: PlaylistSkew")
+    assert (_row(store)["state"], _row(store)["attempts"]) == ("open", 1)
+    assert _advance(store, client, db, now=T0 + 299) == [] and _row(store)["attempts"] == 1   # inside recheck_s
+    for k in range(2, 13):
+        assert len(_advance(store, client, db, now=T0 + 300 * k)) == 1
+    r = _row(store)
+    assert (r["state"], r["attempts"]) == ("given_up", 12)
+    [ev] = _not_placed(store)
+    assert ev["playlist_id"] == "pl-1" and ev["song_id"] == store.ext
+    assert ev["detail"].startswith("Disco Edits: not placed after 12 tries: PlaylistSkew")
+    assert ev["detail"].endswith("; re-run the import to append it")
+    assert _advance(store, client, db, now=T0 + 300 * 20) == [] and store.due_placements() == []
+    assert _updates(srv) == [] and _songs(srv, "pl-1") == ["s1", "s2", "s3"]
+    assert "s9" not in store.imported("pl-1")                                   # a re-run can still append it
+
+
+def test_a_transient_error_is_not_counted_and_a_bug_is(srv, db, store):
+    import urllib.error
+
+    class Down(SubsonicClient):
+        error = urllib.error.URLError("connection refused")
+
+        def playlist(self, playlist_id):
+            raise Down.error
+
+    client = Down(srv.url, "demo", "demo")
+    [line] = _advance(store, client, db)
+    assert "URLError" in line and (_row(store)["state"], _row(store)["attempts"]) == ("open", 0)
+    Down.error = KeyError("playlist")
+    [line] = _advance(store, client, db, now=T0 + 300)
+    assert "KeyError" in line and (_row(store)["state"], _row(store)["attempts"]) == ("open", 1)
+
+
+def test_one_failing_pair_does_not_stop_the_others(srv, client, db, store):
+    other = store.add_external_wanted("Double Exposure", "Ten Percent", playlist_id="pl-3", position=1)
+    store.set_library_song(other, "s3")
+    store.set_external_status(other, "ok")
+    store.mark_playlist_imported("pl-3", "Sunday Listening", "spotify:playlist:def")
+    store.record_import_order("pl-3", [(1, None, other), (2, "s2", None)])
+    srv.state.missing.add("s2")                                                 # pl-1 refuses; pl-3 has no s2 hidden
+    srv.state.playlists["pl-3"]["songs"] = ["s5"]
+    srv.state.sync()
+    store.commit()
+    lines = _advance(store, client, db)
+    assert lines[0].startswith(f"{store.ext} → pl-1: refused") and lines[1] == f"{other} → pl-3: placed at 1 (append)"
+
+
+def test_two_due_rows_of_one_playlist_are_placed_in_position_order(srv, client, db, store):
+    srv.state.songs["s8"] = dict(srv.state.songs["s5"], id="s8", title="Ten Percent", artist="Double Exposure")
+    srv.state.sync()
+    other = store.add_external_wanted("Double Exposure", "Ten Percent", playlist_id="pl-1", position=4)
+    store.set_library_song(other, "s8")
+    store.set_external_status(other, "ok")
+    store.record_import_order("pl-1", [(1, "s1", None), (2, None, store.ext), (3, "s2", None), (4, None, other),
+                                       (5, "s3", None), (6, None, store.ext)])  # ext at two positions: one placement
+    store.commit()
+    assert _advance(store, client, db) == [f"{store.ext} → pl-1: placed at 1 (after s1)",
+                                           f"{other} → pl-1: placed at 3 (after s2)"]
+    assert _songs(srv, "pl-1") == ["s1", "s9", "s2", "s8", "s3"]
+
+
+def test_a_rerun_that_appends_the_song_ends_the_pair(srv, client, db, store):
+    srv.state.missing.add("s2")
+    srv.state.sync()
+    _advance(store, client, db)
+    assert _row(store)["state"] == "open"
+    store.mark_imported("pl-1", ["s9"])                                         # a re-run appended it meanwhile
+    store.commit()
+    assert _advance(store, client, db, now=T0 + 600) == [] and _row(store)["attempts"] == 1
+
+
+def test_the_intent_row_is_committed_before_the_write(srv, db, store):
+    seen = []
+
+    class Watching(SubsonicClient):
+        def update_playlist(self, playlist_id, **kw):
+            seen.append((store.db.in_transaction, dict(_row(store))))
+            super().update_playlist(playlist_id, **kw)
+
+    _advance(store, Watching(srv.url, "demo", "demo"), db)
+    [(in_tx, row)] = seen
+    assert not in_tx and row["state"] == "writing" and row["detail"] == "inserting at 1 into 3 entries (after s1)"
+    assert _row(store)["state"] == "done"
+
+
+def test_a_refusal_after_the_intent_row_is_open_and_counted(srv, client, db, store):
+    """rewrite re-reads the playlist after the intent row: a PlaylistChanged there wrote nothing, so it is retried."""
+    class Racing(SubsonicClient):
+        reads = 0
+
+        def playlist(self, playlist_id):
+            Racing.reads += 1
+            if Racing.reads == 2:
+                srv.state.playlists["pl-1"]["songs"].append("s5")
+                srv.state.sync()
+            return super().playlist(playlist_id)
+
+    [line] = _advance(store, Racing(srv.url, "demo", "demo"), db)
+    assert "refused: PlaylistChanged" in line
+    assert (_row(store)["state"], _row(store)["attempts"]) == ("open", 1) and _updates(srv) == []
+    assert _advance(store, client, db, now=T0 + 300) == [f"{store.ext} → pl-1: placed at 1 (after s1)"]
+
+
+def _unconfirmed(srv, landed):
+    class Unconfirmed(SubsonicClient):
+        def update_playlist(self, playlist_id, **kw):
+            if landed:
+                super().update_playlist(playlist_id, **kw)
+            raise OSError("timed out")                                          # rewrite: EditNotKept
+
+    return Unconfirmed(srv.url, "demo", "demo")
+
+
+def test_an_unconfirmed_edit_that_landed_is_done_after_a_look(srv, client, db, store):
+    [line] = _advance(store, _unconfirmed(srv, landed=True), db)
+    assert line == f"{store.ext} → pl-1: placed (confirmed after an unconfirmed edit)"
+    assert _row(store)["state"] == "done" and "s9" in store.imported("pl-1")
+    [ev] = _placed(store)
+    assert ev["detail"] == "Disco Edits: MFSB – Love Is the Message at 2 (confirmed after an unconfirmed edit)"
+    srv.state.playlists["pl-1"]["songs"].remove("s9")                           # Michael removes it: stays removed
+    srv.state.sync()
+    assert _advance(store, client, db, now=T0 + 1000) == [] and _songs(srv, "pl-1") == ["s1", "s2", "s3"]
+
+
+def test_an_unconfirmed_edit_that_did_not_land_gives_up_without_a_second_write(srv, client, db, store):
+    [line] = _advance(store, _unconfirmed(srv, landed=False), db)
+    assert line.startswith(f"{store.ext} → pl-1: given up: edit not confirmed")
+    assert _row(store)["state"] == "given_up" and _songs(srv, "pl-1") == ["s1", "s2", "s3"]
+    [ev] = _not_placed(store)
+    assert ev["detail"] == ("Disco Edits: edit not confirmed, look at the playlist; re-run the import to append it")
+    assert "s9" not in store.imported("pl-1")                                   # the re-run can append it
+    assert _advance(store, client, db, now=T0 + 1000) == [] and _updates(srv) == []
+
+
+def test_a_writing_row_left_by_a_crash_is_resolved_by_looking(srv, client, db, store):
+    store.note_placement(store.ext, "pl-1", "writing", "inserting at 1 into 3 entries (after s1)", song_id="s9",
+                         count=False, now=T0)
+    store.commit()                                                              # the edit landed, the commit did not
+    srv.state.playlists["pl-1"]["songs"].insert(1, "s9")
+    srv.state.sync()
+    assert _advance(store, client, db, now=T0 + 1) == [
+        f"{store.ext} → pl-1: placed (confirmed after an unconfirmed edit)"]
+    assert _row(store)["state"] == "done" and _updates(srv) == []
+    assert _songs(srv, "pl-1") == ["s1", "s9", "s2", "s3"]
+
+
+def test_a_failed_look_leaves_the_row_writing(srv, db, store):
+    import urllib.error
+    store.note_placement(store.ext, "pl-1", "writing", "inserting", song_id="s9", count=False, now=T0)
+    store.commit()
+
+    class Down(SubsonicClient):
+        def playlist(self, playlist_id):
+            raise urllib.error.URLError("connection refused")
+
+    [line] = _advance(store, Down(srv.url, "demo", "demo"), db, now=T0 + 1)
+    assert "could not look" in line and "URLError" in line
+    assert _row(store)["state"] == "writing" and _updates(srv) == []
