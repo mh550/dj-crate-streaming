@@ -13,6 +13,29 @@ stop`; answers to the questions below go under `## Answers`. Every session reads
 
 ---
 
+### 2026-10-19 02:25 · verify H3
+
+| Feature | Step | What you ran or read | What you saw | Holds |
+|---|---|---|---|---|
+| H3-01 | 1 | read `tests/test_service.py::test_status_reports_the_worker_heartbeat_age` (l.131-); `crates/service.py` l.107-121; ran test_service.py | asserts workerHeartbeatAge None with no file, <10 fresh, ~300 for mtime 300 s old; 73 tests in the subset pass | yes |
+| H3-01 | 2 | `/home/mh550/projects/agent-harness/lib/check.sh` | green (cached for this tree, 1379 tests) | yes |
+| H3-02 | 1 | read `tests/test_gatus.py` pinned/localhost/read-only tests; ran file | v5.37.0 (not latest), `127.0.0.1:4590:8080`, config mount `:ro`; pass | yes |
+| H3-02 | 2 | read `test_the_http_checks_are_the_specs_table`, `..._60_s_..._3_failures`, `test_no_secret_literals_only_variable_names`, read config.yaml | navidrome/crates/slskd interval 60s, failure-threshold 3, backup+disk external; secrets only `${...}`; pass | yes |
+| H3-02 | 3 | `grep GATUS deploy/.env.example`; read `test_env_example_lists_the_gatus_variables` | GATUS_NTFY_TOPIC and GATUS_BACKUP_TOKEN listed, test asserts it | yes |
+| H3-02 | 4 | read progress H3-02 entry; Gatus v5.37.0 runs live and `_backup` external endpoint is configured | external-endpoints supported (verified by earlier session against real image); no improvisation needed, nothing contradicted live | yes |
+| H3-02 | 5 | `.harness/check.sh` via agent-harness check.sh | green | yes |
+| H3-03 | 1 | read `tests/test_health_push.py` healthy/full/unmounted/unset-URL tests; ran file | success=true healthy; false with reason for full, unmounted; unset URL/token warns, no request; pass | yes |
+| H3-03 | 2 | read `test_the_units_pass_systemd_analyze_verify`; ran | passes (verify run on a copy pointing at the script, reason noted in progress) | yes |
+| H3-03 | 3 | `lib/check.sh` | green | yes |
+| H3-04 | 1 | read progress H3-04 (01:58) entry; live `curl :4590/api/v1/endpoints/statuses` | entry quotes the deploy command, the three statuses and rollback; live now: crates, navidrome, slskd all success=True | yes |
+| H3-04 | 2 | `docker inspect -f StartedAt` for all containers; read progress | navidrome/slskd/gluetun predate the Gatus deploy (unchanged), but crates and worker started 05:55:56Z, recreated by a second deploy. Step says crates and worker uptimes unchanged: does not hold as written | NO |
+| H3-04 | 3 | compared INBOX H3-04 section with spec 'Michael's one-time steps' | 3 steps verbatim | yes |
+| H3-05 | 1 | read progress H3-05 entry | 3 Important findings I-A/I-B/I-C with fixes listed; 0 Critical | yes |
+| H3-05 | 2 | read docs/monitoring.md vs deploy/gatus/config.yaml; ran tests/test_monitoring_doc.py | table endpoints, URLs, intervals, thresholds, worker limit 180 match; test passes; covers checks, alerts, adding a check, one-time steps | yes |
+| H3-05 | 3 | `lib/check.sh` | green | yes |
+
+H3-04 flipped to passes=false: step 2 as written conflicts with the deliberate crates/worker redeploy (its own progress entry proposes rewording the step).
+
 ### 2026-10-19 06:25 · H3-05 · passes
 - **Review (Opus, `/tmp/…/h3-review.diff`, H3 diff 8d99309..HEAD plus restic-backup's push): 0 Critical, 3 Important, all fixed test-first.**
   - **I-A:** `deploy.sh gatus` recreated nothing after a config-only change, so a broken config "deployed green" and crash-looped at the next restart. It now runs `up -d --build --force-recreate gatus`, keeps `config.yaml.prev`, and prints a rollback that restores it.

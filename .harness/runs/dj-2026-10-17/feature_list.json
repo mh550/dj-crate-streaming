@@ -262,7 +262,7 @@
         "No other container was recreated (`docker ps` uptimes for navidrome, crates, worker, slskd, gluetun unchanged)",
         "INBOX lists Michael's one-time steps from the spec, verbatim"
       ],
-      "passes": true
+      "passes": false
     },
     {
       "id": "H3-05",
