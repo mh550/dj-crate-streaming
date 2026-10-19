@@ -13,6 +13,38 @@ stop`; answers to the questions below go under `## Answers`. Every session reads
 
 ---
 
+### 2026-10-19 · verify N2
+
+| Feature | Step | What you ran or read | What you saw | Holds |
+|---|---|---|---|---|
+| N2-01 | 1 | Read plan's cited code: sourcing/import_playlist.py is_imported/_MARKER_TOKEN, store.py table, crates/imported.py, migrate_attrs | Plan's 'Today' table matches the code; legacy reader still in import_playlist and used by imported.py + migrate_attrs | yes |
+| N2-01 | 2 | Read docs/plans/2026-10-17-n2-imported-marker.md (190 lines): table, readers, migration, forget_playlist, test list | Plan has the table, every reader, `imported migrate [--apply]`/`list`, forget_playlist hook (deferred to N3 by design) and tests by name; schema at store.py:80 matches | yes |
+| N2-01 | 3 | grep D37 in pivot spec | Line 32: `D37 *default*` with table, row-before-strip, legacy reader | yes |
+| N2-01 | 4 | grep progress.md for Tea tent / shakori question | N2-03/N2-04 entries ask Michael to approve `imported migrate --apply` for both playlists; not run live | yes |
+| N2-01 | 5 | `git log` for N2-01 commit | ded3ba1 `N2-01: plan for the imported marker in crates.db` present | yes |
+| N2-01 | 6 | `lib/check.sh` | green, 1412 tests | yes |
+| N2-02 | 1 | Read tests/test_crates.py:211-230; ran test subset | tests for mark/is/imported_playlists and reopening exist and pass (117 passed in subset) | yes |
+| N2-02 | 2 | Read import_playlist.py:270-340 and test_app_owner.py test_import_writes_no_comment; test_import_playlist.py:112-130 | `ours` uses store; merge records row, comment untouched; app owner: asserts no updatePlaylist has a comment param; owner comment uses attrs.write('', tier); NameCollision text asserted at test:124 | yes |
+| N2-02 | 3 | Read test_import_marks_its_playlists…, test_marker_is_a_token…, test_a_comment_marker_without_a_row…, test_app_owner (renamed from …leaves_no_tier…) | Store-row asserts; is_imported tests legacy only; app test asserts comment=='' on creation and re-run; rename is equivalent to the step | yes |
+| N2-02 | 4 | grep MARKER|is_imported|#imported in non-test py | Only import_playlist.py (definition), crates/imported.py, crates/migrate_attrs.py; test_migrate_attrs passes | yes |
+| N2-02 | 5 | `.harness/check.sh` on import_playlist, app_owner, crates, migrate_attrs, sourcing_cli, imported_migrate | 117 passed | yes |
+| N2-02 | 6 | `lib/check.sh` | green, 1412 tests | yes |
+| N2-02 | 7 | git log | 84b3e28 `N2-02: import-playlist records its playlists in crates.db` | yes |
+| N2-03 | 1 | Read tests/test_imported_migrate.py; ran it | plan/dry-run/apply/second-apply/other-owner skipped/'#imported'→''/CommentNotKept (row kept, exit 1 names playlist)/event 'migrated from comment' all asserted and pass | yes |
+| N2-03 | 2 | Read strip_marker param cases (test_strip_marker_removes_whole_tokens_only) | 'x#imported' untouched, doubled space collapsed, runs of markers handled | yes |
+| N2-03 | 3 | Read crates/cli.py:52,130-144; test_cli_apply_then_list_then_rerun | `imported migrate`/`list` wired; list prints rows; passes | yes |
+| N2-03 | 4 | grep docs/architecture.md | §8 table row at line 334 with migrate --apply and list | yes |
+| N2-03 | 5 | git log | 78bce14 `N2-03: imported migrate and list` | yes |
+| N2-03 | 6 | `lib/check.sh` | green, 1412 tests | yes |
+| N2-04 | 1 | Read n2.diff in scratch; grep for readers/writers; read test_a_playlist_recreated_under_the_same_name_is_foreign_until_merged | Diff exists; 'ours' decided from store only; nothing writes '#imported'; legacy reader only in imported.py/migrate_attrs; recreated playlist (new id) raises NameCollision until merge | yes |
+| N2-04 | 2 | Read import_playlist.py:320-345 and progress N2-04 entry; ran new tests | Helpers inlined; owner-merge, name-refresh, other-owner tests exist and pass | yes |
+| N2-04 | 3 | grep architecture.md:92,129-130, next-todos.md:28, pivot spec:58 | Owner row, comment bullet, §4(a), next-todos 'Built (N2); live migration pending', pivot bullet all updated | yes |
+| N2-04 | 4 | git log | c167979 `N2-04: review and simplify the imported marker move` | yes |
+| N2-04 | 5 | `lib/check.sh` | green, 1412 tests | yes |
+| N2-04 | 6 | `.harness/check.sh tests/test_playlist_admin.py` and the 117-test subset | pass; no live commands run by me | yes |
+
+All 4 hold. Nothing live was run.
+
 ### 2026-10-19 03:33 · N2-04 · passes
 - **What:** I reviewed the N2 diff (`git diff 73c6d96 HEAD`, without .harness, written to `$HARNESS_SCRATCH/n2.diff`) with an Opus reviewer: 0 Critical, 0 Important, 4 Minor, 4 Simplify. Three Minors are fixed test-first in `sourcing/import_playlist.py`: (1) `--merge` could adopt another user's playlist, since getPlaylists lists other users' public ones; now `NameCollision` says `belongs to <owner>, not <user>; rename it in Navidrome`, with or without `--merge`. (2) A re-run of ours now refreshes the row's name, so `imported list` shows the current name. (3) An adoption's event says `adopted with --merge: <source>`. Simplified: `_rerun_comment` and `_write_comment_and_cache` are inlined (one caller each, owner comment only), and `crates/cli.py` no longer filters skipped steps twice (`apply()` keeps the guard). Not fixed: `strip_marker("#imported\n#tier:medium")` leaves a leading blank line, as the plan's table says (cosmetic; the live comments are checked in the runbook's dry run). Tests 1,409 → 1,412: the playlist re-created under the same name (new id) stays foreign until `--merge` (I checked it fails if "ours" is decided by name), the other-owner refusal, and the name refresh with the adoption event.
 - **Docs:** `docs/architecture.md` §3 owner row (`imported_playlists`, D33/D37, built), the "Playlist comment" bullet (left empty), §4(a) steps 3–4; `docs/next-todos.md` item 2 "Built (N2); live migration pending"; the pivot spec's import_playlist bullet; README's crate bullet; the plan gets an N2-04 "Done" note.
