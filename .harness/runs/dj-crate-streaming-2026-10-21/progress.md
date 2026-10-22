@@ -3,6 +3,28 @@
 What this file is: the shared memory of the agent harness for this run. Each session appends one entry **at the top**
 (newest first) when it finishes a feature: what it built, what it learned, what it asks. Nobody edits older entries.
 
+### 2026-10-21 · verify R4
+
+| Feature | Step | What you ran or read | What you saw | Holds |
+|---|---|---|---|---|
+| R4-01 | 1 | read `with_worker_lock` (sourcing/worker.py:78) and scripts/tag_cleanup.py `main`; ran test_retag_and_move_refuse_while_the_worker_holds_its_lock | retag|move wrapped in `with_worker_lock`, plan/refresh-map not; path `Path(CRATES_DB).parent/'worker.lock'`; WorkerRunning → exit 1 with `refused: stop the worker first (docker compose stop worker): it holds <path>`; unset CRATES_DB → the set-CRATES_DB message; fd closed only after `run()`; test asserts rc 1, message, byte-identical files/manifest | yes |
+| R4-01 | 2 | read scripts/dedupe_copies.py `main`; ran test_repoint_and_trash_refuse_while_the_worker_holds_its_lock | repoint|trash guarded, plan free; same two messages; test asserts rc 1, message, no file/plan/trash change | yes |
+| R4-01 | 3 | `grep -c LOCK_EX scripts/tag_cleanup.py scripts/dedupe_copies.py`; grep LOCK_EX scripts crates | 0 and 0; helper imported from sourcing.worker (only crates/reconcile.py has its own, pre-existing) | yes |
+| R4-01 | 4 | pytest -k 'lock or refuse or plan' on test_tag_cleanup/test_dedupe_copies; read the hold-for-whole-command, plan-never-locks, unset-CRATES_DB tests | 22 passed; four commands refuse with lock held, lock held during run and released after, plan runs with lock held, unset → 1 + message | yes |
+| R4-01 | 5 | read tests/test_identity_backfill.py:1186 test_apply_dry_run_runs_while_the_worker_holds_its_lock | holds hold_lock(db.parent/'worker.lock') and apply --dry-run runs; passes | yes |
+| R4-01 | 6 | `git log origin/main..HEAD` | commit `R4-01: worker.lock guard on tag_cleanup retag|move and dedupe_copies repoint|trash` present | yes |
+| R4-01 | 7 | `lib/check.sh`; `git ls-remote origin` | green, 1579 tests; remote branch at bea69ca contains the R4 commits | yes |
+| R4-02 | 1 | ran `python3 -m sourcing.cli rank --download`; read sourcing/cli.py:166-170 and header | argparse error exit 2 with the exact message in stderr; header says ranks only, no `[--download]`; old download block gone | yes |
+| R4-02 | 2 | read test_rank_download_is_gone_and_names_preview_and_approve; `grep -rn -- '--download' tests/ sourcing/ scripts/ docs/worker.md` | asserts code 2, message, plain rank still ranks fixture (rc 0, output); grep hits only that test, the refusal check and the docs line saying it is gone | yes |
+| R4-02 | 3 | read docs/specs/2026-10-17-m9-remaining-ownership.md:243, docs/architecture.md:316, docs/worker.md:329-333 | §6 marked 'Built (R4)' with guards and removed flag; architecture row present naming lock and commands; worker.md names the guard | yes |
+| R4-02 | 4 | `git log origin/main..HEAD` | commit `R4-02: retire rank --download; M9 §6 docs` present | yes |
+| R4-02 | 5 | `lib/check.sh`; `git ls-remote` | green 1579 tests; pushed | yes |
+| R4-03 | 1 | read git diff of the guard files and sourcing/worker.py `with_worker_lock` | fd kept open via try/finally around `run()`; path is the worker's own; refusal precedes `_run`; plan not wrapped; no new flock copy | yes |
+| R4-03 | 2 | read the shared helper and the extra tests (unopenable lock file, held for whole command) | one `with_worker_lock` helper in sourcing/worker.py shared by both scripts; OSError case has a test | yes |
+| R4-03 | 3 | `git log origin/main..HEAD` | commit `R4-03: review and simplify the guards` present | yes |
+| R4-03 | 4 | `lib/check.sh`; `git ls-remote` | green 1579 tests; pushed | yes |
+
+
 How to read the feature list: `.harness/runs/dj-crate-streaming-2026-10-21/feature_list.json`. Array order is priority
 and dependency order; the harness hands a session the first feature whose `passes` is false and whose `after` passes.
 R1–R7 are independent (`after: []`), R8 waits for all of them. A session may flip only its own feature's `passes`, and
