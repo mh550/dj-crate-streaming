@@ -530,8 +530,11 @@ $("#btn-reconcile").onclick = async () => {
 };
 
 loadStatus(); loadPlaylists(); loadStreamTier();
-// a link to …/#<tab> opens that tab (#identity for R7-05's screenshots); the Identity pill is filled either way
-const opened = [...document.querySelectorAll(".tabs button")].find(b => location.hash === "#" + b.dataset.tab);
+// a link to …/#<tab> opens that tab, …/#identity/<class> with that filter (R7-05's screenshots); the Identity pill is filled either way
+const [hashTab, hashClass] = location.hash.slice(1).split("/");
+const opened = [...document.querySelectorAll(".tabs button")].find(b => b.dataset.tab === hashTab);
+if (opened && hashTab === "identity" && [...$("#identity-class").options].some(o => o.value === hashClass))
+  $("#identity-class").value = hashClass;
 if (!opened || opened.dataset.tab !== "identity") loadIdentity();
 if (opened) opened.click();
 // the worker recounts playlist health every export; a tab left open on the phone catches up when shown again

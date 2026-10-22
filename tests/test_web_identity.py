@@ -159,3 +159,22 @@ def test_the_held_choice_and_the_suggestion_compare_ids_in_lowercase(svc):
 def test_the_hash_opener_loads_the_identity_list_once(svc):
     js = asset(svc, "app.js")
     assert re.search(r'if \(!opened \|\| opened\.dataset\.tab !== "identity"\) loadIdentity\(\);\s*if \(opened\) opened\.click\(\);', js)
+
+
+def test_a_hash_with_a_class_opens_the_tab_filtered(svc):
+    """`#identity/conflict` opens the tab with the filter set (R7-05's screenshots); a class the filter lacks is ignored."""
+    js = asset(svc, "app.js")
+    assert re.search(r'const \[hashTab, hashClass\] = location\.hash\.slice\(1\)\.split\("/"\);', js)
+    assert re.search(r'find\(b => b\.dataset\.tab === hashTab\)', js)
+    assert re.search(r'hashTab === "identity" && \[\.\.\.\$\("#identity-class"\)\.options\]\.some\(o => o\.value === hashClass\)\)'
+                     r'\s*\$\("#identity-class"\)\.value = hashClass;', js)
+    assert js.index("= hashClass;") < js.index('opened.dataset.tab !== "identity") loadIdentity();')   # set before the load
+
+
+def test_the_class_badge_stays_beside_the_title_on_a_phone(svc):
+    """R7-05's screenshot: with a 200px basis the `ambiguous` badge fell onto its own line under ▶ and the title.
+    Measured in Chromium: a row is 272px wide inside at 320px (327 at 375), the `ambiguous` badge 74px, gaps 12px."""
+    css = asset(svc, "app.css")
+    m = re.search(r"#identity \.grow \{ flex:1 1 (\d+)px; \}", css)
+    assert m, "#identity .grow has no flex basis in px"
+    assert 40 + 12 + int(m.group(1)) + 12 + 74 <= 272

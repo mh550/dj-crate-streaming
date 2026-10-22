@@ -94,7 +94,7 @@ pre.sub { white-space:pre-wrap; overflow-wrap:anywhere; max-width:100%; }
 @media (max-width: 420px) { .tabs { gap:0; padding:8px 4px 0; } .tabs button { padding:8px 7px; } }
 #identity-class { font:inherit; background:var(--panel); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:6px 8px; min-height:40px; margin-bottom:8px; max-width:100%; }
 #identity li { flex-wrap:wrap; align-items:flex-start; }
-#identity .grow { flex:1 1 200px; }
+#identity .grow { flex:1 1 120px; }   /* ▶ + 120 + the widest badge fit a 320px phone: the badge stays beside the title */
 #identity .title { white-space:normal; overflow-wrap:anywhere; }
 #identity .play { width:40px; height:40px; border-radius:50%; padding:0; display:grid; place-items:center; flex:none; }
 #identity .proposed, #identity .cands, #identity .reason, #identity .istate { flex-basis:100%; min-width:0; }

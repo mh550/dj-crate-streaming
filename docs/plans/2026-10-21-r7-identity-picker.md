@@ -284,7 +284,7 @@ proposal, tags equal, target fields empty.
   `skipped`, or `stale: pick again`. An error shows `e.message` (the server's text) in the row; it does not go
   through `changeError`, whose 409 and 503 texts are about playlists. Nothing else reloads.
 - Phone-first: no fixed width over 375 px, and long titles wrap.
-- `app.js` never says `apply`. A `#identity` hash opens the tab (for the R7-05 screenshots).
+- `app.js` never says `apply`. A `#identity` hash opens the tab, `#identity/<class>` with that filter set (R7-05; an unknown class is ignored). The screenshots are `docs/screenshots/r7-identity-{ambiguous,conflict,chosen}.png` (R7-05).
 
 Built in R7-04 (review amendments): an error is shown under the choice the row still holds, never instead of it,
 and never blank (`not saved (<status>)` when the server sent no text); a 409 adds a **reload** button. A recorded,
