@@ -377,8 +377,9 @@ docker compose exec -T worker python -m scripts.identity_backfill propose --limi
   modification time, so a second propose asks only about changed files. Delete it to ask again for every file (an
   answer of "not in AcoustID" is kept too). The key is never written to it. `apply` and `revert` do not read it.
 
-**2. Review.** Open `identity-backfill-report.md` (`/srv/docker/crates/identity/`). It lists each class with the files in
-it and a MusicBrainz link for each pick. Then, in `identity-proposal.json`:
+**2. Review.** The easy way is the crates app's **Identity** tab (below, "Apply the picker's choices"). By hand: open
+`identity-backfill-report.md` (`/srv/docker/crates/identity/`). It lists each class with the files in it and a
+MusicBrainz link for each pick. Then, in `identity-proposal.json`:
 - set `"skip": true` on any row you do not want written;
 - on an `ambiguous` row (or a `none` row with candidates), set `"choose": "<recording id>"` to one of its listed
   candidates. Any other id is refused;
@@ -417,8 +418,10 @@ docker compose exec -T worker python -m scripts.identity_backfill apply /data/id
 ```
 
 - Without `--classes` it selects **only** the rows you accepted or chose. With `--classes` it adds those classes' rows.
-  `--limit` and `--only` apply to all of them alike. The live run is yours: the staged steps (dry run, `--limit 5`,
-  all, scan and check after each) are in `docs/plans/2026-10-21-r7-identity-picker.md` "Live steps".
+  `--limit` and `--only` apply to all of them alike.
+- **The live apply with `--choices` is Michael's step** (`docs/next-todos.md` item 6; the harness never runs it): the
+  staged steps (dry run, `--limit 5`, all, scan and check after each, `revert` with the run's log) are in
+  `docs/plans/2026-10-21-r7-identity-picker.md` "Live steps".
 - Accept takes a `search` row's proposed recording, Choose sets the row's `choose` to the tapped candidate, Skip
   drops the row, whatever its class. The choices file wins over a hand-typed `"choose"`, for an Accept too (the run
   says so); a `"skip": true` in the proposal still wins over everything. A path the proposal holds twice is refused.

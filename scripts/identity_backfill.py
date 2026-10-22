@@ -476,9 +476,13 @@ def check_out_dir(music_root: Path, out_dir: Path) -> None:
 
 
 def write_atomic(path: Path, text: str) -> None:
+    """tmp + fsync + replace: a power cut leaves the old file or the new one, never an empty one."""
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    tmp.replace(path)
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(text)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, path)
 
 
 def propose(music_root: Path, out_dir: Path, mb: MusicBrainz, *, lookup=None, limit: int | None = None,

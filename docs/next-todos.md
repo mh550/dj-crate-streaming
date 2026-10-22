@@ -60,7 +60,9 @@ Anything that trashes files or writes tags needs a reviewed plan file and a reve
 6. **Id backfill:** after Michael has looked at `identity-backfill-report.md`, apply the default classes (`confirmed`, `isrc`,
    `acoustid`; 485 files): dry run, then `--limit 5`, then all, as in `docs/worker.md`; scan and check after each stage
    (the trial's checks: ids appear in `navidrome.db`, song ids unchanged, `scripts.export_playlists check`). Then the
-   `ambiguous`/`none`/`conflict` pickers (M9 item 5a). `revert` undoes any run.
+   `search`/`ambiguous`/`none`/`conflict` picker (M9 item 5a): **built (R7), not deployed**. Michael picks in the
+   Identity tab, then runs `apply --choices` himself, staged as in `docs/plans/2026-10-21-r7-identity-picker.md`
+   "Live steps". `revert` undoes any run.
 7. **Version tag (`VERSION`/`TIT3`)** as its own reviewed proposal (M9 item 4, approved "later").
 8. **Before the first real download:** run the M8 trash-move probe (`docs/architecture.md` §9 step 3); Michael says "go" with an
    `ext-N`; check the whole chain on one file (D7).

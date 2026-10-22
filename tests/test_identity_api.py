@@ -581,3 +581,53 @@ def test_choice_problem_reasons():
     assert "decided_by" in ib.choice_problem(r, c | {"action": "skip", "mbid": None, "decided_by": "worker"})
     assert "decided_by" in ib.choice_problem(r, {k: v for k, v in c.items() if k != "decided_by"}
                                              | {"action": "skip", "mbid": None})
+
+
+# ── R7-06 review (Minor findings fixed test-first) ───────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("why,name", [
+    ("FileNotFoundError: [Errno 2] No such file: '/srv/music/A/b.flac'", "b.flac"),   # the root inside another path
+    ("PermissionError: [Errno 13] denied: \"/data/identity/Guns N' Roses.json\"", "Guns N' Roses.json"),  # "…"
+    ("cache /data/identity/acoustid-cache.jsonl is torn", "acoustid-cache.jsonl"),    # an unquoted path
+])
+def test_scrub_leaves_no_absolute_path(why, name):
+    from crates.identity_view import _scrub
+    out = _scrub(why, "/music")
+    assert "/srv" not in out and "/data" not in out and "/music" not in out and name in out, out
+
+
+def test_scrub_keeps_slashes_that_are_not_paths():
+    from crates.identity_view import _scrub
+    for why in ("AC/DC fit at 3:13/3:15; 1/2 results", "search / isrc: 2 fit"):
+        assert _scrub(why, "/music") == why
+    assert _scrub("unreadable: '/music/K/x.flac'", "/music") == "unreadable: 'K/x.flac'"
+
+
+def test_proposed_is_what_accept_checks(api):
+    """The shown recording is the row's `write.mb_trackid`, the one id an Accept is checked against."""
+    app, srv, ident = api
+    def edit(doc):
+        next(r for r in doc["proposals"] if r["path"] == "K/search.flac")["recording"] = X1
+    edit_proposal(ident, edit)
+    shown = rows(srv)["K/search.flac"]["proposed"]
+    assert shown["id"] == RA and shown["url"].endswith(RA)
+    assert pick(srv, "K/search.flac", "accept", shown["id"])[0] == 200
+
+
+def test_a_path_the_proposal_holds_twice_is_not_offered(api):
+    """apply --choices refuses such a path (which row was tapped?), so the picker does not offer it."""
+    app, srv, ident = api
+    add_rows(ident, row("K/tie.flac", "conflict", "LP", rec(X1, "T", 8.0), size=2))
+    assert "K/tie.flac" not in rows(srv)
+    code, body = pick(srv, "K/tie.flac", "skip")
+    assert code == 400 and not (ident / ib.CHOICES).exists()
+
+
+def test_the_choices_file_is_fsynced_before_it_replaces_the_old_one(tmp_path, monkeypatch):
+    import os
+    seen = []
+    real_fsync, real_replace = os.fsync, os.replace
+    monkeypatch.setattr(os, "fsync", lambda fd: (seen.append("fsync"), real_fsync(fd))[1])
+    monkeypatch.setattr(os, "replace", lambda a, b: (seen.append("replace"), real_replace(a, b))[1])
+    ib.write_atomic(tmp_path / ib.CHOICES, "{}\n")
+    assert (tmp_path / ib.CHOICES).read_text() == "{}\n" and seen[:2] == ["fsync", "replace"]

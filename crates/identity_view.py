@@ -13,6 +13,7 @@ import datetime
 import json
 import re
 import sqlite3
+from collections import Counter
 from pathlib import Path
 
 from scripts.identity_backfill import (CHOICE_ACTIONS, CHOICES, PROPOSAL, _canon, _navidrome_ids, choice_problem,
@@ -22,7 +23,9 @@ from sourcing.identity import loose
 PICKER = ("search", "ambiguous", "none", "conflict", "error")    # the order the rows come in
 SKIP_ONLY = ("conflict", "error")
 MB_RECORDING = "https://musicbrainz.org/recording/"
-_QUOTED_PATH = re.compile(r"'(/[^']*)'")                     # an exception's quoted absolute path
+# an absolute path: quoted as Python quotes it ('…', or "…" when the name holds a '), or bare after a space
+_ABS_PATH = re.compile(r"""'(/[^']*)'|"(/[^"]*)"|(?<![^\s(=])(/[^\s'"/][^\s'"]*)""")
+_PATH_START = r"""(?<![^\s'"(=])"""                           # where a path may begin: not inside "AC/DC" or 3:13/3:15
 _ROW_TYPES = {"file": dict, "write": dict, "candidates": list, "candidate_details": list}
 
 
@@ -46,10 +49,16 @@ def load_proposal(identity_dir: Path) -> dict:
     except (OSError, ValueError) as e:
         raise Refused(503, f"{PROPOSAL} cannot be read ({type(e).__name__}): run identity_backfill propose again") from None
     if not (isinstance(doc, dict) and isinstance(doc.get("proposals"), list)
-            and all(isinstance(r, dict) and all(isinstance(r.get(k, t()), t) for k, t in _ROW_TYPES.items())
-                    for r in doc["proposals"])):
+            and all(_well_formed(r) for r in doc["proposals"])):
         raise Refused(503, f"{PROPOSAL} is not a proposal: run identity_backfill propose again")
     return doc
+
+
+def _well_formed(row) -> bool:
+    """A row whose fields the picker reads have their types (a missing field is fine)."""
+    if not isinstance(row, dict):
+        return False
+    return all(field not in row or isinstance(row[field], kind) for field, kind in _ROW_TYPES.items())
 
 
 def load_choices(identity_dir: Path) -> dict:
@@ -69,10 +78,12 @@ def load_choices(identity_dir: Path) -> dict:
 
 def picker_rows(doc: dict) -> dict[str, dict]:
     """path → row, for the rows that offer Michael something to decide (a `none` row needs candidates). A row
-    skipped in the proposal JSON is left out: that skip is final (`apply`), so a tap on it could do nothing."""
+    skipped in the proposal JSON is left out: that skip is final (`apply`), so a tap on it could do nothing. So is a
+    path the proposal holds twice: `apply --choices` refuses it (which row was tapped?)."""
+    held = Counter(r.get("path") for r in doc["proposals"])
     return {r["path"]: r for r in doc["proposals"]
-            if isinstance(r.get("path"), str) and r.get("cls") in PICKER and not r.get("skip")
-            and (r["cls"] != "none" or r.get("candidates"))}
+            if isinstance(r.get("path"), str) and held[r["path"]] == 1 and r.get("cls") in PICKER
+            and not r.get("skip") and (r["cls"] != "none" or r.get("candidates"))}
 
 
 def _suggested(row: dict, details: list[dict]) -> str | None:
@@ -94,10 +105,16 @@ def _choice_view(row: dict, entry: dict | None) -> dict | None:
 
 
 def _scrub(why: str, root: str) -> str:
-    """`why` without absolute paths: an exception's text can hold one (the file's, or a cache file's)."""
+    """`why` without absolute paths: an exception's text can hold one (the file's, or a cache file's). A path in the
+    library loses the root; any other keeps only its name."""
     if root.rstrip("/"):
-        why = why.replace(root.rstrip("/") + "/", "")
-    return _QUOTED_PATH.sub(lambda m: "'…/" + m.group(1).rsplit("/", 1)[-1] + "'", why)
+        why = re.sub(_PATH_START + re.escape(root.rstrip("/") + "/"), "", why)
+
+    def name(m):
+        quote = "'" if m.group(1) is not None else '"' if m.group(2) is not None else ""
+        path = next(g for g in m.groups() if g is not None)
+        return f"{quote}…/{path.rstrip('/').rsplit('/', 1)[-1]}{quote}"
+    return _ABS_PATH.sub(name, why)
 
 
 def _view(row: dict, root: str, song_ids: dict[str, str], entry: dict | None) -> dict:
@@ -106,7 +123,7 @@ def _view(row: dict, root: str, song_ids: dict[str, str], entry: dict | None) ->
     why = _scrub(str(row.get("why") or ""), root)
     proposed = None
     if cls == "search":
-        rid = str(row.get("recording") or "")
+        rid = str((row.get("write") or {}).get("mb_trackid") or "")      # what an Accept is checked against
         proposed = {"id": rid, "title": row.get("title"), "length_s": row.get("length_s"), "url": MB_RECORDING + rid}
     return {"path": row["path"], "cls": cls, "why": why, "file": row.get("file") or {},
             "songId": song_ids.get(row["path"]), "proposed": proposed,

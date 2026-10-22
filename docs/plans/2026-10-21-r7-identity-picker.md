@@ -95,7 +95,8 @@ works with or without a key.
   - It reads the proposal (`<identity_dir>/identity-proposal.json`).
   - It builds the rows.
   - It reads and writes `<identity_dir>/identity-choices.json`. The write is atomic: tmp + `os.replace`, with
-    `_write_atomic` made public in `identity_backfill` as `write_atomic` and imported, not copied.
+    `_write_atomic` made public in `identity_backfill` as `write_atomic` and imported, not copied. Since R7-06 it
+    fsyncs the tmp file before the replace, so a power cut never leaves an empty choices file.
   - It never opens any other path for writing.
 
   `PROPOSAL`, `CHOOSABLE`, `_canon`, `_navidrome_ids` and a new `choice_problem(row, choice) -> str` come from
@@ -131,15 +132,19 @@ works with or without a key.
 
 - `counts` counts the picker rows per class, before the filter.
 - The rows come in class order (`search`, `ambiguous`, `none`, `conflict`, `error`), then by path.
-- `proposed` is set only on `search` rows: `{"id", "title", "length_s", "url"}`, from `recording`/`title`/
-  `length_s`. It is what Accept writes, and the row shows it as its one recording.
+- `proposed` is set only on `search` rows: `{"id", "title", "length_s", "url"}`; `id` is `write.mb_trackid` (the
+  id an Accept is checked against and writes; R7-06), `title`/`length_s` the row's. The row shows it as its one
+  recording.
 - `candidates` come from `candidate_details`, in the proposal's order, each with its MusicBrainz link.
 - `suggested` is the one candidate with a release (`releases`, else `release`) that loosely equals the file's album
   (`sourcing.identity.loose`, as `_same_album`). It is `null` when none or several match, and always `null` on
   `search`, `conflict` and `error` rows.
-- `why` is shown with the proposal's `music_root` prefix removed (`<music_root>/` → ""). An `error` row's
-  `unreadable: …` text comes from an exception and can hold the absolute path. Any other quoted absolute path (an
-  AcoustID cache error names `/data/identity/…`) is shown as `'…/<name>'` (R7-02 review).
+- `why` is shown with the proposal's `music_root` prefix removed (`<music_root>/` → "", only where a path starts).
+  An `error` row's `unreadable: …` text comes from an exception and can hold the absolute path. Any other absolute
+  path (an AcoustID cache error names `/data/identity/…`), quoted `'…'`, `"…"` or bare after a space, is shown as
+  `…/<name>`; `AC/DC` or `3:13/3:15` are not paths (R7-02 and R7-06 reviews).
+- A path the proposal holds more than once is not listed (and a tap on it is a 400): `apply --choices` refuses
+  such a path (R7-06).
 - `songId` is `_navidrome_ids(NAVIDROME_DB).get(path)`, read once per request. It is `null` when `NAVIDROME_DB` is
   unset, or the path is not in Navidrome or is missing there. A `sqlite3.Error` gives the existing 503.
 - `choice` is the recorded choice for the path, or `null`. `stale` is true when it no longer fits the row (see the
@@ -434,6 +439,23 @@ matches Navidrome…".
    (`ND_SCANSCHEDULE` 1 h) or start one in Navidrome's UI, then run **Check**. After a revert, re-run `propose`
    before applying again: the revert changed the files' mtime.
 5. **All:** the same command without `--limit`, then **Check**. The undo is as in step 4, with this run's log.
+
+## Review (R7-06)
+
+An Opus review of `git diff origin/main...HEAD` over the picker found 0 Critical and 0 Important issues: every rule
+in "Safety rules" holds in the code. Fixed test-first: `why` scrubbing (a `"…"`-quoted or bare absolute path, and the
+root only where a path starts), `proposed.id` from `write.mb_trackid`, a path held twice is not offered, and
+`write_atomic` fsyncs. Left as they are, on purpose:
+- The choices file is written before the `identity_pick` event is committed. When crates.db refuses the event, the
+  choice stands without its event, and the 503 says "tap it again". Logging first would not close the gap either: the
+  commit can still fail after the write.
+- A choice on a row that later leaves the picker (e.g. `search` → `acoustid` after a new `propose`) is refused as
+  stale by `apply --choices --classes …`, but the tab no longer lists the row. Delete its entry from the choices
+  file, or apply without `--choices`.
+- `GET /api/identity` answers 503 when navidrome.db cannot be read, while a POST does without the song id.
+- `_checked` (the POST's statuses and texts) and `choice_problem` (apply's) state the same rules twice. Both run on
+  every POST, and `record` refuses a tap the second one rejects. `_canon` and `_navidrome_ids` are imported across
+  modules with their underscore.
 
 ## Not built
 
