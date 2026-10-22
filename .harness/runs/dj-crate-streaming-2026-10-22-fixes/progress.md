@@ -9,6 +9,15 @@ Michael steers from `INBOX.md` on this branch (status line `run | pause | stop`;
 session reads it at startup. Policy: **build-only** (`.harness/config.sh`) and the brief in `brief.md`: nothing live,
 no docker, no `/srv`, no network, no client UI, PRs only.
 
+### 2026-10-22 18:45 · S1-02 · passes
+
+- **Changed:** `sourcing/verify.py`. `verify(..., asked_title=)` is passed through to `_acoustid_check`. With no recording id, a confident result (a recording scoring at least `ACOUSTID_CONFIDENT` = 0.8) where no returned recording can be the asked song is the hard `recording` finding "AcoustID says this is <title>, not <asked>". `m["acoustid"]["asked"]` records the asked title. `sourcing/fetch.py` passes `asked_title = row.get("asked_title") or row["title"]` whenever a lookup is configured.
+- **Deviation from the step ("equals"):** "can be the asked song" means one `loose(parse_title(t).base)` contains the other, not that they are equal. An Opus review showed that equality hard-rejects the same song in common forms: `Song ft. X`, `Song (Acoustic)` (a label `parse_title` doesn't know), and a Navidrome title such as `Al Green - Love and Happiness` or `01 Love and Happiness`. A hard reject throws a good download away, while a miss only keeps today's behaviour. ext-74 still fails. Any returned recording, at any score, can clear the check (the spec's "no returned recording").
+- **Tests:** 1774 → 1781 (6 new in `tests/test_acoustid.py`, 1 new in `tests/test_fetch_filing.py`; two `kw ==` asserts there updated). The ext-74 test failed first with `TypeError: unexpected keyword 'asked_title'`.
+- **Verified:** full `check.sh` green in 654 s, 1781 tests.
+- **Known limits:** `Song, Pt. 1` vs `Song, Part 1` and a title in another script (Japanese vs romanised) still give the hard finding when AcoustID's titles differ that way.
+- **Next:** S1-03. No questions for Michael.
+
 ### 2026-10-22 17:50 · S1-01 · passes
 
 - **Changed:** `sourcing/scorer.py`. New helpers `title_slot(basename)` (shared with `name_match`) and `slot_names_another_song`. A candidate whose title slot's song differs from the wanted title's song is rejected as `title slot is <slot>`, score 0. Songs are compared as `loose` base titles, with feat./ft. credits and labels ignored; D26 version rules are unchanged.

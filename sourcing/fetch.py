@@ -453,6 +453,8 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
                 store.commit()                # the verifier decodes for minutes: hold no write transaction meanwhile
             rid = navidrome.song(copy_id).music_brainz_id or None
         extra = {"recording_id": rid, "lookup": lookup} if lookup is not None else {}    # see header_only in tests
+        if lookup is not None:          # with no recording id, AcoustID's title is checked against the asked one (S1-02)
+            extra["asked_title"] = row.get("asked_title") or row["title"]
         if intent == "version" and best.length_s:        # the peer's listing of this file, checked against what arrived
             extra["listed_length_s"] = best.length_s
         set_status("sourcing", f"checking {best.basename}")      # committed: the web's progress strip shows the phase
