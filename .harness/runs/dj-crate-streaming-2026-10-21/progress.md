@@ -18,6 +18,17 @@ Michael. The spec is `docs/specs/2026-10-21-guards-and-checks.md`; the brief is 
 
 ---
 
+### 2026-10-21 · R3-03 · passes
+Opus review of `r3.diff` (scratch; the 5 files from origin/main...HEAD): no Critical/Important. Holds: `references()`
+checks untouched (trash :586, `_put_back`, already-gone, `recheck_moved`); repoint/trash take the hold from plan.json only,
+so a `--hold-lossless` plan never flips on recompute; keeper = `keep_rank` first (lossless tie → `_copy_rank` filed path);
+reverse logs untouched; an old plan.json without `note` renders and acts as before. Applied: `render` sorts by
+`note == LOSSLESS_PAIR` not any note (new test failed first); usage line gets `[--hold-lossless]`; N1 plan's `build_plan`
+signature. Tests 1,559 → 1,560; `tests/test_duplicate_cleanup.py` 117 passed, every §7 duplicate-cleanup guard has its test.
+**Proposed change (Minor, not built: it changes the trash flow, needs the plan reviewed):** `_recheck` checks that the keeper and the extra are still in one group, but not that the plan's keeper is still the group's first file.
+If beets re-files a flac keeper between plan and trash, the badly filed copy stays and the properly filed one is trashed (reversible). Fix: `skipped: keeper changed; re-run plan`.
+For Michael: `keep_rank` doesn't compare bit depth or sample rate, so a 24/96 flac in Compilations/ is trashed in favour of a filed 16/44 one (D31 as answered). report.md shows kbps for each copy.
+
 ### 2026-10-21 · R3-02 · passes
 `scripts/duplicate_cleanup.py` `render`: groups with the D35 note get their own section "Lossless pairs, will be trashed"
 (keeper, each extra with its playlists), before the held groups; no such groups → no section; the held-groups line no
