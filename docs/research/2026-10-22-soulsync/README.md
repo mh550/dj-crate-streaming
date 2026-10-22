@@ -370,7 +370,7 @@ Ours has none of this today. The only album signal is +4 for a folder named like
 Running SoulSync would still leave it without the same-release rule and the one-switch bound. Its bundle and retry
 code is woven through its task worker, monitor and staging ([04-soulseek.md](04-soulseek.md#when-a-track-fails)).
 So the piece worth re-writing in S2-04 is small: the one-to-one track assignment `assign_album_tracks`
-(`SoulSync:core/downloads/soulseek_identity.py:310-341`) and the folder score
+(`SoulSync:core/downloads/soulseek_identity.py:310-340`) and the folder score
 (`SoulSync:core/downloads/master.py:438-516`). Re-writing them in our own words follows 04's "paraphrase, don't copy";
 the MIT notice is needed only if code is copied.
 

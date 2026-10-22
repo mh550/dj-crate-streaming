@@ -8,6 +8,14 @@ Michael steers through `INBOX.md` on this branch (first line `status: run|pause|
 Every session reads `INBOX.md` and this file first, then the spec `docs/specs/2026-10-22-soulsync-review.md` and the
 brief `brief.md` (the brief wins on scope).
 
+### 2026-10-22 15:51 · V4-01 · passes
+
+- **What changed:** the verify V4 defect: `SoulSync:core/downloads/soulseek_identity.py:310-341` → `:310-340` (the file and `assign_album_tracks` end at line 340, `wc -l` 340) in 09-recommendations.md (rows at lines 121 and 207) and README.md:373. Docs only; tests 1757 → 1757.
+- **Verified (every step, myself):** (1) `## Options` with the four `### (a)`-`### (d)` parts at 36/49/104/145, and the shared Maintenance pace and Licence rows cite 01-map.md; (2) `### (b)` has D18, D27, D7 and `amperfy`, plus 22 SoulSync and 12 ours cites; (3) the (c) table has 15 rows; (4) the first sentence names Option (c), followed by 7 numbered steps; (5) 23 S-rows: 12 keep, 11 change, 11 `### Spec delta` blocks, each with `draft, not applied`; (6) 10 questions, each with an assumption and where it is used; (7) the progress.md citation check prints nothing, and a range-aware check (both ends, a ≤ b) over 2,417 unique cites prints 0 BAD, while it does catch the old `310-341` on the pre-fix file; (8) `unverified` marks in every file (09: 8), unchanged from the verifier's pass; (9) `lib/check.sh` "green in 651 s, 1757 tests".
+- **Next:** the same fix clears V4-02 step 2 (the verifier's only V4-02 fail), so V4-02 should pass on its re-run without a doc edit.
+- **Proposed change:** the conventions' citation check tests only a range's first line, which is how `310-341` got past the earlier sessions' checks. Replace it with the range-aware form: `grep -ohE '(SoulSync|ours):[A-Za-z0-9_./-]+:[0-9]+(-[0-9]+)?' docs/research/2026-10-22-soulsync/*.md | sort -u | while IFS=: read -r src p r; do a=${r%-*}; b=${r#*-}; case $src in SoulSync) f=$HOME/research/soulsync-src/SoulSync/$p;; ours) f=$p;; esac; [ -f "$f" ] && [ "$a" -le "$b" ] && [ "$b" -le "$(wc -l < "$f")" ] || echo "BAD $src:$p:$r"; done` (tested: it prints nothing on this tree and one BAD on the pre-fix 09).
+- **Questions for Michael:** none new; the 10 in 09 `## Questions for Michael` stand.
+
 ### 2026-10-22 verify V4
 
 Independent re-run: 0 hold, 2 fail. Both fail on one real defect: `SoulSync:core/downloads/soulseek_identity.py:310-341` (09-recommendations.md lines 121 and 207) cites line 341, but the file has 340 lines. Fix: change to `310-340`. Nothing live touched; no doc or code edited. My own citation loop (2,417 unique cites, `SoulSync:` against the clone, `ours:` against this tree) printed that single BAD line.
