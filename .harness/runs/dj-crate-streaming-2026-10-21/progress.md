@@ -3,6 +3,42 @@
 What this file is: the shared memory of the agent harness for this run. Each session appends one entry **at the top**
 (newest first) when it finishes a feature: what it built, what it learned, what it asks. Nobody edits older entries.
 
+### 2026-10-22 verify R7
+| Feature | Step | What you ran or read | What you saw | Holds |
+|---|---|---|---|---|
+| R7-01 | 1 | read docs/plans/2026-10-21-r7-identity-picker.md (469 lines), grepped each named item | has proposal schema, CRATES_IDENTITY_DIR (default /data/identity), GET/POST routes with 409/400 rules, choices file shape, identity_pick event, --choices semantics, Michael's live steps (dry run, --limit 5, all, revert), not-built list | yes |
+| R7-01 | 2 | grep test names in plan | names test_identity_api.py, test_identity_backfill.py, test_web_identity.py; all three exist | yes |
+| R7-01 | 3 | `git log origin/main..HEAD` | commit 7456065 `R7-01: plan for the identity picker` | yes |
+| R7-01 | 4 | `lib/check.sh`; `git branch -r --contains` | green, 1749 tests (cached); the R7-01 commit is on origin (last 2 HARNESS commits were unpushed, pushed now) | yes |
+| R7-02 | 1 | read crates/service.py:64,81 and crates/identity_view.py in full | Config.identity_dir from CRATES_IDENTITY_DIR default /data/identity; stdlib module; _navidrome_ids (export_playlists path→id) used; one write site `write_atomic(identity_dir / CHOICES)` (tmp+fsync+replace) | yes |
+| R7-02 | 2 | read identity_view.listing/record/_checked; service.py:445,490 routes | GET /api/identity?class= with created/counts/rows, 404 with plain text when no proposal; POST: 409 accept/choose on conflict/error, 400 for mbid not a candidate or unknown path, 200 with choice; store.log identity_pick `…; decided_by=michael` in detail | yes |
+| R7-02 | 3 | `.harness/check.sh tests/test_identity_api.py tests/test_identity_backfill.py tests/test_web_identity.py`; read test names | 164 passed; test_rows_have_the_plan_shape, test_suggested_is_the_only_candidate_on_the_files_album, each refusal test, test_second_click_replaces_the_first, test_each_pick_logs_identity_pick_with_decided_by_michael, test_nothing_is_written_outside_the_identity_dir | yes |
+| R7-02 | 4 | `git log` | commit 91c68bb `R7-02: identity rows and choices API` | yes |
+| R7-02 | 5 | `lib/check.sh` | green, 1749 tests | yes |
+| R7-03 | 1 | read scripts/identity_backfill.py read_choices, choice_problem, apply (lines 686-1070) | skip→not selected; choose→row's choose set, existing _intended check; accept selects row outside --classes; conflict/error refused `choices: <path> is <cls>; refused`; unknown path reported and ignored; dry run names rows from choices | yes |
+| R7-03 | 2 | read CLI lines 1171-1231, 1207 | `apply <proposal> --choices FILE --dry-run`; decided_by carried into apply log notes and dry-run text `(choice: …, decided_by michael)` | yes |
+| R7-03 | 3 | test names test_choices_* in tests/test_identity_backfill.py (21 tests, in the 164 passed run) | accept search would-write, choose shows id, skip absent, wrong mbid existing message, conflict refused, test_choices_dry_run_changes_nothing_on_disk (sha256 + tags re-read), existing tests green | yes |
+| R7-03 | 4 | grep docs/worker.md, docs/how-ids-work.md | worker.md:413-417 has the --choices form; how-ids-work.md:75 has the picker paragraph | yes |
+| R7-03 | 5 | `git log` | commit 2efb1cd `R7-03: apply --choices merges the picker's choices` | yes |
+| R7-03 | 6 | `lib/check.sh` | green, 1749 tests | yes |
+| R7-04 | 1 | read web/index.html:29,71-82; web/app.js:449-467; grep | tab data-tab=identity with count pill, section #tab-identity, class select (search/ambiguous/none/conflict/error), ul#identity; Accept only for search rows, Skip always, MusicBrainz link prefix present | yes |
+| R7-04 | 2 | tests/test_web_identity.py (24 tests, in the 164 passed run); read test_phone_first_css | tab/list, endpoints, three labels, MB URL prefix, no library path, widths ≤375px asserted | yes |
+| R7-04 | 3 | `grep -c apply web/app.js`; `grep /srv web/app.js web/index.html` | 0; no /srv match | yes |
+| R7-04 | 4 | `git log` | commit 5f444da `R7-04: Identity tab` | yes |
+| R7-04 | 5 | `lib/check.sh` | green, 1749 tests | yes |
+| R7-05 | 1 | file(1) on docs/screenshots/r7-identity-*.png; viewed each image | three PNGs, 375x812; real renders of the tab (ambiguous, conflict, chosen); the hash opener `#identity/<class>` exists (test_a_hash_with_a_class_opens_the_tab_filtered) | yes |
+| R7-05 | 2 | viewed images vs the R7-05 progress entry | ambiguous: filter 'ambiguous (2)', pill 6, tags/length/path/why, album-only candidate pre-checked with accent border, Choose+Skip, no Accept; conflict: Skip only; chosen: second radio checked, `chosen: 9999…` shown; no overflow seen; badge-fit defect has test_the_class_badge_stays_beside_the_title_on_a_phone | yes |
+| R7-05 | 3 | n/a: firefox did render, so the fallback was not needed | screenshots are real renders | yes |
+| R7-05 | 4 | `git log` | commit 709dbc2 `R7-05: identity tab screenshots…` | yes |
+| R7-05 | 5 | `lib/check.sh` | green, 1749 tests | yes |
+| R7-06 | 1 | read identity_view.py in full against §5a rules; grep app.js; read test_nothing_is_written_outside_the_identity_dir, test_why_never_shows_an_absolute_path | no apply in client; choice checked in _checked and choice_problem on record, and by apply; conflict/error → 409; path only a dict key; one write inside identity_dir; every pick logs event with decided_by=michael; _scrub removes absolute paths; no key in payload (not independently re-diffed r7.diff) | yes |
+| R7-06 | 2 | read progress R7-06 and the suite for its tests | fixes have tests (test_scrub_*, test_proposed_is_what_accept_checks, test_a_path_the_proposal_holds_twice_is_not_offered, test_the_choices_file_is_fsynced…); all pass | yes |
+| R7-06 | 3 | grep M9 spec, architecture.md, worker.md, next-todos, pivot spec | M9 §5a line 225 'Built (R7…) not live' with Q7/Q8 D47; D47 default in pivot spec; architecture §2/§3/§4(d) name Identity view and choices file; worker.md:422 live apply is Michael's step item 6; plan has Review (R7-06) section and the built status codes | yes |
+| R7-06 | 4 | `git log` | commit 66d090e `R7-06: review and simplify the identity picker` | yes |
+| R7-06 | 5 | `lib/check.sh` | green, 1749 tests | yes |
+
+All 6 R7 features hold; the full suite was not re-run beyond `lib/check.sh` (cached green) and the three R7 test files (164 passed).
+
 ### 2026-10-22 06:20 · R7-06 · passes
 - Review (Opus, scratch `r7.diff` = `git diff origin/main...HEAD` over crates/ web/ identity_backfill tests docs/, 2326 lines): 0 Critical, 0 Important, 7 Minor, 4 simplifications. Every safety rule holds. I checked these with cheap commands myself: one write site, `write_atomic(identity_dir / CHOICES)`; a body `path` is only a dict key; `grep -c apply web/app.js` → 0; no `/srv` in the client.
 - Fixed test-first (all seen red, 5 failures): `_scrub` now hides `"…"`-quoted and bare absolute paths too, and strips the root only where a path starts (`AC/DC`, `3:13/3:15` and ` / ` are untouched); `proposed.id` comes from `write.mb_trackid`, the id Accept is checked against; a path the proposal holds twice is no longer offered, because apply refuses it; `write_atomic` fsyncs before the replace. Simplified: `load_proposal`'s nested check is now `_well_formed`.
