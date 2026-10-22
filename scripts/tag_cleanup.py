@@ -44,13 +44,13 @@ try:
     from scripts.export_playlists import open_ro                         # python3 -m scripts.tag_cleanup
     from scripts.library_map import read_csv, write_csv
     from scripts.tag_rules import blank, clean, usable_artist
-    from sourcing.worker import hold_worker_lock
+    from sourcing.worker import with_worker_lock
 except ImportError:                                                      # python3 scripts/tag_cleanup.py
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from export_playlists import open_ro
     from library_map import read_csv, write_csv
     from tag_rules import blank, clean, usable_artist
-    from sourcing.worker import hold_worker_lock
+    from sourcing.worker import with_worker_lock
 
 REPO = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG = REPO / "deploy" / "beets.yaml"
@@ -369,13 +369,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--navidrome-db", type=Path, default=DEFAULT_NAVIDROME_DB)
     a = ap.parse_args(argv)
     if a.cmd in ("retag", "move"):                         # they write beets and the library: never beside the worker
-        fd = hold_worker_lock()
-        if fd is None:
-            return 1
-        try:
-            return _run(a)
-        finally:
-            os.close(fd)
+        return with_worker_lock(lambda: _run(a))
     return _run(a)
 
 

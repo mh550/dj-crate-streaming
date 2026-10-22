@@ -242,7 +242,7 @@ command (`apply`, `placement`). Every pick is an event with `decided_by=michael`
 
 **Built (R4), not deployed.** `rank --download` is deleted: an old invocation exits 2 with "rank no longer
 downloads: use Preview + Approve in the web client (the worker downloads, D23)". Two guards take the worker's own
-`<dirname(CRATES_DB)>/worker.lock` with `sourcing.worker.hold_lock` (through `hold_worker_lock`) for the whole command
+`<dirname(CRATES_DB)>/worker.lock` with `sourcing.worker.hold_lock` (through `with_worker_lock`) for the whole command
 and refuse with `refused: stop the worker first (docker compose stop worker): it holds <path>`: `scripts/tag_cleanup.py
 retag|move` and `scripts/dedupe_copies.py repoint|trash` (`plan` and `refresh-map` stay free). `identity_backfill apply`
 stays outside the lock. The problem text below is the state before R4.

@@ -313,7 +313,7 @@ the test fixture `tests/fixtures/policy-legacy.toml` holds.
 | One worker at a time | `fcntl.flock` on `/data/worker.lock` (`worker.py:36`) |
 | An approval is spent once | `claim_approval` conditional UPDATE (`store.py:324`) |
 | One beets writer | filer exists only with `DJ_WORKER=1` (`cli.py:38`); host convention for the rest (§10) |
-| Only the worker downloads; host scripts write beets only with the worker stopped (built R4, not deployed) | `sourcing.cli rank` has no `--download` (an old invocation exits 2 naming Preview + Approve); `scripts/tag_cleanup.py retag|move` and `scripts/dedupe_copies.py repoint|trash` hold `<dirname(CRATES_DB)>/worker.lock` (`sourcing.worker.hold_worker_lock` → `hold_lock`) for the whole command, else exit 1 "refused: stop the worker first"; `identity_backfill apply` stays outside the lock |
+| Only the worker downloads; host scripts write beets only with the worker stopped (built R4, not deployed) | `sourcing.cli rank` has no `--download` (an old invocation exits 2 naming Preview + Approve); `scripts/tag_cleanup.py retag|move` and `scripts/dedupe_copies.py repoint|trash` hold `<dirname(CRATES_DB)>/worker.lock` (`sourcing.worker.with_worker_lock` → `hold_lock`) for the whole command, else exit 1 "refused: stop the worker first"; `identity_backfill apply` stays outside the lock |
 | beets only sees fresh downloads | filer refuses a folder not under `.staging` (`filer.py:268`); exactly one audio file |
 | beets writes tags only on a confirmed match | `-W` import + `confirm` hook (`filer.py:291-299`) |
 | A filed file is never downloaded twice | row → `verify` with path as soon as beets filed it (`fetch.py:307-313`); re-checks never search (`fetch.py:211-224`) |

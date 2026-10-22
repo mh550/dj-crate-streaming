@@ -31,12 +31,12 @@ try:
     from scripts.export_playlists import open_ro
     from scripts.library_map import _copy_rank, read_csv, write_csv
     from sourcing.identity import loose
-    from sourcing.worker import hold_worker_lock
+    from sourcing.worker import with_worker_lock
 except ImportError:                                                      # python3 scripts/dedupe_copies.py
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from crates.trash import free_path
     from sourcing.identity import loose
-    from sourcing.worker import hold_worker_lock
+    from sourcing.worker import with_worker_lock
     from export_playlists import open_ro
     from library_map import _copy_rank, read_csv, write_csv
 
@@ -215,13 +215,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--config", type=Path, default=REPO / "deploy" / "beets.yaml")
     a = ap.parse_args(argv)
     if a.cmd in ("repoint", "trash"):                      # they change playlists and the library: never beside the worker
-        fd = hold_worker_lock()
-        if fd is None:
-            return 1
-        try:
-            return _run(a)
-        finally:
-            os.close(fd)
+        return with_worker_lock(lambda: _run(a))
     return _run(a)
 
 
