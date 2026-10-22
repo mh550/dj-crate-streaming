@@ -175,3 +175,12 @@ def test_events_show_no_absolute_path(svc):
     s, _, ev = get(srv.url + "/api/events")
     assert s == 200
     assert [e["detail"] for e in ev[:2]] == ["old copy moved to b.mp3", "made by import-playlist: tea tent.csv"]
+
+
+def test_status_carries_playlist_health(svc):
+    """R5-01: the worker's stored count after each export; [] before it ever ran."""
+    fake, app, srv = svc
+    assert get(srv.url + "/api/status")[2]["playlistHealth"] == []
+    rows = [{"id": "pl-1", "name": "Disco Edits", "missing": 1}, {"id": "pl-3", "name": "Sunday Listening", "missing": 1}]
+    app.store.set_playlist_health(rows)
+    assert get(srv.url + "/api/status")[2]["playlistHealth"] == rows

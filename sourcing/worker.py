@@ -30,7 +30,10 @@ Each tick:
      (placement.retry_wait), the 12th gives up with a `not_placed` event; an error of the step is logged and the tick goes on;
   4. every `export_s` seconds (WORKER_EXPORT_S, 300 in the CLI; 0 = never) the playlists are exported as `.m3u8`
      into <music>/_playlists (scripts.export_playlists rewrites only changed files), so repoints, proposal swaps and
-     Michael's own edits reach the files.
+     Michael's own edits reach the files. After an export that worked, the playlist entries on a missing or unknown
+     media_file are counted per playlist (scripts.export_playlists.playlist_health, M9 §7); when that set differs
+     from the stored one (the `playlist_health` setting, read by /api/status) it is stored and one `playlist_health`
+     event is logged, so an unchanged set (or a restart) logs nothing.
 
 Heartbeat (H1): with `heartbeat_path` (the CLI uses <dirname(CRATES_DB)>/worker.heartbeat) the worker touches that
 file when a tick ends, and at each poll while a fetch waits on a download or a Navidrome scan (fetch's `sleep`). A
@@ -54,7 +57,7 @@ from typing import Callable
 
 from crates import placement
 from crates.reconcile import ReconcileBusy
-from scripts.export_playlists import export
+from scripts.export_playlists import export, playlist_health
 from . import replace
 from .fetch import fetch
 
@@ -97,6 +100,15 @@ def with_worker_lock(run: Callable[[], int], env=os.environ) -> int:
         return run()
     finally:
         os.close(fd)
+
+
+def health_detail(rows: list[dict]) -> str:
+    """'2 entries in Tea tent point at missing files; 1 in Chicago 86' (playlist_health rows)."""
+    if not rows:
+        return "no playlist entry points at a missing file"
+    n, name = rows[0]["missing"], rows[0]["name"]
+    first = f"1 entry in {name} points at a missing file" if n == 1 else f"{n} entries in {name} point at missing files"
+    return "; ".join([first] + [f"{r['missing']} in {r['name']}" for r in rows[1:]])
 
 
 @dataclass
@@ -228,6 +240,24 @@ class Worker:
             self.exporter(db, music, music / "_playlists")
         except Exception as e:                             # the next interval tries again
             self.log(f"export failed: {type(e).__name__}: {e}")
+            return
+        if db is not None:
+            self.health(db)
+
+    def health(self, db: Path) -> None:
+        """Step 4b: one `playlist_health` event when the set of playlists with hidden entries (or a count) changed."""
+        try:
+            rows = playlist_health(db)
+            if rows == self.store.playlist_health():
+                return
+            detail = health_detail(rows)
+            self.store.log(None, None, "playlist_health", detail)
+            self.store.set_playlist_health(rows)           # commits the event with it
+        except Exception as e:                             # the stored value stays until a count is stored
+            self.store.db.rollback()
+            self.log(f"playlist health failed: {type(e).__name__}: {e}")
+            return
+        self.log(f"playlist health: {detail}")
 
     def _spend(self, approvals: list[dict], results: list[str]) -> int:
         """Claim and fetch each approval; returns how many were claimed. A play-now approval (D20) is fetched at

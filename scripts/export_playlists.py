@@ -16,6 +16,7 @@ import os
 import re
 import sqlite3
 import sys
+from contextlib import closing
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -61,6 +62,17 @@ def _path_ids(db: Path) -> dict[str, str]:
         return {path: mid for mid, path in con.execute("SELECT id, path FROM media_file")}
     finally:
         con.close()
+
+
+def playlist_health(db: Path) -> list[dict]:
+    """Playlists holding entries getPlaylist hides (the playlist_edit skew condition): rows on a media_file that is
+    missing or gone. One {"id", "name", "missing"} each, by name; empty when every entry plays (M9 §7)."""
+    with closing(open_ro(db)) as con:
+        rows = con.execute(
+            "SELECT p.id, p.name, COUNT(*) FROM playlist p JOIN playlist_tracks t ON t.playlist_id = p.id"
+            " LEFT JOIN media_file m ON m.id = t.media_file_id WHERE m.id IS NULL OR COALESCE(m.missing, 0)"
+            " GROUP BY p.id, p.name ORDER BY p.name COLLATE NOCASE, p.id").fetchall()
+    return [{"id": pid, "name": name, "missing": n} for pid, name, n in rows]
 
 
 def file_name(name: str, taken: set[str]) -> str:

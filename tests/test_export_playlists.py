@@ -91,3 +91,38 @@ def test_database_is_opened_read_only(tmp_path):
         assert ep.export(db, music, out).written == 3
     finally:
         os.chmod(db, 0o644)
+
+
+# --- R5-01: playlist health (M9 §7) -------------------------------------------------------------------------------
+
+def fake_mirror(tmp_path, missing=()):
+    from subsonic.fake_server import FakeState
+    state = FakeState(db_path=tmp_path / "fake-navidrome.db")
+    state.missing = set(missing)
+    state.sync()
+    return state.db_path
+
+
+def test_playlist_health_counts_entries_on_missing_files_per_playlist(tmp_path):
+    db = fake_mirror(tmp_path, missing={"s2"})
+    assert ep.playlist_health(db) == [{"id": "pl-1", "name": "Disco Edits", "missing": 1},
+                                      {"id": "pl-3", "name": "Sunday Listening", "missing": 1}]
+
+
+def test_playlist_health_counts_an_entry_whose_song_navidrome_no_longer_has(tmp_path):
+    db = fake_mirror(tmp_path)
+    assert ep.playlist_health(db) == []
+    con = sqlite3.connect(db)
+    con.executemany("INSERT INTO playlist_tracks (id, playlist_id, media_file_id) VALUES (?,?,?)",
+                    [(4, "pl-2", "gone-1"), (5, "pl-2", "gone-2")])
+    con.commit(); con.close()
+    assert ep.playlist_health(db) == [{"id": "pl-2", "name": "Chicago 86", "missing": 2}]
+
+
+def test_playlist_health_opens_the_database_read_only(tmp_path):
+    db = fake_mirror(tmp_path, missing={"s2"})
+    os.chmod(db, 0o444)
+    try:
+        assert [r["id"] for r in ep.playlist_health(db)] == ["pl-1", "pl-3"]
+    finally:
+        os.chmod(db, 0o644)

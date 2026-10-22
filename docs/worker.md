@@ -33,7 +33,11 @@ of at most one second and ends early when a play-now approval is waiting (see "P
    "Placement"): one guarded edit per playlist and track; a refused one is retried later, less often each time.
 7. **Export.** At most once every `WORKER_EXPORT_S` seconds (300 by default; 0 turns it off) the playlists are
    written as `.m3u8` into `/srv/music/_playlists`, changed files only, so repoints, swaps and your own edits reach
-   the backup files.
+   the backup files. After an export that worked, it counts per playlist the entries on a missing or unknown song
+   (the ones Navidrome hides; read-only `navidrome.db`). When that list changes it is stored for `/api/status`
+   (`playlistHealth`) and one `playlist_health` event says so ("2 entries in Tea tent point at missing files; 1 in
+   Chicago 86", or "no playlist entry points at a missing file" once they are gone). An unchanged list logs nothing.
+   Healing a hidden entry stays manual (M9 §7).
 
 One bad row never stops the tick, and a tick that fails (slskd or Navidrome down, database locked) never stops the
 worker; the next tick tries again. `python -m sourcing.cli worker --once` runs a single tick and exits.
