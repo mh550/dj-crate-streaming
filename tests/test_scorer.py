@@ -78,3 +78,27 @@ def test_unknown_duration_is_neutral():
     cands = rank(FIX, w)
     assert by_user(cands, "editversion").rejected is None
     assert not any("duration" in r for r in by_user(cands, "editversion").reasons)
+
+
+def _nena(filename):
+    """The fixture's first response with one file renamed: a shape slskd really sends."""
+    r = json.loads(json.dumps(FIX[0]))
+    r["files"] = [dict(FIX[0]["files"][0], filename=filename, length=232)]
+    return [r]
+
+
+@pytest.mark.parametrize("filename", ["@@music\\Nena\\Nena (1983)\\Nena - 99 Luftballons.flac",
+                                      "@@music\\Nena\\Nena (1983)\\99 Luftballons.flac",
+                                      "@@music\\Nena\\Nena (1983)\\01 99 Luftballons.flac"])
+def test_99_luftballons_is_a_title_match(filename):
+    """M9 §8b: the "99 " of "99 Luftballons" is the title, not a track number."""
+    [c] = rank(_nena(filename), Wanted("Nena", "99 Luftballons"))
+    assert c.rejected is None
+    assert c.reasons[0].startswith("name 1.00"), c.reasons
+
+
+@pytest.mark.parametrize("filename, wanted", [("@@music\\Taylor Swift\\Red\\22 Shake It Off.flac", Wanted("Taylor Swift", "22")),
+                                              ("@@music\\Prince\\1999\\7 Little Red Corvette.flac", Wanted("Prince", "7"))])
+def test_a_track_number_equal_to_a_numeric_title_is_still_a_track_number(filename, wanted):
+    [c] = rank(_nena(filename), wanted)
+    assert c.rejected and "name match too weak" in c.rejected

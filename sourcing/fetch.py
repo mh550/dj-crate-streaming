@@ -411,7 +411,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
     if copy_id is not None:
         intent = "copy"
     else:
-        got = parse_filename(best.basename, wanted.artist)        # read as the scorer read it
+        got = parse_filename(best.basename, wanted.artist, wanted.title)   # as the scorer read it
         if got.key != parse_title(wanted.title, wanted.artist).key:
             intent, expected = "version", None
             store.log(None, wanted_id, "pick", f"another version ({got.label or "no label"}) of {wanted.title}: {best.basename}")

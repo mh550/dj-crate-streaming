@@ -1,7 +1,7 @@
 """sourcing.identity: song / version / copy, from real library titles (M7 plan, measured fact 3)."""
 import pytest
 
-from sourcing.identity import Copy, is_placeholder, lead_artist, parse_filename, loose, parse_title, same_version, song_key, version_groups, words
+from sourcing.identity import Copy, is_placeholder, lead_artist, parse_filename, loose, parse_title, same_version, song_key, strip_trackno, version_groups, words
 
 
 def test_words_and_loose():
@@ -494,3 +494,42 @@ def test_parse_filename_never_peels_the_song_itself():
     assert parse_filename("Prince - 1999.flac", "Prince").base == "1999"
     assert parse_filename("1999.flac", "Prince").base == "1999"
     assert parse_filename("Taylor Swift - 22.flac", "Taylor Swift").base == "22"
+
+
+# ---- M9 §8b: a bare leading number stays when it is part of the wanted title ("99 Luftballons") ----
+
+@pytest.mark.parametrize("name, wanted, out", [
+    ("03 - Good Times", "Good Times", "Good Times"),
+    ("03. Good Times", "Good Times", "Good Times"),
+    ("A1 Good Times", "Good Times", "Good Times"),
+    ("03 Good Times", "Good Times", "Good Times"),
+    ("99 Luftballons", "99 Luftballons", "99 Luftballons"),
+    ("01 99 Luftballons", "99 Luftballons", "99 Luftballons"),
+    ("01 - 99 Luftballons", "99 Luftballons", "99 Luftballons"),
+    ("99 Luftballons (Extended)", "99 Luftballons (12'' Version)", "99 Luftballons (Extended)"),
+    ("99 luftballons", "99 Luftballons", "99 luftballons"),       # the scorer's folded text
+])
+def test_strip_trackno_keeps_a_number_the_wanted_title_starts_with(name, wanted, out):
+    assert strip_trackno(name, wanted) == out
+
+
+@pytest.mark.parametrize("name, out", [("03 - Good Times", "Good Times"), ("03. Good Times", "Good Times"),
+                                       ("A1 Good Times", "Good Times"), ("99 Luftballons", "Luftballons"),
+                                       ("1999", "1999")])
+def test_strip_trackno_without_a_wanted_title_is_unchanged(name, out):
+    assert strip_trackno(name) == out
+
+
+def test_parse_filename_passes_the_wanted_title_through():
+    assert parse_filename("99 Luftballons.flac", "Nena", "99 Luftballons").base == "99 Luftballons"
+    assert parse_filename("01 99 Luftballons.flac", "Nena", "99 Luftballons").base == "99 Luftballons"
+    assert parse_filename("99 Luftballons.flac", "Nena").base == "Luftballons"
+
+
+@pytest.mark.parametrize("name, wanted, out", [
+    ("22 Shake It Off", "22", "Shake It Off"),                     # the wanted title is only the number
+    ("7 Little Red Corvette", "7", "Little Red Corvette"),
+    ("17 Againx", "17 Again", "Againx"),                           # whole words only
+])
+def test_strip_trackno_keeps_a_number_only_when_the_wanted_words_follow_it(name, wanted, out):
+    assert strip_trackno(name, wanted) == out

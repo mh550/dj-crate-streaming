@@ -234,9 +234,10 @@ def _misfit(f: FileFacts, t, r: Recording) -> str:
     rt = parse_title(r.title, r.artist)
     if not loose(t.base) or loose(rt.base) != loose(t.base):
         return f"title {r.title!r}"
-    if rt.key != t.key:
-        return f"version {r.title!r} vs file {f.title!r}"
     d = _disambiguation_label(r.disambiguation)
+    # A version MusicBrainz names only in the disambiguation (`12" version`) is the unlabelled title's (M9 §8c).
+    if rt.key != t.key and (rt.label or d is None or d.key != t.key):
+        return f"version {r.title!r} vs file {f.title!r}"
     if d is not None:
         by = {b for b in d.by.split("|") if b}
         if not t.kinds or d.kinds - t.kinds or not by <= set(t.by.split("|")):
