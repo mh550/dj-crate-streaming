@@ -1386,6 +1386,21 @@ def test_choices_without_classes_selects_only_the_picks(tmp_path, template):
     assert apply(tmp_path, music, list(rows.values()), dry_run=True).written == ["K/isrc.flac", "K/ambiguous.flac"]
 
 
+def test_choices_name_a_hand_typed_choose_they_leave_out(tmp_path, template):
+    """R8-02 review: with --choices a JSON choose nobody tapped is not applied; it is named, not dropped silently."""
+    music, rows = picker_library(tmp_path, template)
+    rows["ambiguous"]["choose"] = RA
+    ch = choices_file(tmp_path, {"K/none.flac": pick(rows["none"], "choose", RB)})
+    said = []
+    rep = apply(tmp_path, music, list(rows.values()), dry_run=True, choices=ch, say=said.append)
+    why = "choices: K/ambiguous.flac has a choose in the proposal but no choice; not applied (pick it in the Identity tab)"
+    assert rep.written == ["K/none.flac"] and dict(rep.skipped)["K/ambiguous.flac"] == why and why in said
+    rows["ambiguous"]["skip"] = True                       # a skipped row is not worth a line
+    said.clear()
+    apply(tmp_path, music, list(rows.values()), dry_run=True, choices=ch, say=said.append)
+    assert not any("K/ambiguous.flac" in line for line in said)
+
+
 def test_choices_with_classes_adds_the_picks(tmp_path, template):
     music, rows = picker_library(tmp_path, template)
     ch = choices_file(tmp_path, {"K/search.flac": pick(rows["search"], "accept", R1)})

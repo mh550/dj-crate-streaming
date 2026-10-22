@@ -139,7 +139,8 @@ def test_a_cached_file_is_neither_fingerprinted_nor_looked_up_again(tmp_path, st
     song = tmp_path / "a.flac"
     song.write_bytes(b"audio")
     calls, cache = [], tmp_path / "out" / "acoustid-cache.jsonl"
-    look = acoustid.make_lookup("KEY", cache=acoustid.Cache(cache), opener=docs_opener(calls), sleep=lambda s: None)
+    look = acoustid.cached(acoustid.make_lookup("KEY", opener=docs_opener(calls), sleep=lambda s: None),
+                           acoustid.Cache(cache))
     first = look(song)
     assert first == acoustid.parse(json.loads(DOCS)) and first[0]["id"] == "cd2e7c47-16f5-46c6-a37c-a1eb7bf599ff"
     assert look(song) == first
@@ -147,7 +148,8 @@ def test_a_cached_file_is_neither_fingerprinted_nor_looked_up_again(tmp_path, st
     st = song.stat()
     assert lines(cache) == [{"path": str(song), "size": st.st_size, "mtime_ns": st.st_mtime_ns, "recordings": first}]
     # a new Cache over the same file (the next run) answers from disk
-    again = acoustid.make_lookup("KEY", cache=acoustid.Cache(cache), opener=docs_opener(calls), sleep=lambda s: None)
+    again = acoustid.cached(acoustid.make_lookup("KEY", opener=docs_opener(calls), sleep=lambda s: None),
+                            acoustid.Cache(cache))
     assert again(song) == first and len(calls) == 1
 
 
@@ -156,7 +158,8 @@ def test_a_changed_mtime_or_size_looks_up_again_and_appends(tmp_path, stub_fp):
     song = tmp_path / "a.flac"
     song.write_bytes(b"audio")
     calls, cache = [], tmp_path / "acoustid-cache.jsonl"
-    look = acoustid.make_lookup("KEY", cache=acoustid.Cache(cache), opener=docs_opener(calls), sleep=lambda s: None)
+    look = acoustid.cached(acoustid.make_lookup("KEY", opener=docs_opener(calls), sleep=lambda s: None),
+                           acoustid.Cache(cache))
     look(song)
     st = song.stat()
     os.utime(song, ns=(st.st_atime_ns, st.st_mtime_ns + 1))          # one nanosecond: still a different file
@@ -182,7 +185,8 @@ def test_a_corrupt_or_torn_cache_line_is_skipped_not_fatal(tmp_path, stub_fp):
     cache.write_text("not json\n" + json.dumps({"path": "x"}) + "\n" + json.dumps(good) + "\n"
                      + "".join(json.dumps(x) + "\n" for x in shapes) + "{\"path\": \"TORN-TAIL")
     calls = []
-    look = acoustid.make_lookup("KEY", cache=acoustid.Cache(cache), opener=docs_opener(calls), sleep=lambda s: None)
+    look = acoustid.cached(acoustid.make_lookup("KEY", opener=docs_opener(calls), sleep=lambda s: None),
+                           acoustid.Cache(cache))
     assert look(song) == [{"id": "r1"}] and calls == []
     other = tmp_path / "b.flac"
     other.write_bytes(b"other")
@@ -219,8 +223,8 @@ def test_a_cache_hit_waits_for_no_slot(tmp_path, stub_fp):
     song = tmp_path / "a.flac"
     song.write_bytes(b"audio")
     slept = []
-    look = acoustid.make_lookup("KEY", cache=acoustid.Cache(tmp_path / "c.jsonl"), opener=docs_opener([]),
-                                clock=lambda: 0.0, sleep=slept.append)
+    look = acoustid.cached(acoustid.make_lookup("KEY", opener=docs_opener([]), clock=lambda: 0.0, sleep=slept.append),
+                           acoustid.Cache(tmp_path / "c.jsonl"))
     look(song)
     look(song)
     assert slept == []
@@ -230,7 +234,8 @@ def test_the_key_never_reaches_the_cache_file(tmp_path, stub_fp):
     song = tmp_path / "a.flac"
     song.write_bytes(b"audio")
     cache = tmp_path / "acoustid-cache.jsonl"
-    acoustid.make_lookup("s3cret-key", cache=acoustid.Cache(cache), opener=docs_opener([]), sleep=lambda s: None)(song)
+    acoustid.cached(acoustid.make_lookup("s3cret-key", opener=docs_opener([]), sleep=lambda s: None),
+                    acoustid.Cache(cache))(song)
     assert cache.exists() and "s3cret-key" not in cache.read_text()
 
 
@@ -241,7 +246,7 @@ def test_a_failed_lookup_is_not_cached(tmp_path, stub_fp):
 
     def down(req, timeout):
         raise urllib.error.URLError("down")
-    look = acoustid.make_lookup("KEY", cache=acoustid.Cache(cache), opener=down, sleep=lambda s: None)
+    look = acoustid.cached(acoustid.make_lookup("KEY", opener=down, sleep=lambda s: None), acoustid.Cache(cache))
     with pytest.raises(urllib.error.URLError):
         look(song)
     assert not cache.exists() or cache.read_text() == ""

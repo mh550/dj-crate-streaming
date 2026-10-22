@@ -16,8 +16,8 @@ import sqlite3
 from collections import Counter
 from pathlib import Path
 
-from scripts.identity_backfill import (CHOICE_ACTIONS, CHOICES, PROPOSAL, _canon, _navidrome_ids, choice_problem,
-                                       write_atomic)
+from scripts.export_playlists import write_atomic
+from scripts.identity_backfill import CHOICE_ACTIONS, CHOICES, PROPOSAL, _canon, _navidrome_ids, choice_problem
 from sourcing.identity import loose
 
 PICKER = ("search", "ambiguous", "none", "conflict", "error")    # the order the rows come in

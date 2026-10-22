@@ -241,7 +241,7 @@ All of it arrives with step 4.
   `scripts/live-run.sh python3 -m sourcing.cli rank --download` exits 2 with "rank no longer downloads: use Preview +
   Approve in the web client (the worker downloads, D23)". It contacts nothing. Undo: none needed.
 - **Host writers refuse beside the worker (R4).** `tag_cleanup retag|move` and `dedupe_copies repoint|trash` hold
-  `/data/worker.lock` for the whole command. To see the refusal without running any of them, with the worker up
+  the worker's lock (`/srv/docker/crates/worker.lock`, `/data/worker.lock` inside a container) for the whole command. To see the refusal without running any of them, with the worker up
   (`docker compose ps worker`):
 
   ```
@@ -273,8 +273,8 @@ All of it arrives with step 4.
      scripts/live-run.sh python3 -m scripts.identity_backfill apply /data/identity/identity-proposal.json --choices /data/identity/identity-choices.json --dry-run
      ```
 
-     Check: **every** `would write` line carries `(choice: …)` and is a pick you made; every `refused` line is one
-     you understand. Undo: none (writes nothing).
+     Check: **every** `would write` line carries `(choice: …)` and is a pick you made; every `choices:` line (a refused,
+     skipped or ignored pick) is one you understand. Undo: none (writes nothing).
   4. Five files:
 
      ```

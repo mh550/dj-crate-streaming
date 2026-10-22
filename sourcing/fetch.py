@@ -414,7 +414,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         got = parse_filename(best.basename, wanted.artist, wanted.title)   # as the scorer read it
         if got.key != parse_title(wanted.title, wanted.artist).key:
             intent, expected = "version", None
-            store.log(None, wanted_id, "pick", f"another version ({got.label or "no label"}) of {wanted.title}: {best.basename}")
+            store.log(None, wanted_id, "pick", f"another version ({got.label or 'no label'}) of {wanted.title}: {best.basename}")
 
     if external and copy_id is None:          # what this download is for, recorded before it starts (D20)
         store.set_provisional(wanted_id, provisional)
