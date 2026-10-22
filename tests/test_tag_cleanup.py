@@ -1,6 +1,7 @@
 """tag_cleanup against a real (temporary) beets library built from one-second generated files."""
 import hashlib
 import json
+import os
 import sqlite3
 import subprocess
 import sys
@@ -335,3 +336,83 @@ def test_remove_ids_deletes_only_the_named_id_fields(tmp_path):
     assert str(t["TIT2"]) == "Le Freak"
     with pytest.raises(ValueError):
         tc.remove_ids(m, ["title"])
+
+
+# M9 §6: retag and move write beets and the library, so they run only with the worker stopped (its worker.lock).
+from sourcing.worker import WorkerRunning, hold_lock                  # noqa: E402
+
+STOP_WORKER = "refused: stop the worker first (docker compose stop worker): it holds"
+
+
+@pytest.fixture
+def crates_db(tmp_path, monkeypatch):
+    db = tmp_path / "crates" / "crates.db"
+    db.parent.mkdir()
+    db.touch()
+    monkeypatch.setenv("CRATES_DB", str(db))
+    return db
+
+
+def _args(cmd, lib):
+    cfg, music, state = lib
+    return [cmd, "--config", str(cfg), "--music", str(music), "--manifest", str(state / "manifest.json"),
+            "--navidrome-db", str(state / "navidrome.db"), "--report", str(state / "report.md")]
+
+
+@pytest.mark.parametrize("cmd", ["retag", "move"])
+def test_retag_and_move_refuse_while_the_worker_holds_its_lock(lib, crates_db, capsys, cmd):
+    cfg, music, state = lib
+    (state / "manifest.json").write_text("[]")
+    before = {p: _digest(p) for p in [*music.rglob("*"), *state.iterdir()] if p.is_file()}
+    fd = hold_lock(crates_db.parent / "worker.lock")
+    try:
+        assert tc.main(_args(cmd, lib)) == 1
+    finally:
+        os.close(fd)
+    err = capsys.readouterr().err
+    assert f"{STOP_WORKER} {crates_db.parent / 'worker.lock'}" in err
+    assert {p: _digest(p) for p in before} == before                       # no file, no DB, no manifest byte changed
+
+
+@pytest.mark.parametrize("cmd", ["retag", "move"])
+def test_retag_and_move_hold_the_worker_lock_for_the_whole_command(lib, crates_db, monkeypatch, cmd):
+    ran = []
+
+    def body(*a):
+        with pytest.raises(WorkerRunning):                                 # a worker starting now would refuse
+            hold_lock(crates_db.parent / "worker.lock")
+        ran.append(cmd)
+        return 0 if cmd == "retag" else []
+    monkeypatch.setattr(tc, cmd, body)
+    assert tc.main(_args(cmd, lib)) == 0 and ran == [cmd]
+    os.close(hold_lock(crates_db.parent / "worker.lock"))                  # and released when it ends
+
+
+@pytest.mark.parametrize("cmd", ["retag", "move"])
+def test_retag_and_move_need_crates_db(lib, monkeypatch, capsys, cmd):
+    monkeypatch.delenv("CRATES_DB", raising=False)
+    monkeypatch.setattr(tc, cmd, lambda *a: pytest.fail("ran without the lock"))
+    assert tc.main(_args(cmd, lib)) == 1
+    assert "set CRATES_DB to the crate service's database (its folder holds worker.lock)" in capsys.readouterr().err
+
+
+def test_plan_never_takes_the_worker_lock(lib, crates_db):
+    fd = hold_lock(crates_db.parent / "worker.lock")
+    try:
+        assert tc.main(_args("plan", lib)) == 0
+    finally:
+        os.close(fd)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root opens any file")
+def test_a_lock_file_it_cannot_open_is_a_refusal_not_a_traceback(lib, crates_db, monkeypatch, capsys):
+    lock = crates_db.parent / "worker.lock"                                # the worker container's file, on the host
+    lock.touch()
+    lock.chmod(0o444)
+    monkeypatch.setattr(tc, "retag", lambda *a: pytest.fail("ran without the lock"))
+    try:
+        assert tc.main(_args("retag", lib)) == 1
+    finally:
+        lock.chmod(0o644)
+    err = capsys.readouterr().err
+    assert f"refused: cannot open {lock}" in err and "Permission denied" in err

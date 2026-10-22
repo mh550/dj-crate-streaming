@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import fcntl
 import os
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -71,6 +72,26 @@ def hold_lock(path: Path) -> int:
         os.close(fd)
         raise WorkerRunning(f"worker already running (lock {path} is held)") from None
     return fd
+
+
+def hold_worker_lock(env=os.environ) -> int | None:
+    """For a host script that writes beets or the library (M9 §6: tag_cleanup retag|move, dedupe_copies
+    repoint|trash): hold the worker's own lock, <dirname(CRATES_DB)>/worker.lock (D36), so it never runs beside the
+    worker. Keep the fd until the command ends. None, with the reason on stderr, when CRATES_DB names no database or
+    the worker holds the lock."""
+    db = env.get("CRATES_DB")
+    if not db or not Path(db).is_file():                   # never a stray lock beside some other folder
+        print("set CRATES_DB to the crate service's database (its folder holds worker.lock)", file=sys.stderr)
+        return None
+    path = Path(db).parent / "worker.lock"
+    try:
+        return hold_lock(path)
+    except WorkerRunning:
+        print(f"refused: stop the worker first (docker compose stop worker): it holds {path}", file=sys.stderr)
+        return None
+    except OSError as e:                                   # e.g. the container's lock file, read-only on the host
+        print(f"refused: cannot open {path} ({e.strerror}); run it as a user who can", file=sys.stderr)
+        return None
 
 
 @dataclass

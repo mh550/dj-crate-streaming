@@ -6,6 +6,9 @@
     /usr/bin/python3 -m scripts.tag_cleanup move     # pass 2: re-file the changed songs; refuses until pass 1 is scanned
     (scripts/tag_repair.py: the one-off repair of the first live run's full-field beets writes)
     /usr/bin/python3 -m scripts.tag_cleanup refresh-map   # docs/library-map.csv follows the moves
+retag and move write beets and the library, so they run only with the worker stopped (M9 §6): they hold
+<dirname(CRATES_DB)>/worker.lock for the whole command (CRATES_DB=/srv/docker/crates/crates.db on the host) and
+refuse while the worker holds it.
 
 Why two passes: on Navidrome 0.64 a retag keeps the song id and a move with unchanged tags keeps
 it, but a retag *and* a move between two scans gives a new id and the song silently drops out of
@@ -41,10 +44,13 @@ try:
     from scripts.export_playlists import open_ro                         # python3 -m scripts.tag_cleanup
     from scripts.library_map import read_csv, write_csv
     from scripts.tag_rules import blank, clean, usable_artist
+    from sourcing.worker import hold_worker_lock
 except ImportError:                                                      # python3 scripts/tag_cleanup.py
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from export_playlists import open_ro
     from library_map import read_csv, write_csv
     from tag_rules import blank, clean, usable_artist
+    from sourcing.worker import hold_worker_lock
 
 REPO = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG = REPO / "deploy" / "beets.yaml"
@@ -362,6 +368,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     ap.add_argument("--navidrome-db", type=Path, default=DEFAULT_NAVIDROME_DB)
     a = ap.parse_args(argv)
+    if a.cmd in ("retag", "move"):                         # they write beets and the library: never beside the worker
+        fd = hold_worker_lock()
+        if fd is None:
+            return 1
+        try:
+            return _run(a)
+        finally:
+            os.close(fd)
+    return _run(a)
+
+
+def _run(a) -> int:
     if a.cmd == "plan":
         p = plan(a.config, a.report)
         print(f"{sum(p.counts.values())} rule hits {dict(p.counts)}; {p.moves} moves; {len(p.collisions)} collisions → {a.report}")

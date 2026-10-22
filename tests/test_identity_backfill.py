@@ -1181,3 +1181,26 @@ def test_cli_never_says_0_written_when_apply_raises_after_a_write(tmp_path, temp
     out = capsys.readouterr().out
     assert rc == 1 and ib.read_ids(p)["mb_trackid"] == [R1]
     assert "did not start" not in out and "0 written" not in out and f"revert log {log}" in out
+
+
+def test_apply_dry_run_runs_while_the_worker_holds_its_lock(tmp_path, template, capsys, monkeypatch):
+    """M9 §6: apply writes only the id fields, which no worker step reads or writes, so it stays outside worker.lock
+    (unlike tag_cleanup retag|move and dedupe_copies repoint|trash)."""
+    import os
+    from sourcing.worker import hold_lock
+    db = tmp_path / "crates" / "crates.db"
+    db.parent.mkdir()
+    db.touch()
+    monkeypatch.setenv("CRATES_DB", str(db))
+    music = tmp_path / "music"
+    p = rich(music, "K/a.flac", template)
+    before = p.read_bytes()
+    prop = proposal_file(tmp_path, [row_for(music, p)])
+    fd = hold_lock(db.parent / "worker.lock")
+    try:
+        rc = ib.main(["apply", str(prop), "--music", str(music), "--dry-run", "--log", str(tmp_path / "out" / "a.jsonl")])
+    finally:
+        os.close(fd)
+    out = capsys.readouterr()
+    assert rc == 0 and "1 would be written, 0 skipped" in out.out and out.err == ""
+    assert p.read_bytes() == before
