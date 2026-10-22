@@ -59,8 +59,8 @@ marks a consequence derived from cited lines but not run. Music only: `api/video
     (`SoulSync:web_server.py:12608-12900`).
 - The page itself: `/` renders `index.html` (`SoulSync:web_server.py:3265-3267`), `/sw.js` is served from static at
   root scope (`SoulSync:web_server.py:3270-3285`), and `/<path:page>` is the SPA catch-all
-  (`SoulSync:web_server.py:3288-3293`), which leaves `/api`, `/auth`, `/socket.io`, `/static` and `/stream` alone
-  (`SoulSync:core/webui/spa.py:5-23`).
+  (`SoulSync:web_server.py:3288-3293`), which leaves `/api`, `/auth`, `/callback`, `/deezer`, `/socket.io`,
+  `/static`, `/stream`, `/tidal` and `/status` alone (`SoulSync:core/webui/spa.py:5-23`).
 
 ### The web UI
 
@@ -151,7 +151,9 @@ marks a consequence derived from cited lines but not run. Music only: `api/video
 - Three sources, none **transcoded on the fly** (source 3's default YouTube file is already an MP3 320 re-encode, 05-other-sources.md):
   1. A library file on disk, served as is with a hand-rolled `Range` → 206 reply in 64 KB chunks
      (`SoulSync:web_server.py:12744-12785`), or `send_file` without a Range header (`SoulSync:web_server.py:12786-12791`).
-     The only `ffmpeg` calls in `web_server.py` are the ReplayGain routes (`SoulSync:web_server.py:10283-10284`).
+     The only `ffmpeg` calls in `web_server.py` are the three ReplayGain routes' availability checks
+     (`SoulSync:web_server.py:10283-10284`, `SoulSync:web_server.py:10330-10331`,
+     `SoulSync:web_server.py:10444-10445`).
   2. **Navidrome only:** its Subsonic `/rest/stream` URL with token + salt, client `c=SoulSync`, `max_bitrate=0`
      (`SoulSync:core/navidrome_client.py:451-473`), proxied with the browser's `Range` passed upstream and the body
      streamed through unbuffered (`SoulSync:web_server.py:12693-12723`, issue #809 in the docstring). Plex/Jellyfin

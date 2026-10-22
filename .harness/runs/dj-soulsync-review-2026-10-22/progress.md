@@ -8,6 +8,46 @@ Michael steers through `INBOX.md` on this branch (first line `status: run|pause|
 Every session reads `INBOX.md` and this file first, then the spec `docs/specs/2026-10-22-soulsync-review.md` and the
 brief `brief.md` (the brief wins on scope).
 
+### 2026-10-22 13:55 · V2-08 · passes
+
+Second attempt: verify V2 failed step 1 only (no file/citation/holds table). I opened a fresh seeded sample (`pick.py 1022`, 3 SoulSync + 1 ours per file, none from the first attempt's 21) with `sed -n` and checked each against its full sentence: 24 hold, 4 were incomplete and are fixed in the file.
+
+| File | Citation | Holds |
+|---|---|---|
+| 02 | `SoulSync:core/spotify_client.py:1575-1643` (Liked Songs as a virtual playlist) | yes |
+| 02 | `SoulSync:core/listenbrainz_client.py:178-179` (`Authorization: Token`) | yes |
+| 02 | `SoulSync:api/wishlist.py:88-97` (`POST /api/v1/wishlist`, API key; route at :44-46) | yes |
+| 02 | `ours:web/app.js:355` (approve button) | yes |
+| 03 | `SoulSync:database/music_database.py:14038-14081` (#808 qualifier strip) | yes |
+| 03 | `SoulSync:core/musicbrainz_worker.py:344-379` (existing ids kept) | yes |
+| 03 | `SoulSync:core/matching_engine.py:1218-1221` (remix patterns) | **no**: list missed `rework`; fixed |
+| 03 | `ours:sourcing/identity.py:313-321` (`parse_filename`) | yes |
+| 04 | `SoulSync:web_server.py:2187-2205` (Soulseek albums one at a time) | yes |
+| 04 | `SoulSync:core/soulseek_client.py:686-687` (search timeout 60 s) | yes |
+| 04 | `SoulSync:core/soulseek_client.py:1079-1115` (`transfers/downloads` shape) | yes |
+| 04 | `ours:sourcing/fetch.py:430-446` (non-Succeeded/600 s fails the row, `return fail`) | yes |
+| 05 | `SoulSync:core/amazon_download_client.py:252-264` (codec step-down only) | yes |
+| 05 | `SoulSync:core/bandcamp_client.py:225-275` (public autocomplete JSON) | yes |
+| 05 | `SoulSync:core/deezer_download_client.py:1194-1219` (fallback default True in code; order at :48) | yes |
+| 05 | `ours:sourcing/verify.py:232` (`HARD_EVERY_TIER`) | yes |
+| 06 | `SoulSync:core/downloads/validation.py:981-1015` (artist words in one path segment) | yes |
+| 06 | `SoulSync:core/matching/acoustid_candidates.py:171-186` (length-contradiction SKIP; 60 s/35 % at :118-124) | yes |
+| 06 | `SoulSync:api/quarantine.py:481-488` (legacy `recover` to Staging) | yes |
+| 06 | `ours:sourcing/verify.py:217-218` (120 s / 900 s fingerprint) | yes |
+| 07 | `SoulSync:core/maintenance/dedupe_source_ids.py:24-32` (`dry_run=True`) | yes |
+| 07 | `SoulSync:core/repair_worker.py:492` (`repair.master_enabled` True) | yes |
+| 07 | `SoulSync:core/imports/pipeline.py:1209-1222` (simple download scans) | **partly**: only outside a batch and while the auto-scan automation is on; fixed |
+| 07 | `ours:docs/hard-won-facts.md:24-26` (`ND_AUTOIMPORTPLAYLISTS` off) | yes |
+| 08 | `SoulSync:core/webui/spa.py:5-23` via `web_server.py:3288-3293` (SPA exclusions) | **partly**: also `/callback`, `/deezer`, `/tidal`, `/status`; fixed |
+| 08 | `SoulSync:webui/index.html:12689-12691` (graphology/sigma from CDN) | yes |
+| 08 | `SoulSync:web_server.py:10283-10284` (only ffmpeg use is ReplayGain) | **partly**: 1 of 3 checks; added `:10330-10331`, `:10444-10445` |
+| 08 | `ours:sourcing/worker.py:8-37` (reconcile 600 s, re-check 300 s, export 300 s) | yes |
+
+- **Changed:** `03-matching.md`, `07-filing-library.md`, `08-ui-api.md` (9 lines; docs only, tests 1757 → 1757).
+- **Other steps re-run by me:** citation check, no BAD line (2,182 unique cites); 34 `*unverified*` lines in 02-08 (7 are the header legend), each with a would-verify clause (08:358 is one group clause covering five phone questions); 02-08 have the four `## ` headings in order and one `**Verdict:**` each; README links 01-08 resolve, 09 is V4-01's forward link; grep across 01-08 for spotipyFree, beets, `playlist_sync.mode`, 12 h purge, transcode agrees across files; 9 code blocks over 10 lines, all our own ASCII flows, 0 Python lines (`def|class|return|import|self.`). Suite: `lib/check.sh` "green in 648 s, 1757 tests" on the final tree.
+- **For V3:** the two ASCII flows in 08 (lines 248, 281) cite paths without the `SoulSync:` prefix, so the citation check skips them; I did not open those.
+- **Questions for Michael:** none. **Proposed changes:** as in the first attempt (step 3: "01-08 resolve; 09 is a forward link"; step 5: grep for Python lines inside code blocks).
+
 ### 2026-10-22 13:25 · verify V2
 
 Independent re-run: 8 features hold, 1 fail (V2-08). Nothing live touched.

@@ -160,8 +160,9 @@ rewrites title and artist from an AcoustID result (`SoulSync:core/repair_worker.
 - **Who and when:** once per download run. `batch_complete` fires at batch end and is held back while other batches
   are pending, so the last batch scans for all (#1615, `SoulSync:core/downloads/lifecycle.py:812-832`,
   `SoulSync:core/automation/handlers/scan_library.py:53-56`); the seeded "Auto-Scan After Downloads" automation turns
-  it into `request_scan` (`SoulSync:core/automation_engine.py:140-145`). A single simple download requests one directly
-  (`SoulSync:core/imports/pipeline.py:1209-1222`); the UI has `POST /api/scan/request` (`SoulSync:web_server.py:8341-8365`).
+  it into `request_scan` (`SoulSync:core/automation_engine.py:140-145`). A single simple download outside a batch
+  requests one directly, but only while that same automation is on (`SoulSync:core/imports/pipeline.py:1209-1222`);
+  the UI has `POST /api/scan/request` (`SoulSync:web_server.py:8341-8365`).
 - **Debounce and wait** (`WebScanManager`, one per process, `SoulSync:web_server.py:1284`): every request restarts a
   60 s timer (`SoulSync:core/web_scan_manager.py:71-124`); a request during SoulSync's own scan becomes **one**
   follow-up scan (`SoulSync:core/web_scan_manager.py:97-105`, `SoulSync:core/web_scan_manager.py:353-355`). It then polls
