@@ -36,7 +36,7 @@ scripts/    one-off library tooling: library_map.py (folder + audio-hash map), f
             identity_backfill.py (M7: propose / apply / revert MusicBrainz ids, reviewed — docs/worker.md)
 deploy/     compose.yml (+ .env.example), beets.yaml, policy.toml (tiers + version preferences) — /srv/docker/compose.yml symlinks here
 fixtures/   slskd-shaped search responses covering the failure modes
-tests/      1,523 tests, no network, about 7 minutes
+tests/      1,523 tests, no network, about 9-10 minutes
 ```
 
 ## Try it now (no server needed)

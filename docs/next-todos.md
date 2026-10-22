@@ -21,6 +21,10 @@ Anything that trashes files or writes tags needs a reviewed plan file and a reve
   playlist's rows at reconcile (N3). (4) Placement of filed downloads at their Spotify position by the worker (N4).
   Also on the branch: snapshots, heartbeat and healthchecks (H1), the backup job in git (H2), Gatus and the disk timer
   (H3). The live steps in order, each with its undo: [`plans/2026-10-17-morning-checklist.md`](plans/2026-10-17-morning-checklist.md).
+- **2026-10-21:** the live image is `dj-crates:f4882ab85b` (crates + worker). It contains N1, N1F, H1, H2 and
+  H3-01..04. PRs #5-#13 are merged into `main`. H1-H3 are live, except the H3-03 timer and
+  H3-05's changes to it (merged, not installed). N2-N5 are merged, not
+  deployed. N1's code is live but has never been run.
 
 ## In order
 

@@ -13,10 +13,11 @@ Legend: **built** = in the code; **live** = also running on the box; **planned**
 |---|---|
 | M6 worker, approvals, beets filing, stream "server" | built, **live** (images built 10:16) |
 | M7 identity (Tasks 1–10) | built, **live** since 2026-10-17 (image `dj-crates:328eca5f2f`) |
-| M7 review (Task 11) | running now |
+| M7 review (Task 11) | done |
+| H1-H3 (snapshots, heartbeat, healthchecks, backup job, Gatus, disk timer) | **live** (image `dj-crates:f4882ab85b`), except the H3-03 timer and H3-05's changes to it (merged, not installed) |
 | M7 live proposal (Task 12), gated apply (Task 13) | not done; Task 13 waits for you |
 | M8 lifecycle (Parts A–D: replacement, proposals, play-now; ownership changed by the pivot) | **built, live** since 2026-10-17; the trash-move probe in §9 has not been run (it needs the first real replacement) |
-| N1-N4 (run `dj-2026-10-17`: duplicate cleanup, imported marker in crates.db, vanished-playlist cleanup, placement) | built, **not live** (branch `harness/dj-2026-10-17`; the live steps are in `docs/plans/2026-10-17-morning-checklist.md`) |
+| N1-N4 (run `dj-2026-10-17`: duplicate cleanup, imported marker in crates.db, vanished-playlist cleanup, placement) | merged into `main`, **not live** except N1's code (never run); live steps in `docs/plans/2026-10-17-morning-checklist.md` |
 | M9 | [`docs/specs/2026-10-17-m9-remaining-ownership.md`](specs/2026-10-17-m9-remaining-ownership.md): item 3 built (N1, not run live), item 1 placement built (N4, not deployed); the rest not built |
 
 Checked live (read-only) when this was written: the worker image has no `deploy/policy.toml` and no
@@ -357,7 +358,7 @@ docker compose stop worker / start worker          # pause / resume (a stop mid-
 | Identity apply | `… identity_backfill apply /data/identity/identity-proposal.json --dry-run`, then `--yes [--limit 5] [--classes …] [--only GLOB]` |
 | Undo apply | `… identity_backfill revert /data/identity/apply-<time>.jsonl` |
 | Duplicate cleanup | `docker compose exec -T worker python3 -m scripts.duplicate_cleanup plan`, then `repoint [--dry-run] [--limit N]`; with the worker stopped `docker compose run --rm --no-deps worker python3 -m scripts.duplicate_cleanup trash [--dry-run] [--limit N]`; staged runbook and undo in `docs/worker.md` "Duplicate cleanup" |
-| Tests | `cd ~/projects/dj-crate-streaming && ~/.local/bin/pytest -q` (1,523 tests, about 7 minutes) |
+| Tests | `cd ~/projects/dj-crate-streaming && ~/.local/bin/pytest -q` (1,523 tests, about 9-10 minutes) |
 | Offline demo | `python3 -m crates.cli demo` → http://127.0.0.1:4580 |
 
 Where to look: worker stdout (`docker compose logs worker`), the web client's log tab (`events`), approvals'
@@ -555,6 +556,8 @@ Each: what, **impact**, *mitigation*.
 - The M7 rulings (a–c) and the M8 defaults went to `TODO-MICHAEL.md` ("M7/M8 defaults to confirm"); §11 is the full list.
 
 ## 11. Outstanding questions for you
+
+> The 2026-10-17 pivot supersedes questions 1, 2, 5, 8 and 10 (one quality rule, app-owned crate flag, exact track).
 
 Each has a default in place; answering changes only what is named.
 
