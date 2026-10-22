@@ -8,6 +8,89 @@ Michael steers through `INBOX.md` on this branch (first line `status: run|pause|
 Every session reads `INBOX.md` and this file first, then the spec `docs/specs/2026-10-22-soulsync-review.md` and the
 brief `brief.md` (the brief wins on scope).
 
+### 2026-10-22 13:42 · verify V2
+
+Independent re-run, all 9 features hold. Nothing live touched, no code or doc edited. Citation check on the final tree: 2,182 unique cites, no BAD line. I opened a fresh seeded sample (seed 777, 3 SoulSync + 1 ours per file, 28 cites, none from earlier samples) with the cited lines beside the sentence: all supported the claim (03:157 supports the penalty lift; the gate lift is elsewhere). I also re-ran the endpoint-table count (36), the `api/*.py` count (63) and route sum (1,212), `@media` in mobile.css (43), index.html length (12,932) and four flow cites in 07. Suite: `lib/check.sh` printed "green (cached for this code tree, 1757 tests)"; it shows no skip count.
+
+| Feature | Step | What you ran or read | What you saw | Holds |
+|---|---|---|---|---|
+| V2-01 | 1 | read 02-intake.md 49-110; `grep -n 'PKCE\|2026'` | `### Spotify`: authorization code with the user's own app (client id/secret/redirect from settings, `spotify_client.py:800-819`), PKCE only for Tidal, cites public_api/scraper/token_cache/free_metadata, Feb 2026 limits at :104 with cites | yes |
+| V2-01 | 2 | `grep -n '^### '`; read :139 | `### Other playlist sources` (131) with Tidal PKCE, Deezer, YT Music, Beatport, ListenBrainz paragraphs citing the named files | yes |
+| V2-01 | 3 | headings 222/262/286; ls of cited files | Wishlist and watchlist, Requests, Lidarr compatibility headings present; all 9 spot-listed cited files exist in the clone | yes |
+| V2-01 | 4 | read lines 17-37 | ASCII flow source → mirrored_playlists → run_sync_task → wishlist_tracks → run_full_missing_tracks_process with function names at each arrow | yes |
+| V2-01 | 5 | `grep -oE 'ours:…' \| uniq -c`; `grep -c S2-02/S3-0[12]` | playlist_sources 3, import_playlist 7, spotify_csv 4, cli.py 3, store.py 5, downloads spec cited; S2-02 and S3-01/S3-02 named | yes |
+| V2-01 | 6 | `grep -n 'Goal C\|Goal D'` | bold "Goal C" (354) and "Goal D" (380) judgements under `## The difference that matters` | yes |
+| V2-01 | 7 | `grep -nE '^## \|^\*\*Verdict'` | headings at 8, 304, 352, 405 in order; `**Verdict:** adapt` at 418, file ends 2 lines later | yes |
+| V2-01 | 8 | citation loop from progress.md over docs/research/2026-10-22-soulsync/*.md | 2,182 cites, no BAD line | yes |
+| V2-01 | 9 | `grep -n unverified`; sampled cites 02:101, 02:183, 02:157, 02:328 against the clone/ours | 3 marks, each with a would-verify clause; the four sampled cites support their sentences | yes |
+| V2-01 | 10 | `lib/check.sh` | green (cached), 1757 tests | yes |
+| V2-02 | 1 | `grep -c` for each named file in 03-matching.md; read :46 area | matching_engine, core/matching/, client_match, source_ids, release_identity, edition_grouping, isrc_match, musicbrainz_*, acoustid_client all cited | yes |
+| V2-02 | 2 | read 213-236; sampled 03:234 (`matching_engine.py:314-321`) and 03:47 (`:298-312`) | 4-qualifier table (remaster, live, extended, radio edit) × library/Soulseek/AcoustID/ours, each cell cited; 314-321 shows the 0.3 version-keyword penalty | yes |
+| V2-02 | 3 | `grep -oE 'ours:…' \| uniq -c`; `sed -n 21p` pivot spec | import_playlist 13, identity.py 20, identity.md 9, scorer.py 10; D26 at amperfy-pivot.md:21 is the D26 row | yes |
+| V2-02 | 4 | read 301-380; `grep ext-74` | ext-74 answered: base scorer accepts, base-title veto rejects (0.275 < 0.30), flat-name veto misses, cited | yes |
+| V2-02 | 5 | `grep -nE '^## \|^\*\*Verdict'` | headings 10, 237, 301, 381 in order; `**Verdict:** adapt` at 397 | yes |
+| V2-02 | 6 | citation loop | no BAD line | yes |
+| V2-02 | 7 | `grep -c unverified` = 1; sampled 03:157, 03:352 | the one mark has a would-verify clause; sampled cites support (03:352 is the D26 row) | yes |
+| V2-02 | 8 | `lib/check.sh` | green, 1757 tests | yes |
+| V2-03a | 1 | headings in 04-soulseek.md; per-file `grep -c` in 30-343 | four `## ` headings; `### Search and candidates` cites query_variants 2, soulseek_client 27, candidates 17, candidate_pool 3, candidate_store 2 | yes |
+| V2-03a | 2 | read `### Scoring` 126-152; prioritize 1, observed_speed 1 cites | scoring terms and numbers with line cites | yes |
+| V2-03a | 3 | read 153-241 | album_bundle 4, album_bundle_dispatch 1, pinned_batch 3, release_identity 1 cites; ASCII flow album request → folder candidates → winner → bundle → per-track at 212-227 | yes |
+| V2-03a | 4 | read 242-316 | retry order (same `(peer,file)` never again, another peer, bundle alternatives ≤ 4, 3 error retries), table against goal E and against S2-04/S1-06 | yes |
+| V2-03a | 5 | `grep -c` failed_blocklist 3, peer_observation 2, soulseek_identity 6 | `### Peer memory` at 317 cites all three; 90-day blocklist, SHA1 key | yes |
+| V2-03a | 6 | `grep -c 'ours:sourcing/X'` in 662-768 | scorer 11, fetch 10, policy 3, fake_slskd 7; "5 peers" finding cited | yes |
+| V2-03a | 7 | `grep -rn 'part 2, transfers' docs/research` | no placeholder left (V2-03b removed it); sections have part-1 content | yes |
+| V2-03a | 8 | citation loop; sampled 04:566, 04:528, 04:472, 04:694 | no BAD line; sampled lines support (web_server.py:1434-1442 is the ThreadPoolExecutor(max_workers=3) pool) | yes |
+| V2-03a | 9 | `grep -c unverified` = 12; read 04:87, 338, 349, 367, 384 | each carries a what-would-verify clause | yes |
+| V2-03a | 10 | `lib/check.sh` | green, 1757 tests | yes |
+| V2-03b | 1 | read 344-487 | `### Transfers` cites enqueue body, `:1250` remove pattern, poll/timeouts, task states list at 108-109 | yes |
+| V2-03b | 2 | read 488-577; `sed -n 1042p`, `1248,1256p` of soulseek_client.py | `### Errors and outages` and `### Throttling` present; the DELETE `?remove=` pattern at :1250 is as described | yes |
+| V2-03b | 3 | `awk '/^\| [0-9]+ \|/'` over the table; ls /api/v0/ grep | 36 rows (states 36), each "from SoulSync's code, not captured"; /api/v0 prefix at :199-212 and direct path :315-321 noted; `grep` shows `transfers/downloads/{id}` at :1042 | yes |
+| V2-03b | 4 | read 635-660 | S1-04/S2 capture list: enqueue response, `/users/{peer}/directory` browse, per-transfer record, each tied to S1-04/S2-04/S2-05 | yes |
+| V2-03b | 5 | read 719-768 | `slskd_client.py` table of eight calls by line, fetch loop, per-peer 404 handling at slskd_client.py:79-84, S1-04/S1-05/S1-06 cited | yes |
+| V2-03b | 6 | read 790-833 | failure classes: 404 from GET per-peer (SoulSync never asks it, confirmed by `grep` of `transfers/downloads/{`), DELETE without remove, VPN drop; placeholders gone | yes |
+| V2-03b | 7 | headings and verdict | headings 30, 662, 769, 834; `**Verdict:** adapt` at 859 | yes |
+| V2-03b | 8 | citation loop | no BAD line | yes |
+| V2-03b | 9 | unverified marks read | clauses present (e.g. 04:384, 543, 554) | yes |
+| V2-03b | 10 | `lib/check.sh` | green, 1757 tests | yes |
+| V2-04 | 1 | `grep -n '^### '`; `ls core \| grep -iE 'tidal\|youtube\|…'`; count `ToS/legal` | 12 source headings (Deezer…Lidarr); 12 inline flags (streaming rip ×7, clean ×1, grey ×4); tidal/youtube/soundcloud client files exist so no "not in the clone" needed | yes |
+| V2-04 | 2 | read Deezer, Tidal, Qobuz, Amazon, HiFi paragraphs | each states **Credentials:** and "Embedded: …" with file:line, mechanism only (Blowfish secret, scraped Qobuz secret), no values | yes |
+| V2-04 | 3 | read 254-336 | `### How the orchestrator chooses` cites download_orchestrator, registry, base; order, enable flags (membership of `hybrid_order`), fall-through; ASCII flow present | yes |
+| V2-04 | 4 | read 337-360, 388-406 | two-sentence ours (D7, D26, architecture.md:36-37, fetch.py); D24 quality-provenance paragraph; verdict per source group | yes |
+| V2-04 | 5 | headings and verdict | 12, 337, 348, 388; `**Verdict:** no` ends the file | yes |
+| V2-04 | 6 | citation loop; sampled 05:247, 05:121, 05:61, 05:386 | no BAD; sampled lines support (settings.py:676 is Lidarr `quality_profile: "Any"`) | yes |
+| V2-04 | 7 | `grep -c unverified` = 4; read 05:64, 171 | each has a would-verify clause | yes |
+| V2-04 | 8 | `lib/check.sh` | green, 1757 tests | yes |
+| V2-05 | 1 | `grep -c` of 13 named files over 10-337 | validation 5, post_processing 16, atomic_* 8/3/7, album_consistency 8, acoustid_verification 10, audio_length 3, quality 11, replaygain 4, quarantine 8, review_reject 3, blocklist 2; check chain table with thresholds; `file_integrity.py:100-116` shows 3.0/5.0/15.0 s | yes |
+| V2-05 | 2 | read 306-337 | summary table (fake detection: no; wrong-song; album consistency; quarantine) and `### Would ext-74 have been caught?` with `audio_verification.py:829-831` | yes |
+| V2-05 | 3 | `grep -oE 'ours:…' \| uniq -c`; `grep -c _acoustid_check` | verify.py 33, acoustid.py 5, policy.py 3, deploy/policy.toml 3, download-validation.md 4; `_acoustid_check` 1; S1-02 6, S2-03 2 | yes |
+| V2-05 | 4 | read 423-483 | D24 (line 425) and D26 judged by name | yes |
+| V2-05 | 5 | headings and verdict | 10, 338, 423, 484; `**Verdict:** adapt` at 506 | yes |
+| V2-05 | 6 | citation loop; sampled 06:65, 06:270, 06:59, 06:376 | no BAD; lines support the sentences | yes |
+| V2-05 | 7 | `grep -c unverified` = 10; read 06:89, 104, 303, 503 | the content marks have would-verify clauses (the rest are the word in code names such as `acoustid_unverified`) | yes |
+| V2-05 | 8 | `lib/check.sh` | green, 1757 tests | yes |
+| V2-06 | 1 | `grep -n '^### '` and cites in 07 | five `###` questions (beets, tags, scans, playlists, deletes) each cited; "beets is not a dependency" at :48 agrees with 01-map:245 | yes |
+| V2-06 | 2 | read the ASCII flow (lines 13-35); `sed -n` of settings.py:915-919, 539, pipeline.py:1514, file_ops.py:208, web_server.py:1284, automation_engine.py:140-145 | flow runs download → pipeline → auto_import_worker → template (`album_path`, settings.py:915-919) → tags → scan; each cited line says what the flow says | yes |
+| V2-06 | 3 | `grep -c` ours cites; MOVES 3, S2-06 5 | filer 8, playlist_edit 7, trash 4, placement 3, CLAUDE.md, hard-won-facts, S2-06 cited | yes |
+| V2-06 | 4 | read 392-417 | table with one row per invariant (4) and honours/conflicts/not addressed with cites | yes |
+| V2-06 | 5 | headings and verdict | 11, 323, 392, 418; `**Verdict:** no` at 442 | yes |
+| V2-06 | 6 | citation loop; sampled 07:70, 07:317, 07:282, 07:241 | no BAD; lines support (07:317's cite closes the previous sentence) | yes |
+| V2-06 | 7 | `grep -c unverified` = 3 | marks present with clauses ("absence inferred" ones name the grep) | yes |
+| V2-06 | 8 | `lib/check.sh` | green, 1757 tests | yes |
+| V2-07 | 1 | read 26-64; recount: `ls api/*.py`, summed route grep, `wc -l webui/index.html` | 63 files and 1,212 routes (255 + 957) match my count; index.html 12,932 lines; blueprint, auth, streaming, MCP, automation, webhooks headings | yes |
+| V2-07 | 2 | `grep -n 'A request from the phone'`; read 232-330 | three paths (search, pasted link, share-sheet/bookmarklet) end at an API call and record | yes |
+| V2-07 | 3 | read 331-363; `grep -c @media mobile.css` | viewport meta, 43 `@media` in mobile.css (my count 43), `index.html` none (my count 0), manifest and `sw.js` present; unprovable items marked *unverified* | yes |
+| V2-07 | 4 | read 364-441, 442-492 | ours:crates/service.py, web/, architecture.md, S3-01..S3-06 cited; B1, B2, B3 paragraphs | yes |
+| V2-07 | 5 | headings and verdict | 9, 364, 442, 493; `**Verdict:** no` at 516 | yes |
+| V2-07 | 6 | citation loop; sampled 08:351, 08:240, 08:215, 08:413 | no BAD; lines support (index.html:92 `theme-color`, :93 apple-touch-icon) | yes |
+| V2-07 | 7 | `grep -c unverified` = 7 | marks have would-verify clauses | yes |
+| V2-07 | 8 | `lib/check.sh` | green, 1757 tests | yes |
+| V2-08 | 1 | read the V2-08 table in the 13:55 entry; reopened 28 fresh cites | table lists 4 per file (3 SoulSync, 1 ours) for 02-08; my 28 also hold; the `rework` fix is in 03 (matching_engine.py:1218-1221 lists it) | yes |
+| V2-08 | 2 | citation loop; read the 34 unverified lines | no BAD; marks carry what would verify them | yes |
+| V2-08 | 3 | `grep -nE '^## \|^\*\*Verdict'` on 02-08; README links via `ls` | four headings in order and one verdict in each; README links 01-08 resolve; 09 is V1-01's forward link and does not exist until V4-01 | yes |
+| V2-08 | 4 | greps for beets, streaming, retry counts across 04/06/07/08 | agree: no beets (07:48, 01-map:245), streams to its own browser player only (08:145), 5 quarantine retries and ≤ 4 album alternatives (04, 06) | yes |
+| V2-08 | 5 | python over every ``` block >10 lines in 01-08 | 10 blocks, all ASCII flows or tables of ours; the only lines resembling code are box-drawing lines containing words like "import pipeline" | yes |
+| V2-08 | 6 | `lib/check.sh` | green, 1757 tests (cached) | yes |
+
 ### 2026-10-22 13:55 · V2-08 · passes
 
 Second attempt: verify V2 failed step 1 only (no file/citation/holds table). I opened a fresh seeded sample (`pick.py 1022`, 3 SoulSync + 1 ours per file, none from the first attempt's 21) with `sed -n` and checked each against its full sentence: 24 hold, 4 were incomplete and are fixed in the file.
