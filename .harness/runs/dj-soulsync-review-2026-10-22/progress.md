@@ -8,6 +8,29 @@ Michael steers through `INBOX.md` on this branch (first line `status: run|pause|
 Every session reads `INBOX.md` and this file first, then the spec `docs/specs/2026-10-22-soulsync-review.md` and the
 brief `brief.md` (the brief wins on scope).
 
+### 2026-10-22 verify V4
+
+Independent re-run: 0 hold, 2 fail. Both fail on one real defect: `SoulSync:core/downloads/soulseek_identity.py:310-341` (09-recommendations.md lines 121 and 207) cites line 341, but the file has 340 lines. Fix: change to `310-340`. Nothing live touched; no doc or code edited. My own citation loop (2,417 unique cites, `SoulSync:` against the clone, `ours:` against this tree) printed that single BAD line.
+
+| Feature | Step | What you ran or read | What you saw | Holds |
+|---|---|---|---|---|
+| V4-01 | 1 | `grep -n '^#'` and read 09:21-48, 104-156 | `## Options` with (a)-(d) headings; (a) has the Effort/Risk/Ongoing maintenance/Licensing/What changes rows, shared pace and MIT rows cite 01-map.md | yes |
+| V4-01 | 2 | read `### (b)` 49-103 | integration points and D18, D27, D7, amperfy conflicts each cited | yes |
+| V4-01 | 3 | read `### (c)` 104-144 | table rows with SoulSync files, ours file, effort, MIT notice (15 rows) | yes |
+| V4-01 | 4 | read 157-187 | first sentence "Option (c)"; 7 numbered steps each with verb, file/spec, size | yes |
+| V4-01 | 5 | counted S-rows in 188-219 (23), keep/change tally, `grep 'draft, not applied'` | 23 rows: 12 keep, 11 change; 11 `### Spec delta` blocks, each marked `draft, not applied` | yes |
+| V4-01 | 6 | read 325-342 | 10 questions each with assumption and where used (incl. initializer 1-5) | yes |
+| V4-01 | 7 | `/tmp/.../cc.py` loop over the folder | `BAD line ...09-recommendations.md SoulSync:core/downloads/soulseek_identity.py:310-341 340` (file ends at 340, `wc -l` 340) | **no** |
+| V4-01 | 8 | `grep -c unverified` per file; read 09:36-47 marks | marks present on uncited claims (09 has 8); sampled mechanism sentences cited | yes |
+| V4-01 | 9 | `lib/check.sh` | green (cached, 1757 tests) | yes |
+| V4-02 | 1 | read progress spot-check table; opened 5 cites (audio_verification.py:26-29, docker-publish.yml:4-12, store.py:105-108, slskd_client.py:40-44, license.txt:10-11) | 30-row table (20 SoulSync, 10 ours, 10 files); fixes named; my 5 opened cites support their sentences | yes |
+| V4-02 | 2 | unverified table in progress.md (50 rows) and the citation loop | table present; citation loop prints a BAD line for the whole folder | **no** |
+| V4-02 | 3 | awk `## Summary`..`## Sections`, grep headings | 47 lines; `### Top 5 findings`, `### Next steps`, final line "Questions for Michael: see 09-recommendations.md" | yes |
+| V4-02 | 4 | `git diff origin/main..HEAD -- docs/next-todos.md` | 1 file, 1 insertion, links README, "verdict: port pieces, never adopt SoulSync" | yes |
+| V4-02 | 5 | `git diff --stat origin/main..HEAD`; `git log --first-parent --no-merges --name-only 6fb134e..HEAD` filtered | stat also lists 10 pre-run .py files (sourcing/, tests/) and fixtures/specs from earlier commits; the run's own commits touch only the allowed paths. Literal wording does not hold, intent does | yes (intent) |
+| V4-02 | 6 | `anchors.py` on the folder; `grep -rnoE '[A-Za-z0-9]{32,}'` | "links ok"; grep prints nothing | yes |
+| V4-02 | 7 | `lib/check.sh` | green (cached, 1757 tests) | yes |
+
 ### 2026-10-22 15:26 · V4-02 · passes
 
 - **What changed:** README.md `## Summary` (47 lines): the verdict (c), `### Top 5 findings` (D7, the second library writer, maintenance pace, the album path for E, ext-74), `### Next steps` (the 7 steps of 09 `## Recommendation`) and the line "Questions for Michael: see 09-recommendations.md". `## Sections` now also links README.md itself. Review fixes are in 01, 02, 03, 06, 08, 09 and README, and `docs/next-todos.md` has one new line under `## State at hand-off` ("verdict: port pieces, never adopt SoulSync"). Docs only: 1757 tests before and after.
