@@ -18,6 +18,16 @@ Michael. The spec is `docs/specs/2026-10-21-guards-and-checks.md`; the brief is 
 
 ---
 
+### 2026-10-21 · R2-02 · passes
+Opus review of `r2.diff` (scratch): quoting, `--no-deps`, the label name (Dockerfile:15), no-docker refusal and .env all hold;
+one cmd array already feeds `--print` and the run. One Important finding, fixed test-first: `scripts/live-check.sh ""` (and
+`--print junk`) forwarded `"$@"` to live-run and ran a live compose with an empty command word; it now accepts only no
+argument or a lone `--print` and builds the flag itself. Minors fixed: `docker inspect --type container`; a label that is
+not a hex sha (`development` used to become `developmen`) is refused before the 10-char cut; inspect refusal names
+"docker unreachable". Docs: morning checklist (R8-replaces note, **check** = live-check.sh, step 3.3 trash via live-run.sh),
+architecture trash row, worker.md "from a checkout", D45 notes that only the image is pinned (env/mounts come from
+/srv/docker/compose.yml). Tests 1,541 → 1,549; full suite green in 561 s. Never ran either script (build-only).
+
 ### 2026-10-21 · R2-01 · passes
 New `scripts/live-run.sh` (reads `dj-worker-1`'s `org.opencontainers.image.revision`, cuts it to 10 chars, refuses in one
 line on: no docker, no container, empty/`<no value>`/`dev` label, missing `dj-crates:<rev>`; else prints
