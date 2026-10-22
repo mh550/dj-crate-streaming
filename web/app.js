@@ -25,7 +25,7 @@ const state = { playlists: [], current: null, playingId: null };
 document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
   document.querySelectorAll(".tabs button, .tab").forEach(x => x.classList.remove("active"));
   b.classList.add("active"); $("#tab-" + b.dataset.tab).classList.add("active");
-  ({ wanted: loadWanted, log: loadEvents })[b.dataset.tab]?.()?.catch(e => alert(e.message));
+  ({ wanted: loadWanted, log: loadEvents, identity: loadIdentity })[b.dataset.tab]?.()?.catch(e => alert(e.message));
 });
 
 // ---- status
@@ -395,6 +395,97 @@ async function loadEvents() {
   for (const e of ev) ul.append(el("li", null, `${new Date(e.ts * 1000).toLocaleTimeString()}  ${e.kind}  ${e.playlist_id || ""} ${e.song_id || ""}  ${e.detail || ""}`));
 }
 
+// ---- identity (M9 §5a, R7): the identity proposal's open rows. A tap only records Michael's pick
+// (POST /api/identity/choice → identity-choices.json); the worker writes tags later, never this page.
+// identity:begin
+const MB_RECORDING = "https://musicbrainz.org/recording/";
+const len = s => s == null ? "?:??" : dur(Math.round(s));
+const ID_DONE = { accept: () => "accepted", choose: c => `chosen: ${c.mbid}`, skip: () => "skipped" };
+function idPaint(box, choice) {                // the choice the server holds for this row
+  box.textContent = !choice ? "" : choice.stale ? "stale: pick again" : (ID_DONE[choice.action] || (() => choice.action))(choice);
+}
+function idLink(mbid) {
+  const a = el("a", "mb", "MusicBrainz"); a.href = MB_RECORDING + encodeURIComponent(mbid); a.target = "_blank"; a.rel = "noopener";
+  return a;
+}
+function idCandidate(c, name, checked, suggested) {
+  const lab = el("label", "cand" + (suggested ? " suggested" : "")), radio = el("input"), text = el("div", "grow");
+  radio.type = "radio"; radio.name = name; radio.value = c.id; radio.checked = checked;
+  text.append(el("div", "wrap", `${c.title || "?"} — ${c.artist || "?"} · ${len(c.length_s)}`));
+  const sub = [c.release, c.disambiguation, suggested ? "suggested: on this file's album" : ""].filter(Boolean).join(" · ");
+  if (sub) text.append(el("div", "sub wrap", sub));
+  text.append(idLink(c.id));
+  lab.append(radio, text);
+  return lab;
+}
+function idRow(r, i) {
+  const li = el("li", "irow"), grow = el("div", "grow"), f = r.file || {};
+  if (r.songId) {
+    const pl = el("button", "play" + (state.playingId === r.songId ? " playing" : ""), "▶");
+    pl.setAttribute("aria-label", "Play this file");
+    pl.onclick = () => playTrack({ id: r.songId, title: f.title || r.path, artist: f.artist, album: f.album });
+    li.append(pl);
+  }
+  grow.append(el("div", "title", `${f.artist || "?"} — ${f.title || "?"}`));
+  grow.append(el("div", "sub wrap", [f.album, len(f.length_s)].filter(Boolean).join(" · ")));
+  grow.append(el("div", "sub wrap", r.path));
+  if (r.why) grow.append(el("div", "reason", r.why));
+  li.append(grow, el("span", "badge", r.cls));
+
+  const buttons = [], box = el("div", "istate");
+  box.setAttribute("role", "status"); box.setAttribute("aria-live", "polite");
+  let radios = [], choose = null;
+  const picked = () => radios.find(x => x.checked);
+  const send = (action, mbid) => async () => {
+    buttons.forEach(b => b.disabled = true); box.textContent = "…";
+    try { const res = await api("/api/identity/choice", { path: r.path, action, ...(mbid ? { mbid } : {}) }); r.choice = res.choice; idPaint(box, res.choice); }
+    catch (e) {                                  // the server's own words, in this row, under the choice it still holds
+      idPaint(box, r.choice); box.append(el("div", "err", e.message || `not saved (${e.status || "no answer"})`));
+      if (e.status === 409) box.append(button("reload", () => loadIdentity()));   // "the proposal changed…; reload"
+    }
+    finally { buttons.forEach(b => b.disabled = false); if (choose) choose.disabled = !picked(); }
+  };
+  const button = (label, onclick, cls) => { const b = el("button", cls, label); b.onclick = onclick; buttons.push(b); return b; };
+  if (r.cls === "search" && r.proposed) {        // one proposed recording: Accept writes exactly the one shown
+    const p = el("div", "proposed");
+    p.append(el("div", "wrap", `proposed: ${r.proposed.title || "?"} · ${len(r.proposed.length_s)}`), idLink(r.proposed.id));
+    li.append(p);
+    button("Accept", send("accept", r.proposed.id), "primary");
+  } else if (["ambiguous", "none"].includes(r.cls)) {
+    const low = s => (s || "").toLowerCase();       // the choices file holds canonical (lowercase) ids
+    const fs = el("fieldset", "cands"), pre = low(r.choice && r.choice.action === "choose" && !r.choice.stale ? r.choice.mbid : r.suggested);
+    for (const c of r.candidates || []) fs.append(idCandidate(c, "idpick-" + i, low(c.id) === pre, low(c.id) === low(r.suggested)));
+    radios = [...fs.querySelectorAll("input")];
+    li.append(fs);
+    choose = button("Choose", () => send("choose", picked().value)(), "primary");
+    choose.disabled = !picked();
+    fs.onchange = () => { choose.disabled = !picked(); };
+  } else {                                       // conflict / error: the evidence, and Skip only
+    const ids = ["mb_trackid", "acoustid_id", "isrc"].filter(k => f[k]).map(k => `${k} ${f[k]}`);
+    if (ids.length) li.append(el("div", "reason", "the file has " + ids.join(" · ")));
+  }
+  button("Skip", send("skip"));
+  const row = el("div", "actions"); row.append(...buttons);
+  li.append(row, box);
+  idPaint(box, r.choice);
+  return li;
+}
+let idSeq = 0;                                   // only the newest request paints the list (filter taps can overlap)
+async function loadIdentity() {
+  const sel = $("#identity-class"), ul = $("#identity"), cls = sel.value, seq = ++idSeq;
+  let d;
+  try { d = await api("/api/identity" + (cls ? "?class=" + encodeURIComponent(cls) : "")); }
+  catch (e) { if (seq !== idSeq) return; $("#identity-count").textContent = ""; ul.replaceChildren(el("li", "muted wrap", e.message || "the identity list did not load")); return; }
+  if (seq !== idSeq) return;
+  const counts = d.counts || {};
+  $("#identity-count").textContent = Object.values(counts).reduce((a, b) => a + b, 0) || "";
+  for (const o of sel.options) o.textContent = o.value ? `${o.value} (${counts[o.value] || 0})` : "all";
+  ul.replaceChildren(...d.rows.map(idRow));
+  if (!d.rows.length) ul.append(el("li", "muted", "nothing to decide here"));
+}
+$("#identity-class").onchange = () => loadIdentity();
+// identity:end
+
 // ---- player: the stream tier (spec §1) is one server-side setting, so it survives a cache clear
 function streamUrl(id) {
   const u = new URL("/api/stream/" + id, location.href);
@@ -439,5 +530,9 @@ $("#btn-reconcile").onclick = async () => {
 };
 
 loadStatus(); loadPlaylists(); loadStreamTier();
+// a link to …/#<tab> opens that tab (#identity for R7-05's screenshots); the Identity pill is filled either way
+const opened = [...document.querySelectorAll(".tabs button")].find(b => location.hash === "#" + b.dataset.tab);
+if (!opened || opened.dataset.tab !== "identity") loadIdentity();
+if (opened) opened.click();
 // the worker recounts playlist health every export; a tab left open on the phone catches up when shown again
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") loadStatus(); });

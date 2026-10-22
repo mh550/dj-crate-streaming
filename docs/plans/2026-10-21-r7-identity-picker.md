@@ -286,6 +286,13 @@ proposal, tags equal, target fields empty.
 - Phone-first: no fixed width over 375 px, and long titles wrap.
 - `app.js` never says `apply`. A `#identity` hash opens the tab (for the R7-05 screenshots).
 
+Built in R7-04 (review amendments): an error is shown under the choice the row still holds, never instead of it,
+and never blank (`not saved (<status>)` when the server sent no text); a 409 adds a **reload** button. A recorded,
+non-stale `choose` is pre-checked over `suggested`, and ids compare in lowercase. Only the newest `GET` paints the
+list, so a slow startup load cannot overwrite a filtered one. The page loads the list at startup for the pill.
+Not done: a tap still in flight when the filter changes paints a row that is no longer shown; reopening the tab shows
+the saved choice.
+
 ## Tasks and tests
 
 Each task is TDD: the test first, seen red, then the code.
