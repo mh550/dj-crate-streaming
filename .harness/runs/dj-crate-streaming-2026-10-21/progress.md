@@ -18,6 +18,15 @@ Michael. The spec is `docs/specs/2026-10-21-guards-and-checks.md`; the brief is 
 
 ---
 
+### 2026-10-21 · R3-02 · passes
+`scripts/duplicate_cleanup.py` `render`: groups with the D35 note get their own section "Lossless pairs, will be trashed"
+(keeper, each extra with its playlists), before the held groups; no such groups → no section; the held-groups line no
+longer says to set `hold` to null. D35 row in the pivot spec reads as Michael's 2026-10-19 answer (`grep -c 'D35 \*default\*'` → 0);
+`docs/worker.md`, the N1 plan and morning checklist step 1 name the section and `plan --hold-lossless` (716 / 730 songs).
+Tests 1,553 → 1,559: report section (fails on the old render), no section without pairs, repoint of a released pair
+(like a lossy extra), `trash --dry-run` gives `dry run: would move`, `--hold-lossless` skipped in repoint and trash.
+Finished the killed session's WIP (2f6a4e1); Opus review: no bugs, two wording fixes applied. Full suite green, 566 s.
+
 ### 2026-10-21 · R3-01 · passes
 D35 as Michael answered it: `scripts/duplicate_cleanup.py` `_hold` now returns `(hold, note)` and takes `hold_lossless`;
 by default a lossless pair gets `hold: null` + `note: "lossless pair: released by Michael 2026-10-19 (D35)"` (lossy extras
