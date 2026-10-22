@@ -1,7 +1,7 @@
 """sourcing.identity: song / version / copy, from real library titles (M7 plan, measured fact 3)."""
 import pytest
 
-from sourcing.identity import Copy, is_placeholder, lead_artist, parse_filename, loose, parse_title, same_version, song_key, strip_trackno, version_groups, words
+from sourcing.identity import Copy, can_be_song, is_placeholder, lead_artist, parse_filename, loose, parse_title, same_version, song_key, strip_trackno, version_groups, words
 
 
 def test_words_and_loose():
@@ -533,3 +533,18 @@ def test_parse_filename_passes_the_wanted_title_through():
 ])
 def test_strip_trackno_keeps_a_number_only_when_the_wanted_words_follow_it(name, wanted, out):
     assert strip_trackno(name, wanted) == out
+
+
+@pytest.mark.parametrize("title, asked", [
+    ("Love and Happiness", "Love And Happiness"), ("Love and Happiness (Live)", "Love And Happiness"),
+    ("Love And Happiness feat. Bob", "Love and Happiness"), ('Love and Happiness - From "Movie"', "Love and Happiness"),
+    ("02 Can You Feel It", "Can You Feel It"), ("Al Green - Love and Happiness", "Love and Happiness"),
+    ("", "Love and Happiness"), ("Love and Happiness", None)])
+def test_can_be_song_is_lenient_about_spelling_labels_credits_and_prefixes(title, asked):
+    assert can_be_song(title, asked)
+
+
+def test_can_be_song_tells_another_song_apart():
+    """ext-74: the same-named album's track 9 is not the title track (S1-02, S1-03)."""
+    assert not can_be_song("One of These Good Old Days", "I'm Still In Love With You")
+    assert not can_be_song("Le Freak", "Good Times")

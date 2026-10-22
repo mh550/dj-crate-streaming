@@ -9,6 +9,15 @@ Michael steers from `INBOX.md` on this branch (status line `run | pause | stop`;
 session reads it at startup. Policy: **build-only** (`.harness/config.sh`) and the brief in `brief.md`: nothing live,
 no docker, no `/srv`, no network, no client UI, PRs only.
 
+### 2026-10-22 20:05 · S1-03 · passes
+
+- **Changed:** `sourcing/fetch.py` `finish`: when Navidrome lists the filed file under a title that can't be the asked song (`asked_title or title`), the row becomes `review` "filed <X> as <rel>, asked for <Y>". It keeps its names and `library_song_id` (None), gets a `wrong_song` event (path + song id), no rename, no proposals, no placement. This applies to the first filing, the `verify` re-check, play-now and crate copy upgrades (no replacement starts). `RETRYABLE_REVIEW` (`crates/store.py`, `web/app.js`) accepts the reason; `filed_path` is None for it.
+- **Deviation from step 2 ("compare `loose` bases"):** the comparison is the new `identity.can_be_song`: one `loose` base contains the other. This is S1-02's rule, now shared by `verify` and `fetch`. An Opus review showed that equality sends real same-song pairs to `review`: an old copy titled `02 Can You Feel It`, an unbracketed `feat. Bob`, `- From "Movie"`. ext-74 is still caught.
+- **Tests:** 1781 → 1801 (`tests/test_fetch.py` +7: ext-74, same song ×3 (spelling, `(Live)`, `feat.`), re-check, play-now, crate copy; `tests/test_identity.py` +10; `tests/test_m8_followup.py` +3). The ext-74 test failed first (`'ok' != 'review'`). Full `check.sh`: green in 657 s, 1801 tests.
+- **Decision D48 *default*** (pivot spec): a wrong-song review is retryable. Approving downloads again; the wrong file stays as its own song. **Michael:** keep it retryable, or require `wanted reopen` first? **S1-08 takes D49.**
+- **Known limits / proposed changes:** (1) The retry doesn't remember the rejected file. If AcoustID isn't confident, the same peer's mislabelled file can be downloaded and filed again, each time as an extra copy. Proposed: a later feature (S1-R1 or S1-08) rejects the `wrong_song` pick in `rank`. (2) `play_now` refuses this review row with "pick a version first", which is the wrong wording (Minor; for S1-R1). (3) Containment is lenient: asked `Love` vs filed `Lovely Day` still renames (today's behaviour).
+- **Next:** S1-04.
+
 ### 2026-10-22 18:45 · S1-02 · passes
 
 - **Changed:** `sourcing/verify.py`. `verify(..., asked_title=)` is passed through to `_acoustid_check`. With no recording id, a confident result (a recording scoring at least `ACOUSTID_CONFIDENT` = 0.8) where no returned recording can be the asked song is the hard `recording` finding "AcoustID says this is <title>, not <asked>". `m["acoustid"]["asked"]` records the asked title. `sourcing/fetch.py` passes `asked_title = row.get("asked_title") or row["title"]` whenever a lookup is configured.

@@ -10,7 +10,9 @@
 Filing is beets' job (D18): the verified download moves to its own `<downloads>/.staging/<id>-<ts>/`
 folder and BeetsFiler imports it from there, so beets never sees slskd's folders or the library's
 originals. Navidrome's names for the filed song then go back onto the wanted row (`renamed` event),
-because they are what the library now calls it. Soulseek peer names never reach a reason or an event.
+because they are what the library now calls it, unless its title cannot be the asked song (identity.can_be_song):
+then the row keeps its names, is not placed, and becomes `review` ("filed <X> as <rel>, asked for <Y>", a
+`wrong_song` event; approving it downloads again, D48). Soulseek peer names never reach a reason or an event.
 
 `prefer` (an approval's candidate, D18) makes the download that exact file while it is still offered and
 unrejected; otherwise the top-ranked one is used, and a `pick` event says which of the two happened.
@@ -47,7 +49,8 @@ to `needs_source` as the upgrade ("provisional low copy filed as <rel>; upgrade 
 `upgrade_queued` event). The upgrade is then an ordinary copy upgrade of the provisional song, approved by Michael:
 with proof it replaces the provisional file (trash), else both are kept and the row asks.
 
-    filed, Navidrome lists it ─┬─ provisional (play-now) ────────────────────▶ needs_source: the upgrade, queued
+    filed, Navidrome lists it ─┬─ as another song than asked ───────────────▶ review "filed <X> as …, asked for <Y>"
+                               ├─ provisional (play-now) ────────────────────▶ needs_source: the upgrade, queued
                                ├─ not a copy upgrade ───────────────────────▶ ok
                                ├─ withdrawn (no tiered playlist holds it) ──▶ review, both copies kept
                                ├─ proven ─▶ replacement: repoint ─▶ trash ─▶ scan ─▶ done (else the worker resumes)
@@ -68,7 +71,7 @@ from crates.store import CrateStore, filed_path, never_indexed, retryable_review
 from scripts.export_playlists import open_ro
 from subsonic.client import SubsonicClient, SubsonicError
 from .filer import BeetsFiler, FilingError
-from .identity import parse_filename, parse_title
+from .identity import can_be_song, parse_filename, parse_title
 from .policy import TIERS, QualityPolicy, check_tier
 from . import replace as replacement
 from .scorer import Candidate, Wanted, explain, rank
@@ -228,8 +231,17 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
             why = f"filed as {rel} but Navidrome has not picked it up yet" + (f" (check {check})" if check else "")
             set_status("verify", why)
             return FetchResult("verify", why, best, filed, explain=text)
-        store.set_wanted_names(wanted_id, new.artist or "", new.title)      # what the library calls it now
         rel = filed.relative_to(music_root).as_posix()
+        asked = row.get("asked_title") or row["title"]
+        if not can_be_song(new.title, asked):
+            # Another song (ext-74: a same-named album's track 9): never renamed onto it, never placed. The file
+            # stays in the library as its own song; approving the row again is a fresh download (RETRYABLE_REVIEW).
+            why = f"filed {new.title} as {rel}, asked for {asked}"
+            set_status("review", why)
+            store.log(None, wanted_id, "wrong_song", f"{rel} is song {new.id} ({new.title}), not {asked}")
+            store.commit()
+            return FetchResult("review", why, best, filed, new.id, text)
+        store.set_wanted_names(wanted_id, new.artist or "", new.title)      # what the library calls it now
         done = f"filed as {rel}"
         if copy_id is None and external and (store.external(wanted_id) or {}).get("provisional"):
             # A fast copy that already meets the row's tier is the row's file, but only when it was verified at
@@ -362,8 +374,8 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         return FetchResult("ok", "already ok; nothing to do")
     if status == "review" and not retryable_review(row.get("reason")):     # import-playlist: several versions fit
         return FetchResult("review", f"needs a pick first ({row.get('reason')}); nothing searched")
-    # A replacement's review (kept beside / declined / not made / filed beside) falls through: approving it is a
-    # fresh download attempt, and the row becomes `sourcing` like any other.
+    # A replacement's review (kept beside / declined / not made / filed beside) and a wrong song's (filed <X> as …,
+    # asked for <Y>) fall through: approving it is a fresh download attempt, and the row becomes `sourcing` like any other.
     reason = row.get("reason") or ""
     rel = filed_path(reason)
     if status == "verify" or (status == "failed" and rel is not None):    # filed already: re-check, never download

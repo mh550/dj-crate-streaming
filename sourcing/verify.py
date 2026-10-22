@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from .identity import loose, parse_title
+from .identity import can_be_song, parse_title
 from .policy import DEFAULT_TIER, TIERS, check_tier
 
 TEXT = {"text": True, "encoding": "utf-8", "errors": "replace"}   # ffmpeg echoes tags in whatever code page they're in
@@ -393,11 +393,8 @@ def _acoustid_check(path: Path, lookup: Callable[[Path], list[dict]], recording_
                     findings: list, m: dict, asked_title: str | None = None) -> None:
     """A failed lookup (no network, bad key, no fpcalc) is only a warning; a *disagreement* with the recording
     Navidrome knows is the hard `recording` finding. With no recording id, a confident result none of whose
-    recordings (any score) can be the asked song is that finding too (S1-02, ext-74). "Can be": one `loose` base
-    title holds the other, so spelling, labels parse_title doesn't know ("(Acoustic)"), credits ("ft. X") and a
-    Navidrome title with the artist or a track number in front never fail; D26 judges versions elsewhere. A
-    lenient miss keeps today's behaviour, a false hard finding throws a good download away. Nothing asked or
-    nothing found never fails."""
+    recordings (any score) can be the asked song (identity.can_be_song) is that finding too (S1-02, ext-74).
+    Nothing asked or nothing found never fails."""
     try:
         recs = lookup(path)
     except Exception as e:
@@ -414,10 +411,8 @@ def _acoustid_check(path: Path, lookup: Callable[[Path], list[dict]], recording_
                                       f"not recording {recording_id}"))
     elif recording_id is None and asked_title:
         m["acoustid"]["asked"] = asked_title
-        asked = loose(parse_title(asked_title).base)
-        same = lambda t: (k := loose(parse_title(t).base)) in asked or asked in k
         sure = [r for r in recs if r.get("title") and (r.get("score") or 0) >= ACOUSTID_CONFIDENT]
-        if sure and asked and not any(same(r["title"]) for r in recs if r.get("title")):
+        if sure and not any(can_be_song(r["title"], asked_title) for r in recs if r.get("title")):
             findings.append(("recording", f"AcoustID says this is {sure[0]['title']}, not {asked_title}"))
 
 

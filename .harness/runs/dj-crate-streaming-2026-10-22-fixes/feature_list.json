@@ -51,7 +51,7 @@
         "`.harness/check.sh` is green (full suite, about 1,750 tests, 10-11 min); the commit is pushed to harness/dj-crate-streaming-2026-10-22-fixes"
       ],
       "after": [],
-      "passes": false
+      "passes": true
     },
     {
       "id": "S1-04",

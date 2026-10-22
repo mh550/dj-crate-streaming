@@ -326,6 +326,16 @@ def song_key(artist: str | None, title: str | None) -> str:
     return f"{loose(lead_artist(artist))}|{loose(parse_title(title, artist).base)}"
 
 
+def can_be_song(title: str | None, asked: str | None) -> bool:
+    """Whether `title` can name the song `asked` names: one `loose` base title holds the other, so spelling, labels
+    parse_title doesn't know ("(Acoustic)", `- From "Movie"`), unbracketed credits ("ft. X") and a title with the
+    artist or a track number in front ("02 Song") still match; an empty side always does. Lenient on purpose: the
+    callers turn a miss into a hard verdict (verify's `recording`, fetch's wrong-song review, S1-02/S1-03), so a
+    false miss throws a good download away. D26 judges versions elsewhere."""
+    a, b = loose(parse_title(title).base), loose(parse_title(asked).base)
+    return a in b or b in a
+
+
 # What taggers and Navidrome put in an empty field (scripts.tag_rules.blank uses this set too).
 PLACEHOLDERS = frozenset({"", "[unknown artist]", "unknown artist", "[unknown album]", "unknown album"})
 _NO_ARTIST = frozenset(loose(p) for p in PLACEHOLDERS) | {"variousartists", "various", "va", "unknown"}   # "<unknown>" too

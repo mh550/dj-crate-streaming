@@ -175,6 +175,108 @@ def test_external_wanted_row_files_without_playlist_swap(world, tmp_path):
     assert [e.id for e in world["client"].playlist("pl-2").entries] == ["s3", "s4", "s5"]   # untouched
 
 
+# --- S1-03: a row is never renamed onto another song (ext-74) ------------------------------------------
+
+ASKED = "I'm Still In Love With You"
+OTHER = "Al Green/Singles/One of These Good Old Days.flac"
+
+
+def al_green(world, tmp_path, title, rel, nd_title, asked=ASKED):
+    """An external row asking for `asked`, one peer offering a file named for it, and a filer that files it at `rel`,
+    which Navidrome then lists as `nd_title` (on the Al Green album, so the row's own search finds it)."""
+    store = world["store"]
+    ext = store.add_external_wanted("Al Green", asked, duration_s=196, playlist_id="pl-1", position=1)
+    store.record_import_order("pl-1", [(1, None, ext)])
+    flac = make_flac(tmp_path / "al.flac", total=44100 * 196, pad_bytes=196 * 900_000 // 8).read_bytes()
+    name = f"@@music\\Al Green\\Singles\\Al Green - {title}.flac"
+    resp = [dict(RESPONSES[0], files=[dict(RESPONSES[0]["files"][0], filename=name, size=len(flac), length=196)])]
+    lib = beets_items_db(tmp_path / "al-library.db")
+    filer = BeetsFiler(tmp_path / "beets.yaml", library=lib, tagger=lambda path, names: [],
+                       runner=fake_beet(world["music"], lib, rel, artist="Al Green", title=nd_title, length=196))
+    nd = world["nd"]
+    nd.state.songs["s9"] = dict(nd.state.songs["s1"], id="s9", title=nd_title, artist="Al Green",
+                                album="I'm Still in Love With You", suffix="flac", bitRate=880, samplingRate=44100,
+                                bitDepth=16, size=len(flac), duration=196, path=rel)
+    return ext, resp, {name: flac}, filer
+
+
+def events_of(world, ext, kind):
+    return [e for e in world["store"].events(limit=1000) if e["kind"] == kind and e["song_id"] == ext]
+
+
+def test_a_file_navidrome_lists_as_another_song_puts_the_row_in_review_not_renamed(world, tmp_path):
+    store = world["store"]
+    ext, resp, files, filer = al_green(world, tmp_path, ASKED, OTHER, "One of These Good Old Days")
+    with FakeSlskdServer(resp, world["dl"], files=files) as srv:
+        r = run(world, srv, approve=True, wanted_id=ext, filer=filer)
+    why = f"filed One of These Good Old Days as {OTHER}, asked for {ASKED}"
+    assert (r.status, r.reason, r.new_song_id) == ("review", why, "s9")
+    row = store.external(ext)
+    assert (row["status"], row["reason"]) == ("review", why)
+    assert (row["artist"], row["title"], row["library_song_id"]) == ("Al Green", ASKED, None)
+    assert events_of(world, ext, "renamed") == []
+    (wrong,) = events_of(world, ext, "wrong_song")
+    assert OTHER in wrong["detail"] and "s9" in wrong["detail"] and "vinylhead77" not in wrong["detail"]
+    assert store.due_placements() == []
+    assert (world["music"] / OTHER).is_file()                  # the file stays in the library as its own song
+
+
+@pytest.mark.parametrize("listed", ["Love and Happiness", "Love and Happiness (Live)", "Love And Happiness feat. Bob"])
+def test_the_same_song_in_another_spelling_or_version_is_renamed_as_before(world, tmp_path, listed):
+    store = world["store"]
+    rel = "Al Green/Singles/Love and Happiness.flac"
+    ext, resp, files, filer = al_green(world, tmp_path, "Love And Happiness", rel, listed, asked="Love And Happiness")
+    with FakeSlskdServer(resp, world["dl"], files=files) as srv:
+        r = run(world, srv, approve=True, wanted_id=ext, filer=filer)
+    assert r.status == "ok", r.reason
+    row = store.external(ext)
+    assert (row["status"], row["title"], row["library_song_id"]) == ("ok", listed, "s9")
+    assert [e["detail"] for e in events_of(world, ext, "renamed")] == [
+        f"Al Green – Love And Happiness → Al Green – {listed}"]
+    assert events_of(world, ext, "wrong_song") == []
+    assert [p["wanted_id"] for p in store.due_placements()] == [ext]
+
+
+def test_a_recheck_that_finds_the_file_under_another_song_ends_review_not_ok(world, tmp_path):
+    store = world["store"]
+    ext, resp, files, filer = al_green(world, tmp_path, ASKED, OTHER, "One of These Good Old Days")
+    (world["music"] / OTHER).parent.mkdir(parents=True)
+    (world["music"] / OTHER).write_bytes(next(iter(files.values())))
+    store.set_external_status(ext, "verify", f"filed as {OTHER} but Navidrome has not picked it up yet")
+    store.commit()
+    with FakeSlskdServer(resp, world["dl"], files=files) as srv:
+        r = run(world, srv, approve=True, wanted_id=ext, filer=filer)
+    assert srv.enqueued == []
+    row = store.external(ext)
+    assert (r.status, row["status"]) == ("review", "review")
+    assert row["reason"] == f"filed One of These Good Old Days as {OTHER}, asked for {ASKED}"
+    assert (row["title"], row["library_song_id"]) == (ASKED, None) and events_of(world, ext, "renamed") == []
+
+
+def test_a_play_now_copy_of_another_song_is_review_not_the_rows_provisional_song(world, tmp_path):
+    store = world["store"]
+    ext, resp, files, filer = al_green(world, tmp_path, ASKED, OTHER, "One of These Good Old Days")
+    with FakeSlskdServer(resp, world["dl"], files=files) as srv:
+        r = run(world, srv, approve=True, wanted_id=ext, filer=filer, score_tier="low", provisional=True)
+    row = store.external(ext)
+    assert (r.status, row["status"], row["library_song_id"]) == ("review", "review", None)
+    assert events_of(world, ext, "upgrade_queued") == [] and events_of(world, ext, "renamed") == []
+
+
+def test_a_copy_upgrade_navidrome_lists_as_another_song_replaces_nothing(world, tmp_path):
+    """A crate row compares with its own title: the old copy stays, no playlist is touched, no replacement starts."""
+    flac = good_flac_bytes(tmp_path)
+    with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: flac}) as srv:
+        new_song(world["nd"], len(flac))
+        world["nd"].state.songs["s9"].update(title="Le Freak", album="Good Times (Single)")   # the search finds it
+        r = run(world, srv, approve=True)
+    assert r.status == "review", r.reason
+    st = world["store"].track_status_map("pl-2")["s4"]
+    assert st["status"] == "review" and st["title"] == "Good Times" and st["reason"].endswith("asked for Good Times")
+    assert [e.id for e in world["client"].playlist("pl-2").entries] == ["s3", "s4", "s5"]
+    assert world["store"].db.execute("SELECT COUNT(*) FROM replacements").fetchone()[0] == 0
+
+
 def test_exception_after_sourcing_marks_failed_and_reraises(world, tmp_path):
     import urllib.error
     with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: b"x"}, fail_enqueue=True) as srv:

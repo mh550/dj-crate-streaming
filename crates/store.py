@@ -186,10 +186,12 @@ def in_flight(status: str, reason: str | None) -> bool:
 
 
 # A `review` row is a question. Copy replacement (sourcing.replace / fetch) and proposals leave rows in `review` with
-# one of these reasons when a better copy was filed but did not replace the old one; approving such a row is a fresh
-# download attempt. Any other review reason (import-playlist's "ambiguous …": several library versions fit) waits
-# for a pick between versions that already exist, and a download would not answer it.
-RETRYABLE_REVIEW = re.compile(r"kept beside |declined replacement #\d+|replacement #\d+ not made:|filed beside ")
+# one of these reasons when a better copy was filed but did not replace the old one, and fetch when Navidrome lists the
+# filed file as another song than the one asked for (S1-03); approving such a row is a fresh download attempt. Any
+# other review reason (import-playlist's "ambiguous …": several library versions fit) waits for a pick between versions
+# that already exist, and a download would not answer it.
+RETRYABLE_REVIEW = re.compile(r"kept beside |declined replacement #\d+|replacement #\d+ not made:|filed beside |"
+                              r"filed .+ as .+, asked for ")
 
 
 def retryable_review(reason: str | None) -> bool:
