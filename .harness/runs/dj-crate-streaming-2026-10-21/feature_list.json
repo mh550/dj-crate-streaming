@@ -1,0 +1,429 @@
+{
+  "run": "dj-crate-streaming-2026-10-21",
+  "branch": "harness/dj-crate-streaming-2026-10-21",
+  "features": [
+    {
+      "id": "R1-01",
+      "milestone": "R1",
+      "kind": "docs",
+      "model": "sonnet",
+      "description": "The docs tell the truth about what is built, merged, deployed and fixed (spec R1 items 1-5): CLAUDE.md, next-todos, architecture, the M9 spec header and hard-won facts; no code changes.",
+      "steps": [
+        "CLAUDE.md 'Staged runbooks': the bullet on `duplicate_cleanup trash` says review findings I1 and I2 are fixed, naming `_scanned_since_repoint` (I1, the repoint-log check) and the size check in `trash` (I2, `planned_size` vs `media_file.size`) in scripts/duplicate_cleanup.py, and that trash stays at `--dry-run` until a live `trash --dry-run` has confirmed `lastScan` and Michael lifts it. `grep -n 'I1' CLAUDE.md` shows the new sentence; `grep -n '_scanned_since_repoint' scripts/duplicate_cleanup.py` proves the function exists.",
+        "CLAUDE.md 'How to verify' says 1,523 tests and about 9-10 minutes (init measured 570 s): `grep -n '1,523' CLAUDE.md` matches and `grep -c '1,120' CLAUDE.md` prints 0.",
+        "docs/next-todos.md 'State at hand-off' has a dated 2026-10-21 paragraph with: the live image `dj-crates:f4882ab85b` and what it contains (N1, N1F, H1, H2, H3-01..04); PRs #5-#13 merged into main; H1-H3 live except the H3-03 timer; N2-N5 merged, not deployed; N1 code live, never run. `grep -n 'f4882ab85b' docs/next-todos.md` matches.",
+        "docs/architecture.md: the status table at the top says M7 review is done, has an H1-H3 row and says N1-N4 are merged into main but not live (N1 live in code, never run); §11 gets one note that the pivot supersedes questions 1, 2, 5, 8 and 10. `grep -n 'supersedes' docs/architecture.md` matches; `grep -c 'running now' docs/architecture.md` prints 0.",
+        "docs/specs/2026-10-17-m9-remaining-ownership.md header says items 1 and 3 are built (N4, N1) and the rest is not built: `grep -n 'items 1 and 3' docs/specs/2026-10-17-m9-remaining-ownership.md` matches.",
+        "docs/hard-won-facts.md says the H2 backup script is installed, so the nightly snapshot runs the installed copy (`/usr/local/sbin/restic-backup`), not the checkout: `grep -n 'installed copy' docs/hard-won-facts.md` matches.",
+        "`git diff --stat origin/main...HEAD -- '*.py' '*.sh' '*.js' '*.html'` shows no code file changed by this feature (docs only).",
+        "Commit `R1-01: doc truth (live image, merged PRs, I1/I2 fixed, test count)`.",
+        "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
+      ],
+      "after": [],
+      "passes": false
+    },
+    {
+      "id": "R1-02",
+      "milestone": "R1",
+      "kind": "review",
+      "model": "opus",
+      "description": "R1 review: an Opus reviewer checks every sentence R1-01 changed against the code and git history, fixes what is wrong, and leaves the docs consistent with each other.",
+      "steps": [
+        "Write `git diff origin/main...HEAD -- CLAUDE.md docs/` to $HARNESS_SCRATCH/r1.diff and check each changed sentence against its source: function names against scripts/duplicate_cleanup.py, PR numbers against `git log --merges origin/main --oneline | head -12`, the test count against `.harness/check.sh --collect-only -q | tail -1`, the image tag and the merged/not-deployed claims against the facts list at the top of docs/specs/2026-10-21-guards-and-checks.md.",
+        "Every wrong or unverifiable sentence is corrected or removed; README.md, docs/architecture.md §8 and docs/hard-won-facts.md agree on the test count and duration with CLAUDE.md (`grep -rn '1,523' README.md docs/architecture.md docs/hard-won-facts.md CLAUDE.md` finds all four).",
+        "Commit `R1-02: review doc truth` (even when nothing needed fixing, the review's findings go into the progress entry).",
+        "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
+      ],
+      "passes": false
+    },
+    {
+      "id": "R2-01",
+      "milestone": "R2",
+      "kind": "build",
+      "model": "opus",
+      "description": "`scripts/live-run.sh <command…>` runs a one-off worker command in the image the worker container was deployed from (its `org.opencontainers.image.revision` label), and `scripts/live-check.sh` is the Check through it; both tested with a stub docker, never run live.",
+      "steps": [
+        "`scripts/live-run.sh` (bash, `set -euo pipefail`) reads `docker inspect -f '{{index .Config.Labels \"org.opencontainers.image.revision\"}}' dj-worker-1`, refuses with exit 1 and a one-line reason when the container is missing, the revision is empty or `dev`, or `docker image inspect dj-crates:<rev>` fails; otherwise prints `live-run: image dj-crates:<rev>` first, then runs `GIT_SHA=<rev> docker compose --project-directory /srv/docker run --rm --no-deps worker <command…>`. The revision in the tag is the 10-char form `scripts/deploy.sh` uses (`git rev-parse --short=10`): if the label holds the full sha, truncate to 10; document which one deploy.sh writes (read deploy/compose.yml's `labels:` for the worker service).",
+        "`scripts/live-run.sh --print <command…>` prints the exact command it would run and exits 0 without running docker compose.",
+        "`scripts/live-check.sh` runs, through live-run.sh, `sh -c 'python3 -m scripts.export_playlists export && python3 -m scripts.export_playlists check'` and exits with its status.",
+        "tests/test_live_run.py, in the style of tests/test_deploy_script.py (a stub `docker` first on PATH that records argv to $DOCKER_LOG and answers `inspect` from an env var such as $STUB_REVISION): the happy path runs compose with `GIT_SHA=<rev>` in its environment, `run --rm --no-deps worker` and the command verbatim; each refusal (missing container, empty label, `dev`, image not present) exits 1 with its reason and never calls `compose`; `--print` calls no `compose`; live-check.sh passes the two export_playlists commands.",
+        "No test and no step of this feature calls the real docker: `grep -rn 'docker' tests/test_live_run.py` shows only the stub path.",
+        "CLAUDE.md 'Check' names `scripts/live-check.sh` as the Check (keeping the long form as what it runs); docs/worker.md 'Duplicate cleanup' trash commands use `scripts/live-run.sh python3 -m scripts.duplicate_cleanup trash …` instead of the bare `docker compose run --rm --no-deps worker …`; the pivot spec gets `D45 *default*`: live one-off commands run in the deployed image, resolved from the worker container's revision label (`grep -n 'D45' docs/specs/2026-10-17-amperfy-pivot.md`).",
+        "Commit `R2-01: live-run.sh and live-check.sh run one-offs in the deployed image`.",
+        "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
+      ],
+      "after": [],
+      "passes": false
+    },
+    {
+      "id": "R2-02",
+      "milestone": "R2",
+      "kind": "review",
+      "model": "opus",
+      "description": "R2 review and simplify: the two scripts and their tests are reviewed from a diff file, Critical/Important findings fixed test-first, and the docs that name the Check agree.",
+      "steps": [
+        "Write `git diff origin/main...HEAD -- scripts/live-run.sh scripts/live-check.sh tests/test_live_run.py CLAUDE.md docs/worker.md docs/specs/2026-10-17-amperfy-pivot.md` to $HARNESS_SCRATCH/r2.diff and review it for: a quoting bug with arguments containing spaces (a test passes `sh -c 'a && b'` through and the stub sees one argument); `--no-deps` always present; the label name matching deploy/compose.yml exactly; a refusal when `docker` itself is missing from PATH; nothing in the script reads /srv/docker/.env.",
+        "Each Critical/Important finding gets a failing test first, then the fix; simplifications applied (one place builds the compose command line, used by both `--print` and the run).",
+        "docs/plans/2026-10-17-morning-checklist.md step 3.3 (trash) uses live-run.sh, with a note that R8 replaces this checklist.",
+        "Commit `R2-02: review and simplify live-run`.",
+        "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
+      ],
+      "passes": false
+    },
+    {
+      "id": "R3-01",
+      "milestone": "R3",
+      "kind": "build",
+      "model": "opus",
+      "description": "`duplicate_cleanup plan` no longer holds a lossless extra beside a lossless keeper (D35 as Michael answered it): the group gets `hold: null` and a note, `--hold-lossless` restores the old hold; the N1 plan file records the change first.",
+      "steps": [
+        "docs/plans/2026-10-17-n1-duplicate-cleanup.md gets a dated 'D35 (2026-10-19, Michael)' section before any code change: lossless pairs are released by default, the keeper is still `keep_rank`'s first file (lossless, then bit rate, then the properly filed path), `--hold-lossless` keeps the old behaviour, the report lists the pairs in their own section (R3-02); the `hold` bullet list in that file no longer says Michael edits plan.json to release them.",
+        "scripts/duplicate_cleanup.py `_hold` (or its caller `build_plan`) takes `hold_lossless: bool = False`: with False a lossless pair gives `hold` None and `\"note\": \"lossless pair: released by Michael 2026-10-19 (D35)\"` on the group; with True it gives `\"both lossless\"` as before. `plan --hold-lossless` sets it. The 'keeper missing on disk' hold is unchanged.",
+        "tests/test_duplicate_cleanup.py: a default `build_plan` on a flac extra beside a flac keeper gives `hold is None` and the note; `build_plan(..., hold_lossless=True)` gives `hold == 'both lossless'`; the CLI `plan --hold-lossless` path is covered; the existing test that asserted the hold (line ~94) is moved to the `--hold-lossless` case, every other existing test stays green unchanged.",
+        "`counts(plan)` and `render(plan)` still count a released pair as a group to act on (the summary line's group count includes it).",
+        "Commit `R3-01: D35 as answered: lossless pairs released by default, --hold-lossless keeps the hold`.",
+        "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
+      ],
+      "after": [],
+      "passes": false
+    },
+    {
+      "id": "R3-02",
+      "milestone": "R3",
+      "kind": "build",
+      "model": "opus",
+      "description": "report.md lists released lossless pairs in their own section ('lossless pairs, will be trashed'), repoint and trash treat them like any other group, and the ledger row D35 carries Michael's answer.",
+      "steps": [
+        "`render(plan)` writes a section headed 'Lossless pairs, will be trashed' listing every group with the D35 note (keeper line, each extra line with `held_by`), placed before the held groups; a plan with no such group writes no such section. A test reads the rendered report.md and finds the heading and the group's two paths.",
+        "A test runs `repoint` on a plan whose only group is a released lossless pair: the playlist is repointed to the keeper exactly as for a lossy extra (compare with the existing repoint test's assertions); a test runs `trash --dry-run` on it: the extra is reported `dry run: would move`, not `skipped: held`.",
+        "A plan made with `--hold-lossless` still gives `skipped: held (both lossless)` in repoint and trash (existing tests at lines ~343 and ~766 stay).",
+        "docs/specs/2026-10-17-amperfy-pivot.md: the D35 row loses `*default*` and reads as Michael's 2026-10-19 answer (lossless extras are trashed too; `--hold-lossless` for the old hold); `grep -c 'D35 \\*default\\*' docs/specs/2026-10-17-amperfy-pivot.md` prints 0.",
+        "docs/worker.md 'Duplicate cleanup' no longer tells Michael to set `hold` to null; it names the report section and `--hold-lossless`; `grep -n 'hold-lossless' docs/worker.md` matches.",
+        "Commit `R3-02: lossless-pair report section; D35 recorded as answered`.",
+        "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
+      ],
+      "passes": false
+    },
+    {
+      "id": "R3-03",
+      "milestone": "R3",
+      "kind": "review",
+      "model": "opus",
+      "description": "R3 review and simplify: the D35 diff is reviewed from a file against the four safety invariants, Critical/Important findings fixed test-first, and the N1 plan and docs describe the built rule.",
+      "steps": [
+        "Write `git diff origin/main...HEAD -- scripts/duplicate_cleanup.py tests/test_duplicate_cleanup.py docs/plans/2026-10-17-n1-duplicate-cleanup.md docs/worker.md docs/specs/2026-10-17-amperfy-pivot.md` to $HARNESS_SCRATCH/r3.diff and review it for: a released pair still never trashed while any playlist (hidden rows, other owners) holds it (`references()` checks untouched); groups still recomputed from navidrome.db before acting; the keeper of a lossless pair is `keep_rank`'s first file and a tie still prefers the properly filed path; the reverse logs unchanged; an old plan.json without the `note` key still loads.",
+        "Each Critical/Important finding gets a failing test first, then the fix; simplifications applied (no second hold vocabulary; one function decides the hold).",
+        "Run `.harness/check.sh tests/test_duplicate_cleanup.py` and confirm every safety test named in docs/architecture.md §7's duplicate-cleanup row still exists and passes.",
+        "Commit `R3-03: review and simplify D35`.",
+        "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
+      ],
+      "passes": false
+    },
+    {
+      "id": "R4-01",
+      "milestone": "R4",
+      "kind": "build",
+      "model": "opus",
+      "description": "`tag_cleanup retag|move` and `dedupe_copies repoint|trash` refuse unless they can take `<dirname(CRATES_DB)>/worker.lock` with `sourcing.worker.hold_lock`, telling the operator to stop the worker; `identity_backfill apply` stays outside the lock.",
+      "steps": [
+        "scripts/tag_cleanup.py `main`: for `retag` and `move` (not `plan`, not `refresh-map`) take `Path(os.environ['CRATES_DB']).parent / 'worker.lock'` with `hold_lock` and keep the fd for the whole command; `WorkerRunning` → exit 1 with `refused: stop the worker first (docker compose stop worker): it holds <path>` on stderr; an unset CRATES_DB → exit 1 with `set CRATES_DB to the crate service's database (its folder holds worker.lock)` (the wording scripts/duplicate_cleanup.py:674 uses). `write_minimal`/`remove_ids` stay plain library functions.",
+        "scripts/dedupe_copies.py `main`: the same guard for `repoint` and `trash` (`plan` is read-only and stays free), with the same two messages.",
+        "The lock helper is `sourcing.worker.hold_lock`, imported, not copied: `grep -c 'LOCK_EX' scripts/tag_cleanup.py scripts/dedupe_copies.py` prints 0 for both.",
+        "tests/test_tag_cleanup.py and tests/test_dedupe_copies.py: with CRATES_DB pointed into tmp_path and `fd = hold_lock(tmp_path / 'worker.lock')` held in the test (the in-process pattern of tests/test_duplicate_cleanup.py:597), `main(['retag', …])`, `main(['move', …])`, `main(['repoint', …])` and `main(['trash', …])` each return 1 and print the refusal before touching anything (the manifest/plan unchanged); with the lock free the same calls proceed (existing behaviour, the existing tests stay green); `main(['plan', …])` never takes the lock; CRATES_DB unset → 1 with the set-CRATES_DB message.",
+        "tests/test_identity_backfill.py: `apply --dry-run` on fixtures runs while the test holds worker.lock (M9 §6: apply stays outside the lock).",
+        "Commit `R4-01: worker.lock guard on tag_cleanup retag|move and dedupe_copies repoint|trash`.",
+        "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
+      ],
+      "after": [],
+      "passes": false
+    },
+    {
+      "id": "R4-02",
+      "milestone": "R4",
+      "kind": "build",
+      "model": "opus",
+      "description": "`sourcing.cli rank --download` is gone: an old invocation fails with a message naming Preview + Approve, and the docs say so.",
+      "steps": [
+        "sourcing/cli.py: the `--download` option and the block at `if a.download and client and best` (line ~328) are deleted; `rank --download …` exits 2 from argparse with `rank no longer downloads: use Preview + Approve in the web client (the worker downloads, D23)` in the error (a custom `error` or an explicit check of argv before parsing; the message must appear in stderr); the usage header at the top of sourcing/cli.py no longer shows `[--download]`.",
+        "tests/test_sourcing_cli.py: `main(['rank', …, '--download'])` fails with that message and `rank` without it still ranks a fixture; no test anywhere still passes `--download` (`grep -rn -- '--download' tests/ sourcing/ scripts/ docs/worker.md` is empty, apart from the refusal message and docs that say it is gone).",
+        "docs/specs/2026-10-17-m9-remaining-ownership.md §6 is marked built (R4) with the two guards and the removed flag; docs/architecture.md §7 safety table gets a row 'Only the worker downloads; host scripts write beets only with the worker stopped' naming the lock and the commands; docs/worker.md names the guard where it documents tag_cleanup/dedupe_copies (or in 'Settings the worker reads').",
+        "Commit `R4-02: retire rank --download; M9 §6 docs`.",
+        "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
+      ],
+      "passes": false
+    },
+    {
+      "id": "R4-03",
+      "milestone": "R4",
+      "kind": "review",
+      "model": "opus",
+      "description": "R4 review and simplify: the guards diff is reviewed from a file, Critical/Important findings fixed test-first, nothing duplicated.",
+      "steps": [
+        "Write `git diff origin/main...HEAD -- sourcing/cli.py scripts/tag_cleanup.py scripts/dedupe_copies.py tests/test_sourcing_cli.py tests/test_tag_cleanup.py tests/test_dedupe_copies.py tests/test_identity_backfill.py docs/` to $HARNESS_SCRATCH/r4.diff and review it for: the lock fd kept open for the whole command (not released by a `with` that ends early); the lock path exactly `<dirname(CRATES_DB)>/worker.lock` (the worker's own, D36); a refusal before any file or beets write; `plan` never blocked; no new copy of the flock code.",
+        "Each Critical/Important finding gets a failing test first, then the fix; simplifications applied (one small `_worker_lock(crates_db)` helper shared by both scripts if the two guards are otherwise identical, placed in sourcing/worker.py or crates/, not a third copy).",
+        "Commit `R4-03: review and simplify the guards`.",
+        "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
+      ],
+      "passes": false
+    },
+    {
+      "id": "R5-01",
+      "milestone": "R5",
+      "kind": "build",
+      "model": "opus",
+      "description": "After each export the worker counts playlist entries that point at a missing or unknown media_file, per playlist, from read-only navidrome.db; a change writes one `playlist_health` event and `/api/status` carries the counts.",
+      "steps": [
+        "scripts/export_playlists.py (or crates/playlist_edit.py, whichever already holds the skew SELECT) gets a pure `playlist_health(db) -> list[dict]`: one `{\"id\", \"name\", \"missing\"}` per playlist with at least one `playlist_tracks` row whose `media_file` row is absent or has `missing=1`, sorted by name, read through `open_ro`. Every column it SELECTs already exists in `subsonic/fake_server.py` `NAVIDROME_SCHEMA` and the fake's INSERT, or is added to both in the same commit (hard-won facts).",
+        "crates/store.py: `playlist_health()` / `set_playlist_health(rows)` on the `settings` table (key `playlist_health`, JSON), like `stream_tier`; `sourcing/worker.py` `export_due` runs the count after a successful export, and when the JSON differs from the stored one it stores the new value and logs one event `playlist_health` with detail `2 entries in Tea tent point at missing files; 1 in Chicago 86` (or `no playlist entry points at a missing file` when it returns to empty); an unchanged set logs nothing, so a restart repeats nothing; a failed read logs `playlist health failed: …` and keeps the stored value.",
+        "crates/service.py `status()` adds `playlistHealth` (the stored rows, `[]` when never computed); the web client reads it in R5-03.",
+        "tests: `playlist_health` on the fake mirror with `state.missing = {'s2'}` reports pl-1 'Disco Edits' and pl-3 'Sunday Listening' with their counts and nothing else; an unknown media_file_id row inserted straight into the mirror counts too; a worker tick (tests/test_worker.py `worker` fixture) with a missing song writes exactly one `playlist_health` event, a second tick writes none, fixing the file and ticking writes the empty-set event; `/api/status` carries `playlistHealth`.",
+        "Commit `R5-01: playlist health after each export (event + /api/status)`.",
+        "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
+      ],
+      "after": [],
+      "passes": false
+    },
+    {
+      "id": "R5-02",
+      "milestone": "R5",
+      "kind": "build",
+      "model": "opus",
+      "description": "Before rewriting a changed `.m3u8`, the export keeps the previous file in `_playlists/.history/<YYYY-MM-DD>/`, pruned after 30 days; pruning never touches anything outside `.history/`.",
+      "steps": [
+        "scripts/export_playlists.py `export`: when `target` exists and its text differs, copy it to `out_dir/.history/<today>/<fname>` before the atomic replace, only if that history file does not exist yet (the first version of the day is the one kept); an unchanged file is never copied; a new playlist (no target) makes no history.",
+        "`prune_history(out_dir, today, days=30)` removes `.history/<date>/` directories whose date is older than `today - 30 days`, only directories named like a date (`YYYY-MM-DD`), and only under `out_dir/.history/`; it is called at the end of `export`; a `.history` that does not exist is fine; a symlink inside `.history` is not followed.",
+        "`check` and the `stale` list ignore `.history/` (they already glob only `*.m3u8` in `out_dir`; a test proves a history file is not reported stale).",
+        "tests/test_export_playlists.py: a second export after a playlist change leaves `.history/<today>/<fname>` equal to the first file's text; a third change the same day keeps the first; `prune_history` with a 31-day-old directory removes it, keeps a 29-day-old one, keeps `.history/notes/` and a file in `out_dir` with an old mtime, and never deletes outside `.history` (assert the music dir and the live `.m3u8` files are untouched); the worker's export tick (tests/test_worker.py) produces the history file.",
+        "docs/worker.md 'What it does each tick' step 4 mentions the history and the 30-day prune; `docs/hard-won-facts.md` line on `.m3u8` exports notes the history as the restore source.",
+        "Commit `R5-02: .m3u8 history before each rewrite, pruned after 30 days`.",
+        "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
+      ],
+      "passes": false
+    },
+    {
+      "id": "R5-03",
+      "milestone": "R5",
+      "kind": "check",
+      "model": "opus",
+      "description": "What Michael will see: the web client shows a banner from `/api/status` `playlistHealth` ('2 entries in Tea tent point at missing files'), hidden when empty, with a 375 px screenshot in docs/screenshots.",
+      "steps": [
+        "web/index.html gets `<div id=\"health\" class=\"banner hidden\"></div>` under the header; web/app.js `loadStatus` fills it from `s.playlistHealth`: one line per playlist, `N entries in <name> point at missing files` (`1 entry` singular), hidden when the list is empty; web/app.css styles `.banner` phone-first (full width at 375 px, no horizontal scroll).",
+        "tests/test_web_m8.py-style tests (no JS runner): the page has `#health`; the script reads `playlistHealth` and contains the words `point at missing files`; `/api/status` with `state.missing={'s2'}` after a worker export carries the two rows.",
+        "Screenshot: start `CrateServer` on the fake with a missing song and a stored health value, open it with `firefox --headless --screenshot $HARNESS_SCRATCH/health.png --window-size=375,812 <url>`, copy it to `docs/screenshots/r5-health-banner.png`, and describe in the progress entry what is on it (the banner text, which tab is open). If headless firefox cannot run here, say so in the progress entry and describe what the DOM test proves instead.",
+        "Commit `R5-03: playlist-health banner in the web client`.",
+        "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
+      ],
+      "passes": false
+    },
+    {
+      "id": "R5-04",
+      "milestone": "R5",
+      "kind": "review",
+      "model": "opus",
+      "description": "R5 review and simplify: the health and history diff is reviewed from a file, Critical/Important findings fixed test-first, and the M9 spec and docs describe §7 as built.",
+      "steps": [
+        "Write `git diff origin/main...HEAD -- scripts/export_playlists.py sourcing/worker.py crates/store.py crates/service.py web/ tests/test_export_playlists.py tests/test_worker.py tests/test_web_m8.py subsonic/fake_server.py docs/` to $HARNESS_SCRATCH/r5.diff and review it for: the prune's deletion bounded to `out_dir/.history/<date>/` (a path check, no `rmtree` on anything else, symlinks not followed); the health SELECT read-only (`mode=ro`); the count including hidden rows (missing=1) and rows with no media_file at all; no event storm (one event per change); the banner shows no absolute paths or user names (`store.public` rules).",
+        "Each Critical/Important finding gets a failing test first, then the fix; simplifications applied.",
+        "docs/specs/2026-10-17-m9-remaining-ownership.md §7 marked built (R5) with Q11's default; docs/architecture.md §3 table lists the `playlist_health` setting, §4 or §8 names the `.history` folder; docs/worker.md has the `playlist_health` event in its event list.",
+        "Commit `R5-04: review and simplify playlist health and history`.",
+        "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
+      ],
+      "passes": false
+    },
+    {
+      "id": "R6-01",
+      "milestone": "R6",
+      "kind": "build",
+      "model": "opus",
+      "description": "AcoustID lookups are cached by path + size + mtime in `acoustid-cache.jsonl` beside the proposal and spaced by a process-wide 3 req/s limiter (M9 §8a); no network in tests.",
+      "steps": [
+        "sourcing/acoustid.py: a `Cache(path)` (one JSON line per entry: `{\"path\", \"size\", \"mtime_ns\", \"recordings\"}`; the last line for a key wins; appended atomically per lookup) and `make_lookup(key, cache=None, clock=time.monotonic, sleep=time.sleep)`; a hit returns the stored recordings without calling fpcalc or the opener; a miss fingerprints, waits its slot on a module-level limiter (`musicbrainz.Limiter` reused, a separate shared instance at `min_interval_s = 1/3`; a `reset_shared_limiter`-style reset for tests), looks up, and appends; the key never goes into the cache file or any message (existing `_redacting` stays).",
+        "scripts/identity_backfill.py `propose` passes `out_dir / 'acoustid-cache.jsonl'` as the cache (constant `ACOUSTID_CACHE`); `revert`/`apply` do not read it.",
+        "tests/test_acoustid.py: with the fixture `fixtures/acoustid_lookup.docs-example.json` as the opener's answer and a stub fingerprint, two lookups of the same file call the opener once and the cache file has one line; a changed mtime (or size) calls it again and appends; a corrupt line is skipped, not fatal; three lookups through a fake clock/sleep are spaced at least 1/3 s apart (assert the sleep calls); the key does not appear in the cache file.",
+        "tests/test_identity_backfill.py: a second `propose` over the same fixture files with a lookup that counts calls makes zero new AcoustID calls.",
+        "Commit `R6-01: AcoustID cache and 3 req/s limiter`.",
+        "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
+      ],
+      "after": [],
+      "passes": false
+    },
+    {
+      "id": "R6-02",
+      "milestone": "R6",
+      "kind": "build",
+      "model": "opus",
+      "description": "`strip_trackno` keeps a bare leading 'NN ' when the rest no longer fits the wanted title ('99 Luftballons', M9 §8b), and a MusicBrainz recording whose version is only in its disambiguation fits a file titled with that version (§8c, recall only).",
+      "steps": [
+        "sourcing/identity.py: `strip_trackno(s, wanted: str | None = None)`: with a wanted title, a bare `NN ` prefix (digits and a space, no `-`, `.` or `_` separator) is stripped only when the remainder still `loose`-matches the wanted title's start; `03 - Good Times`, `03. Good Times`, `A1 Good Times` strip as before; `99 Luftballons` with wanted `99 Luftballons` stays; `01 99 Luftballons` becomes `99 Luftballons`. `parse_filename(basename, artist, wanted=None)` passes it through; sourcing/scorer.py and sourcing/fetch.py pass the wanted title where they parse candidates.",
+        "tests/test_identity.py and tests/test_scorer.py: the cases above, plus a scorer test that a Soulseek candidate `Nena - 99 Luftballons.flac` for wanted 'Nena' / '99 Luftballons' ranks as a title match (fixture-shaped search response from `fixtures/search_responses.sample.json`, no invented shape).",
+        "scripts/identity_backfill.py `_misfit` (and `classify`'s sort): a recording whose title has no label but whose `disambiguation` parses to one (`12\" version`) is compared as if its title carried that label: it fits a file titled `Good Times (12'' Version)` and misfits a file titled `Good Times`; a recording with no disambiguation is unchanged. Test with a recording dict in the shape of `fixtures/musicbrainz_search.sample.json` (add `disambiguation` only if the fixture's recordings already carry that key; otherwise build the Recording via `parse_recording` on a copied entry).",
+        "Precision stays: the existing identity_backfill tests on ambiguous/conflict rows are unchanged and green.",
+        "Commit `R6-02: keep '99 Luftballons'; disambiguation-only versions fit`.",
+        "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
+      ],
+      "passes": false
+    },
+    {
+      "id": "R6-03",
+      "milestone": "R6",
+      "kind": "build",
+      "model": "opus",
+      "description": "A re-import reuses a failed, unfiled wanted row (back to `needs_source`, same id) instead of queuing a second one (M9 §8h).",
+      "steps": [
+        "crates/store.py: `find_external` (or a new `find_external(..., include_failed=True)` used by import) returns a failed unfiled row for the same lead artist + title; `add_external_wanted` (or `sourcing/import_playlist.py` where it seeds rows) sets such a row back to `needs_source` with reason `re-asked by import of <playlist>` and the new playlist id/position, keeping its `ext-N` id and logging one event `reasked`; a failed row whose file was filed (`filed_path`) is still treated as live, as today.",
+        "tests/test_import_playlist.py: import, mark the row failed via `set_wanted_status`, import again: the same `ext-N` is `needs_source`, `SELECT count(*) FROM external_wanted` is unchanged, and `import_order` names the reused id; tests/test_crates.py (store): the direct store path. Preview/Approve on the reused row works (existing approvable rules).",
+        "The web client's Wanted tab shows the reused row once (tests/test_web_m8.py-style check of `/api/wanted`).",
+        "Commit `R6-03: re-import reuses a failed row`.",
+        "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
+      ],
+      "passes": false
+    },
+    {
+      "id": "R6-04",
+      "milestone": "R6",
+      "kind": "review",
+      "model": "opus",
+      "description": "R6 review and simplify: the §8 diff is reviewed from a file, Critical/Important findings fixed test-first, M9 §8 rows a, b, c, h marked built, docs/identity.md updated.",
+      "steps": [
+        "Write `git diff origin/main...HEAD -- sourcing/acoustid.py sourcing/identity.py sourcing/scorer.py sourcing/fetch.py scripts/identity_backfill.py crates/store.py sourcing/import_playlist.py tests/ docs/` to $HARNESS_SCRATCH/r6.diff and review it for: the AcoustID key never written to disk or printed; the cache keyed on size + mtime_ns, not on mtime seconds; the limiter shared process-wide (two `make_lookup` instances share it); `strip_trackno` without `wanted` behaving exactly as before (every caller that passes nothing); 8c adding recall without changing any row that was `confirmed`/`isrc` before; 8h never reviving a `removed` row.",
+        "Each Critical/Important finding gets a failing test first, then the fix; simplifications applied.",
+        "docs/specs/2026-10-17-m9-remaining-ownership.md §8 table: 8a, 8b, 8c, 8h say built (R6); docs/identity.md describes the track-number rule and disambiguation versions; docs/worker.md 'Identity backfill' names `acoustid-cache.jsonl`.",
+        "Commit `R6-04: review and simplify M9 §8 items`.",
+        "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
+      ],
+      "passes": false
+    },
+    {
+      "id": "R7-01",
+      "milestone": "R7",
+      "kind": "plan",
+      "model": "opus",
+      "description": "A reviewed plan file exists for the identity picker (M9 §5a, Q7/Q8 defaults): the API, the choices file, how `apply --choices` merges, the events, and the live apply that stays Michael's.",
+      "steps": [
+        "docs/plans/2026-10-21-r7-identity-picker.md exists with: the data source (`/data/identity/identity-proposal.json` as `scripts/identity_backfill.py` writes it: `proposals[]` with `path`, `cls`, `write`, `why`, `candidates`, `size`, `mtime_ns`, `file` tags, candidate details from `_detail`); the env var `CRATES_IDENTITY_DIR` (default `/data/identity`, the crates container's existing `/srv/docker/crates:/data` mount, so no compose change); `GET /api/identity` (rows with class, tags, length, candidates with length/release/disambiguation/MusicBrainz link, `suggested` = the only candidate on the file's own album, `songId` from navidrome.db by path for ▶, the recorded choice if any); `POST /api/identity/choice` body `{path, action: accept|choose|skip, mbid?}` with the rules (conflict/error rows: skip only → 409; choose must be a listed candidate → 400; accept only for `search`); the choices file `identity-choices.json` (`{\"created\", \"choices\": {<path>: {\"action\", \"mbid\", \"at\", \"decided_by\": \"michael\"}}}`, written atomically, latest choice per path wins); the event `identity_pick` per click with `decided_by=michael`; `apply --choices <file>` semantics (accept → that row applied even though `search` is not in `--classes`; choose → `choose` set on the row; skip → row skipped; a choice for a row that changed since (size/mtime) is refused by the existing file check); the live apply steps for Michael (dry run, `--limit 5`, all, scan and check after each, `revert` log) that go into the R8 checklist; what is not built (bulk accept, a picker for the 5b import review rows).",
+        "The plan names its tests: tests/test_identity_api.py (API on a fake data dir), tests/test_identity_backfill.py (`apply --choices` dry run on fixtures), tests/test_web_identity.py (DOM/script contract).",
+        "Commit `R7-01: plan for the identity picker`.",
+        "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
+      ],
+      "after": [],
+      "passes": false
+    },
+    {
+      "id": "R7-02",
+      "milestone": "R7",
+      "kind": "build",
+      "model": "opus",
+      "description": "The crates service serves the identity rows and records choices: `GET /api/identity` and `POST /api/identity/choice` write `identity-choices.json` in the identity dir and log an `identity_pick` event with `decided_by=michael`.",
+      "steps": [
+        "crates/service.py `Config` gets `identity_dir` from `CRATES_IDENTITY_DIR` (default `/data/identity`); a new module crates/identity_view.py (stdlib) loads the proposal JSON, builds the rows of the plan's shape (with `suggested` and `songId` via `scripts.export_playlists._path_ids` on `NAVIDROME_DB` when set), reads and writes `identity-choices.json` atomically (tmp + replace) and never writes anywhere else than `identity_dir`.",
+        "Routes: `GET /api/identity` → `{\"created\", \"counts\", \"rows\": [...]}` (404 with a plain message when no proposal file exists); `GET /api/identity?class=ambiguous` filters; `POST /api/identity/choice` with the plan's rules: 409 for accept/choose on `conflict`/`error`, 400 for a `choose` mbid not among the row's candidates or an unknown path, 200 with the stored choice otherwise; each accepted POST logs event `identity_pick` (`detail` = `<class> <path>: accept|choose <mbid>|skip`, `decided_by=michael` recorded in the detail or a column that `store.events` already has).",
+        "tests/test_identity_api.py: a tmp identity dir with a small proposal JSON in the real schema (made by running `identity_backfill.propose` on the suite's audio fixtures with a scripted MusicBrainz client, or copied from such a run), `CrateServer` on the fake; the rows, the suggestion rule (exactly one candidate on the file's own album → `suggested`; two or none → null), each refusal, the choices file after two clicks (the second replaces the first for the same path), the event, and that nothing is written outside the identity dir (list tmp_path).",
+        "Commit `R7-02: identity rows and choices API`.",
+        "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
+      ],
+      "passes": false
+    },
+    {
+      "id": "R7-03",
+      "milestone": "R7",
+      "kind": "build",
+      "model": "opus",
+      "description": "`identity_backfill apply --choices <file>` merges the picker's choices into the proposal rows with the existing candidate check; tested dry-run only on fixtures.",
+      "steps": [
+        "scripts/identity_backfill.py: `apply(..., choices: Path | None)` reads `identity-choices.json`; per row: `skip` → not selected; `choose <mbid>` → the row's `choose` is set (the existing `_intended` check refuses an mbid not among `candidates`, message unchanged); `accept` → the row is selected even when its class is outside `--classes` (only `search`, `ambiguous`, `none` rows: a choice on `conflict`/`error` is refused with `choices: <path> is <class>; refused`); a path in the choices file that is not in the proposal is reported and ignored; the dry-run output names which rows came from choices.",
+        "The CLI: `apply <proposal> --choices <file> --dry-run`; the file's `decided_by` is carried into the apply log lines (`decided_by: michael`).",
+        "tests/test_identity_backfill.py: on fixtures, dry-run with a choices file: an accepted `search` row is listed as would-write, a chosen `ambiguous` row shows the chosen id, a skipped row is absent, a wrong mbid is refused with the existing message, a conflict choice is refused, and nothing on disk changes (tags re-read equal); without `--choices` behaviour is unchanged (existing tests green).",
+        "docs/worker.md 'Identity backfill' gets the `--choices` form and docs/how-ids-work.md one paragraph on the picker.",
+        "Commit `R7-03: apply --choices merges the picker's choices`.",
+        "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
+      ],
+      "passes": false
+    },
+    {
+      "id": "R7-04",
+      "milestone": "R7",
+      "kind": "build",
+      "model": "opus",
+      "description": "The web client has an Identity tab: one row per file with its tags, length and ▶, the candidates with length, release, disambiguation and a MusicBrainz link, Accept / Choose / Skip (Skip only on conflict and error rows), the album-only candidate pre-selected, nothing applied without a click.",
+      "steps": [
+        "web/index.html: a tab button `data-tab=\"identity\"` with a count pill, a `<section id=\"tab-identity\">` with a class filter (`search`, `ambiguous`, `none`, `conflict`, `error`) and `<ul id=\"identity\">`; web/app.js: `loadIdentity()` renders rows from `GET /api/identity` (artist, title, album, length, class, `why`, a ▶ that plays `/api/stream/<songId>` through the existing player when `songId` is set), each candidate as a radio with length, release, disambiguation and an `https://musicbrainz.org/recording/<mbid>` link, `suggested` pre-checked; buttons Accept (search rows only), Choose (enabled when a radio is checked), Skip; conflict/error rows: Skip only; a click POSTs `/api/identity/choice`, paints the stored choice on the row (`chosen: <mbid>` / `accepted` / `skipped`) and reloads nothing else; an error shows its message in the row (the `changeError` pattern).",
+        "tests/test_web_identity.py (no JS runner, tests/test_web_m8.py style): the page has the tab and the list; the script calls `/api/identity` and `/api/identity/choice`, contains the three button labels, the MusicBrainz URL prefix, never a `/srv` path; the CSS keeps the row phone-first (no fixed widths over 375 px).",
+        "Nothing in the client writes tags or calls apply: `grep -c 'apply' web/app.js` prints 0.",
+        "Commit `R7-04: Identity tab`.",
+        "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
+      ],
+      "passes": false
+    },
+    {
+      "id": "R7-05",
+      "milestone": "R7",
+      "kind": "check",
+      "model": "opus",
+      "description": "What Michael will see: 375 px screenshots of the Identity tab (an ambiguous row with its pre-selected candidate, a conflict row with Skip only, a row after a choice), saved in docs/screenshots and described in the progress entry.",
+      "steps": [
+        "Start `CrateServer` on the fake with a tmp identity dir holding the R7-02 test proposal (at least one `search`, one `ambiguous` with an album-only candidate, one `conflict` row) and take `firefox --headless --screenshot <file> --window-size=375,812 <url>#identity` (add a `location.hash` tab opener to app.js if the tab cannot be opened by URL; keep it tiny); save `docs/screenshots/r7-identity-ambiguous.png`, `r7-identity-conflict.png`, `r7-identity-chosen.png` (after a POST choice).",
+        "The progress entry lists, per screenshot, what is on it: the class filter, the row's tags, which candidate is pre-selected, which buttons are shown; any defect seen (overflow at 375 px, a missing label, a button on a conflict row) is fixed in this feature with a test.",
+        "If headless firefox cannot render here, the entry says so and the three DOM states are proven with tests instead (the HTML rendered by the script is not testable without JS, so prove the API payloads and the script strings).",
+        "Commit `R7-05: identity tab screenshots`.",
+        "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
+      ],
+      "passes": false
+    },
+    {
+      "id": "R7-06",
+      "milestone": "R7",
+      "kind": "review",
+      "model": "opus",
+      "description": "R7 review and simplify: the picker diff is reviewed from a file against M9 §5a's safety rules, Critical/Important findings fixed test-first, and the M9 spec, architecture and worker docs describe it as built.",
+      "steps": [
+        "Write `git diff origin/main...HEAD -- crates/ web/ scripts/identity_backfill.py tests/test_identity_api.py tests/test_web_identity.py tests/test_identity_backfill.py docs/` to $HARNESS_SCRATCH/r7.diff and review it for: nothing applied without a click and nothing written by the client but the choices file; a choice checked against the row's candidates both when recorded and when applied; `conflict`/`error` rows never accepted; the choices file written only inside `identity_dir` (path traversal via `path` in the body is impossible: the path is a proposal key, never a filesystem path the service opens); every pick an event with `decided_by=michael`; absolute paths and the AcoustID key never in the API payload.",
+        "Each Critical/Important finding gets a failing test first, then the fix; simplifications applied.",
+        "docs/specs/2026-10-17-m9-remaining-ownership.md §5a marked built (R7) with Q7/Q8 defaults; docs/architecture.md §2 components and §4(d) name the Identity view and the choices file; docs/worker.md 'Identity backfill' says the live apply with `--choices` is Michael's step (next-todos item 6); docs/plans/2026-10-21-r7-identity-picker.md matches the built API.",
+        "Commit `R7-06: review and simplify the identity picker`.",
+        "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
+      ],
+      "passes": false
+    },
+    {
+      "id": "R8-01",
+      "milestone": "R8",
+      "kind": "docs",
+      "model": "opus",
+      "description": "Michael's morning checklist v2 (`docs/plans/2026-10-22-morning-checklist.md`) lists every live step of this run in order, each with its check and its undo, and the old checklist points at it.",
+      "steps": [
+        "docs/plans/2026-10-22-morning-checklist.md exists; docs/plans/2026-10-17-morning-checklist.md keeps its text with a first line pointing at the new file. The new file keeps the old conventions block (flock on `/srv/docker/crates/live.lock`, no live write 03:15-04:30 or while the backup is active, snapshots first) and uses `scripts/live-check.sh` as **check** and `scripts/live-run.sh` for every one-off worker command.",
+        "Steps, in this order, each with 'Check:' and 'Undo:' lines: (1) pull `~/projects/dj-crate-streaming` (first `git checkout -- .harness/runs/dj-2026-10-17/INBOX.md` if `git status` still shows it); (2) enable the H3-03 timer per docs/monitoring.md 'Michael's one-time steps'; (3) `grep -c '^GIT_SHA=' /srv/docker/.env` must print 0 (a pinned GIT_SHA there would override live-run.sh's choice; explain what to do if it prints 1); (4) deploy main from a fresh worktree with `scripts/deploy.sh`, noting the rollback tag `dj-crates:f4882ab85b` and the rollback command from CLAUDE.md; (5) `imported migrate` dry run then `--apply` (the N2 runbook); (6) `duplicate_cleanup plan` and reading the new 'Lossless pairs, will be trashed' section, the repoint stages `--dry-run`, `--limit 5`, `--limit 50`, all, each followed by check, then `docker compose stop worker` and `scripts/live-run.sh python3 -m scripts.duplicate_cleanup trash --dry-run`, stop there until the lastScan refusal is understood and the hold is lifted; (7) `crates.cli reconcile` (N3); (8) the import re-runs (next-todos item 5), dry run first; (9) what R4-R7 change live and how to look at it: the `rank --download` refusal, the lock refusal when the worker runs, the health banner and `playlist_health` event, `/srv/music/_playlists/.history/<date>/` after the first changed export, the Identity tab and `identity-choices.json`, and the identity apply with `--choices` staged dry run → `--limit 5` → all with scan + check after each and `revert` as the undo.",
+        "Every command in the file is one that exists in the repo at this commit: for each `python3 -m <module> <cmd>` in the file, `python3 -m <module> --help` from the worktree (with the suite's env, no live paths) lists `<cmd>`; `scripts/live-run.sh --print` and `scripts/live-check.sh` exist and are executable.",
+        "No live command was run by this session: the progress entry says so explicitly.",
+        "Commit `R8-01: morning checklist v2 (2026-10-22)`.",
+        "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
+      ],
+      "after": [
+        "R1",
+        "R2",
+        "R3",
+        "R4",
+        "R5",
+        "R6",
+        "R7"
+      ],
+      "passes": false
+    },
+    {
+      "id": "R8-02",
+      "milestone": "R8",
+      "kind": "review",
+      "model": "opus",
+      "description": "Whole-run review and simplify: an Opus reviewer reads the full run diff from a file, Critical/Important findings are fixed test-first, the docs match the code, and the suite is green.",
+      "steps": [
+        "Write `git diff 0b4f712...HEAD -- . ':!.harness/runs'` to $HARNESS_SCRATCH/run.diff and review it against: the four safety invariants in CLAUDE.md (each still has its test; name them); no live path, credential or docker call in tests (`grep -rn '/srv\\|\\.env' tests/` shows only string literals in asserts); no new copy of existing helpers (lock, limiter, atomic write); every destructive or tag-writing path still logs a reverse; the checklist's commands match the code.",
+        "Critical/Important findings fixed RED → GREEN; simplification passes applied; the docs touched by R1-R7 re-read once for contradictions (test count, image tag, what is built vs live).",
+        "docs/next-todos.md 'State at hand-off' gains a 2026-10-21 paragraph naming the run, what each of R1-R7 built (none run live), and that the checklist for the live steps is docs/plans/2026-10-22-morning-checklist.md; the pivot spec's new `D<n> *default*` rows (D45 and any later) are present and numbered without gaps (`grep -n 'D4[5-9]' docs/specs/2026-10-17-amperfy-pivot.md`).",
+        "The progress entry lists every question for Michael from this run in one place, with the default taken for each.",
+        "Commit `R8-02: whole-run review and simplify`.",
+        "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
+      ],
+      "passes": false
+    }
+  ]
+}
