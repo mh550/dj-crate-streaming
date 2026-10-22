@@ -145,4 +145,255 @@ with both readings.
 
 ## Fit to goals
 
-<!-- V3-02 writes this section -->
+The goals are quoted from the review spec (`ours:docs/specs/2026-10-22-soulsync-review.md:33-44`). Each part says
+whether SoulSync has the goal today, how (with links to the section file), and what it costs two ways:
+
+- **from SoulSync**: the cheapest route that uses SoulSync, either running it beside ours or porting a piece of it;
+- **build ours**: our own code, mostly the planned S-features.
+
+**Effort unit.** A *harness night* is one overnight run of this harness. The run's default is that one night does
+about 6-10 features, or 1-2 human days (an assumption, *unverified*; the initializer's question 1 in `progress.md` asks
+Michael to change it). For scale, the queued downloads run has 23 features: S1 8, S2 7, S3 6, S4 2
+(`ours:docs/specs/2026-10-22-downloads-and-requests.md:61-96`,
+`ours:docs/specs/2026-10-22-downloads-and-requests.md:97-187`,
+`ours:docs/specs/2026-10-22-downloads-and-requests.md:188-222`,
+`ours:docs/specs/2026-10-22-downloads-and-requests.md:223-230`). That is about 3 harness nights.
+Every effort figure below is a judgment, not a measurement (*unverified* until a run does the work).
+
+Several "from SoulSync" figures run SoulSync itself, and they share one **fixed setup cost of about 1 harness night**
+(*unverified* estimate): its own compose project from a pinned digest, not `:latest`
+(`SoulSync:docker-compose.yml:8-9`); its own Navidrome user; its `transfer_path` (`SoulSync:core/settings.py:539`)
+pointed at an input folder that our worker files from, never `/srv/music`; and the automations that act without
+approval turned off. Those automations are the 30-minute wishlist run (`SoulSync:core/automation_engine.py:77-83`) and
+the 12-hour Full Cleanup (`SoulSync:core/automation_engine.py:244-250`). Under the build-only policy, Michael would do
+the live part of that setup himself.
+
+### B, the client
+
+**SoulSync: partly.** Only option 1 is relevant to it, and only in part: it has an installable, responsive web UI. It
+has no Subsonic server, being only a Subsonic client of Navidrome (`SoulSync:core/navidrome_client.py:451-481`), so
+option 2 has nothing to start from. It has no native app for option 3 (*unverified*: no iOS or Android project was
+found in the clone, and 01-map.md's module map lists none). [08-ui-api.md](08-ui-api.md#the-difference-that-matters)
+has each option in full.
+
+**Option 1: Amperfy, plus our web client as a phone web app, plus an iOS share-sheet Shortcut**
+(`ours:docs/specs/2026-10-22-soulsync-review.md:35`). SoulSync's UI has these:
+- a phone stylesheet, "overrides for ≤768px" (`SoulSync:webui/static/mobile.css:1-4`);
+- a manifest with `display: standalone` and 192/512 PNG icons (`SoulSync:webui/static/manifest.json:5-36`);
+- a real service worker (`SoulSync:webui/static/sw.js:93-111`), skipped on non-HTTPS origins
+  (`SoulSync:webui/static/init.js:3881-3886`).
+
+Ours has a manifest with one SVG icon and no service worker (`ours:web/manifest.webmanifest:1-9`). It does have the
+`apple-mobile-web-app-*` meta tags (`ours:web/index.html:7-9`), which SoulSync lacks
+([08-ui-api.md](08-ui-api.md#phone-fit)). Neither project has a `share_target`
+(`SoulSync:webui/static/manifest.json:1-37`). The only Shortcut-shaped endpoint SoulSync has is
+`POST /api/v1/request`. It takes a free-text query, not a link (`SoulSync:api/request.py:345-363`), and downloads the
+best hit at once without approval (`SoulSync:api/request.py:272-341`), so a Shortcut aimed at it breaks D7. SoulSync's
+UI would sit beside Amperfy as a second app on a second server. It is a 24-page admin console
+(`SoulSync:webui/src/platform/shell/route-manifest.ts:29-61`), not a companion to the Subsonic client. Its request
+paths have no per-download preview: "Begin Analysis" analyses and downloads in one step
+(`SoulSync:web_server.py:19512-19517`).
+
+**Cost:** from SoulSync: 1.5 harness nights / build ours: 0.5 harness night.
+- From SoulSync: the fixed setup, plus a patch that makes "Begin Analysis" and `/api/v1/request` wait for an approval, carried on every upstream release.
+- Build ours: on top of S3-01/S3-03 (`ours:docs/specs/2026-10-22-downloads-and-requests.md:191-211`), four small items: a static-only service worker, PNG icons, a `share_target` that posts to S3-01, and a written Shortcut recipe.
+
+Android would use the `share_target`; iOS needs the Shortcut (*unverified* until tried on Michael's phone).
+
+**Option 2: a Subsonic proxy inside crates, in octo-fiesta's style**
+(`ours:docs/specs/2026-10-22-soulsync-review.md:36`). There is no Subsonic server in SoulSync to adopt (above). Its
+Navidrome proxy shows one pattern a proxy needs: it forwards `Range` and streams the body unbuffered
+(`SoulSync:web_server.py:12693-12723`). Ours answers 302 and never carries audio (`ours:crates/service.py:454-459`).
+SoulSync's "play a track you don't own" downloads the whole file first (`SoulSync:core/streaming/prepare.py:114-123`).
+Its queue prefetch (`SoulSync:web_server.py:6842-6858`) files up to 250 unowned tracks into the library
+(`SoulSync:core/playback/prefetch.py:15`) with no per-track approval. Both break D7. A proxy in crates would instead
+turn a `stream` of a missing id into our play-now approval (`ours:crates/service.py:253-279`). Nobody has measured
+which Subsonic endpoints Amperfy calls (*unverified*), so the size of that proxy is a guess.
+
+**Cost:** from SoulSync: 2-3 harness nights (the same as ours) / build ours: 2-3 harness nights.
+- From SoulSync: nothing in it is a Subsonic server, so it saves only the `Range` lesson.
+- Build ours: a proxy for the subset of Subsonic that Amperfy calls, forwarding to Navidrome and turning missing tracks into approvals, tested against a fake.
+
+**Option 3: a native fork, Cassette/Minidisc or Yuzic** (`ours:docs/specs/2026-10-22-soulsync-review.md:37`).
+A native Subsonic client would still talk to Navidrome. It would reach SoulSync only through its key-scoped `/api/v1`
+(`SoulSync:api/auth.py:40-101`), whose request status a client can poll (`SoulSync:api/request.py:432-462`). The
+lesson is that API's shape, which S3-03/S3-05 already plan
+(`ours:docs/specs/2026-10-22-downloads-and-requests.md:207-214`). One gap remains: ours plans no auth beyond the tailnet
+(`ours:docs/specs/2026-10-22-downloads-and-requests.md:211`, `ours:docs/architecture.md:545-546`). The forks' sources
+are not read in this run (*unverified*).
+
+**Cost:** from SoulSync: ≥ 5 harness nights (the same as ours) / build ours: ≥ 5 harness nights.
+- From SoulSync: it has no app code to fork, so its API is the only input, and S3 already plans that shape.
+- Build ours: a fork of a Swift or Flutter client is mostly work this Linux box cannot build or test, so much of it falls to Michael or another machine.
+
+### C, requests from the phone
+
+**SoulSync: partly.** C asks for a search bar over the common catalogs, or a pasted or shared link, with Spotify only
+through Michael's own developer app (`ours:docs/specs/2026-10-22-soulsync-review.md:38-39`).
+- **Search bar: yes.** It searches about five catalogs on an unconfigured install, and Spotify, Discogs and Hydrabase
+  once configured (`SoulSync:core/search/orchestrator.py:229-256`), plus the local library
+  (`SoulSync:core/search/orchestrator.py:1-13`).
+- **Paste a link: partly.** It has two parsers, and each misses one kind. The search bar's keyword table has no
+  playlist kind (`SoulSync:core/search/by_id.py:83-91`), so a playlist link gets only a hint
+  (`SoulSync:core/search/by_id.py:305-308`). The Sync page's Spotify parser takes only playlist and album links
+  (`SoulSync:core/spotify_public_scraper.py:39-42`). Tidal links work nowhere (`SoulSync:core/search/by_id.py:45-48`).
+- **Share a link: no.** There is no `share_target` and no Shortcut (`SoulSync:webui/static/manifest.json:1-37`).
+- **Spotify through his own app: yes.** It uses the authorization-code flow with the user's own client id
+  (`SoulSync:core/spotify_client.py:800-819`). It also has a credential-less SpotipyFree fallback that imitates the web
+  player (`SoulSync:core/spotify_public_api.py:4-9`), which C rules out.
+- **Approval: only for member profiles.** An admin approves a member's request
+  (`SoulSync:api/music_requests.py:247-266`), and the item then waits for the 30-minute wishlist run
+  (`SoulSync:core/wishlist/processing.py:1076-1091`). That queue misses D7 in four ways:
+  - Michael would be the admin, and the admin's own paths download at once or on the timer: Begin Analysis
+    (`SoulSync:web_server.py:19512-19517`), the wishlist (`SoulSync:core/automation_engine.py:76-83`) and
+    `/api/v1/request` (`SoulSync:api/request.py:287-306`).
+  - It approves a request, not a chosen file.
+  - It retries on a schedule with no new approval (`SoulSync:core/wishlist/retry_backoff.py:7-17`).
+  - A member may reach `start-missing-process` without the check (*unverified* at runtime;
+    [08-ui-api.md](08-ui-api.md#a-request-from-the-phone)).
+
+[08-ui-api.md](08-ui-api.md#a-request-from-the-phone) and [02-intake.md](02-intake.md#the-difference-that-matters)
+have the flows. Ours today takes a Spotify link only through the CLI (`ours:docs/architecture.md:365`). S3 plans one
+link endpoint, MusicBrainz catalog search, then preview and approve
+(`ours:docs/specs/2026-10-22-downloads-and-requests.md:188-221`). S3-06's Client Credentials cannot read Michael's
+private playlists ([02-intake.md](02-intake.md#the-difference-that-matters)). Two pieces of SoulSync shorten our
+build: its link-keyword table (`SoulSync:core/search/by_id.py:83-91`) and its 2026 Spotify rules
+(`SoulSync:core/spotify_client.py:1510-1530`).
+
+**Cost:** from SoulSync: 2 harness nights, plus a fork to maintain / build ours: 1.5 harness nights.
+- From SoulSync: the fixed setup, plus an approval patch on three request paths in a codebase that changes weekly ([01-map.md](01-map.md#maintenance-health)).
+- Build ours: S3's 6 features (about 1 night), plus about 0.5 night for an authorization-code login with Michael's own app.
+
+### D, more than one song at a time
+
+**SoulSync: has.** A playlist sync puts every unmatched track on the wishlist
+(`SoulSync:services/sync_service.py:1187-1245`). An album click queues each track
+(`SoulSync:api/wishlist_routes.py:605-606`, `SoulSync:core/wishlist/routes.py:790`). The wishlist run then submits
+album batches (`SoulSync:core/wishlist/processing.py:211`). The cost is in the record:
+- A wishlist row is one track keyed by a provider track id. The album exists only inside a JSON blob
+  (`SoulSync:database/music_database.py:807-817`), and requests are grouped back into albums only for display
+  (`SoulSync:core/requests/music.py:50-99`).
+- An approved item is retried on a schedule with no new approval (`SoulSync:core/wishlist/retry_backoff.py:7-17`).
+
+[02-intake.md](02-intake.md#the-difference-that-matters) has the detail. Ours today is one wanted row per track. Its
+`import-playlist` keeps playlist and position (`ours:sourcing/import_playlist.py:355-357`) but downloads one approval
+at a time (`ours:sourcing/worker.py:267-279`). The plan makes the album a record:
+- S2-01: a `requests` table with `mb_release_id` and `track_no`;
+- S2-02: fills the album from an album URL;
+- S2-07: a playlist in one go.
+
+Those three are at `ours:docs/specs/2026-10-22-downloads-and-requests.md:103-111` and
+`ours:docs/specs/2026-10-22-downloads-and-requests.md:183-186`. S2-05 (under E) runs the album job.
+
+**Cost:** from SoulSync: 1.5 harness nights / build ours: 0.5 harness night.
+- From SoulSync: the fixed setup plus turning off its scheduled retries, and its track-keyed row still drops the album identity that E needs.
+- Build ours: S2-01, S2-02 and S2-07 are 3 features, at the unit's 6-10 features a night.
+
+### E, album-first sourcing
+
+**SoulSync: partly.** Goal E's three steps (`ours:docs/specs/2026-10-22-soulsync-review.md:41-42`), each marked
+against SoulSync. The full read is in [04-soulseek.md, "When a track fails"](04-soulseek.md#when-a-track-fails),
+including its goal E table, and folder choice is in [album requests](04-soulseek.md#album-requests-and-folder-choice).
+
+1. "One peer's folder for the whole album." **Present.** A folder is pinned when it covers ≥ 80 % of the requested
+   tracks (`SoulSync:core/downloads/master.py:1372-1382`) and scores ≥ 0.62 (`SoulSync:core/downloads/master.py:44`).
+   Only the files that match wanted tracks are enqueued (`SoulSync:core/soulseek_client.py:2073-2097`).
+2. "On trouble, switch to **one** other folder for the rest, preferring the same release." **Different.**
+   - It walks up to 4 alternative folders, each only if it covers *all* that is still owed
+     (`SoulSync:core/soulseek_client.py:2197-2259`).
+   - Nothing prefers the same release: release identity returns None for every Soulseek peer
+     (`SoulSync:core/download_plugins/release_identity.py:80-83`), and the bundle ignores the expected album duration
+     (`SoulSync:core/soulseek_client.py:1948-1953`).
+   - A verify failure never distrusts the folder: the retry clears the peer and download id the folder-drop check
+     looks for (`SoulSync:core/downloads/monitor.py:410-413`, `SoulSync:web_server.py:16737-16751`).
+3. "Per-track only as the last resort." **Present, with a difference.**
+   - Tracks the folder did not supply go per-track to any peer (`SoulSync:core/downloads/task_worker.py:208-216`).
+   - A bundle with no completed file falls back to per-track for the whole album
+     (`SoulSync:core/soulseek_client.py:2148-2154`).
+   - In that fallback, the batch's folder moves to whichever per-track download starts next
+     (`SoulSync:web_server.py:16865-16872`), so one album can still spread across peers.
+   - That source-reuse path takes a file at the base score ≥ 0.70 with no title veto, which is how ext-74's wrong song
+     gets in (`SoulSync:web_server.py:16757-16762`).
+
+Ours has none of this today. The only album signal is +4 for a folder named like the album
+(`ours:sourcing/scorer.py:224-225`). S2-03..S2-06 plan the following
+(`ours:docs/specs/2026-10-22-downloads-and-requests.md:112-182`):
+- S2-03: a MusicBrainz release match;
+- S2-04: a primary folder, plus one same-release secondary folder (lengths within 2 s, or the same MB release);
+- S2-05: distrust a folder on one "not what it claims" finding;
+- S2-06: one album path.
+
+Running SoulSync would still leave it without the same-release rule and the one-switch bound. Its bundle and retry
+code is woven through its task worker, monitor and staging ([04-soulseek.md](04-soulseek.md#when-a-track-fails)).
+So the piece worth re-writing in S2-04 is small: the one-to-one track assignment `assign_album_tracks`
+(`SoulSync:core/downloads/soulseek_identity.py:310-341`) and the folder score
+(`SoulSync:core/downloads/master.py:438-516`). Re-writing them in our own words follows 04's "paraphrase, don't copy";
+the MIT notice is needed only if code is copied.
+
+**Cost:** from SoulSync: 1.5 harness nights / build ours: 1 harness night.
+- From SoulSync: the fixed setup plus confining its output to an input folder, for a fallback that still breaks goal E's one-switch, same-release rule.
+- Build ours: S2-03..S2-06 are 4 features after S1-01/S1-02 (`ours:docs/specs/2026-10-22-downloads-and-requests.md:97`), and S2-04/S2-05 are the largest features in S2, so they count at the slow end of the unit.
+
+### Crates for DJing
+
+**SoulSync: no.** The goal is playlists kept synced, Mixxx on a Rane One reading the same library, one DJ quality (D24),
+the exact track (D26) and nothing downloaded without approval (D7) (`ours:docs/specs/2026-10-22-soulsync-review.md:43-44`).
+SoulSync has no crate concept (*unverified*: `grep -rlIiw 'crate\|crates' --include=*.py` finds only a chat-badge
+test). The playlists it syncs are its own mirror list (`SoulSync:database/music_database.py:1385`).
+
+- **Synced playlists: conflicts.** Its default reconcile adds every source id that is missing and removes every entry
+  the source lacks, so a track Michael added by hand is removed and one he removed comes back
+  (`SoulSync:core/sync/playlist_edit.py:96-108`). It appends with `songIdToAdd`, with no position
+  (`SoulSync:core/navidrome_client.py:1800-1806`). Ours is insert-only at the Spotify position (D44,
+  `ours:docs/specs/2026-10-17-amperfy-pivot.md:39`), and the crate flag lives in `crates.db` (D27,
+  `ours:docs/specs/2026-10-17-amperfy-pivot.md:22`).
+- **Mixxx reading the same library: not addressed, and the tags are at risk.** SoulSync has no DJ-software integration.
+  Its code and docs never name Mixxx (*unverified*: `grep -rliI mixxx` over its `.py/.md/.js/.ts/.tsx/.json` finds
+  nothing; a test names a playlist "Rekordbox Set", `SoulSync:tests/downloads/test_playlist_folder_exists.py:66`).
+  Ours treats the file's tags as the record because they travel into Mixxx
+  (`ours:docs/specs/2026-10-16-ownership-and-identity.md:24`). SoulSync clears every tag on import and rewrites from
+  its matched source, or saves the file untagged (`SoulSync:core/metadata/enrichment.py:110-123`). On a collision it
+  deletes or overwrites ([07-filing-library.md](07-filing-library.md#what-it-writes-into-tags-and-when)).
+- **D24: conflicts.** Its quality gate reads the header's claim, and nothing detects a transcode
+  (`SoulSync:core/quality/schema.py:171-172`, `SoulSync:core/imports/file_integrity.py:445-470`;
+  [06-verification.md](06-verification.md#the-difference-that-matters)).
+- **D26: conflicts.** On Soulseek an extended mix costs −0.025 and a radio edit −0.04, so either stands in for the plain
+  cut. Those are the base penalties (`SoulSync:core/matching_engine.py:1246-1248`,
+  `SoulSync:core/matching_engine.py:1204-1206`) halved on a match (`SoulSync:core/matching_engine.py:1421`;
+  [03-matching.md](03-matching.md#remaster-live-extended-radio-edit)).
+- **D7: conflicts** (goal C above).
+
+**Would it write to the same Navidrome playlists and beets index as ours?**
+- **Navidrome playlists: yes, if it shares Michael's account.**
+  - It finds a playlist by case-insensitive name (`SoulSync:core/navidrome_client.py:1537`) among the configured
+    account's own playlists, then overwrites it (`SoulSync:core/navidrome_client.py:1216-1233`).
+  - It marks no playlist as its own, so a crate with a mirror's name would be adopted and reconciled
+    ([07-filing-library.md](07-filing-library.md#how-it-edits-navidrome-playlists-and-with-what-guards)).
+  - On its own Navidrome user its sync touches only that user's playlists. Its admin profile, though, may edit or delete
+    any playlist the account sees (`SoulSync:web_server.py:18068-18085`), and Navidrome lets an admin edit another
+    user's playlist (`ours:crates/playlist_edit.py:38`). So its Navidrome user must not be an admin, or the `amperfy`
+    account's playlists are within reach.
+- **beets index: not the database itself, but the library under it.**
+  - SoulSync has no beets and never writes beets' `library.db`
+    ([07-filing-library.md](07-filing-library.md#does-it-use-beets), `SoulSync:requirements.txt:21`).
+  - It files under its own `transfer_path` with its own template (`SoulSync:core/settings.py:539`,
+    `SoulSync:core/settings.py:915-919`). Pointed at `/srv/music`, it would be a second writer of the library that
+    beets indexes.
+  - That is the **two-writers conflict with D18**: the worker is the only process that downloads, runs beets or moves
+    files into `/srv/music` (`ours:docs/specs/2026-10-13-next-session-design.md:72`,
+    `ours:docs/architecture.md:76-77`).
+  - beets' index would then list files that SoulSync's collisions and repair jobs deleted, and miss files nobody
+    imported ([07-filing-library.md](07-filing-library.md#the-difference-that-matters)).
+  - The only safe confinement is the fixed setup above: an input folder, its own non-admin Navidrome user, and its
+    playlist sync off.
+
+What crates need is built in ours:
+- the crate switch;
+- D44 placement (`ours:crates/placement.py:83-115`);
+- D24 verify (`ours:sourcing/verify.py:433-447`);
+- D26 sourcing, which rejects another version (`ours:sourcing/scorer.py:171-177`), and D26 matching, which leaves it
+  ambiguous (`ours:sourcing/import_playlist.py:188-197`).
+
+**Cost:** from SoulSync: not reachable without a fork (≥ 2 harness nights, then every upstream release) / build ours: 0 more harness nights.
+- From SoulSync: its playlist sync, tagger, quality gate, version penalties and request paths would all have to change, which is a fork, not a configuration.
+- Build ours: what is left (S2-07's playlist in one go, S1's fixes) is already counted under D and in the S1 run.
