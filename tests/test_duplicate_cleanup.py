@@ -84,15 +84,61 @@ def test_keeper_already_in_the_playlist_drops_the_extra(lib):
     assert pl1["after"] == ["s9", "s1"]
 
 
-def test_two_lossless_copies_are_held_and_repoint_nothing(lib):
+def lossless_pair(srv, music):
+    """s10, a second flac of s9 in Compilations: s9 (the properly filed path) stays the keeper of s9, s10, s3."""
+    add_song(srv, dict(S9, id="s10", bitRate=1411, path="Compilations/House/05 - Move Your Body.flac"), music)
+
+
+def test_two_lossless_copies_are_held_with_hold_lossless_and_repoint_nothing(lib):
     srv, db, music = lib
-    flac = dict(S9, id="s10", bitRate=1411, path="Compilations/House/05 - Move Your Body.flac")
-    add_song(srv, flac, music)
+    lossless_pair(srv, music)
+    plan = dc.build_plan(db, music, hold_lossless=True)
+    [g] = plan["groups"]
+    assert g["keep"]["id"] == "s9" and [e["id"] for e in g["extras"]] == ["s10", "s3"]
+    assert g["hold"] == "both lossless" and "note" not in g
+    assert plan["playlists"] == []
+
+
+def test_a_lossless_pair_is_released_by_default_with_the_d35_note(lib):
+    srv, db, music = lib
+    lossless_pair(srv, music)
     plan = dc.build_plan(db, music)
     [g] = plan["groups"]
     assert g["keep"]["id"] == "s9" and [e["id"] for e in g["extras"]] == ["s10", "s3"]
+    assert g["hold"] is None
+    assert g["note"] == "lossless pair: released by Michael 2026-10-19 (D35)"
+    assert {p["id"]: p["after"] for p in plan["playlists"]} == {"pl-1": ["s1", "s2", "s9"], "pl-2": ["s9", "s4", "s5"]}
+    assert dc.counts(plan).startswith("1 group to act on (2 extras, 1 in a playlist), 0 held")
+    report = dc.render(plan)
+    acting = report.split("## Groups to act on")[1].split("## Held groups")[0]
+    assert S9["path"] in acting and "Compilations/House/05 - Move Your Body.flac" in acting
+
+
+def test_a_lossy_pair_has_no_note(lib):
+    srv, db, music = lib
+    assert "note" not in dc.build_plan(db, music)["groups"][0]
+
+
+def test_a_keeper_missing_on_disk_is_held_even_in_a_lossless_pair(lib):
+    srv, db, music = lib
+    lossless_pair(srv, music)
+    (music / S9["path"]).unlink()
+    for hold_lossless in (False, True):
+        [g] = dc.build_plan(db, music, hold_lossless=hold_lossless)["groups"]
+        assert g["hold"] == "keeper missing on disk" and "note" not in g
+
+
+def test_plan_hold_lossless_through_the_cli(lib, tmp_path, capsys):
+    srv, db, music = lib
+    lossless_pair(srv, music)
+    args = ["plan", "--navidrome-db", str(db), "--music-root", str(music), "--out", str(tmp_path / "c")]
+    assert dc.main(args) == 0
+    assert "1 group to act on" in capsys.readouterr().out
+    assert json.loads((tmp_path / "c" / "plan.json").read_text())["groups"][0]["hold"] is None
+    assert dc.main(args + ["--hold-lossless"]) == 0
+    assert "0 groups to act on" in capsys.readouterr().out
+    [g] = json.loads((tmp_path / "c" / "plan.json").read_text())["groups"]
     assert g["hold"] == "both lossless"
-    assert plan["playlists"] == []
 
 
 def test_a_keeper_missing_on_disk_is_held(lib):
