@@ -5,9 +5,11 @@
 #   scripts/deploy.sh crates     # just one
 #   scripts/deploy.sh gatus      # monitoring: installs this commit's deploy/gatus/config.yaml, then starts Gatus, waits for its API
 #
-# Refuses a dirty tree (an image must equal a commit), tags the image dj-crates:<short sha> and labels it with the
-# full sha, so `docker image ls dj-crates` and `docker inspect` say what is running. Rollback: check out the older
-# commit and run this again (or `GIT_SHA=<old> docker compose ... up -d --no-build` if its image is still here).
+# Refuses a dirty tree (an image must equal a commit), tags the image dj-crates:<10-char sha> and labels it
+# (org.opencontainers.image.revision, set in the Dockerfile from GIT_SHA) with the same 10-char sha, so
+# `docker image ls dj-crates` and `docker inspect` say what is running (scripts/live-run.sh reads that label).
+# Rollback: check out the older commit and run this again (or `GIT_SHA=<old> docker compose ... up -d --no-build`
+# if its image is still here).
 # Compose and .env come from /srv/docker (project name `dj`, so the existing containers are replaced in place).
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

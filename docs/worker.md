@@ -409,8 +409,11 @@ so no path flags are needed. The design, with every check, is in `docs/plans/202
 All commands run from `/srv/docker`. Output goes to `/data/duplicate-cleanup/` in the container, which is
 `/srv/docker/crates/duplicate-cleanup/` on the host. Stop at the first surprise and undo from the logs (below).
 
-**check** below means
-`docker compose run --rm --no-deps worker sh -c 'python3 -m scripts.export_playlists export && python3 -m scripts.export_playlists check'`.
+**check** below means `scripts/live-check.sh` (from a checkout of this repo), which runs
+`docker compose run --rm --no-deps worker sh -c 'python3 -m scripts.export_playlists export && python3 -m scripts.export_playlists check'`
+in the deployed image. `scripts/live-run.sh <command…>` runs any one-off worker command that way (D45): it reads the
+revision label of `dj-worker-1` (running or stopped), refuses when it is missing, `dev` or its `dj-crates:<rev>` image
+is gone, and passes `GIT_SHA=<rev>`, so the one-off never runs `dj-crates:dev`. `--print` shows the command only.
 Only the worker image mounts `/srv/music`. The worker exports only every 300 s, and not at all while it is stopped, so
 a check without a fresh export reports "stale".
 
@@ -458,14 +461,15 @@ docker compose exec -T crates python3 -m crates.cli reconcile
 
 ```
 docker compose stop worker
-docker compose run --rm --no-deps worker python3 -m scripts.duplicate_cleanup trash --dry-run
-docker compose run --rm --no-deps worker python3 -m scripts.duplicate_cleanup trash --limit 5      # then check
-docker compose run --rm --no-deps worker python3 -m scripts.duplicate_cleanup trash --limit 50     # then check
-docker compose run --rm --no-deps worker python3 -m scripts.duplicate_cleanup trash                # then check
+scripts/live-run.sh python3 -m scripts.duplicate_cleanup trash --dry-run
+scripts/live-run.sh python3 -m scripts.duplicate_cleanup trash --limit 5      # then check
+scripts/live-run.sh python3 -m scripts.duplicate_cleanup trash --limit 50     # then check
+scripts/live-run.sh python3 -m scripts.duplicate_cleanup trash                # then check
 docker compose start worker
 ```
 
-- Use `run --rm worker`, not `exec`. Only that container has `DJ_WORKER=1`, which tells beets to forget each trashed
+- `docker compose` from `/srv/docker`, `scripts/live-run.sh` from a checkout. `live-run.sh` is
+  `run --rm --no-deps worker` in the deployed image (its first line names it). Use `run --rm worker`, not `exec`. Only that container has `DJ_WORKER=1`, which tells beets to forget each trashed
   path, and `/srv/music` and `/srv/_trash` mounted.
 - It refuses to start while the worker holds `/data/worker.lock`, while a Navidrome scan runs (checked again before
   every move), or when the library or the trash is not mounted.
