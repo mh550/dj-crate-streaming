@@ -51,6 +51,21 @@ def test_remove_download_deletes_the_record(tmp_path):
         assert c.downloads("vinylhead77")["directories"] == []
 
 
+def test_a_peer_with_no_transfers_is_404_and_the_client_reads_it_as_empty(tmp_path):
+    """Live slskd 0.26 (2026-10-21): GET /transfers/downloads/<peer> is 404 until that peer has a transfer. The worker
+    asks it right before every first enqueue, so the client must read 404 as "no transfers", not fail the fetch."""
+    import urllib.error
+    import urllib.request
+    with FakeSlskdServer(RESPONSES, tmp_path, files={GOOD: b"x"}) as srv:
+        req = urllib.request.Request(srv.url + "/api/v0/transfers/downloads/vinylhead77", headers={"X-API-Key": "k"})
+        try:
+            urllib.request.urlopen(req)
+            assert False, "expected HTTPError"
+        except urllib.error.HTTPError as e:
+            assert e.code == 404
+        assert SlskdClient(srv.url, "k").downloads("vinylhead77") == {"username": "vinylhead77", "directories": []}
+
+
 def test_fail_enqueue_mode_returns_500(tmp_path):
     import urllib.error
     with FakeSlskdServer(RESPONSES, tmp_path, files={GOOD: b"x"}, fail_enqueue=True) as srv:
