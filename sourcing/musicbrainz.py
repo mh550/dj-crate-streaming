@@ -32,11 +32,12 @@ URL = "https://musicbrainz.org/ws/2/recording/{id}?fmt=json"
 USER_AGENT = "dj-crate-streaming/0.1 (https://github.com/mh550/dj-crate-streaming)"
 
 
-class _Limiter:
+class Limiter:
     """The process-wide spacing: one request in flight, each at least `min_interval_s` after the last finished.
 
     Module-level on purpose: the backfill client and the worker's confirm step (`recording_length`) are different
-    callers of one MusicBrainz IP allowance, so no instance owns the limit. The lock is held across the request,
+    callers of one MusicBrainz IP allowance, so no instance owns the limit (sourcing/acoustid.py keeps its own
+    shared instance for AcoustID's allowance). The lock is held across the request,
     so threads queue. `clock`/`sleep` are injectable per call for tests.
     """
 
@@ -60,7 +61,7 @@ class _Limiter:
                 self._last = clock()
 
 
-_SHARED = _Limiter()
+_SHARED = Limiter()
 
 
 def reset_shared_limiter() -> None:
@@ -130,6 +131,28 @@ def parse_recording(d: dict) -> Recording:
                      disambiguation=(d.get("disambiguation") or "").strip(), video=bool(d.get("video")))
 
 
+def read_cache_lines(path: Path) -> list:
+    """Every JSON line of an append-only cache file, in order; unparsable lines are skipped (the cache is derived).
+
+    A killed run's torn last line is cut from the file first, or the next append would merge into it and lose
+    both entries."""
+    path = Path(path)
+    if not path.exists():
+        return []
+    data = path.read_bytes()
+    if data and not data.endswith(b"\n"):
+        data = data[:data.rfind(b"\n") + 1]
+        with path.open("r+b") as f:
+            f.truncate(len(data))
+    rows = []
+    for line in data.decode("utf-8", errors="replace").splitlines():
+        try:
+            rows.append(json.loads(line))
+        except ValueError:
+            continue
+    return rows
+
+
 def _escape(s: str) -> str:
     """Lucene phrase escaping: a backslash or a quote inside "..." gets one more backslash."""
     return s.replace("\\", "\\\\").replace('"', '\\"')
@@ -148,18 +171,11 @@ class MusicBrainz:
         self.min_interval_s, self.retries, self.timeout = min_interval_s, retries, timeout
         self._cache_path = Path(cache) if cache else None
         self._cache: dict[str, tuple[int, dict | None]] = {}
-        if self._cache_path and self._cache_path.exists():
-            data = self._cache_path.read_bytes()
-            if data and not data.endswith(b"\n"):            # a killed run's torn last line: cut it, or the next
-                data = data[:data.rfind(b"\n") + 1]          # append would merge into it and lose both entries
-                with self._cache_path.open("r+b") as f:
-                    f.truncate(len(data))
-            for line in data.decode("utf-8", errors="replace").splitlines():
-                try:
-                    row = json.loads(line)
-                    self._cache[row["url"]] = (row["status"], row.get("body"))
-                except (ValueError, KeyError, TypeError):
-                    continue
+        for row in read_cache_lines(self._cache_path) if self._cache_path else ():
+            try:
+                self._cache[row["url"]] = (row["status"], row.get("body"))
+            except (KeyError, TypeError):
+                continue
 
     def _remember(self, url: str, status: int, body: dict | None) -> None:
         self._cache[url] = (status, body)

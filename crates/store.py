@@ -639,31 +639,45 @@ class CrateStore:
         return self._approval_row(r) if r else None
 
     # --- external wanted (not in Navidrome at all; seeded from Spotify etc.)
-    def find_external(self, artist: str, title: str) -> dict | None:
-        """A live (not failed) external row for the same lead artist/title, ignoring case and punctuation. A row
-        renamed from Navidrome (set_wanted_names) also matches the names it was first asked for. A failed row
-        whose file was filed (filed_path) counts as live: re-seeding must not queue a second download of it."""
+    def _same_external(self, artist: str, title: str) -> list[sqlite3.Row]:
+        """Every external row for the same lead artist/title, ignoring case and punctuation, oldest first. A row
+        renamed from Navidrome (set_wanted_names) also matches the names it was first asked for."""
         def k(a, t):                     # lead artists: an old "Chic feat. Nile Rodgers" row is a "Chic" ask
             return _loose(lead_artist(a)) + "|" + _loose(t)
         key = k(artist, title)
-        for r in self.db.execute("SELECT * FROM external_wanted"):
-            if r["status"] == "failed" and filed_path(r["reason"]) is None:
-                continue
-            asked = k(r["asked_artist"], r["asked_title"]) if r["asked_title"] is not None else None
-            if key in (k(r["artist"], r["title"]), asked):
-                return self._ext_row(r)
-        return None
+        return [r for r in self.db.execute("SELECT * FROM external_wanted ORDER BY id")
+                if key in (k(r["artist"], r["title"]), k(r["asked_artist"], r["asked_title"])
+                           if r["asked_title"] is not None else None)]
+
+    def find_external(self, artist: str, title: str, include_failed: bool = False) -> dict | None:
+        """A live (not failed) external row for the same lead artist/title (_same_external), else a `removed` one.
+        A failed row whose file was filed (filed_path) counts as live: re-seeding must not queue a second download
+        of it. With include_failed (an import asking again), the newest failed unfiled row answers, and a removed one
+        never does: the import queues a fresh row and the removed one stays as it was (M9 §8h, R6 review)."""
+        live, failed, removed = None, None, None
+        for r in self._same_external(artist, title):
+            if r["status"] == "removed":
+                removed = removed or r
+            elif r["status"] == "failed" and filed_path(r["reason"]) is None:
+                failed = r                       # the newest: the one a later import queued and import_order names
+            else:
+                live = live or r
+        r = live or (failed if include_failed else removed)
+        return self._ext_row(r) if r else None
 
     def add_external_wanted(self, artist: str, title: str, album: str | None = None, duration_s: float | None = None,
                             year: int | None = None, source: str | None = None,
                             playlist_id: str | None = None, position: int | None = None, tier: str | None = None,
-                            default_tier: str = DEFAULT_TIER) -> str:
+                            default_tier: str = DEFAULT_TIER, reask: str | None = None) -> str:
         """Returns the existing id when the same artist/title is already queued (re-running a seed is a no-op);
         a playlist position or a tier, when given, is (re)recorded on that row. A new row without a tier gets
-        default_tier (crate; imports pass medium, D15)."""
+        default_tier (crate; imports pass medium, D15). Without `reask` a failed row is re-queued as a new row, as
+        seed-spotify always did; with it (import-playlist passes the playlist's name), see _reask (M9 §8h)."""
         check_tier(tier or check_tier(default_tier))
-        existing = self.find_external(artist, title)
+        existing = self.find_external(artist, title, include_failed=reask is not None)
         if existing:
+            if existing["status"] == "failed" and filed_path(existing["reason"]) is None:
+                self._reask(existing, reask, artist, title, album, duration_s, playlist_id, tier or default_tier)
             if playlist_id is not None:
                 self.db.execute("UPDATE external_wanted SET playlist_id=?, position=?, updated_at=? WHERE id=?",
                                 (playlist_id, position, time.time(), _ext_pk(existing["song_id"])))
@@ -671,6 +685,27 @@ class CrateStore:
                 self.set_external_tier(existing["song_id"], tier)
             return existing["song_id"]
         return self._insert_external(artist, title, album, duration_s, year, source, playlist_id, position, tier or default_tier)
+
+    def _reask(self, row: dict, by: str, artist, title, album, duration_s, playlist_id, tier) -> None:
+        """Ask a failed, unfiled row again instead of queuing a second one: back to needs_source with its own id,
+        the import's tier, album and length, and no preview of the attempt that failed (approve would reuse its
+        pick). One `reasked` event keeps the old reason. Older failed duplicates (queued before §8h) become
+        `removed`, superseded by this row, each with a `superseded` event naming its old reason, and any import_order
+        naming them names this row; one with an approval waiting or being fetched is kept (Michael's yes stays)."""
+        ext = row["song_id"]
+        self.set_external_status(ext, "needs_source", f"re-asked by import of {by}")
+        self.log(playlist_id, ext, "reasked", f"was failed: {row['reason'] or ''}")
+        self.set_external_tier(ext, tier)
+        self.db.execute("UPDATE external_wanted SET album=COALESCE(?, album), duration=COALESCE(?, duration) WHERE id=?",
+                        (album, int(duration_s) if duration_s else None, _ext_pk(ext)))
+        self.db.execute("DELETE FROM previews WHERE song_id=?", (ext,))
+        for r in self._same_external(artist, title):
+            old = f"ext-{r['id']}"
+            if (r["status"] == "failed" and filed_path(r["reason"]) is None and old != ext
+                    and self.approval_in_progress(old) is None):
+                self.set_external_status(old, "removed", f"superseded by {ext}")
+                self.log(r["playlist_id"], old, "superseded", f"by {ext}; was failed: {r['reason'] or ''}")
+                self.db.execute("UPDATE import_order SET wanted_id=? WHERE wanted_id=?", (ext, old))
 
     def set_external_tier(self, ext_id: str, tier: str) -> None:
         """Change the tier an external row is sourced at; logged when it changes."""

@@ -1204,3 +1204,136 @@ def test_apply_dry_run_runs_while_the_worker_holds_its_lock(tmp_path, template, 
     out = capsys.readouterr()
     assert rc == 0 and "1 would be written, 0 skipped" in out.out and out.err == ""
     assert p.read_bytes() == before
+
+
+# ── M9 §8a: AcoustID answers cached beside the proposal ─────────────────────────────────────────────────────────
+
+def test_a_second_propose_asks_acoustid_nothing_new(tmp_path, template):
+    music, out = tmp_path / "music", tmp_path / "out"
+    tagged(music, "D/free.flac", template, artist="Double Exposure", title="My Love Is Free")
+    tagged(music, "K/song.flac", template, artist="Kool & the Gang", title="Song")
+    two = [rec(RA, "My Love Is Free", 8.0, artist="Double Exposure"),
+           rec(RB, "My Love Is Free", 8.0, artist="Double Exposure")]
+    mb = FakeMB(two, searches={"My Love Is Free": two, "Song": [rec(R1, "Song", 8.0)]})
+    asked = []
+
+    def lookup(path):
+        asked.append(path)
+        return [{"id": RB, "title": "My Love Is Free", "score": 0.9, "acoustid": "a-1"}]
+    first = ib.propose(music, out, mb, lookup=lookup, log=lambda s: None)
+    assert len(asked) == 2 and (out / ib.ACOUSTID_CACHE).exists()
+    assert ib.ACOUSTID_CACHE == "acoustid-cache.jsonl"
+    second = ib.propose(music, out, mb, lookup=lookup, log=lambda s: None)
+    assert len(asked) == 2
+    assert [p.cls for p in second] == [p.cls for p in first] and "acoustid" in {p.cls for p in first}
+    # a retagged file is a different file: asked again
+    from scripts.tag_cleanup import write_minimal
+    write_minimal(music / "K/song.flac", {"artist": "Kool & the Gang", "title": "Song", "album": "LP"})
+    ib.propose(music, out, mb, lookup=lookup, log=lambda s: None)
+    assert asked[2:] == [music / "K/song.flac"]
+
+
+def test_apply_and_revert_never_read_the_acoustid_cache(tmp_path, template, monkeypatch):
+    music, out = tmp_path / "music", tmp_path / "out"
+    tagged(music, "K/song.flac", template, artist="Kool & the Gang", title="Song")
+    ib.propose(music, out, FakeMB(searches={"Song": [rec(R1, "Song", 8.0)]}), log=lambda s: None)
+    (out / ib.ACOUSTID_CACHE).write_text("{}\n")
+    real_open = open
+
+    def guarded(file, *a, **kw):
+        assert Path(file).name != ib.ACOUSTID_CACHE, "apply/revert opened the AcoustID cache"
+        return real_open(file, *a, **kw)
+
+    def no_cache(*a, **kw):
+        raise AssertionError("apply/revert built an AcoustID cache")
+    monkeypatch.setattr("builtins.open", guarded)
+    monkeypatch.setattr(Path, "read_bytes", lambda self: no_cache() if self.name == ib.ACOUSTID_CACHE
+                        else real_open(self, "rb").read())
+    monkeypatch.setattr(ib.acoustid, "Cache", no_cache)
+    log = tmp_path / "apply.jsonl"
+    assert ib.main(["apply", str(out / ib.PROPOSAL), "--music", str(music), "--yes", "--no-navidrome",
+                    "--classes", "search", "--log", str(log)]) == 0
+    assert log.exists()
+    assert ib.main(["revert", str(log), "--music", str(music)]) == 0
+
+
+# ── M9 §8c: a version MusicBrainz names only in the disambiguation ──────────────────────────────────────────────
+
+def _fixture_recording(**over):
+    """The first recording of the captured search, copied with `over` set, read by the real parser."""
+    from sourcing.musicbrainz import parse_recording
+    d = json.loads((FIXTURES / "musicbrainz_search.sample.json").read_text())["recordings"][0]
+    return parse_recording(dict(d, **over))
+
+
+def test_a_disambiguation_only_version_fits_a_file_titled_with_it(tmp_path, template):
+    music = tmp_path / "music"
+    twelve = _fixture_recording(disambiguation='12" version', length=8000)
+    assert (twelve.title, twelve.artist) == ("My Love Is Free", "Double Exposure")
+    labelled = tagged(music, "a.flac", template, artist="Double Exposure", title="My Love Is Free (12'' Version)")
+    plain = tagged(music, "b.flac", template, artist="Double Exposure", title="My Love Is Free")
+    pr = ib.classify(facts(music, labelled), FakeMB([twelve], searches={"My Love Is Free": [twelve]}))
+    assert pr.cls == "search" and pr.recording == twelve.id
+    pr = ib.classify(facts(music, plain), FakeMB([twelve], searches={"My Love Is Free": [twelve]}))
+    assert pr.cls == "none" and pr.write == {}
+    # the file's own id is confirmed the same way
+    pr = ib.classify(facts(music, tagged(music, "c.flac", template, artist="Double Exposure",
+                                         title="My Love Is Free (12'' Version)", mb_trackid=twelve.id)),
+                     FakeMB([twelve]))
+    assert pr.cls == "confirmed"
+
+
+def test_a_recording_without_a_disambiguation_is_unchanged(tmp_path, template):
+    music = tmp_path / "music"
+    bare = _fixture_recording(length=8000)
+    assert bare.disambiguation == ""
+    labelled = tagged(music, "a.flac", template, artist="Double Exposure", title="My Love Is Free (12'' Version)")
+    plain = tagged(music, "b.flac", template, artist="Double Exposure", title="My Love Is Free")
+    pr = ib.classify(facts(music, labelled), FakeMB([bare], searches={"My Love Is Free": [bare]}))
+    assert pr.cls == "none"
+    pr = ib.classify(facts(music, plain), FakeMB([bare], searches={"My Love Is Free": [bare]}))
+    assert pr.cls == "search" and pr.recording == bare.id
+
+
+def test_a_disambiguation_never_relabels_a_title_that_has_a_label(tmp_path, template):
+    music = tmp_path / "music"
+    dub = _fixture_recording(title="My Love Is Free (Dub)", disambiguation='12" version', length=8000)
+    f = tagged(music, "a.flac", template, artist="Double Exposure", title="My Love Is Free (12'' Version)")
+    pr = ib.classify(facts(music, f), FakeMB([dub], searches={"My Love Is Free": [dub]}))
+    assert pr.cls == "none"
+
+
+def test_a_disambiguation_only_duplicate_never_spoils_a_labelled_recordings_pick(tmp_path, template):
+    """Recall only (R6 review): a recording that fits by its disambiguation counts only when none fits by its title,
+    so the unique `isrc` or `search` pick of before §8c stays unique."""
+    music = tmp_path / "music"
+    titled = _fixture_recording(id=RA, title='My Love Is Free (12" Version)', length=8000)
+    dup = _fixture_recording(id=RB, disambiguation='12" version', length=8000)
+    f = tagged(music, "a.flac", template, artist="Double Exposure", title="My Love Is Free (12'' Version)")
+    pr = ib.classify(facts(music, f), FakeMB([titled, dup], searches={"My Love Is Free": [titled, dup]}))
+    assert pr.cls == "search" and pr.recording == RA and pr.write["mb_trackid"] == RA
+    g = tagged(music, "b.flac", template, artist="Double Exposure", title="My Love Is Free (12'' Version)",
+               isrc="USSA49310048")
+    pr = ib.classify(facts(music, g), FakeMB([titled, dup], isrcs={"USSA49310048": [titled, dup]}))
+    assert pr.cls == "isrc" and pr.recording == RA
+
+
+def test_two_disambiguation_only_fits_stay_ambiguous(tmp_path, template):
+    """More recall can mean a tie: MusicBrainz duplicates are never resolved by guessing."""
+    music = tmp_path / "music"
+    a = _fixture_recording(id=RA, disambiguation='12" version', length=8000)
+    b = _fixture_recording(id=RB, disambiguation='12" version', length=8000)
+    f = tagged(music, "a.flac", template, artist="Double Exposure", title="My Love Is Free (12'' Version)")
+    pr = ib.classify(facts(music, f), FakeMB([a, b], searches={"My Love Is Free": [a, b]}))
+    assert pr.cls == "ambiguous" and set(pr.candidates) == {RA, RB} and pr.write == {}
+
+
+def test_a_credited_disambiguation_fits_only_that_credit(tmp_path, template):
+    music = tmp_path / "music"
+    moulton = _fixture_recording(disambiguation="Tom Moulton mix", length=8000)
+    other = tagged(music, "a.flac", template, artist="Double Exposure", title="My Love Is Free (Larry Levan Mix)")
+    pr = ib.classify(facts(music, other), FakeMB([moulton], searches={"My Love Is Free": [moulton]}))
+    assert pr.cls == "none"
+    his = tagged(music, "b.flac", template, artist="Double Exposure", title="My Love Is Free (Tom Moulton Mix)")
+    pr = ib.classify(facts(music, his), FakeMB([moulton], searches={"My Love Is Free": [moulton]}))
+    assert pr.cls == "search" and pr.recording == moulton.id

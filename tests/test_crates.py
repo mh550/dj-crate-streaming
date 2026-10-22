@@ -475,3 +475,103 @@ def test_repoint_song_moves_an_unfinished_placement_so_the_look_finds_the_new_so
         s.note_placement(wid, "pl-1", state, None, song_id="s4")
     assert s.repoint_song("s4", "s9")["placements"] == 2
     assert [s.placement(w, "pl-1")["song_id"] for w in ("ext-1", "ext-2", "ext-3")] == ["s9", "s9", "s4"]
+
+
+def _events(s, wanted_id, kind):
+    return [tuple(r) for r in s.db.execute("SELECT playlist_id, detail FROM events WHERE song_id=? AND kind=?",
+                                           (wanted_id, kind))]
+
+
+def test_a_reask_reuses_a_failed_unfiled_row():
+    # M9 §8h (R6-03): a re-import puts the failed row back to needs_source, same id, instead of queuing a second one.
+    s = CrateStore()
+    ext = s.add_external_wanted("Chic", "Good Times", playlist_id="pl-1", position=2, tier="medium")
+    s.set_wanted_status(ext, "failed", "download timed out")
+    assert s.find_external("Chic", "Good Times") is None                       # as before: failed is not live
+    assert s.find_external("Chic", "Good Times", include_failed=True)["song_id"] == ext
+    again = s.add_external_wanted("chic", "good times!", playlist_id="pl-3", position=5, reask="Tea tent")
+    row = s.external(ext)
+    assert again == ext and s.external_count() == 1
+    assert (row["status"], row["reason"]) == ("needs_source", "re-asked by import of Tea tent")
+    assert (row["playlist_id"], row["position"], row["tier"]) == ("pl-3", 5, "crate")    # as a new row: default_tier
+    assert _events(s, ext, "reasked") == [("pl-3", "was failed: download timed out")]
+    assert s.add_external_wanted("Chic", "Good Times", reask="Tea tent") == ext                # live now: no-op
+    assert len(_events(s, ext, "reasked")) == 1 and s.external(ext)["position"] == 5
+
+
+def test_a_reask_prefers_a_live_row_and_never_revives_a_filed_or_removed_one():
+    s = CrateStore()
+    failed = s.add_external_wanted("Chic", "Le Freak")
+    s.set_wanted_status(failed, "failed", "download timed out")
+    live = s.add_external_wanted("Chic", "Le Freak")                       # an earlier import's duplicate
+    assert live != failed and s.add_external_wanted("Chic", "Le Freak", reask="Tea tent") == live
+    assert s.external(failed)["status"] == "failed" and _events(s, failed, "reasked") == []
+    filed = s.add_external_wanted("Chic", "Good Times")
+    s.set_wanted_status(filed, "failed", "Navidrome never indexed A/B/x.flac; file is in the library")
+    assert s.add_external_wanted("Chic", "Good Times", reask="Tea tent") == filed
+    assert s.external(filed)["status"] == "failed" and _events(s, filed, "reasked") == []
+    gone = s.add_external_wanted("Sade", "Smooth Operator", playlist_id="pl-3", position=1)
+    s.forget_playlist("pl-3")
+    fresh = s.add_external_wanted("Sade", "Smooth Operator", playlist_id="pl-9", position=4, reask="Tea tent")
+    assert fresh != gone and s.external(fresh)["status"] == "needs_source"     # R6 review: an import asks again
+    row = s.external(gone)
+    assert (row["status"], row["reason"], row["playlist_id"], row["position"]) == ("removed", "playlist deleted", "pl-3", 1)
+    assert _events(s, gone, "reasked") == []
+    assert s.add_external_wanted("Sade", "Smooth Operator") == fresh                     # and once only
+
+
+def test_a_reask_revives_the_newest_of_several_failed_rows_and_supersedes_the_rest():
+    # R6-03 review: a live crates.db may hold duplicates from before §8h; the newest is the one import_order names.
+    s = CrateStore()
+    old = s.add_external_wanted("Chic", "Good Times", playlist_id="pl-1", position=2)
+    s.set_wanted_status(old, "failed", "download timed out")
+    new = s.add_external_wanted("Chic", "Good Times", playlist_id="pl-1", position=2)
+    s.set_wanted_status(new, "failed", "no candidate")
+    assert s.add_external_wanted("Chic", "Good Times", playlist_id="pl-1", position=2, reask="Tea tent") == new
+    assert s.external(new)["status"] == "needs_source"
+    assert (s.external(old)["status"], s.external(old)["reason"]) == ("removed", f"superseded by {new}")
+    assert _events(s, old, "superseded") == [("pl-1", f"by {new}; was failed: download timed out")]
+    assert [r["song_id"] for r in s.wanted()] == [new]
+    assert s.add_external_wanted("Chic", "Good Times", reask="Tea tent") == new    # the removed row never shadows it
+
+
+def test_a_reask_keeps_an_older_duplicate_with_a_waiting_approval_and_repoints_import_order():
+    # R6 review: Michael's yes is never superseded (as forget_playlist and upgrade_busy keep it), and another
+    # playlist's import_order follows the surviving row.
+    s = CrateStore()
+    old = s.add_external_wanted("Chic", "Good Times", playlist_id="pl-1", position=2)
+    s.set_wanted_status(old, "failed", "download timed out")
+    approved = s.add_external_wanted("Chic", "Le Freak", playlist_id="pl-1", position=3)
+    s.set_wanted_status(approved, "failed", "download timed out")
+    s.record_import_order("pl-1", [(2, None, old), (3, None, approved)])
+    new = s.add_external_wanted("Chic", "Good Times", playlist_id="pl-3", position=1)
+    s.set_wanted_status(new, "failed", "no candidate")
+    newer = s.add_external_wanted("Chic", "Le Freak", playlist_id="pl-3", position=2)
+    s.set_wanted_status(newer, "failed", "no candidate")
+    s.approve(approved, "michael", None, "medium")
+    s.add_external_wanted("Chic", "Good Times", playlist_id="pl-3", position=1, reask="Tea tent")
+    s.add_external_wanted("Chic", "Le Freak", playlist_id="pl-3", position=2, reask="Tea tent")
+    assert s.external(old)["status"] == "removed" and s.external(approved)["status"] == "failed"
+    assert [(r["position"], r["wanted_id"]) for r in s.import_order("pl-1")] == [(2, new), (3, approved)]
+
+
+def test_a_newer_failed_row_is_reasked_past_an_older_removed_one():
+    s = CrateStore()
+    gone = s.add_external_wanted("Chic", "Good Times", playlist_id="pl-1", position=2)
+    s.set_wanted_status(gone, "failed", "download timed out")
+    failed = s.add_external_wanted("Chic", "Good Times", playlist_id="pl-3", position=1)    # queued before §8h
+    s.set_wanted_status(gone, "removed", "playlist deleted")
+    s.set_wanted_status(failed, "failed", "download timed out")
+    assert s.add_external_wanted("Chic", "Good Times", playlist_id="pl-3", position=1, reask="Tea tent") == failed
+    assert s.external(gone)["status"] == "removed" and s.external(failed)["status"] == "needs_source"
+
+
+def test_a_reasked_row_drops_its_old_preview_and_takes_the_imports_tier_and_length():
+    s = CrateStore()
+    ext = s.add_external_wanted("Chic", "Good Times", duration_s=200, tier="crate")
+    s.set_preview(ext, {"status": "ok", "pick": {"username": "u", "filename": "f.flac"}})
+    s.set_wanted_status(ext, "failed", "download timed out")
+    s.add_external_wanted("Chic", "Good Times", album="Risqué", duration_s=501, reask="Tea tent", default_tier="medium")
+    row = s.external(ext)
+    assert s.preview(ext) is None and (row["tier"], row["duration"], row["album"]) == ("medium", 501, "Risqué")
+    assert ("None", "needs_source") in [(str(p), d) for p, d in _events(s, ext, "status")]

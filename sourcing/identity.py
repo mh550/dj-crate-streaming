@@ -293,16 +293,29 @@ def _peel_file_junk(t: str, artist: str | None) -> str | None:
     return rest
 
 
-def strip_trackno(s: str) -> str:
-    """A leading track number ("03 - ", "A1 "), as Soulseek file names carry it."""
-    return _TRACKNO.sub("", s)
+def strip_trackno(s: str, wanted: str | None = None) -> str:
+    """A leading track number ("03 - ", "A1 "), as Soulseek file names carry it. With the wanted title, a bare
+    "NN " (digits and spaces only) stays when the wanted title is that number and more words, the rest starts with
+    those words and not with the whole title: the "99 " of "99 Luftballons" is the song's (M9 §8b); "01 99
+    Luftballons" still loses its "01 ", and "22 Shake It Off" its "22 " when "22" is wanted. Whole words only."""
+    m = _TRACKNO.match(s)
+    if not m:
+        return s
+    rest, n = s[m.end():], m.group().strip()
+    if wanted and n.isdigit():
+        want, got = words(parse_title(wanted).base), words(rest)
+        starts = lambda a, b: a == b or a.startswith(b + " ")
+        if want.startswith(n + " ") and starts(got, want[len(n) + 1:]) and not starts(got, want):
+            return s
+    return rest
 
 
-def parse_filename(basename: str, artist: str | None = None) -> Title:
+def parse_filename(basename: str, artist: str | None = None, wanted: str | None = None) -> Title:
     """`parse_title` for a file name (a Soulseek basename): the extension, the track number and trailing file junk
     ("[320]", "[FLAC]", "(320 kbps)", "[WEB]", "(1979)") go first, so they cannot hide the label before them.
-    The scorer and fetch both read candidates with this, so they agree on which version a file is."""
-    t = strip_trackno(_EXT.sub("", basename or "").strip())
+    The scorer and fetch both read candidates with this, so they agree on which version a file is; both pass the
+    wanted title, so a number it starts with stays (`strip_trackno`)."""
+    t = strip_trackno(_EXT.sub("", basename or "").strip(), wanted)
     while (u := _peel_file_junk(t, artist)) is not None:
         t = u
     return parse_title(t, artist)

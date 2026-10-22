@@ -363,12 +363,16 @@ docker compose exec -T worker python -m scripts.identity_backfill propose       
 docker compose exec -T worker python -m scripts.identity_backfill propose --limit 40 # a trial
 ```
 
-- It makes `identity-proposal.json`, `identity-backfill-report.md` and `mb-cache.jsonl` in the output folder.
+- It makes `identity-proposal.json`, `identity-backfill-report.md`, `mb-cache.jsonl` and (with a key)
+  `acoustid-cache.jsonl` in the output folder.
   `--out` and `--music` change the folders. `--out` inside the library is refused.
 - MusicBrainz allows about one request per second, and about one in ten gets a 503, which the client retries. Expect
   roughly 45 to 70 minutes for the whole library. A progress line every 50 files shows the time left.
 - If the run is killed, run the same command again. Answers already fetched come from `mb-cache.jsonl`.
-- With `ACOUSTID_KEY` set in `/srv/docker/.env` it also uses AcoustID. Without it, that step is skipped.
+- With `ACOUSTID_KEY` set in `/srv/docker/.env` it also uses AcoustID (at most 3 requests a second). Without it, that
+  step is skipped. AcoustID answers are kept in `acoustid-cache.jsonl` in the output folder, keyed on path, size and
+  modification time, so a second propose asks only about changed files. Delete it to ask again for every file (an
+  answer of "not in AcoustID" is kept too). The key is never written to it. `apply` and `revert` do not read it.
 
 **2. Review.** Open `identity-backfill-report.md` (`/srv/docker/crates/identity/`). It lists each class with the files in
 it and a MusicBrainz link for each pick. Then, in `identity-proposal.json`:
@@ -628,7 +632,11 @@ profile for `dj-crates-web` decides. It is the default only for a database that 
   `playlist_gone` (reconcile); `pick`, `tagged`, `filed`, `renamed`, `reference`, `kept_both`, `upgrade_queued`,
   `proposal`, `replace` (approvals and copy replacement); `interrupted` (an approval cut off by a restart); `placed`,
   `not_placed` (placement); `playlist_health` (the export step: which playlists have entries on a missing song, logged
-  only when that list changes).
+  only when that list changes); `reasked` (import-playlist: a re-import put a failed, unfiled row back to
+  `needs_source` with its own id instead of queuing a second one, M9 §8h; the detail keeps the old reason) and
+  `superseded` (an older failed duplicate of that row, queued before §8h, set to `removed`; detail: the old reason;
+  one holding an approval is kept). A `removed` row (its playlist deleted) never answers an import: the import queues
+  a fresh row.
 
 ```
 cd /srv/docker
