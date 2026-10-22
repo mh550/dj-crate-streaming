@@ -18,6 +18,17 @@ Michael. The spec is `docs/specs/2026-10-21-guards-and-checks.md`; the brief is 
 
 ---
 
+### 2026-10-21 · R2-01 · passes
+New `scripts/live-run.sh` (reads `dj-worker-1`'s `org.opencontainers.image.revision`, cuts it to 10 chars, refuses in one
+line on: no docker, no container, empty/`<no value>`/`dev` label, missing `dj-crates:<rev>`; else prints
+`live-run: image dj-crates:<rev>` and execs `GIT_SHA=<rev> docker compose --project-directory /srv/docker run --rm --no-deps worker …`;
+`--print` prints the `%q`-quoted command only) and `scripts/live-check.sh` (the Check through it, `--print` too).
+`tests/test_live_run.py` (18, stub docker logs argv + GIT_SHA as JSON); docs: CLAUDE.md Check, worker.md check + trash,
+D45 *default* in the pivot spec; deploy.sh header fixed (it said the label held the full sha: it holds the 10-char one).
+Tests 1,523 → 1,541; full suite green in 555 s. Never ran either script (build-only).
+Proposed change: step 1 says to read deploy/compose.yml's `labels:`; there are none, the label is the Dockerfile's
+`LABEL org.opencontainers.image.revision=$GIT_SHA` (build arg from compose = deploy.sh's `--short=10`).
+
 ### 2026-10-21 · verify R1
 
 | Feature | Step | What you ran or read | What you saw | Holds |
