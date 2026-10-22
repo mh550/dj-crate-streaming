@@ -9,6 +9,15 @@ Michael steers from `INBOX.md` on this branch (status line `run | pause | stop`;
 session reads it at startup. Policy: **build-only** (`.harness/config.sh`) and the brief in `brief.md`: nothing live,
 no docker, no `/srv`, no network, no client UI, PRs only.
 
+### 2026-10-22 17:50 · S1-01 · passes
+
+- **Changed:** `sourcing/scorer.py`. New helpers `title_slot(basename)` (shared with `name_match`) and `slot_names_another_song`. A candidate whose title slot's song differs from the wanted title's song is rejected as `title slot is <slot>`, score 0. Songs are compared as `loose` base titles, with feat./ft. credits and labels ignored; D26 version rules are unchanged.
+- **Review findings fixed:** an Opus review of the first diff found that `- 09. Title`, the en dash `– 09 –` and underscore names bypassed the rule. It also found false rejects for an unbracketed `feat.` and for compilation slots (`Chic - Good Times`, `Good Times - Chic & Nile Rodgers`, `VA_Disco_Hits_07_Chic_Good_Times`). The slot regex now also takes `–` and `NN. `. Any ` - ` part of the slot, or the slot without the lead artist in front, may be the title.
+- **Tests:** 1757 → 1774 (17 new in `tests/test_scorer.py`). Every existing scorer, version, fetch and identity test passes unchanged.
+- **Verified:** `python3 -m sourcing.cli rank --fixture <scratch>/ext74.json --artist 'Al Green' --title "I'm Still In Love With You" --duration 196` prints `✗ title slot is One of These Good Old Days` and exits 3 (no acceptable pick). Full `check.sh`: green in 651 s, 1774 tests.
+- **Known limits (left as they are):** strict key equality still rejects slots like `Lovin' You` for "Loving You" and `Satisfaction` for "(I Can't Get No) Satisfaction". A slot after a bare `- 09 Title` (space only) isn't read as a slot, because that would collide with numeric titles ("Nena - 99 Luftballons").
+- **Next:** S1-02 (`verify._acoustid_check`). No questions for Michael.
+
 ### 2026-10-22 17:05 · initializer
 
 **Scope.** Milestone S1 of `docs/specs/2026-10-22-downloads-and-requests.md` (the eight download fixes from the Al
