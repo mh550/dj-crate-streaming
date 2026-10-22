@@ -18,6 +18,45 @@ Michael. The spec is `docs/specs/2026-10-21-guards-and-checks.md`; the brief is 
 
 ---
 
+### 2026-10-21 · verify R2
+
+| Feature | Step | What you ran or read | What you saw | Holds |
+|---|---|---|---|---|
+| R2-01 | 1 | Read scripts/live-run.sh; Dockerfile:15 and deploy.sh:22 for the label; tests/test_live_run.py happy-path and refusal tests | set -euo pipefail; inspect of dj-worker-1 label; refuses on missing docker/container, empty, `dev`, non-hex, missing image; prints `live-run: image dj-crates:<rev>` then `GIT_SHA=<rev> docker compose --project-directory /srv/docker run --rm --no-deps worker …`; truncates to 10. Label is set in the Dockerfile (compose.yml has no labels:), deploy.sh passes short=10; the script header documents it. Tests: happy path, 5 parametrized refusals, full-sha truncation, all pass | yes |
+| R2-01 | 2 | test_print_shows_the_exact_command_and_runs_no_compose; read script's print branch | --print outputs GIT_SHA=<rev> + quoted command, exit 0, compose log empty | yes |
+| R2-01 | 3 | Read scripts/live-check.sh; test_live_check_runs_export_then_check_through_live_run / _exits_with_the_checks_status | exec live-run.sh sh -c 'export && check'; argv equals the CHECK_CMD; status passed on | yes |
+| R2-01 | 4 | `pytest tests/test_live_run.py`; read the happy-path, refusal, print, live-check tests | 26 passed; GIT_SHA env asserted, `run --rm --no-deps worker` and verbatim command, refusals exit 1 with compose == [], print has no compose, live-check argv asserted | yes |
+| R2-01 | 5 | `grep -n docker tests/test_live_run.py` | Only the stub, PATH handling, argv assertions and refusal text; no real docker call | yes |
+| R2-01 | 6 | grep CLAUDE.md, docs/worker.md, pivot spec | CLAUDE.md Check names scripts/live-check.sh with the long form; worker.md lines 465-468 use scripts/live-run.sh … trash; pivot spec line 40 has `D45 *default*` | yes |
+| R2-01 | 7 | `git log` | Commit `R2-01: live-run.sh and live-check.sh run one-offs in the deployed image` present (c671621) | yes |
+| R2-01 | 8 | `/home/mh550/projects/agent-harness/lib/check.sh`; `git status -sb` | check: green, 1549 tests; R2 commits already on origin/harness/… (branch only ahead by the merge and harness commits) | yes |
+| R2-02 | 1 | Read live-run.sh/live-check.sh and the diff; tests for spaces (`sh -c 'a && b'`), no-deps, docker missing, .env grep | test_an_argument_with_spaces… asserts argv[-3:]==['sh','-c','a && b']; --no-deps in every argv assertion; label name org.opencontainers.image.revision matches Dockerfile:15 (compose.yml has no labels); test_no_docker_on_path_is_refused; `grep .env` in both scripts finds nothing | yes |
+| R2-02 | 2 | Read live-run.sh cmd array; test_a_git_sha_in_the_callers_environment…, test_a_label_that_is_not_a_hex_sha… | One `cmd=(…)` array serves --print and the run; extra tests for findings exist and pass | yes |
+| R2-02 | 3 | Read docs/plans/2026-10-17-morning-checklist.md lines 1-16, 70-78 | Step 3 (trash) uses scripts/live-run.sh; header note says R8 replaces this checklist | yes |
+| R2-02 | 4 | `git log --format=%s` | Commit `R2-02: review and simplify live-run` present (98def83) | yes |
+| R2-02 | 5 | Harness check.sh; origin ref | green 1549 tests; 8146059 is on origin | yes |
+
+### 2026-10-21 · R2-02 · passes
+Opus review of `r2.diff` (scratch): quoting, `--no-deps`, the label name (Dockerfile:15), no-docker refusal and .env all hold;
+one cmd array already feeds `--print` and the run. One Important finding, fixed test-first: `scripts/live-check.sh ""` (and
+`--print junk`) forwarded `"$@"` to live-run and ran a live compose with an empty command word; it now accepts only no
+argument or a lone `--print` and builds the flag itself. Minors fixed: `docker inspect --type container`; a label that is
+not a hex sha (`development` used to become `developmen`) is refused before the 10-char cut; inspect refusal names
+"docker unreachable". Docs: morning checklist (R8-replaces note, **check** = live-check.sh, step 3.3 trash via live-run.sh),
+architecture trash row, worker.md "from a checkout", D45 notes that only the image is pinned (env/mounts come from
+/srv/docker/compose.yml). Tests 1,541 → 1,549; full suite green in 561 s. Never ran either script (build-only).
+
+### 2026-10-21 · R2-01 · passes
+New `scripts/live-run.sh` (reads `dj-worker-1`'s `org.opencontainers.image.revision`, cuts it to 10 chars, refuses in one
+line on: no docker, no container, empty/`<no value>`/`dev` label, missing `dj-crates:<rev>`; else prints
+`live-run: image dj-crates:<rev>` and execs `GIT_SHA=<rev> docker compose --project-directory /srv/docker run --rm --no-deps worker …`;
+`--print` prints the `%q`-quoted command only) and `scripts/live-check.sh` (the Check through it, `--print` too).
+`tests/test_live_run.py` (18, stub docker logs argv + GIT_SHA as JSON); docs: CLAUDE.md Check, worker.md check + trash,
+D45 *default* in the pivot spec; deploy.sh header fixed (it said the label held the full sha: it holds the 10-char one).
+Tests 1,523 → 1,541; full suite green in 555 s. Never ran either script (build-only).
+Proposed change: step 1 says to read deploy/compose.yml's `labels:`; there are none, the label is the Dockerfile's
+`LABEL org.opencontainers.image.revision=$GIT_SHA` (build arg from compose = deploy.sh's `--short=10`).
+
 ### 2026-10-21 · verify R1
 
 | Feature | Step | What you ran or read | What you saw | Holds |

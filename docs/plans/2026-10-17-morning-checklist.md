@@ -1,5 +1,9 @@
 # Morning checklist: the live steps for the dj-2026-10-17 run
 
+> **R8 replaces this checklist** (`docs/plans/2026-10-22-morning-checklist.md`, run dj-crate-streaming-2026-10-21).
+> Until then: **check** and the trash step below run in the deployed image through `scripts/live-check.sh` and
+> `scripts/live-run.sh` (R2, D45).
+
 For Michael. Everything below is built on branch `harness/dj-2026-10-17` and tested against fakes; **none of it has run
 live**. Do the steps in order and stop at the first surprise: undo with that step's undo, run **check**, and ask.
 The full detail of each stage is in `docs/worker.md` ("Duplicate cleanup", "Placement") and the plans named below.
@@ -8,8 +12,9 @@ The full detail of each stage is in `docs/worker.md` ("Duplicate cleanup", "Plac
 `flock -n /srv/docker/crates/live.lock <command>`; if the lock is taken, someone else is working, so wait. Make no
 live write from 03:15 to 04:30 or while `systemctl is-active restic-backup.service` says `active`.
 
-**check** =
+**check** = `scripts/live-check.sh` (from a checkout of this repo; `--print` shows the command). It runs
 `docker compose run --rm --no-deps worker sh -c 'python3 -m scripts.export_playlists export && python3 -m scripts.export_playlists check'`
+in the deployed image `dj-crates:<rev>` (the `dj-worker-1` container's revision label), not `dj-crates:dev`.
 Pass: exit 0 and "ok: every playlist file matches Navidrome…".
 
 ## 0. Before anything
@@ -66,8 +71,11 @@ The trash step stays at `--dry-run` until you lift that: review findings I1 and 
 3. Trash (needs the worker stopped, D36):
    ```
    docker compose stop worker
-   docker compose run --rm --no-deps worker python3 -m scripts.duplicate_cleanup trash --dry-run
+   scripts/live-run.sh python3 -m scripts.duplicate_cleanup trash --dry-run    # from a checkout of this repo
    ```
+   `live-run.sh` prints `live-run: image dj-crates:<rev>` first and refuses (exit 1, one line) when the stopped
+   `dj-worker-1` has no revision label, was built as `dev`, or `dj-crates:<rev>` is gone; `--print` shows the command.
+   Every trash stage below runs the same way (`scripts/live-run.sh python3 -m scripts.duplicate_cleanup trash --limit 5`).
    If the dry run refuses ("no Navidrome scan finished after the newest repoint log"), scan in Navidrome, wait, run it
    again. When it is clean, `docker compose start worker` and **stop here until the trash is cleared to run**. Then
    the stages `--limit 5`, `--limit 50`, all, each followed by **check**, and `docker compose start worker` at the end.
