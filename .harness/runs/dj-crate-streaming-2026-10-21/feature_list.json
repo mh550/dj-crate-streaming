@@ -198,7 +198,7 @@
         "Commit `R5-02: .m3u8 history before each rewrite, pruned after 30 days`.",
         "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "R5-03",
