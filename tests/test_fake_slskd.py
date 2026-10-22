@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from sourcing.fake_slskd import FakeSlskdServer
-from sourcing.slskd_client import SlskdClient
+from sourcing.slskd_client import SlskdClient, SlskdError
 from tests.helpers import load_responses
 
 RESPONSES = load_responses()
@@ -110,20 +110,18 @@ def test_a_peer_with_no_transfers_is_404_and_the_client_reads_it_as_empty(tmp_pa
 
 
 def test_fail_enqueue_mode_returns_500(tmp_path):
-    import urllib.error
     with FakeSlskdServer(RESPONSES, tmp_path, files={GOOD: b"x"}, fail_enqueue=True) as srv:
         try:
             SlskdClient(srv.url, "k").enqueue("vinylhead77", [{"filename": GOOD, "size": 1}])
-            assert False, "expected HTTPError"
-        except urllib.error.HTTPError as e:
-            assert e.code == 500
+            assert False, "expected SlskdError"
+        except SlskdError as e:
+            assert e.status == 500
 
 
 def test_wrong_api_key_is_401(tmp_path):
-    import urllib.error
     with FakeSlskdServer(RESPONSES, tmp_path, files={}) as srv:
         try:
             SlskdClient(srv.url, "wrong").downloads()
-            assert False, "expected HTTPError"
-        except urllib.error.HTTPError as e:
-            assert e.code == 401
+            assert False, "expected SlskdError"
+        except SlskdError as e:
+            assert e.status == 401

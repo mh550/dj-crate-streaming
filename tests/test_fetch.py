@@ -76,7 +76,7 @@ def run(world, srv, approve, wanted_id="s4", **kw):
     kw.setdefault("filer", world["filer"])
     kw.setdefault("navidrome_db", world["nd"].state.db_path)
     kw.setdefault("trash_root", world["trash"])
-    return fetch(wanted_id, store=world["store"], slskd=SlskdClient(srv.url, "k"), navidrome=world["client"],
+    return fetch(wanted_id, store=world["store"], slskd=SlskdClient(srv.url, srv.api_key), navidrome=world["client"],
                  reconciler=world["rec"], music_root=world["music"], downloads_root=world["dl"],
                  approve=approve, poll_s=0.01, download_timeout_s=kw.pop("download_timeout_s", 1),
                  scan_timeout_s=1, **kw)
@@ -278,12 +278,16 @@ def test_a_copy_upgrade_navidrome_lists_as_another_song_replaces_nothing(world, 
 
 
 def test_exception_after_sourcing_marks_failed_and_reraises(world, tmp_path):
-    import urllib.error
-    with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: b"x"}, fail_enqueue=True) as srv:
-        with pytest.raises(urllib.error.HTTPError):
+    """The reason names the step and the endpoint (S1-05): no peer name, no URL, no API key."""
+    from sourcing.slskd_client import SlskdError
+    with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: b"x"}, fail_enqueue=True, api_key="key-5e1d") as srv:
+        with pytest.raises(SlskdError):
             run(world, srv, approve=True)
     st = world["store"].track_status_map("pl-2")["s4"]
-    assert st["status"] == "failed" and "HTTPError" in st["reason"]
+    assert st["status"] == "failed"
+    assert st["reason"] == "SlskdError: slskd POST /transfers/downloads/<peer>: HTTP 500"
+    assert "vinylhead77" not in st["reason"] and "@" not in st["reason"] and srv.api_key not in st["reason"]
+    assert not any("vinylhead77" in (e["detail"] or "") for e in world["store"].events(limit=1000))
 
 
 def test_stale_completed_record_does_not_short_circuit_a_retry(world, tmp_path):

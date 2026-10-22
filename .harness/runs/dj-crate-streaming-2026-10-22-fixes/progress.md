@@ -9,6 +9,15 @@ Michael steers from `INBOX.md` on this branch (status line `run | pause | stop`;
 session reads it at startup. Policy: **build-only** (`.harness/config.sh`) and the brief in `brief.md`: nothing live,
 no docker, no `/srv`, no network, no client UI, PRs only.
 
+### 2026-10-22 19:10 · S1-05 · passes
+
+- **Changed:** `sourcing/slskd_client.py`: `SlskdError(OSError)` with `method`, `endpoint`, `status`. Every call passes its endpoint template to `_req`. An HTTP error reads `slskd POST /transfers/downloads/<peer>: HTTP 500`; a connection error reads `slskd POST /searches: Connection refused` with `status=None`. `downloads(peer)` still reads 404 as empty and `remove_download` still reads 404 as gone (both now via `status`). `fetch.py` and `worker.py` had no `HTTPError`/`urllib` handling to remove.
+- **Beyond the step (Opus review, two Important findings):** an SSL error's text names the host, so `_why` gives only its kind (`reason` or the type name). A bad base URL (`slskd.home:5030`, no scheme, bad port) raised `ValueError`/`URLError` with the host and peer in it; it is now `: invalid URL`. A cut-off body (`IncompleteRead`) and a hang-up are `SlskdError` too, which S1-06 can read as connection errors (`status is None`).
+- **Tests:** 1806 → 1819. New `tests/test_slskd_client.py` (12): 404/500/401 strings, the closed port with key `secret-key-7f3a`, all 8 templates, SSL, 3 bad URLs, 3 dropped connections. In `tests/test_fetch.py`, the fail_enqueue fetch's reason is exactly `SlskdError: slskd POST /transfers/downloads/<peer>: HTTP 500`, with no `vinylhead77`, `@` or key, in the reason or any event. Its `run()` now uses `srv.api_key`. The new tests failed first with `ImportError: SlskdError`.
+- **Deviation:** `tests/test_fake_slskd.py`'s two raw-wire 404 tests (urllib straight at the fake) still assert `HTTPError`, because they check the fake's wire, not the client. Its client-level 500/401 tests now assert `SlskdError.status`.
+- **Verified:** full `check.sh` green in 665 s, 1819 tests.
+- **Next:** S1-06 (retry on a transfer or connection error): `SlskdError.status is None or >= 500` is the test. No questions for Michael.
+
 ### 2026-10-22 18:05 · S1-04 · passes
 
 - **Changed:** `sourcing/fake_slskd.py`: a transfer DELETE acts as slskd 0.26.1 does. Without `?remove=true` it cancels an `InProgress` record (`Completed, Cancelled`) and keeps every record; with `?remove=true` the record goes; both answer 204 with no body; an unknown id is 404. `seed_transfer(..., transfer_id=)`, and a user's transfers are listed sorted by id (the real order isn't captured). `sourcing/slskd_client.py` `remove_download` sends `?remove=true`, and a 404 means already gone. `sourcing/fetch.py` records the ids of this file's transfers right before the enqueue and follows only a new id; it no longer uses `mine[-1]` or the enqueue response. `docs/hard-won-facts.md` gets the slskd fact.
