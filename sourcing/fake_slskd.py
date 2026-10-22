@@ -31,6 +31,7 @@ class FakeSlskdServer:
         self.searches: dict[str, str] = {}            # id → searchText
         self.enqueued: list[tuple[str, str]] = []     # (username, filename)
         self.transfers: list[dict] = []
+        self.empty_reads = 0                          # this many responses reads answer [] (live slskd, 2026-10-21)
         self.httpd = ThreadingHTTPServer(("127.0.0.1", port), self._handler())
         self.httpd.daemon_threads = True
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
@@ -120,6 +121,9 @@ class FakeSlskdServer:
                 m = re.fullmatch(r"/api/v0/searches/([^/]+)(/responses)?", path)
                 if m and m.group(1) in fake.searches:
                     if m.group(2):
+                        if fake.empty_reads > 0:
+                            fake.empty_reads -= 1
+                            return self._send([])
                         self._send(fake.responses)
                     else:
                         self._send({"id": m.group(1), "state": "Completed, Succeeded", "responseCount": len(fake.responses)})
@@ -127,7 +131,11 @@ class FakeSlskdServer:
                     users = sorted({t["username"] for t in fake.transfers})
                     self._send([fake._user_view(u) for u in users])
                 elif path.startswith("/api/v0/transfers/downloads/"):
-                    self._send(fake._user_view(path.rsplit("/", 1)[1]))
+                    view = fake._user_view(path.rsplit("/", 1)[1])
+                    if view["directories"]:
+                        self._send(view)
+                    else:                       # real slskd (0.26) answers 404 for a peer with no transfers
+                        self._send({"error": "not found"}, 404)
                 else:
                     self._send({"error": "not found"}, 404)
 

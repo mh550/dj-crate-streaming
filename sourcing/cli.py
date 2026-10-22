@@ -312,7 +312,7 @@ def main(argv: list[str] | None = None) -> int:
         client = SlskdClient(a.slskd, a.api_key)
         sid = client.search(f"{a.artist} {a.title}")
         st = client.wait_search(sid)
-        responses = client.search_responses(sid)
+        responses = client.search_responses(sid, expect=st.get("responseCount") or 0)
         print(f"search {st.get('state')}: {len(responses)} peers responded", file=sys.stderr)
         if a.save:
             Path(a.save).write_text(json.dumps(responses))
