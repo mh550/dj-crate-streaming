@@ -11,6 +11,8 @@ button.primary { border-color:var(--accent); color:var(--accent); }
 button:disabled, select:disabled { opacity:.5; cursor:default; }
 button.ghost { background:transparent; }
 button:hover { border-color:var(--muted); }
+/* playlist health (M9 §7): under the header, full width, long names wrap */
+.banner { padding:8px 16px; border-bottom:1px solid var(--line); border-left:3px solid var(--warn); background:var(--panel); font-size:13px; overflow-wrap:anywhere; }
 .tabs { display:flex; gap:4px; padding:8px 12px 0; border-bottom:1px solid var(--line); }
 .tabs button { min-height:44px; border:none; border-bottom:2px solid transparent; border-radius:0; background:transparent; color:var(--muted); padding:8px 10px; }
 .tabs button.active { color:var(--fg); border-bottom-color:var(--accent); }

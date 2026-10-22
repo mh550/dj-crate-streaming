@@ -29,11 +29,23 @@ document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
 });
 
 // ---- status
+// health:begin
+// playlist health (M9 §7): one line per playlist whose entries point at files Navidrome no longer has, in the
+// worker's words (sourcing.worker.health_detail). Healing stays manual.
+function healthLines(rows) {
+  return (rows || []).map(r => r.missing === 1
+    ? `1 entry in ${r.name} points at a missing file`
+    : `${r.missing} entries in ${r.name} point at missing files`);
+}
+// health:end
 async function loadStatus() {
   try {
     const s = await api("/api/status");
     $("#server").textContent = `${s.serverType || "subsonic"} ${s.serverVersion || ""} · ${s.user} · ${s.crates} crate${s.crates === 1 ? "" : "s"}`;
     $("#wanted-count").textContent = s.wanted || "";
+    const lines = healthLines(s.playlistHealth), banner = $("#health");
+    banner.replaceChildren(...lines.map(t => el("div", null, t)));
+    banner.classList.toggle("hidden", !lines.length);
   } catch (e) { $("#server").textContent = e.message; $("#server").classList.add("err"); }
 }
 
@@ -427,3 +439,5 @@ $("#btn-reconcile").onclick = async () => {
 };
 
 loadStatus(); loadPlaylists(); loadStreamTier();
+// the worker recounts playlist health every export; a tab left open on the phone catches up when shown again
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") loadStatus(); });
