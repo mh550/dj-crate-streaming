@@ -3,6 +3,13 @@
 What this file is: the shared memory of the agent harness for this run. Each session appends one entry **at the top**
 (newest first) when it finishes a feature: what it built, what it learned, what it asks. Nobody edits older entries.
 
+### 2026-10-22 01:00 · R6-01 · passes
+- `sourcing/acoustid.py`: `Cache(path)` (`acoustid-cache.jsonl`, one line `{path,size,mtime_ns,recordings}`, last line wins, fsync'd append, torn tail cut, wrong-shaped lines skipped), `cached(lookup, cache)`, `make_lookup(key, cache=None, clock, sleep, *, opener)`; every request waits on its own process-wide `musicbrainz.Limiter` at `MIN_INTERVAL_S = 1/3` (`reset_shared_limiter`, reset in conftest). `musicbrainz._Limiter` → `Limiter`; its torn-line loader is now the shared `read_cache_lines`.
+- `scripts/identity_backfill.py`: `ACOUSTID_CACHE`; `propose` wraps any lookup in the cache beside the proposal; apply/revert never touch it. The CLI line now reads `AcoustID on (cache …); MusicBrainz cache …`. The verify step (`sourcing/cli.py`) is spaced but uncached.
+- Tests 1610 → 1621: 9 in test_acoustid.py (opener called once, mtime_ns/size miss appends, corrupt/torn/wrong-shape lines skipped, sleeps 1/3−0.1 and 1/3 across two lookups, separate from MB's limiter, key not in file, failures not cached, unwritable cache still answers); 2 in test_identity_backfill.py (second propose asks nothing, a retagged file is asked again; apply/revert never open the cache).
+- Verified: `lib/check.sh` green, 1621 tests, 585 s, on 4cc568e. An Opus review (diff in scratch `r6-01.diff`) found 1 Important issue (a wrong-shaped cache line was trusted and pinned a file at `error`). Fixed it test-first, along with: one stat per lookup, a failed cache write never hides an answer, the message wording, and three weak tests.
+- Next (R6-04): an empty answer (`[]`, "not in AcoustID") is cached on purpose. Delete the file to ask again. The docs (worker.md, M9 §8 table) are left for R6-04, as its step says.
+
 ### 2026-10-22 · verify R5
 
 | Feature | Step | What you ran or read | What you saw | Holds |
