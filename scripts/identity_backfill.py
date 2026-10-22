@@ -60,6 +60,7 @@ ID_FIELDS = ("mb_trackid", "mb_workid", "acoustid_id")
 PROPOSAL = "identity-proposal.json"
 REPORT = "identity-backfill-report.md"
 CACHE = "mb-cache.jsonl"
+ACOUSTID_CACHE = "acoustid-cache.jsonl"      # beside the proposal; only `propose` reads it (M9 §8a)
 
 _MBID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")   # canonical: fullmatch, lowercase
 _ISRC = re.compile(r"^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$")
@@ -479,6 +480,8 @@ def propose(music_root: Path, out_dir: Path, mb: MusicBrainz, *, lookup=None, li
     music_root, out_dir = Path(music_root), Path(out_dir)
     check_out_dir(music_root, out_dir)
     paths = audio_files(music_root)[:limit]
+    if lookup is not None:                                   # an unchanged file is never fingerprinted twice
+        lookup = acoustid.cached(lookup, acoustid.Cache(out_dir / ACOUSTID_CACHE))
     proposals: list[Proposal] = []
     facts: list[FileFacts] = []
     counts: Counter = Counter()
@@ -1114,7 +1117,8 @@ def main(argv: list[str] | None = None, *, opener=None, sleep=None, navidrome=No
     mb = MusicBrainz(cache=a.out / CACHE, **kw)              # one client per run (tests inject opener/sleep)
     key = (os.environ.get("ACOUSTID_KEY") or "").strip()
     lookup = _redacting(acoustid.make_lookup(key), key) if key else None
-    print(f"AcoustID {'on' if lookup else 'off (no ACOUSTID_KEY)'}; cache {a.out / CACHE}", flush=True)
+    print(f"AcoustID {f'on (cache {a.out / ACOUSTID_CACHE})' if lookup else 'off (no ACOUSTID_KEY)'}; "
+          f"MusicBrainz cache {a.out / CACHE}", flush=True)
     props = propose(a.music, a.out, mb, lookup=lookup, limit=a.limit, log=lambda s: print(s, flush=True))
     n = Counter(p.cls for p in props)
     print(" ".join(f"{c}={n[c]}" for c in CLASSES if n[c]) + f" → {a.out / REPORT}")

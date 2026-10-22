@@ -1204,3 +1204,54 @@ def test_apply_dry_run_runs_while_the_worker_holds_its_lock(tmp_path, template, 
     out = capsys.readouterr()
     assert rc == 0 and "1 would be written, 0 skipped" in out.out and out.err == ""
     assert p.read_bytes() == before
+
+
+# ── M9 §8a: AcoustID answers cached beside the proposal ─────────────────────────────────────────────────────────
+
+def test_a_second_propose_asks_acoustid_nothing_new(tmp_path, template):
+    music, out = tmp_path / "music", tmp_path / "out"
+    tagged(music, "D/free.flac", template, artist="Double Exposure", title="My Love Is Free")
+    tagged(music, "K/song.flac", template, artist="Kool & the Gang", title="Song")
+    two = [rec(RA, "My Love Is Free", 8.0, artist="Double Exposure"),
+           rec(RB, "My Love Is Free", 8.0, artist="Double Exposure")]
+    mb = FakeMB(two, searches={"My Love Is Free": two, "Song": [rec(R1, "Song", 8.0)]})
+    asked = []
+
+    def lookup(path):
+        asked.append(path)
+        return [{"id": RB, "title": "My Love Is Free", "score": 0.9, "acoustid": "a-1"}]
+    first = ib.propose(music, out, mb, lookup=lookup, log=lambda s: None)
+    assert len(asked) == 2 and (out / ib.ACOUSTID_CACHE).exists()
+    assert ib.ACOUSTID_CACHE == "acoustid-cache.jsonl"
+    second = ib.propose(music, out, mb, lookup=lookup, log=lambda s: None)
+    assert len(asked) == 2
+    assert [p.cls for p in second] == [p.cls for p in first] and "acoustid" in {p.cls for p in first}
+    # a retagged file is a different file: asked again
+    from scripts.tag_cleanup import write_minimal
+    write_minimal(music / "K/song.flac", {"artist": "Kool & the Gang", "title": "Song", "album": "LP"})
+    ib.propose(music, out, mb, lookup=lookup, log=lambda s: None)
+    assert asked[2:] == [music / "K/song.flac"]
+
+
+def test_apply_and_revert_never_read_the_acoustid_cache(tmp_path, template, monkeypatch):
+    music, out = tmp_path / "music", tmp_path / "out"
+    tagged(music, "K/song.flac", template, artist="Kool & the Gang", title="Song")
+    ib.propose(music, out, FakeMB(searches={"Song": [rec(R1, "Song", 8.0)]}), log=lambda s: None)
+    (out / ib.ACOUSTID_CACHE).write_text("{}\n")
+    real_open = open
+
+    def guarded(file, *a, **kw):
+        assert Path(file).name != ib.ACOUSTID_CACHE, "apply/revert opened the AcoustID cache"
+        return real_open(file, *a, **kw)
+
+    def no_cache(*a, **kw):
+        raise AssertionError("apply/revert built an AcoustID cache")
+    monkeypatch.setattr("builtins.open", guarded)
+    monkeypatch.setattr(Path, "read_bytes", lambda self: no_cache() if self.name == ib.ACOUSTID_CACHE
+                        else real_open(self, "rb").read())
+    monkeypatch.setattr(ib.acoustid, "Cache", no_cache)
+    log = tmp_path / "apply.jsonl"
+    assert ib.main(["apply", str(out / ib.PROPOSAL), "--music", str(music), "--yes", "--no-navidrome",
+                    "--classes", "search", "--log", str(log)]) == 0
+    assert log.exists()
+    assert ib.main(["revert", str(log), "--music", str(music)]) == 0

@@ -10,12 +10,16 @@ os.environ["DJ_POLICY_FILE"] = str(Path(__file__).parent / "fixtures" / "policy-
 
 import pytest
 
+from sourcing import acoustid
 from sourcing.musicbrainz import reset_shared_limiter
 
 
 @pytest.fixture(autouse=True)
 def _fresh_musicbrainz_limiter():
-    """The MusicBrainz limiter is process-wide: forget it around every test so order never matters."""
+    """The MusicBrainz and AcoustID limiters are process-wide: forget them around every test so order never
+    matters."""
     reset_shared_limiter()
+    acoustid.reset_shared_limiter()
     yield
     reset_shared_limiter()
+    acoustid.reset_shared_limiter()
