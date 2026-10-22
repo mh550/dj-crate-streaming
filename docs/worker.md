@@ -35,9 +35,10 @@ of at most one second and ends early when a play-now approval is waiting (see "P
    written as `.m3u8` into `/srv/music/_playlists`, changed files only, so repoints, swaps and your own edits reach
    the backup files. Before a changed file is rewritten, its previous version goes to
    `_playlists/.history/<YYYY-MM-DD>/` (the first one of the day; later rewrites that day keep it), and day folders
-   older than 30 days are pruned (only date-named folders under `.history/`; links are not followed). After an
-   export that worked, it counts per playlist the entries on a missing or unknown song (the ones Navidrome hides;
-   read-only `navidrome.db`). When that list changes it is stored for `/api/status`
+   older than 30 days are pruned (only date-named folders under `.history/`; links are not followed). The date is
+   the container's (UTC, no `TZ` is set). A history problem is logged as `export: history: …` and never stops the
+   export. After an export that worked, it counts per playlist the entries on a missing or unknown song (the ones
+   Navidrome hides; read-only `navidrome.db`). When that list changes it is stored for `/api/status`
    (`playlistHealth`) and one `playlist_health` event says so ("2 entries in Tea tent point at missing files; 1 in
    Chicago 86", or "no playlist entry points at a missing file" once they are gone). An unchanged list logs nothing.
    Healing a hidden entry stays manual (M9 §7).

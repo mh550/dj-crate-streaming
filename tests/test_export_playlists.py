@@ -221,3 +221,38 @@ def test_export_prunes_old_history(tmp_path, capsys):
     (out / ".history" / "2000-01-01").mkdir()
     assert ep.main(["export", "--db", str(db), "--music", str(music)]) == 0
     assert "history pruned: .history/2000-01-01" in capsys.readouterr().out
+
+
+def test_an_old_day_folder_holding_links_is_removed_without_following_them(tmp_path):
+    out, outside = tmp_path / "_playlists", tmp_path / "music"
+    (outside / "Album").mkdir(parents=True); (outside / "Album" / "song.flac").write_bytes(b"x")
+    day = out / ".history" / "2026-01-01"
+    day.mkdir(parents=True)
+    (day / "dir-link").symlink_to(outside / "Album", target_is_directory=True)
+    (day / "file-link.flac").symlink_to(outside / "Album" / "song.flac")
+    assert ep.prune_history(out, DAY) == ["2026-01-01"]
+    assert not day.exists() and (outside / "Album" / "song.flac").read_bytes() == b"x"
+
+
+def test_a_failing_history_never_stops_the_export(tmp_path, monkeypatch, capsys):
+    db, music, out = lib(tmp_path)
+    ep.export(db, music, out, today=DAY)
+    (out / ".history").write_text("not a folder")               # history cannot be written
+    (tmp_path / "elsewhere").mkdir()
+    _rename_track(db, "Good Times (Edit)")
+    s = ep.export(db, music, out, today=DAY)
+    assert s.written == 2 and "Good Times (Edit)" in (out / "firstset？.m3u8").read_text(encoding="utf-8")
+    assert len(s.errors) == 2 and all("history" in e for e in s.errors)
+    (out / ".history").unlink()                                 # a linked .history is not written through
+    (out / ".history").symlink_to(tmp_path / "elsewhere", target_is_directory=True)
+    _rename_track(db, "Good Times (Dub)")
+    s = ep.export(db, music, out, today=DAY)
+    assert s.written == 2 and list((tmp_path / "elsewhere").iterdir()) == []
+    assert s.errors and all("link" in e for e in s.errors)
+    (out / ".history").unlink()                                 # a prune that fails is reported, not raised
+    (out / ".history" / "2026-01-01").mkdir(parents=True)
+    monkeypatch.setattr(ep.shutil, "rmtree", lambda p: (_ for _ in ()).throw(PermissionError(13, "denied", str(p))))
+    s = ep.export(db, music, out, today=DAY)
+    assert s.pruned == [] and any("prune" in e and "denied" in e for e in s.errors)
+    assert ep.main(["export", "--db", str(db), "--music", str(music), "--out", str(out)]) == 0
+    assert "history: prune" in capsys.readouterr().out

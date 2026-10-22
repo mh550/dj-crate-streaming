@@ -238,10 +238,12 @@ class Worker:
         self._exported_at = now
         db, music = self.common.get("navidrome_db"), Path(self.common["music_root"])
         try:
-            self.exporter(db, music, music / "_playlists")
+            s = self.exporter(db, music, music / "_playlists")
         except Exception as e:                             # the next interval tries again
             self.log(f"export failed: {type(e).__name__}: {e}")
             return
+        for e in getattr(s, "errors", ()):                 # .history problems: the export itself worked
+            self.log(f"export: {e}")
         if db is not None:
             self.health(db)
 

@@ -42,6 +42,7 @@ class Summary:
     unchanged: int = 0
     stale: list[str] = field(default_factory=list)   # .m3u8 files with no playlist behind them
     pruned: list[str] = field(default_factory=list)  # .history/<date> folders removed (older than HISTORY_DAYS)
+    errors: list[str] = field(default_factory=list)  # history problems; they never stop the export itself
 
 
 def open_ro(db: Path) -> sqlite3.Connection:
@@ -121,15 +122,29 @@ def export(db: Path, music_dir: Path, out_dir: Path, today: date | None = None) 
         if old == text:
             s.unchanged += 1
             continue
-        kept = out_dir / ".history" / today.isoformat() / fname
-        if old is not None and not kept.exists():       # the day's first version is the one kept
-            kept.parent.mkdir(parents=True, exist_ok=True)
-            _write(kept, old)
+        if old is not None:
+            try:
+                _keep(out_dir / ".history", today, fname, old)
+            except OSError as e:
+                s.errors.append(f"history: {fname} not kept: {e}")
         _write(target, text)
         s.written += 1
     s.stale = sorted(p.name for p in out_dir.glob("*.m3u8") if p.name not in produced)
-    s.pruned = prune_history(out_dir, today)
+    try:
+        s.pruned = prune_history(out_dir, today)
+    except OSError as e:
+        s.errors.append(f"history: prune failed: {e}")
     return s
+
+
+def _keep(hist: Path, today: date, fname: str, old: str) -> None:
+    """The previous text of `fname` into `.history/<today>/`, unless that day already has it (the first one stays)."""
+    day = hist / today.isoformat()
+    if hist.is_symlink() or day.is_symlink():
+        raise OSError(f"{day} is or lies under a link: not followed")
+    if not (day / fname).exists():
+        day.mkdir(parents=True, exist_ok=True)
+        _write(day / fname, old)
 
 
 def prune_history(out_dir: Path, today: date, days: int = HISTORY_DAYS) -> list[str]:
@@ -195,6 +210,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  stale (no playlist any more, kept): {name}")
         for name in s.pruned:
             print(f"  history pruned: .history/{name}")
+        for e in s.errors:
+            print(f"  {e}")
         return 0
     problems = check(a.db, a.music, out)
     for p in problems:

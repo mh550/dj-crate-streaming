@@ -845,3 +845,14 @@ def test_the_export_tick_keeps_the_previous_playlist_file_in_history(world):
     assert kept.parent.name in {date.today().isoformat(), (date.today() - timedelta(days=1)).isoformat()}
     assert kept.read_text(encoding="utf-8") == "#EXTM3U\n#PLAYLIST:Disco Edits\n"
     assert (out / "Disco Edits.m3u8").read_text(encoding="utf-8") != kept.read_text(encoding="utf-8")
+
+
+def test_a_history_problem_is_logged_and_the_health_count_still_runs(world, monkeypatch):
+    from scripts import export_playlists
+    lines = []
+    monkeypatch.setattr(export_playlists, "prune_history", lambda *a: (_ for _ in ()).throw(OSError("busy")))
+    _set_missing(world, {"s2"})
+    with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
+        worker(world, srv, lines, export_s=300, clock=lambda: 0.0).tick()
+    assert any(ln.startswith("export: history: prune") and "busy" in ln for ln in lines)
+    assert not any(ln.startswith("export failed") for ln in lines) and _kinds(world, "playlist_health")
