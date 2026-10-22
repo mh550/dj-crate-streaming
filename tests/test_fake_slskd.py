@@ -125,3 +125,27 @@ def test_wrong_api_key_is_401(tmp_path):
             assert False, "expected SlskdError"
         except SlskdError as e:
             assert e.status == 401
+
+
+def test_an_errored_peer_s_transfer_ends_errored_and_writes_nothing(tmp_path):
+    """A VPN drop mid-transfer (S1-06): slskd records the transfer, it ends `Completed, Errored`, and no file lands."""
+    with FakeSlskdServer(RESPONSES, tmp_path, files={GOOD: b"x"}, errored_peers={"p-vpn"}) as srv:
+        c = SlskdClient(srv.url, "k")
+        c.enqueue("p-vpn", [{"filename": GOOD, "size": 1}])
+        assert srv.enqueued == [("p-vpn", GOOD)]
+        assert c.downloads("p-vpn")["directories"][0]["files"][0]["state"] == "Completed, Errored"
+        assert list(tmp_path.iterdir()) == []
+        c.enqueue("vinylhead77", [{"filename": GOOD, "size": 1}])         # any other peer downloads as before
+        assert c.downloads("vinylhead77")["directories"][0]["files"][0]["state"] == "Completed, Succeeded"
+
+
+def test_fail_enqueue_may_name_the_peers_that_answer_500(tmp_path):
+    with FakeSlskdServer(RESPONSES, tmp_path, files={GOOD: b"x"}, fail_enqueue={"p-vpn"}) as srv:
+        c = SlskdClient(srv.url, "k")
+        try:
+            c.enqueue("p-vpn", [{"filename": GOOD, "size": 1}])
+            assert False, "expected SlskdError"
+        except SlskdError as e:
+            assert e.status == 500
+        c.enqueue("vinylhead77", [{"filename": GOOD, "size": 1}])
+        assert srv.enqueued == [("vinylhead77", GOOD)]

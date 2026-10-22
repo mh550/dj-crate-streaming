@@ -277,17 +277,19 @@ def test_a_copy_upgrade_navidrome_lists_as_another_song_replaces_nothing(world, 
     assert world["store"].db.execute("SELECT COUNT(*) FROM replacements").fetchone()[0] == 0
 
 
-def test_exception_after_sourcing_marks_failed_and_reraises(world, tmp_path):
-    """The reason names the step and the endpoint (S1-05): no peer name, no URL, no API key."""
-    from sourcing.slskd_client import SlskdError
+def test_slskd_failing_on_both_peers_fails_the_row_naming_steps_not_peers(world, tmp_path):
+    """The reason names the step and the endpoint (S1-05): no peer name, no URL, no API key. A 500 is the network's or
+    the peer's, so a second peer is tried (S1-06) and the row fails, not raises, with both attempts."""
     with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: b"x"}, fail_enqueue=True, api_key="key-5e1d") as srv:
-        with pytest.raises(SlskdError):
-            run(world, srv, approve=True)
+        r = run(world, srv, approve=True)
     st = world["store"].track_status_map("pl-2")["s4"]
-    assert st["status"] == "failed"
-    assert st["reason"] == "SlskdError: slskd POST /transfers/downloads/<peer>: HTTP 500"
-    assert "vinylhead77" not in st["reason"] and "@" not in st["reason"] and srv.api_key not in st["reason"]
-    assert not any("vinylhead77" in (e["detail"] or "") for e in world["store"].events(limit=1000))
+    assert (r.status, st["status"]) == ("failed", "failed") and st["reason"] == r.reason
+    err = "SlskdError: slskd POST /transfers/downloads/<peer>: HTTP 500"
+    assert r.reason == f"{err} (03 - Good Times.flac); then {err} ({r.pick.basename})", r.reason
+    assert r.pick.username != "vinylhead77"
+    for p in {c["username"] for c in RESPONSES} | {"@", srv.api_key}:
+        assert p not in st["reason"]
+        assert not any(p in (e["detail"] or "") for e in world["store"].events(limit=1000))
 
 
 def test_stale_completed_record_does_not_short_circuit_a_retry(world, tmp_path):
@@ -362,3 +364,133 @@ def test_the_download_wait_polls_through_the_given_sleep(world):
     with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: b"x"}, complete=False) as srv:
         r = run(world, srv, True, download_timeout_s=0.2, sleep=calls.append)
     assert (r.status, r.reason) == ("failed", "download timed out") and calls and set(calls) == {0.01}
+
+
+# S1-06: one more source on a transfer error. p-vpn is ranked first (faster) and its transfer errors (a VPN drop);
+# p-ok offers the fixture file.
+VPN = "@@vpn\\Chic - Risqué (1979) [FLAC]\\Chic - Good Times.flac"     # scores as GOOD; listed first
+
+
+def two_peers(*more: str) -> list[dict]:
+    first = dict(RESPONSES[0], username="p-vpn", uploadSpeed=9_000_000, files=[dict(RESPONSES[0]["files"][0], filename=VPN)])
+    return [first, dict(RESPONSES[0], username="p-ok", files=[RESPONSES[0]["files"][0]])] + [
+        dict(RESPONSES[0], username=u, uploadSpeed=100, files=[dict(RESPONSES[0]["files"][0], filename=f"@@{u}\\Chic\\Good Times.flac")])
+        for u in more]
+
+
+def _no_peer_names(world, *peers):
+    texts = [st["reason"] or "" for st in world["store"].track_status_map("pl-2").values()]
+    texts += [e["detail"] or "" for e in world["store"].events(limit=1000)]
+    assert not any(p in t for p in peers for t in texts)
+
+
+def _retries(world):
+    return [e["detail"] for e in world["store"].events(limit=1000) if e["kind"] == "retry"]
+
+
+@pytest.mark.parametrize("state", ["Completed, Errored", "Completed, TimedOut", "Completed, Rejected", "Completed, Cancelled"])
+def test_a_transfer_error_tries_the_next_peer_once(world, tmp_path, state):
+    flac = good_flac_bytes(tmp_path)
+    with FakeSlskdServer(two_peers(), world["dl"], files={GOOD: flac}, errored_peers={"p-vpn"}) as srv:
+        srv.error_state = state
+        new_song(world["nd"], len(flac))
+        r = run(world, srv, approve=True)
+    assert r.status == "ok", r.reason
+    assert srv.enqueued == [("p-vpn", VPN), ("p-ok", GOOD)]
+    assert _retries(world) == [f"Chic - Good Times.flac: download ended: {state}; trying another peer"]
+    _no_peer_names(world, "p-vpn", "p-ok")
+
+
+def test_a_second_transfer_error_fails_with_both_attempts_and_tries_no_third(world, tmp_path):
+    with FakeSlskdServer(two_peers("p-3"), world["dl"], files={GOOD: b"x"}, errored_peers={"p-vpn", "p-ok", "p-3"}) as srv:
+        r = run(world, srv, approve=True)
+    assert r.status == "failed"
+    assert r.reason == ("download ended: Completed, Errored (Chic - Good Times.flac); "
+                        "then download ended: Completed, Errored (03 - Good Times.flac)")
+    assert world["store"].track_status_map("pl-2")["s4"]["reason"] == r.reason
+    assert [u for u, _ in srv.enqueued] == ["p-vpn", "p-ok"] and len(_retries(world)) == 1
+    _no_peer_names(world, "p-vpn", "p-ok", "p-3")
+
+
+def test_no_other_peer_fails_with_the_first_reason(world):
+    with FakeSlskdServer(two_peers()[:1], world["dl"], files={}, errored_peers={"p-vpn"}) as srv:
+        r = run(world, srv, approve=True)
+    assert (r.status, r.reason) == ("failed", "download ended: Completed, Errored") and len(srv.enqueued) == 1
+    assert _retries(world) == []
+
+
+def test_a_verify_failure_is_not_retried_on_another_peer(world, tmp_path):
+    fake_lossless = make_flac(tmp_path / "bad.flac", total=44100 * 501, pad_bytes=10_000).read_bytes()
+    with FakeSlskdServer(two_peers(), world["dl"], files={VPN: fake_lossless, GOOD: good_flac_bytes(tmp_path)}) as srv:
+        r = run(world, srv, approve=True)
+    assert r.status == "failed" and "transcode" in r.reason
+    assert srv.enqueued == [("p-vpn", VPN)] and _retries(world) == []
+
+
+def test_a_5xx_from_the_enqueue_tries_the_next_peer(world, tmp_path):
+    flac = good_flac_bytes(tmp_path)
+    with FakeSlskdServer(two_peers(), world["dl"], files={GOOD: flac}, fail_enqueue={"p-vpn"}) as srv:
+        new_song(world["nd"], len(flac))
+        r = run(world, srv, approve=True)
+    assert r.status == "ok", r.reason
+    assert srv.enqueued == [("p-ok", GOOD)]
+    assert _retries(world) == ["Chic - Good Times.flac: SlskdError: slskd POST /transfers/downloads/<peer>: HTTP 500; "
+                               "trying another peer"]
+    _no_peer_names(world, "p-vpn", "p-ok")
+
+
+def test_a_connection_error_during_the_poll_tries_the_next_peer(world, tmp_path, monkeypatch):
+    from sourcing.slskd_client import SlskdError
+    real = SlskdClient.downloads
+    polls = {"p-vpn": 0}
+
+    def flaky(self, username=None):
+        if username == "p-vpn":
+            polls["p-vpn"] += 1
+            if polls["p-vpn"] == 3:                       # after the forget and the `before` read: the VPN blips
+                raise SlskdError("GET", "/transfers/downloads/<peer>", None, "Connection refused")
+        return real(self, username)
+
+    monkeypatch.setattr(SlskdClient, "downloads", flaky)
+    flac = good_flac_bytes(tmp_path)
+    with FakeSlskdServer(two_peers(), world["dl"], files={GOOD: flac}, errored_peers={"p-vpn"}) as srv:
+        srv.error_state = "InProgress"                    # p-vpn's transfer is still running when we lose slskd
+        new_song(world["nd"], len(flac))
+        r = run(world, srv, approve=True)
+    assert r.status == "ok", r.reason
+    assert [u for u, _ in srv.enqueued] == ["p-vpn", "p-ok"]
+    assert [t for t in srv.transfers if t["username"] == "p-vpn"] == []   # cancelled and forgotten: it can't land later
+    assert _retries(world) == ["Chic - Good Times.flac: SlskdError: slskd GET /transfers/downloads/<peer>: "
+                               "Connection refused; trying another peer"]
+
+
+def test_a_4xx_from_slskd_does_not_switch_peers(world, monkeypatch):
+    from sourcing.slskd_client import SlskdError
+
+    def refuse(self, username, files):
+        raise SlskdError("POST", "/transfers/downloads/<peer>", 404, "HTTP 404")
+
+    monkeypatch.setattr(SlskdClient, "enqueue", refuse)
+    with FakeSlskdServer(two_peers(), world["dl"], files={}) as srv:
+        with pytest.raises(SlskdError):
+            run(world, srv, approve=True)
+    st = world["store"].track_status_map("pl-2")["s4"]
+    assert (st["status"], st["reason"]) == ("failed", "SlskdError: slskd POST /transfers/downloads/<peer>: HTTP 404")
+    assert _retries(world) == []
+
+
+def test_a_4xx_on_the_second_peer_still_names_both_attempts(world, monkeypatch):
+    from sourcing.slskd_client import SlskdError
+    real = SlskdClient.enqueue
+
+    def refuse_p_ok(self, username, files):
+        if username == "p-ok":
+            raise SlskdError("POST", "/transfers/downloads/<peer>", 400, "HTTP 400")
+        return real(self, username, files)
+
+    monkeypatch.setattr(SlskdClient, "enqueue", refuse_p_ok)
+    with FakeSlskdServer(two_peers(), world["dl"], files={}, errored_peers={"p-vpn"}) as srv:
+        r = run(world, srv, approve=True)
+    assert (r.status, r.reason) == ("failed", "download ended: Completed, Errored (Chic - Good Times.flac); then "
+                                              "SlskdError: slskd POST /transfers/downloads/<peer>: HTTP 400 (03 - Good Times.flac)")
+    assert world["store"].track_status_map("pl-2")["s4"]["reason"] == r.reason

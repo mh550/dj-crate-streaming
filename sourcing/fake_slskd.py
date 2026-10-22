@@ -8,7 +8,8 @@ fixtures/search_responses.sample.json). Enqueueing a file "downloads" it the way
 the bytes land at downloads_dir/<remote parent folder>/<basename>, and transfers are reported
 per user as {username, directories:[{directory, files:[{id, filename, state, size}]}]}.
 complete=False keeps transfers InProgress forever (timeout tests); fail_enqueue=True makes
-POST /transfers/downloads answer 500 (peer gone). DELETE of a transfer acts as slskd 0.26.1 does: without
+POST /transfers/downloads answer 500 (peer gone), and a set of peers makes it do so for those peers only; an
+enqueue to one of `errored_peers` records a transfer that ends `Completed, Errored` with no file (a VPN drop). DELETE of a transfer acts as slskd 0.26.1 does: without
 ?remove=true it only cancels (the record stays), with it the record goes; an unknown id is 404.
 """
 from __future__ import annotations
@@ -26,9 +27,11 @@ from .scorer import split_remote
 
 class FakeSlskdServer:
     def __init__(self, responses: list[dict], downloads_dir: Path, files: dict[str, bytes],
-                 api_key: str = "k", complete: bool = True, fail_enqueue: bool = False, port: int = 0):
+                 api_key: str = "k", complete: bool = True, fail_enqueue: bool | set[str] = False, port: int = 0,
+                 errored_peers: set[str] = frozenset()):
         self.responses, self.downloads_dir, self.files = responses, Path(downloads_dir), files
         self.api_key, self.complete, self.fail_enqueue = api_key, complete, fail_enqueue
+        self.errored_peers, self.error_state = set(errored_peers), "Completed, Errored"
         self.searches: dict[str, str] = {}            # id → searchText
         self.enqueued: list[tuple[str, str]] = []     # (username, filename)
         self.transfers: list[dict] = []
@@ -59,7 +62,9 @@ class FakeSlskdServer:
     def _download(self, username: str, filename: str, size: int) -> dict:
         self.enqueued.append((username, filename))
         t = {"id": str(uuid.uuid4()), "username": username, "filename": filename, "size": size, "state": "InProgress"}
-        if self.complete:
+        if username in self.errored_peers:
+            t["state"] = self.error_state
+        elif self.complete:
             folder, base = split_remote(filename)
             dest = self.downloads_dir / folder / base
             dest.parent.mkdir(parents=True, exist_ok=True)
@@ -110,9 +115,9 @@ class FakeSlskdServer:
                     fake.searches[body["id"]] = body["searchText"]
                     self._send({"id": body["id"], "state": "Completed, Succeeded"})
                 elif path.startswith("/api/v0/transfers/downloads/"):
-                    if fake.fail_enqueue:
-                        return self._send({"error": "peer unreachable"}, 500)
                     user = path.rsplit("/", 1)[1]
+                    if fake.fail_enqueue is True or (fake.fail_enqueue and user in fake.fail_enqueue):
+                        return self._send({"error": "peer unreachable"}, 500)
                     self._send([fake._download(user, f["filename"], f.get("size", 0)) for f in body])
                 else:
                     self._send({"error": "not found"}, 404)

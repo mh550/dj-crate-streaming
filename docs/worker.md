@@ -67,6 +67,11 @@ path in its reason, so the re-check picks it up and nothing downloads a second c
 2. Press **Approve**. The row reads "approved · waiting for worker" until the next tick takes it, then
    "worker: <outcome>".
 
+One approval may try a second source. When the transfer ends `Completed, Errored|TimedOut|Rejected|Cancelled`, or
+slskd is unreachable or answers 5xx (a VPN drop), the worker downloads the next acceptable candidate from another
+peer. A `retry` event says so ("<file>: <why>; trying another peer"). A second failure fails the row with both
+attempts in the reason. Our own timeout, a 4xx and a verify failure are never retried this way.
+
 Every download carries an approval record (D23): who approved, the candidate, the tier and the time. Today the only
 `approved_by` value is `michael` (the Approve button, and `sourcing.cli fetch --approve`). Later values are
 `policy:<name>` and `agent:<id>`: new approvers, not a redesign.
