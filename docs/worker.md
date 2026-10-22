@@ -342,7 +342,10 @@ worker downloads: `sourcing.cli rank` no longer has `--download` (it exits 2 and
 
 The crates container reads `CRATES_TRASH` (`/trash`, read-only: status shows its size) and `NAVIDROME_DB` (the same
 file, mounted read-only: playlist edits and proposal answers need it). Navidrome's database is opened with
-`mode=ro`; if it cannot be opened, those calls answer 503 or refuse, and nothing is written.
+`mode=ro`; if it cannot be opened, those calls answer 503 or refuse, and nothing is written. It also reads `CRATES_IDENTITY_DIR`
+(default `/data/identity`, the worker's identity output on the same mount): the Identity picker's `GET /api/identity`
+serves `identity-proposal.json` from there, and `POST /api/identity/choice` writes `identity-choices.json` there, the
+only file it writes (R7).
 
 ## Identity backfill (runs in the worker)
 
@@ -363,15 +366,20 @@ docker compose exec -T worker python -m scripts.identity_backfill propose       
 docker compose exec -T worker python -m scripts.identity_backfill propose --limit 40 # a trial
 ```
 
-- It makes `identity-proposal.json`, `identity-backfill-report.md` and `mb-cache.jsonl` in the output folder.
+- It makes `identity-proposal.json`, `identity-backfill-report.md`, `mb-cache.jsonl` and (with a key)
+  `acoustid-cache.jsonl` in the output folder.
   `--out` and `--music` change the folders. `--out` inside the library is refused.
 - MusicBrainz allows about one request per second, and about one in ten gets a 503, which the client retries. Expect
   roughly 45 to 70 minutes for the whole library. A progress line every 50 files shows the time left.
 - If the run is killed, run the same command again. Answers already fetched come from `mb-cache.jsonl`.
-- With `ACOUSTID_KEY` set in `/srv/docker/.env` it also uses AcoustID. Without it, that step is skipped.
+- With `ACOUSTID_KEY` set in `/srv/docker/.env` it also uses AcoustID (at most 3 requests a second). Without it, that
+  step is skipped. AcoustID answers are kept in `acoustid-cache.jsonl` in the output folder, keyed on path, size and
+  modification time, so a second propose asks only about changed files. Delete it to ask again for every file (an
+  answer of "not in AcoustID" is kept too). The key is never written to it. `apply` and `revert` do not read it.
 
-**2. Review.** Open `identity-backfill-report.md` (`/srv/docker/crates/identity/`). It lists each class with the files in
-it and a MusicBrainz link for each pick. Then, in `identity-proposal.json`:
+**2. Review.** The easy way is the crates app's **Identity** tab (below, "Apply the picker's choices"). By hand: open
+`identity-backfill-report.md` (`/srv/docker/crates/identity/`). It lists each class with the files in it and a
+MusicBrainz link for each pick. Then, in `identity-proposal.json`:
 - set `"skip": true` on any row you do not want written;
 - on an `ambiguous` row (or a `none` row with candidates), set `"choose": "<recording id>"` to one of its listed
   candidates. Any other id is refused;
@@ -401,6 +409,33 @@ docker compose exec -T worker python -m scripts.identity_backfill apply /data/id
   `python3 scripts/export_playlists.py check` first: a playlist that was already stale shows up as a problem.
   `--no-navidrome` skips this.
 - It exits 1 when any check reports a problem. The first failed write stops the run.
+
+**Apply the picker's choices.** The Identity tab of the crates app records each Accept, Choose and Skip in
+`/data/identity/identity-choices.json` (nothing is written to a file then). `--choices` applies them:
+
+```
+docker compose exec -T worker python -m scripts.identity_backfill apply /data/identity/identity-proposal.json --choices /data/identity/identity-choices.json --dry-run
+```
+
+- Without `--classes` it selects **only** the rows you accepted or chose. With `--classes` it adds those classes' rows.
+  `--limit` and `--only` apply to all of them alike.
+- **The live apply with `--choices` is Michael's step** (`docs/next-todos.md` item 6; the harness never runs it): the
+  staged steps (dry run, `--limit 5`, all, scan and check after each, `revert` with the run's log) are in
+  `docs/plans/2026-10-21-r7-identity-picker.md` "Live steps".
+- Accept takes a `search` row's proposed recording, Choose sets the row's `choose` to the tapped candidate, Skip
+  drops the row, whatever its class. The choices file wins over a hand-typed `"choose"`, for an Accept too (the run
+  says so); a `"skip": true` in the proposal still wins over everything. A path the proposal holds twice is refused.
+- A choice is refused, and its row is not written by its class either, when it no longer fits the row: the row's
+  class, size or modification time changed since the tap (a new `propose`), the accepted recording is no longer the
+  row's pick, or the chosen id is not one of the candidates (the same message as a hand-typed `choose`). Accept or
+  Choose on a `conflict` or `error` row is refused. Each refusal is printed as `choices: <path> …`, and a choice for
+  a path the proposal lacks as `… is not in the proposal; ignored`. Pick again in the tab after a new `propose`.
+  A row that a new `propose` moved out of the picker (a `search` row that became `acoustid`, say) is no longer in
+  the tab, so its old choice stays refused (or, for a skip, keeps dropping the row): apply such rows without
+  `--choices`, or delete their entries from the choices file first.
+- The dry run marks those rows `(choice: accept, decided_by michael)`. A real run adds `"choice"` and
+  `"decided_by": "michael"` to their lines in the apply log; `revert` works as before.
+- A missing or unreadable choices file stops the command (exit 2) before any library file is read.
 
 **Undo.**
 
@@ -474,7 +509,8 @@ docker compose exec -T crates python3 -m crates.cli reconcile
 - Exit 1 means a playlist was refused or failed, or the scan did not finish. Read it before going on.
 - `--limit N` counts groups in plan order. A re-run does not write the done ones again.
 
-**4. Trash (the worker stopped).**
+**4. Trash (the worker stopped).** Only `trash --dry-run` may run live until Michael lifts the hold (CLAUDE.md
+"Staged runbooks"); the order with flock and the checks is `docs/plans/2026-10-22-morning-checklist.md` step 6.
 
 ```
 docker compose stop worker
@@ -628,7 +664,11 @@ profile for `dj-crates-web` decides. It is the default only for a database that 
   `playlist_gone` (reconcile); `pick`, `tagged`, `filed`, `renamed`, `reference`, `kept_both`, `upgrade_queued`,
   `proposal`, `replace` (approvals and copy replacement); `interrupted` (an approval cut off by a restart); `placed`,
   `not_placed` (placement); `playlist_health` (the export step: which playlists have entries on a missing song, logged
-  only when that list changes).
+  only when that list changes); `reasked` (import-playlist: a re-import put a failed, unfiled row back to
+  `needs_source` with its own id instead of queuing a second one, M9 §8h; the detail keeps the old reason) and
+  `superseded` (an older failed duplicate of that row, queued before §8h, set to `removed`; detail: the old reason;
+  one holding an approval is kept). A `removed` row (its playlist deleted) never answers an import: the import queues
+  a fresh row.
 
 ```
 cd /srv/docker

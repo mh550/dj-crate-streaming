@@ -7,7 +7,7 @@ is not built. Read first:
 Anything that trashes files or writes tags needs a reviewed plan file and a reverse log, as in M3/M8.
 
 ## State at hand-off
-- Live: image `dj-crates:b2df730b1d` (crates + worker), Navidrome pinned `0.64.2`, `CRATES_OWNER=app`, one DJ-quality rule.
+- Live on 2026-10-17 (since 2026-10-21 `f4882ab85b`, below): image `dj-crates:b2df730b1d` (crates + worker), Navidrome pinned `0.64.2`, `CRATES_OWNER=app`, one DJ-quality rule.
 - Done 2026-10-17: 35 playlists deleted by Michael's rules (D32; list in `/srv/docker/crates/playlists-deleted-2026-10-17.txt`,
   restore from `/srv/music/_playlists/*.m3u8` or `/srv/docker/navidrome/navidrome.db.pre-cleanup.snap`); 10 kept.
 - Id backfill: a fresh `propose` with the AcoustID key finished: confirmed 77, isrc 172, **acoustid 236**, search 16,
@@ -25,6 +25,18 @@ Anything that trashes files or writes tags needs a reviewed plan file and a reve
   H3-01..04. PRs #5-#13 are merged into `main`. H1-H3 are live, except the H3-03 timer and
   H3-05's changes to it (merged, not installed). N2-N5 are merged, not
   deployed. N1's code is live but has never been run.
+- **2026-10-21, run `dj-crate-streaming-2026-10-21` (branch `harness/dj-crate-streaming-2026-10-21`, milestones
+  R1-R8, spec `specs/2026-10-21-guards-and-checks.md`):** built and tested against the fakes, **none of it run live and
+  not deployed**. (R1) Doc truth: image, PRs, test count, what is live. (R2) `scripts/live-run.sh` runs one-off worker
+  commands in the deployed image, from `dj-worker-1`'s revision label, and `scripts/live-check.sh` is the Check (D45).
+  (R3) `duplicate_cleanup plan` releases lossless pairs (D35 as Michael answered it): they get their own report
+  section, and `--hold-lossless` brings the old hold back. (R4) `rank --download` is deleted; `tag_cleanup retag|move`
+  and `dedupe_copies repoint|trash` refuse while the worker holds its lock. (R5) Playlist health after each export
+  (`playlist_health` event, `/api/status`, web banner; our own non-smart playlists only, D46), and `.m3u8` history in
+  `_playlists/.history/<date>/`, kept 30 days. (R6) AcoustID cache and a shared 3 req/s limiter, "99 Luftballons",
+  disambiguation-only version labels, and a re-import reuses a failed unfiled row. (R7) The Identity tab writes `identity-choices.json`;
+  `identity_backfill apply --choices` merges it (D47). The live steps in order, each with its check and undo:
+  [`plans/2026-10-22-morning-checklist.md`](plans/2026-10-22-morning-checklist.md).
 
 ## In order
 
@@ -60,7 +72,9 @@ Anything that trashes files or writes tags needs a reviewed plan file and a reve
 6. **Id backfill:** after Michael has looked at `identity-backfill-report.md`, apply the default classes (`confirmed`, `isrc`,
    `acoustid`; 485 files): dry run, then `--limit 5`, then all, as in `docs/worker.md`; scan and check after each stage
    (the trial's checks: ids appear in `navidrome.db`, song ids unchanged, `scripts.export_playlists check`). Then the
-   `ambiguous`/`none`/`conflict` pickers (M9 item 5a). `revert` undoes any run.
+   `search`/`ambiguous`/`none`/`conflict` picker (M9 item 5a): **built (R7), not deployed**. Michael picks in the
+   Identity tab, then runs `apply --choices` himself, staged as in `docs/plans/2026-10-21-r7-identity-picker.md`
+   "Live steps". `revert` undoes any run.
 7. **Version tag (`VERSION`/`TIT3`)** as its own reviewed proposal (M9 item 4, approved "later").
 8. **Before the first real download:** run the M8 trash-move probe (`docs/architecture.md` §9 step 3); Michael says "go" with an
    `ext-N`; check the whole chain on one file (D7).

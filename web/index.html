@@ -26,6 +26,7 @@
   <button data-tab="wanted">Wanted <span id="wanted-count" class="pill"></span></button>
   <button data-tab="search">Search</button>
   <button data-tab="log">Log</button>
+  <button data-tab="identity">Identity <span id="identity-count" class="pill"></span></button>
 </nav>
 
 <main>
@@ -65,6 +66,19 @@
 
   <section id="tab-log" class="tab">
     <ul id="events" class="list log"></ul>
+  </section>
+
+  <section id="tab-identity" class="tab">
+    <p class="muted">Files whose MusicBrainz recording is not settled. Nothing is written here: a tap records your pick, and the worker writes the tags later, when you run it.</p>
+    <select id="identity-class" title="Show one kind of row">
+      <option value="">all</option>
+      <option value="search">search</option>
+      <option value="ambiguous">ambiguous</option>
+      <option value="none">none</option>
+      <option value="conflict">conflict</option>
+      <option value="error">error</option>
+    </select>
+    <ul id="identity" class="list"></ul>
   </section>
 </main>
 

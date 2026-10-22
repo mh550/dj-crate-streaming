@@ -31,7 +31,7 @@ from sourcing.policy import DEFAULT_POLICY, STREAM, QualityPolicy, check_stream
 from sourcing.slskd_client import SlskdClient
 from subsonic.client import SubsonicClient, SubsonicError
 from .reconcile import CommentNotKept, NameMarked, ReconcileBusy, Reconciler
-from . import proposals, trash
+from . import identity_view, proposals, trash
 from .store import CrateStore, PlayNowRefused, filed_path, held_by, pick_token, public, retryable_review
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
@@ -61,6 +61,7 @@ class Config:
     slskd_url: str | None = None          # slskd, for previews (and the worker)
     slskd_key: str | None = None
     navidrome_db: str | None = None       # read-only navidrome.db: playlist edits cross-check it (crates.playlist_edit)
+    identity_dir: str = "/data/identity"  # identity_backfill's proposal; the picker writes identity-choices.json there
 
     @classmethod
     def from_env(cls, **overrides) -> "Config":
@@ -77,6 +78,7 @@ class Config:
             slskd_url=env.get("SLSKD_URL") or None,
             slskd_key=env.get("SLSKD_API_KEY") or None,
             navidrome_db=env.get("NAVIDROME_DB") or None,
+            identity_dir=env.get("CRATES_IDENTITY_DIR") or "/data/identity",
         )
         for k, v in overrides.items():
             if v is not None:
@@ -327,6 +329,23 @@ class CrateApp:
         with self._lock:
             return self._answer(proposal_id, lambda: proposals.decline(self.store, proposal_id, decided_by))
 
+    # --- identity picker (M9 §5a, R7): Michael's taps on the identity proposal; never writes a tag
+    def identity(self, cls: str | None = None) -> dict:
+        try:
+            return identity_view.listing(Path(self.cfg.identity_dir), self._navidrome_db(), cls)
+        except identity_view.Refused as e:
+            raise ApiError(e.status, str(e)) from None
+
+    def identity_choice(self, body) -> dict:
+        with self._lock:
+            try:
+                return identity_view.record(Path(self.cfg.identity_dir), body, self.store, self._navidrome_db())
+            except identity_view.Refused as e:
+                raise ApiError(e.status, str(e)) from None
+
+    def _navidrome_db(self) -> Path | None:
+        return Path(self.cfg.navidrome_db) if self.cfg.navidrome_db else None
+
     # --- media URLs (signed per call)
     def stream_url(self, song_id: str, max_bit_rate: int | None, fmt: str | None) -> str:
         return self.media.stream_url(song_id, max_bit_rate, fmt)
@@ -423,6 +442,8 @@ def make_handler(app: CrateApp):
                     return self._json(app.wanted_row(p[1]))
                 if head == "proposals" and len(p) == 1:
                     return self._json(app.proposals(include_decided=q.get("all") in ("1", "true")))
+                if head == "identity" and len(p) == 1:
+                    return self._json(app.identity(q.get("class")))
                 if head == "events":
                     return self._json(public(app.store.events(int(q.get("limit", 50)))))
                 if head == "search":
@@ -466,6 +487,8 @@ def make_handler(app: CrateApp):
                     if p[2] == "accept":
                         return self._json(app.accept_proposal(int(p[1])))
                     return self._json(app.decline_proposal(int(p[1])))
+                if head == "identity" and p[1:] == ["choice"]:
+                    return self._json(app.identity_choice(body))
                 if head == "reconcile":
                     return self._json(app.reconcile())
                 if head == "stream-tier":

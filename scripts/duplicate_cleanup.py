@@ -32,7 +32,7 @@ a crates.db event (kind `cleanup`, song_id = the extra, "repointed <playlist> to
 crates.db.
 
     docker compose stop worker
-    docker compose run --rm worker python3 -m scripts.duplicate_cleanup trash [--plan P] [--limit N] [--dry-run]
+    scripts/live-run.sh python3 -m scripts.duplicate_cleanup trash [--plan P] [--limit N] [--dry-run]
 
 `trash` (D36: only with the worker stopped; it holds <dirname(CRATES_DB)>/worker.lock for the whole run, and refuses
 while a Navidrome scan runs, checked again before every move, and unless getScanStatus' lastScan is after the newest

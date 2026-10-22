@@ -45,6 +45,11 @@ Details that matter:
 - **A `VERSION` or `TIT3` tag counts only when it reads as a label.** In the library 35 of 37 hold a year such as
   `2003`, which is ignored.
 - **An en dash is not a separator.** None of the 831 titles has one.
+- **A Soulseek file name loses its track number first** (`03 - Good Times`, `03. Good Times`, `A1 Good Times`), then
+  its file junk (`[320]`, `[FLAC]`, `(1979)`), then it is read like a title. A bare number and space (`99 `) stays
+  when the wanted title starts with that number and the rest of the name goes on with the wanted title's next words:
+  `Nena - 99 Luftballons.flac` for "99 Luftballons" keeps its "99". `01 99 Luftballons` still loses the "01", and
+  `22 Shake It Off` loses its "22" even when "22" is wanted. The scorer and fetch both read names this way.
 
 ## The same-version test
 
@@ -110,8 +115,16 @@ How a proposal is made, per file:
 3. Otherwise MusicBrainz is searched by artist and base title. AcoustID is used only when `ACOUSTID_KEY` is set.
 
 A recording fits only when the lead artists are equal, the base titles and version labels agree, it is not a video,
-and the lengths agree within 4 seconds. A recording with no length never fits. MusicBrainz often has two recordings
+and the lengths agree within 4 seconds. A recording with no length never fits. A version MusicBrainz names only in the
+recording's disambiguation (title `Good Times`, disambiguation `12" version`) counts as that recording's label: it fits
+a file titled "Good Times (12'' Version)" and not one titled "Good Times". Such a recording counts only when no recording
+fits by its title, so it adds matches and never turns a single fit into a tie. A disambiguation that is no label
+(`single`, `remastered 2009`, `BBC session`, or none) changes nothing. MusicBrainz often has two recordings
 at one length (about a third of the searches), and those rows are not guessed.
+
+AcoustID answers are kept in `acoustid-cache.jsonl` next to the proposal, one line per file keyed on path, size and
+modification time (in nanoseconds). A second propose asks AcoustID only about files that changed; an empty answer
+("not in AcoustID") is kept too, so delete the file to ask again. Requests are spaced at most 3 per second.
 
 The report groups each file in one class:
 
