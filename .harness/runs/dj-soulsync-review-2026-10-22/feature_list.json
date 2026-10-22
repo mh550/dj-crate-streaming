@@ -239,7 +239,7 @@
         "V2-06",
         "V2-07"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "V3-01",

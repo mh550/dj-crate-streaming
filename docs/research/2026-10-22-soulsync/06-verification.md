@@ -86,8 +86,13 @@ candidate filter before the transfer (quality profiles, below).
 (`SoulSync:core/quality/schema.py:141-142`), so with replace-lower on it would replace a real 320
 (`SoulSync:core/imports/quality_replace.py:31-36`). The density rule is a preview/padding detector, its own comment
 putting dense material at 40-75 % of raw PCM (`SoulSync:core/imports/file_integrity.py:201-208`); whether a real
-transcode ever falls under 0.30 is *unverified* (no file measured). A search for `spectr|upconver|transcod|lowpass|
-fake.?lossless` over non-test Python hits nothing else on the import path (*unverified*: grep result, not a line).
+transcode ever falls under 0.30 is *unverified* (no file measured; would be verified by FLAC-encoding a decoded
+lossy file and comparing its bitrate with raw PCM × `LOSSLESS_MIN_DENSITY`, `SoulSync:core/imports/file_integrity.py:208`).
+Besides that rule (`SoulSync:core/imports/file_integrity.py:253`), `grep -rniE 'spectr|upconver|transcod|lowpass|
+fake.?lossless' --include=*.py` outside `tests/` hits, over `core/imports/`, `core/downloads/` and `core/download_plugins/`, only comments and
+docstrings, one of which describes the torrent/usenet release size gate (`SoulSync:core/download_plugins/album_bundle.py:463-470`);
+no spectral check runs on the Soulseek import path (*absence inferred* from that grep; repair jobs and the YouTube
+client also match, off the import path).
 The only lossy-source detector is a **library repair job**, "Fake Lossless Detector", off by default, weekly,
 report-only, with `spectral_cutoff_khz: 16.0` (`SoulSync:core/repair_jobs/fake_lossless_detector.py:1-38`). It
 high-passes the first 30 s at 0.35 × the sample rate and calls the file lossy if the rest is under −70 dB
@@ -95,8 +100,9 @@ high-passes the first 30 s at 0.35 × the sample rate and calls the file lossy i
 threshold, so it can never flag a 48 kHz file (`SoulSync:core/repair_jobs/fake_lossless_detector.py:108`). Two likely
 defects, read not run: the extension test sits outside the file loop, so only each directory's last file is looked at
 (`SoulSync:core/repair_jobs/fake_lossless_detector.py:67-70`), and ffmpeg runs with `-v quiet`, which probably hides
-the `volumedetect` line it parses (`SoulSync:core/repair_jobs/fake_lossless_detector.py:255`; *unverified*, inferred
-from ffmpeg's log levels).
+the `volumedetect` line it parses (`SoulSync:core/repair_jobs/fake_lossless_detector.py:255`,
+`SoulSync:core/repair_jobs/fake_lossless_detector.py:266-270`; *unverified*, inferred from ffmpeg's log levels; would be
+verified by running that ffmpeg command on any file and looking for `mean_volume` on stderr).
 
 **ReplayGain** (`core/replaygain.py`). Opt-in, `post_processing.replaygain_enabled` (default False), run after the
 move and cover art (`SoulSync:core/imports/pipeline.py:1737-1753`). ffmpeg `ebur128=peak=true` measures integrated
@@ -128,7 +134,10 @@ imported into a hidden staging mirror and moved into the library "only once the 
   with no audio yet ("fresh"); a fill into an existing album, a failed write probe or any error falls back to
   per-track publish (`SoulSync:core/imports/pipeline.py:482-584`). Upgrades are never staged
   (`SoulSync:core/imports/pipeline.py:1494-1499`). Only the first track's folder is checked
-  (`SoulSync:core/imports/pipeline.py:512-527`); whether a later disc folder can collide is *unverified*.
+  (`SoulSync:core/imports/pipeline.py:512-527`), so a later disc folder (`<disc label> N` on multi-disc albums,
+  `SoulSync:core/imports/paths.py:1497-1500`) is never checked, and publish moves with `os.replace`, which overwrites a
+  same-named file there (`SoulSync:core/downloads/lifecycle.py:164`, `SoulSync:core/imports/file_ops.py:208`; the
+  recovery code's own docstring says a live batch "cannot collide", `SoulSync:core/downloads/atomic_recovery.py:130-136`).
 - **When it publishes:** when every task is terminal, and terminal includes `failed`, `cancelled` and `not_found`
   (`SoulSync:core/downloads/lifecycle.py:1183-1201`). There is no completeness threshold: whatever is staged is moved
   (`SoulSync:core/downloads/atomic_album_publish.py:335`). So "atomic" means "not while still downloading", **not**
@@ -152,7 +161,8 @@ imported into a hidden staging mirror and moved into the library "only once the 
   rolled back**, partial or not ("an album that fills in" beats "an album that never appears",
   `SoulSync:core/downloads/atomic_recovery.py:18-25`); a staged file whose destination exists goes to the recycle bin
   so the library copy wins (`SoulSync:core/downloads/atomic_recovery.py:126-193`); a tree without a manifest still
-  recovers (`SoulSync:core/downloads/atomic_recovery.py:196-212`). It re-verifies nothing (*unverified*: no verify call found in `atomic_recovery.py` by grep).
+  recovers (`SoulSync:core/downloads/atomic_recovery.py:196-212`). It re-verifies nothing (*absence inferred*: `grep -niE 'verif|integrity|acoustid|fingerprint'` over
+  `core/downloads/atomic_recovery.py` hits only a docstring, `SoulSync:core/downloads/atomic_recovery.py:136`).
 
 ### Album consistency (`core/album_consistency.py`)
 
@@ -204,8 +214,9 @@ when every top match runs a very different length, max(60 s, 35 %)
   (`SoulSync:core/acoustid_client.py:436-439`). Without fpcalc on PATH the client **downloads chromaprint's fpcalc
   v1.5.1 from GitHub** at import time (`SoulSync:core/acoustid_client.py:85-176`).
 - `core/audio_length.py` fixes lying CBR MP3 Xing headers (`SoulSync:core/audio_length.py:1-14`) and is used only by
-  audiobook code (*unverified*: grep hits `core/audiobook_completeness.py` and `core/audiobook_library_metadata.py`
-  only). The verifier reads length with mutagen (`SoulSync:core/acoustid_verification.py:99-109`).
+  audiobook code (*absence inferred*: `grep -rnE 'audio_length|reliable_length_seconds' --include=*.py` outside `tests/`
+  hits only `SoulSync:core/audiobook_completeness.py:69` and `SoulSync:core/audiobook_library_metadata.py:10`, plus the
+  unrelated `_audio_length_seconds`, `SoulSync:core/imports/pipeline.py:108`). The verifier reads length with mutagen (`SoulSync:core/acoustid_verification.py:99-109`).
 - A library repair job runs the same decision core over the whole library and files retag / redownload / delete
   findings (`SoulSync:core/repair_jobs/acoustid_scanner.py:1-8`).
 
@@ -267,8 +278,11 @@ wishlist track and library track (`SoulSync:database/music_database.py:1058`, `S
   block is one specific (uploader, file), not the uploader", `SoulSync:core/imports/quarantine.py:590-602`);
   **delete** (`os.remove`, optional siblings) and **clear** (`SoulSync:api/quarantine.py:163-200`,
   `SoulSync:api/quarantine.py:61-77`); stream / A-B compare / tags for review (`SoulSync:api/quarantine.py:327-477`).
-  No retry or unblock route (*unverified*: none among the routes read; `remove_quarantine_source_block` has no
-  caller, `SoulSync:database/music_database.py:24155-24159`). `review_reject.py` serves the *other* list, imported-but-unverified files: rejecting one
+  No retry or unblock route: the blueprint's 11 routes are the ones above plus `play`, `entry` and a legacy `recover`
+  that moves the file to Staging for a manual import (`SoulSync:api/quarantine.py:61-488`,
+  `SoulSync:api/quarantine.py:481-488`); `remove_quarantine_source_block`
+  has no caller (*absence inferred*: `grep -rn remove_quarantine_source_block` over `*.py`, `*.js`, `*.html` outside `tests/`
+  hits only its definition, `SoulSync:database/music_database.py:24155-24159`). `review_reject.py` serves the *other* list, imported-but-unverified files: rejecting one
   deletes it and its library row and adds `(peer, file)` to `download_blacklist`
   (`SoulSync:core/downloads/review_reject.py:1-47`, `SoulSync:api/verification.py:279-339`).
 
@@ -281,9 +295,13 @@ wishlist track and library track (`SoulSync:database/music_database.py:1058`, `S
 | quarantine source blocks | exact (peer, filename) | none, 25,000 cap | every quarantine | Soulseek search filter |
 | failed-download | SHA1 of service, artist, title, size; all Soulseek peers are one service | 90 days, 5,000 rows | give-up after retries for silence / quality / AcoustID, **not** integrity (`SoulSync:core/downloads/failed_blocklist.py:27-28`, `SoulSync:core/downloads/failed_blocklist.py:62-70`, `SoulSync:core/imports/pipeline.py:2090-2115`) | worker `is_candidate_blocked` (`SoulSync:core/downloads/candidates.py:536-544`) |
 
-Nothing blocks a whole peer on the music side (`SoulSync:core/imports/quarantine.py:601-602`). Whether the
-failed-download writer (wanted identity + picked size) and reader (the candidate's own attributes) ever produce the same
-hash is *unverified* (`SoulSync:core/downloads/failed_blocklist.py:145-176`).
+Nothing blocks a whole peer on the music side (`SoulSync:core/imports/quarantine.py:601-602`). The failed-download
+writer hashes the wanted track's artist/title with the picked candidate's size
+(`SoulSync:core/downloads/failed_blocklist.py:166-176`); the reader hashes the candidate's own artist/title/size
+(`SoulSync:core/downloads/failed_blocklist.py:149-154`), which a Soulseek result without them gets by parsing its
+filename (`SoulSync:core/download_plugins/types.py:124-142`). So the two match only when the parsed strings normalize to
+the wanted ones; how often that holds for real Soulseek filenames is *unverified* (would be verified by logging both
+fingerprints for a give-up and its next search).
 
 ### Summary
 
@@ -291,7 +309,7 @@ hash is *unverified* (`SoulSync:core/downloads/failed_blocklist.py:145-176`).
 |---|---|---|---|
 | Fake / transcode detection | **No.** Density < 0.30 of raw PCM triggers a decode for truncation/silence only; the quality gate reads the header's claim | `flac -t` (catches corruption, not transcodes); a weekly report-only spectral repair job that likely flags nothing | `SoulSync:core/imports/file_integrity.py:445-470`, `SoulSync:core/repair_jobs/fake_lossless_detector.py:34-38` |
 | Wrong-song protection | Pre-download match score + base-title veto (03); after download only the length (±3 s, +15 s when longer, skipped without an expected length) | AcoustID: a confident fingerprint naming another title FAILs | `SoulSync:core/imports/file_integrity.py:551-598`, `SoulSync:core/matching/audio_verification.py:829-831` |
-| Album consistency checks | **No check.** A post-publish tag rewrite to one pinned MB release (on by default); no length or same-release test | atomic staging (off) hides a partial album until the batch ends, then publishes it anyway | `SoulSync:core/album_consistency.py:364-410`, `SoulSync:core/downloads/lifecycle.py:1183-1201` |
+| Album consistency checks | **No check.** A post-publish tag rewrite to one pinned MB release (on by default); no length or same-release test | atomic staging (off) hides a partial album until the batch ends, then publishes it anyway | `SoulSync:core/album_consistency.py:364-410`, `SoulSync:core/downloads/lifecycle.py:1183-1217` |
 | Quarantine | **Yes:** moved with a sidecar, `(peer, file)` blocked, next candidate tried (≤ 5), approve / delete in the UI, emptied every 12 h | require-verified, version-mismatch fallback | `SoulSync:core/imports/guards.py:31-124`, `SoulSync:api/quarantine.py:203-312` |
 
 ### Would ext-74 have been caught?
@@ -311,7 +329,7 @@ Spotify's 196 s and the file's 195 s agree, because MusicBrainz has track 1 at 1
   `SoulSync:core/imports/pipeline.py:1998-2030`, `SoulSync:core/downloads/monitor.py:397-416`). The language-script skip does not apply to two
   ASCII titles (`SoulSync:core/matching/audio_verification.py:794-827`). This is read from code and the 10-21 numbers,
   not run; 03-matching.md has the hand estimate.
-- **Before download** the base-title veto would have rejected the candidate on its filename (0.275 < 0.30), but not
+- **Before download** the base-title veto would have rejected the candidate on its filename (0.275 < 0.30) on the per-track search path only (the folder-reuse path has no veto, 04-soulseek.md), but not
   under a flat `Artist - Album - 09 - Title` name (03-matching.md, "ext-74 answer"). That is matching, not verification.
 
 So the protection that would have caught ext-74 is the **title-based** AcoustID FAIL, exactly what S1-02 plans; it is
@@ -370,8 +388,8 @@ lacks the known `recording_id` is the hard `recording` finding; with no recordin
 **On failure.** A hard problem deletes our own download and fails the row; the verdict (problems, warnings,
 measurements) is stored on the row first and shown under it in the web client (`ours:sourcing/fetch.py:460-464`,
 `ours:docs/download-validation.md:68-70`). There is no quarantine folder, no per-file or per-peer block, and no
-automatic retry: a later approval searches again (`ours:sourcing/fetch.py:1-7`). *unverified* (absence: `grep -rni
-'quarantin\|blocklist'` over `sourcing/`, `crates/` and `scripts/` finds only the policy docstring's
+automatic retry: a later approval searches again (`ours:sourcing/fetch.py:1-7`). *absence inferred* (`grep -rni
+'quarantin\|blocklist\|blacklist'` over `sourcing/`, `crates/` and `scripts/` finds only the policy docstring's
 "whitelist/blacklist", `ours:sourcing/policy.py:3`).
 
 **Publish.** A verified file moves to its own `.staging/<id>-<ts>/` folder and beets imports it from there as a
@@ -380,7 +398,8 @@ file (`ours:sourcing/fetch.py:466-468`, `ours:sourcing/filer.py:1-4`). Tags are 
 whose recording length agrees within 4 s (`ours:sourcing/filer.py:6-13`, `ours:sourcing/musicbrainz.py:84-95`). The
 row is `verify` with the filed path from the moment beets files it, so a crash never files a second copy
 (`ours:sourcing/fetch.py:469-476`). There is no album unit: one row, one file, one import. ReplayGain is not computed
-(*unverified*: `grep -rni replaygain` over `sourcing/`, `crates/`, `deploy/` finds nothing).
+(*absence inferred*: `grep -rni replaygain` over `sourcing/`, `crates/`, `deploy/` finds nothing, and `deploy/beets.yaml`
+has no `plugins:` key).
 
 **`docs/download-validation.md`** maps each hand check (Spek, `flac -t`, length vs MusicBrainz, first/last seconds,
 bit depth) to the code and its hard/soft rule (`ours:docs/download-validation.md:36-47`), and names the limits: a
@@ -438,8 +457,8 @@ opposite sides:
 **What happens to a bad file.** SoulSync quarantines it with a sidecar, blocks that `(peer, file)` for good, and tries
 the next candidate automatically, up to 5 times (`SoulSync:core/imports/guards.py:31-124`,
 `SoulSync:core/downloads/monitor.py:60`). Ours deletes it and fails the row; the next approval searches again and can
-pick the same peer's same file (`ours:sourcing/fetch.py:462-464`; *unverified* that nothing remembers it: no
-blocklist found by grep). Under D7 the automatic retry is not ours to copy (each attempt is Michael's approval;
+pick the same peer's same file (`ours:sourcing/fetch.py:462-464`; *absence inferred* that nothing remembers it: `grep -rni
+'quarantin\|blocklist\|blacklist'` over `sourcing/`, `crates/`, `scripts/` hits only `ours:sourcing/policy.py:3`). Under D7 the automatic retry is not ours to copy (each attempt is Michael's approval;
 S1-06 allows one bounded retry on a transfer error, not a verify failure,
 `ours:docs/specs/2026-10-22-downloads-and-requests.md:85-89`). Remembering the `(peer, file)` that failed verify is
 cheap and fits D7: it changes what the next approval is offered, not whether it runs.
@@ -481,7 +500,8 @@ proof, repoint and trash (`ours:sourcing/fetch.py:29-35`).
 - **Don't take:** its quality gate and fake detection (ours is stronger); album consistency as a post-publish tag
   rewrite (S2-06 writes identity before filing, and D22 forbids full writes); quarantine as a folder emptied every
   12 h with hard deletes (our trash + `MOVES.txt` invariant); ReplayGain (loudness tagging is not verification; Mixxx
-  analyses gain itself, *unverified* for Michael's setup).
+  analyses gain itself, *unverified* for Michael's setup: would be verified in his Mixxx preferences, ReplayGain
+  section).
 
 **Verdict:** adapt. SoulSync's verification is weaker than ours on quality (no transcode detection after download) and
 off by default on identity; the pieces worth taking are its title-based AcoustID FAIL (= S1-02), a remembered failed

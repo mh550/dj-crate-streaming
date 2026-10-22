@@ -136,7 +136,9 @@ marks a consequence derived from cited lines but not run. Music only: `api/video
 - **Login mode exempts `/api/v1/*` wholesale** (`SoulSync:core/security/login_gate.py:47-48`), and
   `POST /api/v1/api-keys/bootstrap` has no decorator and mints the first key while none exist
   (`SoulSync:api/settings.py:120-138`, `SoulSync:api/key_store.py:62-71`). Read from code: on a login-mode install that
-  never made a key, an anonymous caller could mint an admin key (*unverified*, nothing was run).
+  never made a key, an anonymous caller could mint an admin key (the blueprint is mounted at `/api/v1`,
+  `SoulSync:web_server.py:1829`, and a key defaults to `admin`, `SoulSync:api/auth.py:104`; *unverified*, nothing was
+  run: would be verified by an unauthenticated `POST /api/v1/api-keys/bootstrap` to a fresh login-mode instance).
 
 ### Streaming, playback and radio
 
@@ -146,7 +148,7 @@ marks a consequence derived from cited lines but not run. Music only: `api/video
   (`SoulSync:web_server.py:12835-12861`, `SoulSync:webui/static/media-player.js:2277-2282`), and
   `POST /api/library/play` (`SoulSync:web_server.py:11051-11106`). The player loads `/stream/audio?t=<ts>`
   (`SoulSync:webui/static/media-player.js:780`).
-- Three sources, **never transcoded**:
+- Three sources, none **transcoded on the fly** (source 3's default YouTube file is already an MP3 320 re-encode, 05-other-sources.md):
   1. A library file on disk, served as is with a hand-rolled `Range` → 206 reply in 64 KB chunks
      (`SoulSync:web_server.py:12744-12785`), or `send_file` without a Range header (`SoulSync:web_server.py:12786-12791`).
      The only `ffmpeg` calls in `web_server.py` are the ReplayGain routes (`SoulSync:web_server.py:10283-10284`).
@@ -265,8 +267,10 @@ no table of its own, and `music_requests` records only outcomes, `approved | ava
 `available` lazily, when someone lists requests or an open page polls the nav badge (every 60 s)
 (`SoulSync:api/music_requests.py:95-118`, `SoulSync:api/music_requests.py:145-148`,
 `SoulSync:api/music_requests.py:204-217`, `SoulSync:webui/static/core.js:805-806`). Read from code: `start-missing-process` calls no `check_download_permission()`
-(`sed -n 19291,19512p web_server.py | grep -n "perm\|denied\|403\|can_download"` matches nothing relevant), so a member
-who calls it directly could likely skip approval (*unverified* at runtime). Albums and playlists go in whole: the dialog
+(`sed -n 19291,19518p web_server.py | grep -nE "perm|denied|403|can_download"` matches only `permanently_failed_tracks`),
+and the page gate covers five other API prefixes, not `/api/playlists` (`SoulSync:core/permissions.py:94-100`), so a member
+who calls it directly could likely skip approval (*unverified* at runtime: would be verified by POSTing to the route as a
+member profile with downloads off). Albums and playlists go in whole: the dialog
 sends every checked track (`SoulSync:webui/static/wishlist-tools.js:1412-1421`), and the Requests page groups rows back
 into album or track asks (`SoulSync:core/requests/music.py:50-99`).
 
@@ -309,7 +313,12 @@ The README offers it "for Discord bots and shortcuts" (`SoulSync:README.md:322`)
 link. Other external intakes: MCP `request_album` puts a whole album on the wishlist (`SoulSync:api/mcp.py:67-101`), and
 the Lidarr API sends album requests to a configured profile's wishlist, through the approval queue when that profile
 cannot download (`SoulSync:api/lidarr_compat.py:49-61`). The "SoulSync Companion" browser extension (Chrome/Firefox, in
-a separate repo, `SoulSync:README.md:332-334`) is desktop-only; the endpoints it calls are *unverified*. Chat
+a separate repo, `SoulSync:README.md:332-334`) is desktop-only. Server comments name two endpoints it calls,
+`/api/image-proxy` (`SoulSync:api/auth.py:265-267`, `SoulSync:api/discover_routes.py:3296`) and
+`/api/mirrored-playlists/resolve` (`SoulSync:api/mirrored_playlists.py:482`, `SoulSync:api/mirrored_playlists.py:502-503`),
+reached with an API key on non-v1 paths (`SoulSync:api/auth.py:284-287`) and CORS on every `/api/*` path
+(`SoulSync:core/security/cors.py:1-10`, `SoulSync:core/security/cors.py:39-41`); the full list is *unverified* (its code
+is not in the clone; reading the soulsync-extension repo would verify it). Chat
 `/want` posts to Soulseek rooms, not to the local queue (`SoulSync:webui/static/chat.js:7082-7083`).
 
 What the requester sees afterwards: a Requests page with a badge polled every 60 s
@@ -347,7 +356,8 @@ a closed phone app (no Web Push, above).
 - **Not provable from code, all *unverified*:** whether iOS Safari honours `user-scalable=no` (it blocks pinch-zoom on a
   dense UI where it is honoured); whether the fixed hamburger overlaps page headers; notch and home-bar overlap beyond
   the one safe-area rule; how fast ~90 scripts + the React bundle + 76k lines of CSS load on a phone; whether iOS shows
-  the standalone app correctly without the Apple meta tags.
+  the standalone app correctly without the Apple meta tags. Each would be verified by loading the UI on Michael's
+  iPhone, in Safari and installed to the home screen.
 
 ## How ours does it
 
@@ -456,7 +466,8 @@ answers 302 and never carries audio, `ours:crates/service.py:454-459`). Its "pla
 whole file before playing (`SoulSync:core/streaming/prepare.py:114-123`), YouTube by default
 (`SoulSync:core/settings.py:569`), and its queue prefetch files up to 250 unowned tracks into the library without a
 per-track approval (`SoulSync:web_server.py:6842-6858`). That is the octo-fiesta idea (a Subsonic client sees
-"missing" tracks and playing one fetches it; octo-fiesta's own behaviour is *unverified* here). It breaks D7 and D24
+"missing" tracks and playing one fetches it; octo-fiesta's own behaviour is *unverified* here: its source is in
+neither the clone nor ours, and reading its stream handler would verify it). It breaks D7 and D24
 (a YouTube re-encode as the copy) as SoulSync does it. Ours keeps the same idea as play-now: one tap = one approved
 low-tier copy (`ours:crates/service.py:253-279`). A B2 proxy would have to turn a Subsonic `stream` of a missing id into
 that approval, not into a silent download.
@@ -487,7 +498,8 @@ SoulSync only for members, only in the scheduler.
 - **Take (adapt) for the web client under B1:** a minimal service worker, a reduced form of SoulSync's (which caches
   images cache-first, `/api/image-proxy` included, and `/static/*` stale-while-revalidate,
   `SoulSync:webui/static/sw.js:93-111`): static files only, every other `/api/*` call passed through, 192/512 PNG icons, and a manifest `share_target` that POSTs a
-  shared URL to S3-01 (neither project has one; Android honours it, iOS needs the Shortcut, *unverified* until tried on
+  shared URL to S3-01 (neither project has one, `SoulSync:webui/static/manifest.json:1-37`,
+  `ours:web/manifest.webmanifest:1-9`; Android honours it, iOS needs the Shortcut, *unverified* until tried on
   Michael's phone). Small, and it serves B1 without a native app.
 - **Take (learn) for S3-03:** request states a client can show, `pending → approved → available | declined | removed`,
   with an "available" check against the library (`SoulSync:core/requests/music.py:20`,

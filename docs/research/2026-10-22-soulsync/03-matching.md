@@ -335,11 +335,14 @@ Walking SoulSync's Soulseek path over it (hand estimate; the peer's path prefix 
    (`ours:sourcing/verify.py:402`), which is exactly why ext-74 passed verify. S1-02 plans that title comparison
    (`ours:docs/specs/2026-10-22-downloads-and-requests.md:68-72`), and S2-03 plans the recording id
    (`ours:docs/specs/2026-10-22-downloads-and-requests.md:112-118`).
-4. **Album downloads.** Whether the veto also runs when SoulSync takes a whole album folder (album bundle) is
-   V2-03a's question (*unverified* here).
+4. **Album downloads.** The veto does not run when SoulSync takes a whole album folder (album bundle): the bundle
+   maps files to tracks with `assign_album_tracks` (`SoulSync:core/soulseek_client.py:2070-2077`), whose module
+   imports no matching engine (`SoulSync:core/downloads/soulseek_identity.py:18-26`), while the veto lives only in
+   `calculate_slskd_match_confidence_enhanced` (`SoulSync:core/matching_engine.py:1269`,
+   `SoulSync:core/matching_engine.py:1307-1335`). That path would not assign track 09 to track 1, but the per-track source-reuse path scores a stored folder's files with the base score at ≥ 0.70 and no veto (`SoulSync:web_server.py:16757-16762`), so a reused folder lacking track 1 yields track 09; 04-soulseek walks ext-74 on both paths.
 
 So SoulSync would most likely have **rejected** ext-74's file as it was laid out (an album folder), by a 0.025 margin
-in step 2. It would have **accepted** the same wrong file under a flat "Artist - Album - NN - Title" name. Step 3 is a
+in step 2, on the per-track search path; on the folder-reuse path it would have accepted it (step 4). It would have **accepted** the same wrong file under a flat "Artist - Album - NN - Title" name. Step 3 is a
 stronger net, but it is off by default and steps aside for non-ASCII titles. Our planned S1-01 (`ours:docs/specs/2026-10-22-downloads-and-requests.md:61-66`) is the
 exact version of step 2: the title slot's song key must equal the wanted key, with no threshold.
 

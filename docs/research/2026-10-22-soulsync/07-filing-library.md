@@ -108,7 +108,9 @@ snapshot the embedded art in memory, `clear_pictures()`, **`tags.clear()` and sa
   (`SoulSync:core/metadata/enrichment.py:254-261`); on success `SOULSYNC_VERIFICATION`
   (`SoulSync:core/imports/pipeline.py:587-603`, `SoulSync:core/tag_writer.py:173-203`).
 - Not written: no AcoustID id or fingerprint tag (*absence inferred*: grep for `ACOUSTID_ID`/`Acoustid Id` writers
-  outside tests finds none), and no version/edition label field (*unverified*: none in the frame lists above).
+  outside tests finds none), and no version/edition field of its own (*absence inferred*: `grep -rnE "TIT3|SUBTITLE"
+  --include=*.py` outside `tests/` finds no tag writer); the nearest is MusicBrainz's disambiguation, written as the
+  album/track comment above (`SoulSync:core/metadata/musicbrainz_tags.py:144-147`, `SoulSync:core/metadata/source.py:617-621`).
 
 If no source metadata is found, the file is saved **with its tags cleared** (art restored) and the import carries on
 (`SoulSync:core/metadata/enrichment.py:116-123`). On an exception, `core_tag_guard.ensure_core_tags` refills only
@@ -190,7 +192,7 @@ and the per-service source adapters (`SoulSync:core/playlists/sources/base.py:1-
 **overwrite the whole list in place** (`SoulSync:core/navidrome_client.py:1365-1431`); `updatePlaylist` with
 `songIdToAdd` + `songIndexToRemove` (`SoulSync:core/navidrome_client.py:1761-1826`); `deletePlaylist`
 (`SoulSync:core/navidrome_client.py:1293-1300`); cover via native `POST /api/playlist/{id}/image`
-(`SoulSync:core/navidrome_client.py:1302-1363`). Mode is `playlist_sync.mode`, default `reconcile`, per mirror
+(`SoulSync:core/navidrome_client.py:1302-1363`). Mode is `playlist_sync.mode`, default `reconcile` on Docker (its seeded config.json has no `mode` key, so the callers' `reconcile` fallback applies, `SoulSync:config/config.example.json:85-87`, `SoulSync:entrypoint.sh:58-60`; a non-Docker install saves the defaults dict and runs `replace`, `SoulSync:core/settings.py:849`, `SoulSync:core/settings.py:1193-1199`), per mirror
 overridable (`SoulSync:core/sync/playlist_edit.py:234-260`):
 - **reconcile (default):** read the playlist (`getPlaylist`), plan, then one `updatePlaylist` that adds the wanted ids
   that are absent and removes, by index into the list just read, every entry whose id is no longer wanted
@@ -232,9 +234,11 @@ tools:
   (`SoulSync:services/sync_service.py:560-566`). No dry run for sync writes: `get_sync_preview` has no non-test caller
   (`SoulSync:services/sync_service.py:1668-1710`; caller *absence inferred* by grep).
 - Hidden (missing) entries: the guard sees only what `getPlaylist` returns, and SoulSync never reads Navidrome's
-  `playlist_tracks`, so a hidden row that shifts `songIndexToRemove` is not accounted for (*unverified*: depends on
-  Navidrome hiding missing rows, which ours measured on 0.64.2, `ours:crates/playlist_edit.py:3-6`; not tested against
-  SoulSync).
+  `playlist_tracks`, so a hidden row that shifts `songIndexToRemove` is not accounted for: the indexes are positions
+  in the `getPlaylist` list (`SoulSync:core/navidrome_client.py:1514`, `SoulSync:core/navidrome_client.py:1786-1791`,
+  `SoulSync:core/navidrome_client.py:1807-1814`) (*unverified* end to end: depends on Navidrome hiding missing rows,
+  which ours measured on 0.64.2, `ours:crates/playlist_edit.py:3-6`; would be verified by a SoulSync reconcile against a
+  Navidrome playlist that holds a missing file).
 
 **Mapping tracks to Navidrome songs:** a fuzzy title/artist(/album) match against SoulSync's **own** library DB at 0.7,
 after a confirmed-match cache (`SoulSync:services/sync_service.py:1346-1370`, `SoulSync:services/sync_service.py:1489-1529`);
@@ -263,7 +267,13 @@ No old→new log (*absence inferred*: grep for undo/revert/rollback/history/json
 rename-only mode's in-run move-back, `SoulSync:core/library_reorganize.py:2673-2689`, and an in-memory list of 30,
 `SoulSync:core/reorganize_queue.py:46-47`), and no scan request. Read from code, not run: reorganize never checks the
 pipeline's "kept existing library file" flag, so when another file already holds a track's target path the original
-may be deleted and the row pointed at the other file (*unverified*).
+may be deleted and the row pointed at the other file: the pipeline sets `_final_processed_path` to the target before
+its existing-file check (`SoulSync:core/imports/pipeline.py:1501`), that check drops the incoming copy, sets the flag and
+returns, leaving that path on the target, when the target has tags and the run is not enhance/force
+(`SoulSync:core/imports/pipeline.py:1618-1638`),
+and reorganize accepts any existing `_final_processed_path` (`SoulSync:core/library_reorganize.py:2036-2043`), repoints
+the row and removes the original (`SoulSync:core/library_reorganize.py:2088-2090`,
+`SoulSync:core/library_reorganize.py:2119-2120`).
 
 **Repair jobs** (`core/repair_worker.py`, `core/repair_jobs/`), master switch `repair.master_enabled` default True
 (`SoulSync:core/repair_worker.py:492`). Two helpers: `_delete_file_if_present` (hard `os.remove`,
@@ -389,7 +399,7 @@ Fetch's only hard delete is its own unverified download (`ours:sourcing/fetch.py
 
 Beyond the table, three differences decide whether its filing could sit beside ours:
 
-- **Tags.** SoulSync clears every tag on import and rewrites from its matched source, with no confidence gate of its own on that write (*unverified*: no threshold found in `SoulSync:core/metadata/enrichment.py:157-246`);
+- **Tags.** SoulSync clears every tag on import and rewrites from its matched source, with no confidence gate of its own on that write (*absence inferred*: `grep -nE 'confiden|threshold|min_score|score'` over all of `core/metadata/enrichment.py` finds nothing; its only entry gate is the master switch, `SoulSync:core/metadata/enrichment.py:72-74`);
   with no metadata it saves the file *untagged* (`SoulSync:core/metadata/enrichment.py:110-123`). That is the opposite
   of D29 (full tags only on a confident match, else as-is) and of the 2026-10-15 lesson that a full rewrite collapses
   multi-valued fields (`ours:deploy/beets.yaml:1-13`). Its library-side writer is field-by-field with sensible guards,
@@ -424,7 +434,7 @@ Beyond the table, three differences decide whether its filing could sit beside o
   (`SoulSync:core/web_scan_manager.py:97-117`), for S2's album jobs. Not its fixed 300 s minimum or its "error = not
   scanning" probe; our `lastScan` check is better (`ours:subsonic/client.py:252-267`).
 - **Don't take:** clear-and-rewrite tagging (D29, D22); reconcile/replace playlist sync, name-matched adoption and
-  whole-list rewrites (D44, the amperfy rule); hard deletes and an auto-emptied bin (invariant 4, `crates/trash.py`);
+  whole-list rewrites (D44, the amperfy rule); hard deletes, a quarantine folder the default-on Full Cleanup purges every 12 h (`SoulSync:core/automation/handlers/download_cleanup.py:115-126`, `SoulSync:core/automation_engine.py:244-250`) and a recycle bin the opt-in Weekly Cleanup empties (`SoulSync:core/automation_engine.py:225-235`) (invariant 4, `crates/trash.py`);
   repair jobs that delete without a playlist check (invariant 1); SoulSync as the tagger/organiser in place of beets
   (D18).
 

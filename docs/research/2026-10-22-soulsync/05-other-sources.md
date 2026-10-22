@@ -61,7 +61,8 @@ link.tidal.com) whose tokens are saved to `tidal_download.session`
 (`SoulSync:core/tidal_download_client.py:511-515`). The metadata client needs the user's own developer app id and
 secret instead (`SoulSync:core/settings.py:502-506`). Embedded: none in the clone. The session is built with
 tidalapi's defaults (`SoulSync:core/tidal_download_client.py:260`); that tidalapi ships its own app client id is
-*unverified* (the library is not in the clone). Its own comment says bursts of download requests can draw
+*unverified* (the library is not in the clone; would be verified by reading `tidalapi.Session`'s config in the pinned
+`tidalapi==0.8.11`, `SoulSync:requirements.txt:81`). Its own comment says bursts of download requests can draw
 a 401/403 plus captcha ("bot-like behavior") that deauths the session
 (`SoulSync:core/tidal_download_client.py:46-55`). **ToS/legal:** streaming rip; it saves full
 `usage=DOWNLOAD` streams outside Tidal's apps on the user's own subscription.
@@ -167,7 +168,8 @@ every result is stamped `bitrate=128, quality='mp3'` whatever yt-dlp picks
 passes there and is left to the import pipeline's duration-agreement check, which needs a known expected length
 (`SoulSync:core/imports/file_integrity.py:20-24`). **Credentials:** none; `is_configured()` = yt-dlp importable
 (`SoulSync:core/soundcloud_client.py:159-169`). Embedded: no SoundCloud client id in the clone (grep finds none
-outside tests); obtaining one is left to yt-dlp's extractor, *unverified* how. **ToS/legal:** streaming rip; it
+outside tests); obtaining one is left to yt-dlp's extractor, *unverified* how (yt-dlp is not in the clone; would be
+verified by reading the SoundCloud extractor of the `yt-dlp>=2026.3.17` it requires, `SoulSync:requirements.txt:63`). **ToS/legal:** streaming rip; it
 saves stream transcodes through yt-dlp, not the uploader's download button.
 
 ### Bandcamp
@@ -361,8 +363,10 @@ credential to manage.
     (`SoulSync:core/imports/guards.py:159-200`); a container probe cannot see that an MP3 320 was made from Opus,
     so the YouTube point stands.
   For a DJ library, where a file goes onto a club system, a mislabelled lossy file is the one failure that is heard.
-  Whether our verify would flag a YouTube MP3 320 made from Opus 256 is *unverified* (Opus's lowpass may sit near
-  20 kHz).
+  Our verify flags a ≥315 kbps file only for a cutoff ≤16 kHz (`transcode`) or ≤18 kHz (`maybe_lossy`)
+  (`ours:sourcing/verify.py:435-442`), so it would pass a YouTube MP3 320 made from Opus 256 if Opus's lowpass sits
+  near 20 kHz; that lowpass is *unverified* (would be verified by encoding a test file Opus 256 → MP3 320 and running
+  ours `verify` on it).
 - **Previews posing as tracks.** SoulSync needed explicit preview guards for HiFi and Qobuz
   (`SoulSync:core/hifi_client.py:1190-1212`, `SoulSync:core/qobuz_client.py:1258-1261`), and SoundCloud's 100 KB floor
   does not catch a 30 s clip; only the import duration check does, and only when the expected length is known

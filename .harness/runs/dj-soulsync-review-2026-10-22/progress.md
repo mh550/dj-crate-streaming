@@ -8,6 +8,30 @@ Michael steers through `INBOX.md` on this branch (first line `status: run|pause|
 Every session reads `INBOX.md` and this file first, then the spec `docs/specs/2026-10-22-soulsync-review.md` and the
 brief `brief.md` (the brief wins on scope).
 
+### 2026-10-22 13:30 · V2-08 · passes
+- **Changed:** 01-08 under `docs/research/2026-10-22-soulsync/` (about 190 lines touched; docs only, tests 1757 → 1757). every content `*unverified*` mark in 02-08 was re-read (48 before, 27 now): 14 are now cited (5 of them corrected claims), 9 grep-only absences became `*absence inferred*` with the grep stated, several more were narrowed to a cited part, and the remaining 27 keep the mark with a "would be verified by" clause (slskd 0.26 captures for S4-01, iOS/Android, tidalapi/yt-dlp, Mixxx). There are 12 cross-file contradictions, reconciled below. Mechanical checks: the citation check prints no BAD line; 02-08 each have the four `##` headings in order and one `**Verdict:**`; README's `## Sections` links 01-08 and all resolve (09 is V4-01's); every code block is our own ASCII flow, and none holds a Python line (`def|class|return|import|self.` grep = 0).
+- **Spot-check (me, `sed -n`):** 20 hold, 1 partly holds (widened). 02: `spotify_client.py:1547-1548` yes, `refresh_mirrored.py:277-351` yes, ours `cli.py:155-160` yes. 03: `watchlist_scanner.py:2900-2976` yes, `matching_engine.py:1517-1529` yes, ours `identity.md:108-140` yes. 04: `slskd_throttle.py:1-23` yes, `size_limit.py:23-53` yes, ours `scorer.py:246-251` yes. 05: `tidal_download_client.py:396-404` yes, `hifi_client.py:792-806` yes, ours `next-session-design.md:142-143` yes. 06: `silence.py:34-43` yes, `lifecycle.py:1183-1201` **partly** (stopped before the publish call; now `1183-1217`), ours `policy.py:27-33` yes. 07: `pipeline.py:123-135` yes, `paths.py:1222-1223` yes, ours `subsonic/client.py:174-178` yes. 08: `index.html:12687-12688` yes, `play_log.py:1-19` yes, ours `web/app.js:151` yes.
+- **Contradictions reconciled (Opus consistency agent; I checked each in the clone):**
+  - The quarantine block is a DB table with no TTL (25,000-row cap), not "until the sidecar goes" (04 vs 06).
+  - ext-74: rejected only on the per-track search path. The folder-reuse path (base ≥ 0.70, no veto, `web_server.py:16757-16762`) would take it (03/06 vs 04).
+  - Reconcile re-adds removed tracks and removes hand-added ones (02 had deferred this to 07).
+  - auto-import starts only when opted in (01 vs 07). Quarantine blocks are per (peer, file), not per peer (01 vs 04/06).
+  - spotipyFree is a pip dependency that is soft-imported (02's "V2-08 reconciles").
+  - Album batches pin one folder at ≥ 80 % coverage and score ≥ 0.62 (02's deferral to 04).
+  - Streaming: none of it is transcoded on the fly, but YouTube files are already MP3 320 re-encodes (08 vs 05).
+  - The 12 h auto-purge hits the quarantine folder, not the recycle bin (07 vs 06/08).
+  - `playlist_sync.mode` is `reconcile` on Docker but `replace` on a non-Docker fresh install (02/07 both missed this).
+  - Ours: `crates/service.py:511`, not `:488` (01 vs 08). There are 43 registered blueprints.
+- **Corrected by the marks pass + an Opus diff review (about 115 cites opened, 10 findings; 8 applied, 2 minor nuances left as they are):**
+  - From code, step 5's 15 s stall timeout never fires: no `track_info` carries `is_album_download`, so it is always 90 s.
+  - A `Completed, Aborted` task with bytes short waits until the 600 s status-builder safety valve (it runs only while the batch status is polled).
+  - Multi-disc atomic publish can overwrite (`os.replace`).
+  - Reorganize removes the original when the target is already taken.
+  - The API-key bootstrap is mounted at `/api/v1`, and a new key defaults to admin.
+  - 06's ours grep `quarantin|blocklist` could not match "blacklist"; it now includes it.
+- **For V3/V4:** S4-01's capture list is unchanged and still the way to settle the slskd-side marks in 04. The README comparison table is still the V3-01 placeholder. Suite: `check.sh` green on the final tree, 1757 tests in 648 s (650 s before the review fixes).
+- **Questions for Michael:** none new. **Proposed changes:** step 3's "README links all eight files" should read "01-08 resolve; 09 is a forward link". Step 5's "`grep -c` of function bodies" is better done as a grep for Python lines inside code blocks, which is what I ran.
+
 ### 2026-10-22 12:17 · V2-07 · passes
 - **New:** `docs/research/2026-10-22-soulsync/08-ui-api.md` (~505 lines, 276 unique cites, 7 `*unverified*` + 13 `*absence inferred*` marks). It covers route registration and counts (63 `api/*.py`, 255 + 957 = 1,212 route decorators), the web UI, auth/profiles/API keys, streaming/radio, MCP, automation and webhooks, and `### A request from the phone` (search, pasted link, Shortcut/API, each as an ASCII flow ending at its record). Then `### Phone fit`, ours (`crates/service.py` routes, `web/`, D19→D25 streaming, S3-01..06), one paragraph per B option plus goal C, and worth taking. **Verdict: no.** Docs only; tests 1757 → 1757.
 - **Findings:** SoulSync has **no Subsonic server**, so Amperfy or a native fork cannot use it. It streams only to its own browser player: library files as they are, Navidrome `/rest/stream` proxied with Range, and tracks it doesn't own downloaded whole first (YouTube by default). Queue prefetch files up to 250 tracks it doesn't own. Login is off by default (a single-profile install treats everyone as admin), and login mode exempts `/api/v1/*`, including an unauthenticated key bootstrap. An admin key downloads at once (`POST /api/v1/request`, no approval). Member approval is enforced only in the 30-minute wishlist run; `start-missing-process` has no permission check (read from code). The search bar and the Sync page use two link parsers, and each misses one kind (playlist vs Spotify track). It has a real PWA (manifest + `sw.js`, mobile.css with 43 `@media` rules) but no `share_target`, no Web Push, and `user-scalable=no`. MCP (35 tools, off by default, key-scoped) can download without confirmation. Full Cleanup ships enabled every 12 h.

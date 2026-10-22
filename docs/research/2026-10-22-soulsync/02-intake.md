@@ -74,8 +74,10 @@ Citations for the arrows: `SoulSync:core/playlists/sources/base.py:118-167`,
   under the config key `spotify.token_info` in the database-backed config store
   (`SoulSync:core/spotify_token_cache.py:29-46`), importing the old `config/.spotify_cache` file once because the
   Docker volume lost it on nightly pulls (`SoulSync:core/spotify_token_cache.py:3-9`). The config store is the
-  Fernet-encrypted one in 01-map ("Settings and credentials"). Refresh itself is spotipy's (*unverified*: inside
-  spotipy). Per-profile tokens still use loose files (`SoulSync:web_server.py:5506`).
+  Fernet-encrypted one in 01-map ("Settings and credentials"). Refresh itself is spotipy's: SoulSync hands a `SpotifyOAuth`
+  with this cache handler to `spotipy.Spotify` (`SoulSync:core/spotify_client.py:815-823`) and has no refresh call of
+  its own (a grep for `refresh_access_token` hits only the Tidal client); the handler's comment expects refreshed
+  tokens to come back through `save_token_to_cache` (`SoulSync:core/spotify_token_cache.py:66-71`). Per-profile tokens still use loose files (`SoulSync:web_server.py:5506`).
 - **Without credentials, two mechanisms.**
   1. `core/spotify_public_scraper.py` GETs `https://open.spotify.com/embed/{playlist|album}/{id}` with a browser
      User-Agent (`SoulSync:core/spotify_public_scraper.py:72-80`) and reads `__NEXT_DATA__` →
@@ -86,8 +88,10 @@ Citations for the arrows: `SoulSync:core/playlists/sources/base.py:118-167`,
      `playlist_items` (`SoulSync:core/spotify_public_api.py:56-95`) up to 10,000 tracks (`SoulSync:core/spotify_public_api.py:29`). Its docstring says it talks to
      "Spotify's private API the way the web player does", tracking client-auth headers Spotify rotates
      (`SoulSync:core/spotify_public_api.py:4-9`). The token and GraphQL hosts live inside that library, not in this
-     repo (a grep for `api-partner|pathfinder|clienttoken` over `core/` and `api/` is empty; the hosts are
-     *unverified*). `fetch_spotify_public` tries SpotipyFree first for playlists and falls back to the embed; albums
+     repo (a grep for `api-partner|pathfinder|clienttoken` over `core/` and `api/` is empty; SpotipyFree is a pip
+     dependency, not vendored, `SoulSync:requirements.txt:88-95`; the hosts are *unverified*, and reading the installed
+     spotipyFree 1.x package would verify them; only a design note names `clienttoken.spotify.com` and
+     `api-partner.spotify.com/pathfinder`, for a SpotiFLAC-style client, `SoulSync:Support/METADATA-FALLBACK-IMPLEMENTATION.md:112-125`). `fetch_spotify_public` tries SpotipyFree first for playlists and falls back to the embed; albums
      always use the embed (`SoulSync:core/spotify_public_scraper.py:177-202`).
 - **`core/spotify_free_metadata.py`** is a "PROTOTYPE" read-only metadata source over SpotipyFree / spotapi
   ("web-player scraping — best-effort, fragile") for search, album, artist and track lookups
@@ -96,7 +100,7 @@ Citations for the arrows: `SoulSync:core/playlists/sources/base.py:118-167`,
   `SoulSync:core/spotify_client.py:93-107`); the enrichment worker uses it by default to save the official quota
   (`SoulSync:core/spotify_worker.py:245-261`). `spotipyFree` (GPL-3.0) is listed in requirements but
   soft-imported, "never a hard runtime requirement": without it the embed scraper is used
-  (`SoulSync:requirements.txt:88-96`). 01-map calls it a hard dependency; V2-08 reconciles the two.
+  (`SoulSync:requirements.txt:88-96`). So the published image installs it as a normal pip dependency (01-map), but nothing fails without it; the module docstring calling it an un-bundled optional install is stale (`SoulSync:core/spotify_public_api.py:11-15`).
 - **The February 2026 developer-mode limits.**
   - Playlist items: the client calls the new `playlists/{id}/items` first, because `/tracks` "returns 403 for
     Development Mode apps after the Feb 2026 API changes", and falls back to `/tracks` on 403/404
@@ -205,8 +209,10 @@ downloads a built-in chain rescans and re-syncs playlists (`SoulSync:core/automa
    `SoulSync:core/sync/sync_fingerprint.py:9`, `SoulSync:core/sync/library_presence.py:1-7`);
 4. have vs missing: `_find_track_in_media_server` per track at a 0.7 threshold
    (`SoulSync:services/sync_service.py:685-718`);
-5. server playlist: matched tracks written to Plex, Jellyfin/Emby or Navidrome in `reconcile` (the automation
-   default), `append` or `replace` mode (`SoulSync:services/sync_service.py:921-944`,
+5. server playlist: matched tracks written to Plex, Jellyfin/Emby or Navidrome in `reconcile` on Docker,
+   whose seeded config.json has no `mode` key so every caller's `reconcile` fallback applies, `SoulSync:Dockerfile:129-130`,
+   `SoulSync:entrypoint.sh:58-60`, `SoulSync:config/config.example.json:85-87`; a non-Docker install without config.json
+   saves the defaults dict and runs `replace`, `SoulSync:core/settings.py:849`, `SoulSync:core/settings.py:1193-1199`), `append` or `replace` mode (`SoulSync:services/sync_service.py:921-944`,
    `SoulSync:core/automation/handlers/sync_playlist.py:403`), the server playlist id remembered
    (`SoulSync:core/sync/mirrored_server_link.py:1-24`);
 6. missing: `_wishlist_unmatched` → `add_spotify_track_to_wishlist(source_type='playlist')`
@@ -365,7 +371,8 @@ wishlist run (`SoulSync:core/discovery/sync.py:59`, `SoulSync:core/discovery/syn
   `POST /api/requests {"url"}` with preview/approve is the better shape for an iOS Shortcut; SoulSync's Deezer
   share-link resolution (`SoulSync:core/deezer_client.py:2030-2068`) shows what "share a link" really receives
   (short redirect links), worth handling for Spotify's `spotify.link` too (*unverified* that Spotify shares such
-  links to the share sheet; check from the phone).
+  links to the share sheet, and SoulSync has no `spotify.link` handling to read (grep); sharing a playlist from the
+  Spotify iOS app into a Shortcut that logs the URL would verify it).
 - Its member/admin approval is close to ours in spirit (nothing downloads until approved) but per profile, not per
   download, and approval means "the 30-minute job may try it", with automatic retries forever
   (`SoulSync:core/wishlist/retry_backoff.py:7-17`). Ours approves one download (D23); a retry needs a new approval.
@@ -378,13 +385,16 @@ wishlist run (`SoulSync:core/discovery/sync.py:59`, `SoulSync:core/discovery/syn
   (`SoulSync:database/music_database.py:807-817`), and a request is grouped back into an album only for display
   (`SoulSync:core/requests/music.py:50-99`). Ours plans the album as a first-class record (S2-01 `requests`,
   `track_no`, `mb_release_id`) so S2-04/05 can source one folder; SoulSync's shape is the one that produced our
-  10-21 "5 peers, 4 releases" outcome, and whether its batches pin one folder is V2-03a's question.
+  10-21 "5 peers, 4 releases" outcome, and its album batches do pin one folder when one covers ≥ 80 % of the requested tracks and scores ≥ 0.62 (04-soulseek.md, `SoulSync:core/downloads/master.py:460`, `SoulSync:core/downloads/master.py:1372-1382`), but the album identity on the wishlist row is still lost.
 - Mirrors that refresh on a schedule and auto-wishlist whatever is new are the opposite of D7 for us; the
   fingerprint skip and "keep stored tracks on a failed refresh" rules (`SoulSync:core/automation/handlers/sync_playlist.py:378-452`,
   `SoulSync:tests/automation/test_handlers_playlist.py:373-376`) are worth having for any re-import, with approval
   kept manual.
 - Reconcile mode writes the server playlist from the source, so a track Michael removed in Navidrome comes back on the
-  next sync (*unverified*: depends on `reconcile_playlist`'s rules, V2-06 reads it). Ours never removes and never
+  next sync while the source still lists it: the reconcile plan adds every source id not in the current list
+  (`SoulSync:core/sync/playlist_edit.py:96-100`), sent as `songIdToAdd` (`SoulSync:core/navidrome_client.py:1800-1806`),
+  and the plan reads only the current and the source id lists, no record of removals
+  (`SoulSync:core/sync/playlist_edit.py:74-77`); a track he added by hand is removed in the same write (07-filing-library.md). Ours never removes and never
   re-adds a removed track (D13, ours:docs/specs/2026-10-13-next-session-design.md:66; ours:sourcing/import_playlist.py:302), which crates need.
 
 **Crates.** SoulSync keeps one wanted row per track id per profile, without playlist position

@@ -84,8 +84,8 @@ true`, `minimumResponseFileCount: 1` and `minimumPeerUploadSpeed` (the setting i
 (`SoulSync:core/downloads/task_worker.py:695-699`, `SoulSync:core/downloads/master.py:1271`), except the hybrid
 fallback's direct search with `timeout=20` (`SoulSync:core/downloads/task_worker.py:95-101`); the default is the
 `soulseek.search_timeout` setting, 60 s (`SoulSync:core/soulseek_client.py:686-687`). Ours sends `searchTimeout`
-instead of `timeout` (`ours:sourcing/slskd_client.py:42-43`); which key slskd 0.26 reads is *unverified* here and goes
-to the endpoint table below.
+instead of `timeout` (`ours:sourcing/slskd_client.py:42-43`); which key slskd 0.26 reads is *unverified* here (the
+`POST /searches` capture with each key, below, would settle it) and goes to the endpoint table below.
 
 **Wait and poll.** It polls `GET searches/{id}/responses` every 1 s for up to timeout + `search_timeout_buffer`
 (15 s default) (`SoulSync:core/soulseek_client.py:734-755`, `SoulSync:core/soulseek_client.py:763-767`). Responses
@@ -126,7 +126,9 @@ most 50 rejected rows are kept (`SoulSync:core/downloads/candidate_pool.py:17`,
 ### Scoring
 
 Three layers decide which file is tried first. None of the rows below reads a MusicBrainz id or a release's track
-lengths (the cited code; that nothing else on this path does is *unverified*).
+lengths (the cited code; a grep for MusicBrainz ids over the matching engine, candidate, validation, identity and
+slskd client modules finds none, and the MusicBrainz release an album batch pins is for tagging only,
+`SoulSync:core/downloads/master.py:757-765`, read back in post-processing, `SoulSync:core/metadata/source.py:525-527`).
 
 | Layer | Term | Numbers | Cite |
 |---|---|---|---|
@@ -255,9 +257,13 @@ Order for one per-track task, read from the code:
 `used_sources` survives every retry (`SoulSync:core/downloads/task_worker.py:435-439`). **Same peer again:** the same
 `(peer, file)` is never retried, except the slow fallback above and the bundle's re-ask of an abandoned crawler; the
 same peer with *another* file of the song can be (the key is `peer_filename`,
-`SoulSync:core/downloads/candidates.py:520-525`). Whether `is_album_download` is ever set on a task's `track_info`,
-which step 5's 15 s needs, is *unverified* (it is set on the batch and on the wishlist re-queue context,
-`SoulSync:core/wishlist/processing.py:582`).
+`SoulSync:core/downloads/candidates.py:520-525`). Step 5's 15 s reads `is_album_download` from the task's `track_info`
+(`SoulSync:core/downloads/monitor.py:1073-1074`), but no Python line writes that key there (grep): album batches put
+`_is_explicit_album_download` on `track_info` (`SoulSync:core/downloads/master.py:1586`,
+`SoulSync:core/downloads/master.py:1679`) and `is_album_download` on batches and post-processing contexts, never on `track_info`
+(`SoulSync:core/downloads/pinned_batch.py:136`, `SoulSync:core/wishlist/processing.py:153`) and the wishlist re-queue
+context (`SoulSync:core/wishlist/processing.py:582`). So the 15 s applies only if a track dict handed in (browser
+JSON, a wishlist row's data) already carries the key at top level; read from the code, it is 90 s.
 
 **Per album.** Inside the bundle (`SoulSync:core/soulseek_client.py:2099-2154`):
 - the chosen folder's transfers end `complete`, `partial` (all terminal, some failed), `failed`, `timeout` (6 h
@@ -315,18 +321,22 @@ elsewhere becomes the new batch folder (`SoulSync:web_server.py:16865-16872`).
 | observed throughput | peer name (no IP or path) | 1 h TTL, at most 512 peers, in process memory (lost on restart) | nothing; orders the walk and the folder band | `SoulSync:core/downloads/peer_observation.py:1-50`, `SoulSync:core/downloads/peer_observation.py:71-81` |
 | tried sources | `peer_filename` per task | the task's life | that file from that peer, for that track | `SoulSync:core/downloads/candidates.py:520-556` |
 | failed batch folder | `peer:folder` per batch | the batch's life | folder reuse for that batch | `SoulSync:web_server.py:16723-16733` |
-| quarantine record | `(peer, file)` from quarantine sidecars on disk | until the quarantine entry goes | that file in every search | `SoulSync:core/soulseek_client.py:2710-2749` |
+| quarantine record | `(peer, file)` in `quarantine_source_blocks` (plus any sidecars still on disk) | no TTL, oldest pruned past 25,000 rows; survives the 12-hourly quarantine purge | that file in every search | `SoulSync:core/imports/quarantine.py:107-135`, `SoulSync:core/imports/guards.py:107-124`, `SoulSync:database/music_database.py:24102`, `SoulSync:core/soulseek_client.py:2710-2749` |
 | user blacklist | `(peer, file)` in `download_blacklist` | until removed | that file | `SoulSync:database/music_database.py:3749-3760`, `SoulSync:database/music_database.py:21381-21393`, `SoulSync:core/downloads/candidates.py:527-534` |
 | failed-download blocklist | SHA1 of service + artist + title + size; **every peer collapses to `soulseek`** | 90 days, ≤ 5,000 rows | a file of that size and those names from any peer | `SoulSync:core/downloads/failed_blocklist.py:1-15`, `SoulSync:core/downloads/failed_blocklist.py:27-28`, `SoulSync:core/downloads/failed_blocklist.py:142-157` |
 
 There is **no per-peer block** in the music download path: every key above includes the file or the batch, and a grep
-of `core/` for per-peer blocks finds them only under `core/video` (skipped, non-music) (grep-based, so
-*unverified* as an absence). A peer that sent a fake or a wrong song keeps its other files eligible. The artist /
+of `core/` for per-peer blocks finds them only under `core/video` (skipped, non-music): the one per-user check,
+`blocked_usernames`, is in the video database (`SoulSync:database/video_database.py:3688-3691`) and is called only
+from `core/video` and `api/video` (`SoulSync:core/video/download_monitor.py:1377`, `SoulSync:api/video/downloads.py:247`),
+while the music `is_blacklisted` takes peer and file together (`SoulSync:database/music_database.py:21381-21390`)
+(grep-based). A peer that sent a fake or a wrong song keeps its other files eligible. The artist /
 album / track blocklist in `core/blocklist` bans metadata, not peers (`SoulSync:core/blocklist/__init__.py:1-6`). The
 failed-download blocklist is recorded from the *wanted* track's artist and title and the picked size
 (`SoulSync:core/downloads/failed_blocklist.py:160-176`) but checked against the *candidate's* parsed artist and title
 (`SoulSync:core/downloads/failed_blocklist.py:142-154`), so it bites only when the filename parse equals the wanted
-names (read from the code; how often is *unverified*). `soulseek_identity.py` stores nothing: it grades one path
+names (read from the code; how often is *unverified*, and logging the parsed against the wanted names over real
+searches would measure it). `soulseek_identity.py` stores nothing: it grades one path
 against one wanted track (`SoulSync:core/downloads/soulseek_identity.py:1-14`). On the per-track path its result never
 rejects: it is logged evidence (`SoulSync:core/downloads/validation.py:888-895`), and it can *admit* a row the score
 put under 0.58 (the recovery pass, `SoulSync:core/downloads/validation.py:861-882`).
@@ -336,13 +346,15 @@ put under 0.58 (the recovery pass, `SoulSync:core/downloads/validation.py:861-88
 **Enqueue: one POST per file.** `download(username, filename, size)` POSTs `transfers/downloads/{username}` with a
 one-element array `[{"filename", "size", "path"}]`, where `path` is SoulSync's own download directory, sent as a
 "Try custom download path" (`SoulSync:core/soulseek_client.py:860-878`). Whether slskd 0.26 reads a `path` field is
-*unverified*; SoulSync finds the file afterwards from its own `soulseek.download_path` either way
+*unverified* (SoulSync's own comment calls it a try, `SoulSync:core/soulseek_client.py:861`; enqueuing one file with a
+`path` on 0.26 and checking where it lands would verify it); SoulSync finds the file afterwards from its own `soulseek.download_path` either way
 (`SoulSync:core/soulseek_client.py:2628-2666`). An album is enqueued the same way, one POST per matched file in a
 loop (`_enqueue_album_tracks`, `SoulSync:core/soulseek_client.py:2184-2195`). No call puts several files in one
 body. When the POST answers anything but 2xx (or times out), it tries three other paths with the same array, then the
 same three with an object body `{"files": [{"filename", "size"}]}`: up to **7 POSTs** for one file, whatever the
-first error was (`SoulSync:core/soulseek_client.py:894-960`). Those paths are guesses from older slskd versions; whether
-0.26 has any of them is *unverified*.
+first error was (`SoulSync:core/soulseek_client.py:894-960`). Those paths are untargeted "alternative patterns"
+(`SoulSync:core/soulseek_client.py:894-902`); whether 0.26 has any of them is *unverified* (0.26's
+`GET /swagger/v1/swagger.json` or its controller routes would settle it).
 
 **The transfer id.** `_extract_transfer_id` takes the id from `{"enqueued": [Transfer, …], "failed": […]}`, matching
 the filename or using a single entry, or from an older bare `{"id"}` / `[{"id"}]` body
@@ -352,7 +364,7 @@ says 0.25.x/0.26 answers 201 with `enqueued` Transfer records (`SoulSync:core/so
 that "an enqueue response carries no id, which slskd 0.26 does" (`SoulSync:core/soulseek_client.py:998-1000`).
 SoulSync's tests pin the first shape by hand, and their comment names slskd's `TransfersController.EnqueueAsync` in
 0.25.1 and 0.26.0 as the source (`SoulSync:tests/test_soulseek_scoped_cleanup.py:208-213`); no captured response backs
-it (*unverified* as a capture). Only an id from the response is recorded as "ours". It goes into a
+it (*unverified* as a capture; the enqueue-reply capture below, S4-01, would verify it). Only an id from the response is recorded as "ours". It goes into a
 persistent registry (`soulseek_owned_transfers` in the metadata table), never the filename ("fail closed",
 `SoulSync:core/soulseek_client.py:838-849`, `SoulSync:core/soulseek_client.py:1387-1388`).
 
@@ -369,7 +381,8 @@ persistent registry (`soulseek_owned_transfers` in the metadata table), never th
   the listing by basename instead, because asking for it as a path made slskd answer 400/405 and cancelled good
   transfers (#1229, `SoulSync:core/soulseek_client.py:995-1034`, `SoulSync:core/soulseek_client.py:1036-1042`). On
   slskd 0.26, `transfers/downloads/{x}` is the per-peer route (ours:docs/specs/2026-10-22-downloads-and-requests.md:25),
-  so a UUID there would be read as a username. That is *unverified*. Callers: post-processing and the status fallback
+  so a UUID there would be read as a username. That is *unverified* (`GET /transfers/downloads/<transfer id>` on 0.26,
+  in the S4-01 captures, would show a 404 or the record). Callers: post-processing and the status fallback
   (`SoulSync:core/downloads/post_processing.py:300`, `SoulSync:core/downloads/status.py:288`).
 
 **Poll loops and timeouts.**
@@ -455,8 +468,9 @@ The diagram's lines, cited: `SoulSync:core/downloads/master.py:1771`, `SoulSync:
 `SoulSync:core/downloads/monitor.py:979`, `SoulSync:core/downloads/monitor.py:1119`,
 `SoulSync:core/downloads/monitor.py:1215`, `SoulSync:core/downloads/monitor.py:1329` and
 `SoulSync:core/downloads/monitor.py:415`; `not_found` at `SoulSync:core/downloads/task_worker.py:926` and
-`SoulSync:core/downloads/lifecycle.py:1164`; `failed` at `SoulSync:core/downloads/monitor.py:908-912`; where
-post-processing sets `completed` is *unverified* (not traced). `downloading` is set **before** the enqueue POST (`SoulSync:core/downloads/candidates.py:568`) and stays until
+`SoulSync:core/downloads/lifecycle.py:1164`; `failed` at `SoulSync:core/downloads/monitor.py:908-912`; `completed`
+after post-processing's import at `SoulSync:core/imports/pipeline.py:1816-1819`, and by stuck detection for a
+`post_processing` task whose file exists at `SoulSync:core/downloads/lifecycle.py:1169-1175`. `downloading` is set **before** the enqueue POST (`SoulSync:core/downloads/candidates.py:568`) and stays until
 post-processing or a retry. `queued` is only a *reported* status: the status builder sets it in the UI payload
 (`task_status`) from slskd's state (`SoulSync:core/downloads/status.py:610-613`), and a grep of `core/downloads` and
 `web_server.py` finds no line setting a track task's own status to `queued`. The staging
@@ -464,8 +478,11 @@ shortcut jumps from `searching` straight to `post_processing` (`SoulSync:core/do
 cancels (`Completed, Cancelled`) makes the task `cancelled`, as if the user had done it, and nothing retries
 (`SoulSync:core/downloads/status.py:503-508`). The monitor's error tokens are `Errored`, `Failed`, `Rejected` and
 `TimedOut` (`SoulSync:core/downloads/monitor.py:632`, `SoulSync:core/downloads/monitor.py:922`); the bundle adds
-`Aborted` and `Cancelled` (`SoulSync:core/soulseek_client.py:2465-2466`). Where a per-track `Completed, Aborted` ends up
-is *unverified* (not traced to the end). Batches have their own `phase` (e.g. `downloading`,
+`Aborted` and `Cancelled` (`SoulSync:core/soulseek_client.py:2465-2466`). A per-track `Completed, Aborted`
+is neither an error token nor `Queued`/`InProgress`, so it falls to the monitor's unknown-state branch
+(`SoulSync:core/downloads/monitor.py:1253-1262`): with no bytes the 90 s timer retries it like a 0 % stall; with some
+bytes the timers reset, and the completion check sees `Completed` with bytes short and waits
+(`SoulSync:core/downloads/monitor.py:632-644`), so the monitor sets no timer; once the task is 600 s old (`soulseek.download_timeout`), the status builder's safety valve, which runs only while the batch status is polled, probes for the file and marks the task `failed` if it is not there (`SoulSync:core/downloads/status.py:418-436`, `SoulSync:core/downloads/status.py:97-120`; read from the code, not run). Batches have their own `phase` (e.g. `downloading`,
 `SoulSync:core/downloads/master.py:1476`); it is not listed here.
 
 ### Errors and outages
@@ -496,8 +513,9 @@ dashboard's status calls it (`SoulSync:web_server.py:3492-3507`), and so does th
 `isLoggedIn` finds only the orchestrator's pass-through (`SoulSync:core/download_orchestrator.py:243-259`).
 `core/connection_detect.py` is the settings page's LAN auto-detect, not an outage check: it scans the subnet for
 `GET /api/v0/session` on port 5030 (`SoulSync:core/connection_detect.py:18-26`,
-`SoulSync:core/connection_detect.py:121-135`). Nothing handles a VPN: a grep for `vpn` and `gluetun` in those
-directories finds nothing (grep-based, so *unverified* as an absence).
+`SoulSync:core/connection_detect.py:121-135`). Nothing handles a VPN: a grep for `vpn` and `gluetun` over every `.py` file in the clone finds
+only a Tidal error hint (`SoulSync:core/tidal_download_client.py:505`) and an Invidious host name
+(`SoulSync:core/video/youtube.py:268`).
 
 **What happens to transfers in flight**, read from the code (not run):
 - **slskd unreachable** (restart, container down). `_make_request` returns None instead of raising, so the monitor's
@@ -522,7 +540,8 @@ directories finds nothing (grep-based, so *unverified* as an absence).
   ours:docs/specs/2026-10-22-downloads-and-requests.md:44-47). A transfer that ends `Completed, Errored` is retried at
   once (≥ 5 s): cancel with `remove=True`, `(peer, file)` marked used, a full re-search
   (`SoulSync:core/downloads/monitor.py:922-985`). Nothing waits for slskd to log in again. What slskd 0.26 answers to a
-  search made while logged out is *unverified*. If no query starts a download the task becomes `not_found`
+  search made while logged out is *unverified* (the `GET /server` capture during a drop, below, plus one search then,
+  would verify it). If no query starts a download the task becomes `not_found`
   (`SoulSync:core/downloads/task_worker.py:918-927`). Failed and cancelled tracks are collected for the wishlist
   (`SoulSync:core/downloads/lifecycle.py:10-13`), and its automatic run retries them (`02-intake.md`). In a bundle,
   the errored file fails and the walk to alternative folders covers it (`SoulSync:core/soulseek_client.py:2463-2472`).
@@ -533,7 +552,7 @@ directories finds nothing (grep-based, so *unverified* as an absence).
   caller reserves its own slot, so concurrent searches get distinct start times
   (`SoulSync:core/slskd_throttle.py:1-23`, `SoulSync:core/slskd_throttle.py:32-33`,
   `SoulSync:core/slskd_throttle.py:40-63`). That 35/220 is slskd's limit by SoulSync's comment only (*unverified*
-  against slskd). There is an optional gap between searches, `soulseek.search_min_delay_seconds`, default 0, added for
+  against slskd; slskd 0.26's search rate-limit setting, or 36 searches inside 220 s answered 429, would verify it). There is an optional gap between searches, `soulseek.search_min_delay_seconds`, default 0, added for
   an ISP that cuts the line after bursts (`SoulSync:core/soulseek_client.py:63-71`,
   `SoulSync:core/soulseek_client.py:124-135`, `SoulSync:core/soulseek_client.py:171-192`). A 429 on `POST searches`
   sets a shared cooldown: `Retry-After`, else 30 s, clamped to 5-120 s (`SoulSync:core/slskd_throttle.py:66-73`,
@@ -551,7 +570,10 @@ directories finds nothing (grep-based, so *unverified* as an absence).
   `SoulSync:core/download_engine/engine.py:117-135`). Only YouTube declares its own policy
   (`SoulSync:core/youtube_client.py:616`). `SoulseekClient` declares none and never dispatches through the engine
   worker (a grep of `soulseek_client.py` for `set_engine` and `engine.worker` finds nothing). For Soulseek the policy is
-  the inert default, and transfer concurrency is slskd's own business (*unverified* that SoulSync sets no slskd limit).
+  the inert default, and transfer concurrency is slskd's own business. SoulSync sets no slskd limit: it only reads `options` (row 23), and
+  its POSTs and one PUT go to searches, enqueue, browse and chat (`SoulSync:core/soulseek_client.py:710`,
+  `SoulSync:core/soulseek_client.py:877`, `SoulSync:core/soulseek_client.py:1283`,
+  `SoulSync:core/soulseek_client.py:2924-2964`; grep-based).
 
 ### Every slskd endpoint SoulSync calls
 
@@ -580,7 +602,7 @@ server/app, 11 chat.
 | 8 | POST | `users/{username}/downloads` | as row 7 | as row 6 | `SoulSync:core/soulseek_client.py:898-958` | from SoulSync's code, not captured; fallback only |
 | 9 | POST | `users/{username}/enqueue` | as row 7 | as row 6 | `SoulSync:core/soulseek_client.py:898-958` | from SoulSync's code, not captured; fallback only |
 | 10 | GET | `transfers/downloads` | – | list of `{username, directories[{files[{id, filename, state, size, bytesTransferred, averageSpeed, timeRemaining, progress, percentComplete}]}]}` | `SoulSync:core/soulseek_client.py:1079-1115`, `SoulSync:core/downloads/monitor.py:759-768`, `SoulSync:web_server.py:2292`, `SoulSync:web_server.py:3973`, `SoulSync:web_server.py:7354` | from SoulSync's code, not captured |
-| 11 | GET | `transfers/downloads/{id}` | – | `id`, `filename`, `username`, `state`, `percentComplete`, `size`, `bytesTransferred`, `averageSpeed`, `timeRemaining` (dict or `[0]`) | `SoulSync:core/soulseek_client.py:1036-1067` | from SoulSync's code, not captured; on 0.26 this path is the per-peer route (*unverified*) |
+| 11 | GET | `transfers/downloads/{id}` | – | `id`, `filename`, `username`, `state`, `percentComplete`, `size`, `bytesTransferred`, `averageSpeed`, `timeRemaining` (dict or `[0]`) | `SoulSync:core/soulseek_client.py:1036-1067` | from SoulSync's code, not captured; on 0.26 this path is the per-peer route (`ours:sourcing/slskd_client.py:9`, `ours:docs/specs/2026-10-22-downloads-and-requests.md:25`); its answer to a transfer id is *unverified* (S4-01 capture) |
 | 12 | GET | `transfers/uploads` | – | as row 10 | `SoulSync:core/soulseek_client.py:1123-1151` | from SoulSync's code, not captured |
 | 13 | DELETE | `transfers/downloads/{username}/{id}` | `?remove=true|false`, or no query (form 3) | any 2xx | `SoulSync:core/soulseek_client.py:1187-1222`, `SoulSync:core/soulseek_client.py:1250-1255`, `SoulSync:core/soulseek_client.py:1568-1569`, `SoulSync:core/soulseek_client.py:1649-1651` | from SoulSync's code, not captured |
 | 14 | DELETE | `transfers/downloads/{id}` | – | any 2xx | `SoulSync:core/soulseek_client.py:1191` | from SoulSync's code, not captured; cancel form 2 |
@@ -771,7 +793,7 @@ planned, not as built.
   global `GET transfers/downloads` once per tick (`SoulSync:core/downloads/monitor.py:759`,
   `SoulSync:core/soulseek_client.py:1079`), which lists every peer, so the 10-21 404 before the first enqueue could
   not happen on that path. It never asks the per-peer route on purpose, but row 11 may reach it with a UUID as the peer
-  name (`SoulSync:core/soulseek_client.py:1042`, *unverified*), and that 404 would be silent. Any 404 it does get becomes a quiet None (`SoulSync:core/soulseek_client.py:257-258`). Ours after
+  name (`SoulSync:core/soulseek_client.py:1042`; slskd's answer is *unverified*, the row 11 capture would settle it), and that 404 would be silent. Any 404 it does get becomes a quiet None (`SoulSync:core/soulseek_client.py:257-258`). Ours after
   the hotfix reads that 404 as "no transfers" (`ours:sourcing/slskd_client.py:79-84`), and S1-04 adds "404 on DELETE =
   gone". The global listing is also what an album job needs: one read covers every planned file, whatever peers they
   came from.
@@ -791,7 +813,8 @@ planned, not as built.
   times, each time with a fresh search on any peer, and the wishlist retries later
   (`SoulSync:core/downloads/monitor.py:922-985`). So it recovers on its own, beyond D7's bound. It never checks that
   slskd is logged in again before retrying, although it has the probe (`SoulSync:core/soulseek_client.py:2668-2690`).
-  With a ~10 s drop, the first retry's search may start while slskd is still logged out (*unverified*). S1-06's "one
+  With a ~10 s drop, the first retry's search may start while slskd is still logged out (*unverified*: logging the
+  retry's search start against `GET /server`'s `isLoggedIn` during a drop would verify it). S1-06's "one
   other peer, once per approval" is the right bound. The cheap thing to take: before that second attempt, wait up to
   a minute for `GET /server` to show `isLoggedIn` (a proposal; the shape is not captured).
 - **slskd down (not a 10-21 class, but next to it).** SoulSync's monitor reads a refused connection as "every transfer
