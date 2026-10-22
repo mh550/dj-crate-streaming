@@ -313,6 +313,7 @@ the test fixture `tests/fixtures/policy-legacy.toml` holds.
 | One worker at a time | `fcntl.flock` on `/data/worker.lock` (`worker.py:36`) |
 | An approval is spent once | `claim_approval` conditional UPDATE (`store.py:324`) |
 | One beets writer | filer exists only with `DJ_WORKER=1` (`cli.py:38`); host convention for the rest (§10) |
+| Only the worker downloads; host scripts write beets only with the worker stopped (built R4, not deployed) | `sourcing.cli rank` has no `--download` (an old invocation exits 2 naming Preview + Approve); `scripts/tag_cleanup.py retag|move` and `scripts/dedupe_copies.py repoint|trash` hold `<dirname(CRATES_DB)>/worker.lock` (`sourcing.worker.hold_worker_lock` → `hold_lock`) for the whole command, else exit 1 "refused: stop the worker first"; `identity_backfill apply` stays outside the lock |
 | beets only sees fresh downloads | filer refuses a folder not under `.staging` (`filer.py:268`); exactly one audio file |
 | beets writes tags only on a confirmed match | `-W` import + `confirm` hook (`filer.py:291-299`) |
 | A filed file is never downloaded twice | row → `verify` with path as soon as beets filed it (`fetch.py:307-313`); re-checks never search (`fetch.py:211-224`) |
@@ -504,9 +505,10 @@ Each: what, **impact**, *mitigation*.
 13. **Worker lock.** `worker.lock` is a harmless empty file; the flock dies with the process. `exec … --once`
     next to the daemon refuses. `identity_backfill apply` does **not** take the lock (different files; low risk).
 14. **Other beets writers on the host.** `scripts/tag_cleanup.py` and `scripts/dedupe_copies.py` still import the
-    beets package and write `library.db`. **Medium** if run while the worker files. *Stop the worker first.*
-15. **`rank --download` bypasses everything.** `sourcing.cli rank --slskd … --download` enqueues in slskd
-    directly (`cli.py:311-313`): no approval, verify or filing, and it prints peer names. *Don't use it.*
+    beets package and write `library.db`. **Medium** if run while the worker files. *Stop the worker first.* Since R4
+    `tag_cleanup retag|move` and `dedupe_copies repoint|trash` refuse while the worker holds `worker.lock` (§7).
+15. **`rank --download` is gone (R4).** It used to enqueue in slskd directly: no approval, verify or filing, and it
+    printed peer names. An old invocation now exits 2 naming Preview + Approve; `rank` only ranks.
 16. **Import `review` rows have no picker.** Since M8 the Wanted tab lists `review` rows with their reason, and the
     retryable ones from copy replacement (kept beside, declined, not made, filed beside) offer Preview and Approve.
     The 11 live import `review` rows (several versions fit) are visible but still cannot be resolved. **Medium.**
