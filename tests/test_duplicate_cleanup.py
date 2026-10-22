@@ -150,6 +150,14 @@ def test_a_plan_without_lossless_pairs_has_no_such_section(lib, tmp_path):
     assert "Lossless pairs" not in dc.render(dc.build_plan(db, music, hold_lossless=True))
 
 
+def test_only_the_d35_note_puts_a_group_under_lossless_pairs(lib):
+    srv, db, music = lib
+    plan = dc.build_plan(db, music)
+    plan["groups"][0]["note"] = "some later note"
+    report = dc.render(plan)
+    assert "Lossless pairs" not in report and "Move Your Body" in report.split("## Held groups")[0]
+
+
 def test_a_lossy_pair_has_no_note(lib):
     srv, db, music = lib
     assert "note" not in dc.build_plan(db, music)["groups"][0]

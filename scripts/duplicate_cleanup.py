@@ -1,6 +1,6 @@
 """The Navidrome duplicate cleanup (D31): keep the best copy of each recording, repoint the playlists, trash the rest.
 
-    docker compose exec -T worker python3 -m scripts.duplicate_cleanup plan [--limit N] [--out DIR]
+    docker compose exec -T worker python3 -m scripts.duplicate_cleanup plan [--limit N] [--out DIR] [--hold-lossless]
         → $CLEANUP_DIR/plan.json + report.md (default /data/duplicate-cleanup = /srv/docker/crates/duplicate-cleanup/)
 
 `plan` is read-only: it opens navidrome.db read-only, looks at music_root, and writes only into --out. It recomputes
@@ -180,8 +180,8 @@ def render(plan: dict) -> str:
            f"Made {plan['made_at']} by `python3 -m scripts.duplicate_cleanup plan`. Nothing was moved or edited.", "",
            f"- {counts(plan)}", "", "## Groups to act on", "",
            "The keeper stays; every playlist is repointed from each extra to it, then the extras go to the trash.", ""]
-    plain = [g for g in plan["groups"] if g["hold"] is None and "note" not in g]
-    pairs = [g for g in plan["groups"] if g["hold"] is None and "note" in g]
+    plain = [g for g in plan["groups"] if g["hold"] is None and g.get("note") != LOSSLESS_PAIR]
+    pairs = [g for g in plan["groups"] if g["hold"] is None and g.get("note") == LOSSLESS_PAIR]
     for g in plain:
         out += _group(g)
     if not plain:

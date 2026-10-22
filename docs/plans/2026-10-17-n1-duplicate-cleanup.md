@@ -50,7 +50,7 @@ i.e. `/srv/docker/crates/duplicate-cleanup/` on the host, inside the existing `/
 
 ### `plan` (N1-02) — read-only
 
-`build_plan(navidrome_db, music_root) -> dict`, `write_plan(plan, out_dir)`. Keeper = `group[0]`. `held_by` comes from
+`build_plan(navidrome_db, music_root, limit=None, hold_lossless=False) -> dict`, `write_plan(plan, out_dir)`. Keeper = `group[0]`. `held_by` comes from
 `playlist_edit.references(db, extra)` (navidrome.db `playlist_tracks`, so hidden rows on missing files and other users'
 playlists count), resolved to playlist names. `--limit N` keeps the first N unheld groups. Prints one counts line.
 
