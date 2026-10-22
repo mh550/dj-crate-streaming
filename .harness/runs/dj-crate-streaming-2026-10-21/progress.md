@@ -18,6 +18,17 @@ Michael. The spec is `docs/specs/2026-10-21-guards-and-checks.md`; the brief is 
 
 ---
 
+### 2026-10-21 · R3-01 · passes
+D35 as Michael answered it: `scripts/duplicate_cleanup.py` `_hold` now returns `(hold, note)` and takes `hold_lossless`;
+by default a lossless pair gets `hold: null` + `note: "lossless pair: released by Michael 2026-10-19 (D35)"` (lossy extras
+of that group too); `plan --hold-lossless` gives `"both lossless"` as before; "keeper missing on disk" still wins (no note).
+N1 plan got a dated "D35 (2026-10-19, Michael)" section, committed first (555898f) before the code (0b095d1); its hold
+bullet, safety row and runbook steps 2/5 (716 songs by default, 730 with `--hold-lossless`) follow. Tests: the old hold
+test moved to `hold_lossless=True`; new: default release + note + counts/render include it, lossy group has no note,
+missing keeper in a lossless pair, CLI `--hold-lossless`. 1,549 → 1,553; full suite green in 561 s.
+Next (R3-02): `render`'s own section; `docs/worker.md` (lines 433, 541) and the morning checklist step 3.1 still say to
+set `hold` to null by hand; the held-groups line in `render` still says so too (true only with `--hold-lossless`).
+
 ### 2026-10-21 · verify R2
 
 | Feature | Step | What you ran or read | What you saw | Holds |
