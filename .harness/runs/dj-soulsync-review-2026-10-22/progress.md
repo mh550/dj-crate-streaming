@@ -8,6 +8,29 @@ Michael steers through `INBOX.md` on this branch (first line `status: run|pause|
 Every session reads `INBOX.md` and this file first, then the spec `docs/specs/2026-10-22-soulsync-review.md` and the
 brief `brief.md` (the brief wins on scope).
 
+### 2026-10-22 verify V4 (second pass)
+
+Independent re-run: 2 hold, 0 fail. The earlier `310-341` defect is gone. Nothing live touched, no code or doc edited.
+
+| Feature | Step | What you ran or read | What you saw | Holds |
+|---|---|---|---|---|
+| V4-01 | 1 | `grep -n '^#'` on 09; read 21-60 | `## Options` at 21, `### (a)`-`### (d)` at 36/49/104/145; tables with effort (nights and days), risk, maintenance, licensing, what changes; shared pace and MIT rows cite 01-map.md | yes |
+| V4-01 | 2 | read `### (b)` 49-103 | integration points, D18, D27, D7 and `amperfy` conflicts, each cited | yes |
+| V4-01 | 3 | read `### (c)` 104-144 | table of 15 candidate rows with SoulSync files, ours file, effort, MIT notice | yes |
+| V4-01 | 4 | read 157-187 | first sentence "Option (c)"; 7 numbered steps, each verb + file/spec + size | yes |
+| V4-01 | 5 | awk count of `^\| S` rows in 188-219; `grep -c` delta headings and `draft, not applied` | 23 rows (12 keep, 11 change, 0 drop); 11 `### Spec delta` blocks; 12 marks | yes |
+| V4-01 | 6 | read 325-342 | 10 questions, each with assumption and where used; initializer 1-5 are questions 1-5 | yes |
+| V4-01 | 7 | range-aware loop from progress.md over all cites in the folder | 2,418 unique cites, no BAD line | yes |
+| V4-01 | 8 | `grep -c unverified` per file; read marks in 09; opened 8 09 cites in the clone (matching_engine 1307-1335, settings 745-748, master 1372-1382, automation_engine 190-196, audio_verification 829-831, library_check 12-17, requests/music 20, ours verify/filer) | marks on uncited claims in all 10 files; the 8 cites support their sentences | yes |
+| V4-01 | 9 | `lib/check.sh` | green (cached, 1757 tests) | yes |
+| V4-02 | 1 | read the 16:14 spot-check table (20 rows: 15 SoulSync, 5 ours, 10 files; 18 yes, 2 partly, fixes named) plus the 15:26 table (30 rows); re-opened 8 cites myself | tables present with sentence, holds and fix; cites I opened support their sentences | yes |
+| V4-02 | 2 | read the unverified list (46, kept with would-verify); `grep -c unverified` per file; citation loop | list present per file; loop prints no BAD line (2,418 cites) | yes |
+| V4-02 | 3 | read README 10-56 | `## Summary` 47 lines; verdict (c); `### Top 5 findings` (5, linked); `### Next steps` (7, mirror 09); last line "Questions for Michael: see 09-recommendations.md" | yes |
+| V4-02 | 4 | `git diff --stat` and `git diff origin/main..HEAD -- docs/next-todos.md` | 1 file, 1 insertion, links README, "port pieces, never adopt SoulSync" | yes |
+| V4-02 | 5 | `git diff --stat origin/main..HEAD`; `git log --first-parent --no-merges --name-only 6fb134e..HEAD` filtered | stat also lists pre-run `.py`, fixtures and specs (commits 19fedea..59c6f6a, 1632d2d, before base 6fb134e, not yet in main); the run's own commits touch only the three allowed paths. Literal wording fails, intent holds | yes (intent) |
+| V4-02 | 6 | `## Sections` links; `grep -rnoE '[A-Za-z0-9]{32,}'` | README `## Sections` lists 01-09 and README; grep prints nothing | yes |
+| V4-02 | 7 | `lib/check.sh` | green (cached, 1757 tests) | yes |
+
 ### 2026-10-22 16:14 · V4-02 · passes
 
 - **What changed:** this is the re-run after verify V4. Its only V4-02 fail (step 2, the `310-341` cite) was fixed by V4-01. A new Opus spot-check found 2 claims that only partly held, and both are fixed: (14) 07:101, the streaming-id range `source.py:124-167` → `:124-168`, plus Beatport's id at `SoulSync:core/metadata/source.py:1433-1434` (it is not in `SOURCE_TAG_CONFIG`); (17) 09:208 and 04:271, where "a peer frozen for 180 s" now reads "once nothing in the bundle has moved for 180 s", which is what the guard does (`SoulSync:core/soulseek_client.py:2434-2438`). I read both in the clone before editing. Docs only; tests 1757 → 1757.
