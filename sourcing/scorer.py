@@ -96,7 +96,13 @@ def name_match(c: Candidate, w: Wanted) -> tuple[float, str]:
 
     artist_in_path = 1.0 if artist and (artist in folder or artist in base or artist in norm(c.filename)) else 0.0
     title_only = ratio(base, title)
-    title_in_name = 1.0 if title and title in base else 0.0
+    # "Artist - Album - 09 - Title" / "Artist_Album_09_Title": the words after a track number between separators
+    # are the title slot. A wanted album title track ("I'm Still in Love With You") is in every file of that
+    # album, so only that slot counts.
+    raw = re.sub(r"\.[^.]+$", "", c.basename)
+    nums = list(re.finditer(r"(?:\s-\s|_)\d{1,3}(?:\s-\s|_)", raw))
+    slot = norm(raw[nums[-1].end():]) if nums else ""
+    title_in_name = 1.0 if title and title in (slot or base) else 0.0
     artist_title = ratio(base, f"{artist} {title}")
     if not artist_in_path:
         # A title-only filename can belong to any song with that name; never let it score as a confident match.
