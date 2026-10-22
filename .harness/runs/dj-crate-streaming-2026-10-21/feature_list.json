@@ -407,7 +407,7 @@
         "R6",
         "R7"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "R8-02",
