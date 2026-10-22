@@ -6,21 +6,27 @@
 Reads navidrome.db read-only: the Subsonic `path` field is virtual (built from tags), so the real
 file path exists only in media_file.path. Entries are relative to the .m3u8 file
 ("../Artist/Album/NN - Title.flac"), so any player opens them. Unchanged playlists are not
-rewritten; files for playlists that no longer exist are reported, never deleted. Navidrome is set
-to ND_AUTOIMPORTPLAYLISTS=false so it does not turn these files back into duplicate playlists.
+rewritten; files for playlists that no longer exist are reported, never deleted. Before a changed file is
+rewritten, its previous text goes to _playlists/.history/<YYYY-MM-DD>/ (the day's first version; folders older than
+30 days are pruned), the restore source for a playlist that lost entries (M9 §7). Navidrome is set to
+ND_AUTOIMPORTPLAYLISTS=false so it does not turn these files back into duplicate playlists.
 """
 from __future__ import annotations
 
 import argparse
 import os
 import re
+import shutil
 import sqlite3
 import sys
+from contextlib import closing
 from dataclasses import dataclass, field
+from datetime import date, timedelta
 from pathlib import Path
 
 DEFAULT_DB = Path("/srv/docker/navidrome/navidrome.db")
 DEFAULT_MUSIC = Path("/srv/music")
+HISTORY_DAYS = 30
 
 
 @dataclass
@@ -35,6 +41,8 @@ class Summary:
     written: int = 0
     unchanged: int = 0
     stale: list[str] = field(default_factory=list)   # .m3u8 files with no playlist behind them
+    pruned: list[str] = field(default_factory=list)  # .history/<date> folders removed (older than HISTORY_DAYS)
+    errors: list[str] = field(default_factory=list)  # history problems; they never stop the export itself
 
 
 def open_ro(db: Path) -> sqlite3.Connection:
@@ -63,6 +71,20 @@ def _path_ids(db: Path) -> dict[str, str]:
         con.close()
 
 
+def playlist_health(db: Path) -> list[dict]:
+    """Playlists holding entries getPlaylist hides (the playlist_edit skew condition): rows on a media_file that is
+    missing or gone. One {"id", "name", "missing"} each, by name; empty when every entry plays (M9 §7). Smart
+    playlists are left out (Navidrome refills them from their rules; playlist_edit refuses them). Every owner's
+    playlists count: the worker keeps only its user's (owner_id is a user id, not a name)."""
+    with closing(open_ro(db)) as con:
+        rows = con.execute(
+            "SELECT p.id, p.name, COUNT(*) FROM playlist p JOIN playlist_tracks t ON t.playlist_id = p.id"
+            " LEFT JOIN media_file m ON m.id = t.media_file_id WHERE (m.id IS NULL OR COALESCE(m.missing, 0))"
+            " AND COALESCE(TRIM(p.rules), '') IN ('', 'null')"
+            " GROUP BY p.id, p.name ORDER BY p.name COLLATE NOCASE, p.id").fetchall()
+    return [{"id": pid, "name": name, "missing": n} for pid, name, n in rows]
+
+
 def file_name(name: str, taken: set[str]) -> str:
     """'playlists / perfect songs' → 'playlists - perfect songs.m3u8'; characters Windows/Samba refuse → '_'."""
     base = re.sub(r'[<>:"\\|?*\x00-\x1f]', "_", name.replace("/", "-")).strip().lstrip(".").strip() or "playlist"
@@ -86,22 +108,65 @@ def _files(pls: list[PL]) -> list[tuple[PL, str]]:
     return [(pl, file_name(pl.name, taken)) for pl in pls]
 
 
-def export(db: Path, music_dir: Path, out_dir: Path) -> Summary:
-    out_dir = Path(out_dir)
+def _write(target: Path, text: str) -> None:
+    tmp = target.with_name(target.name + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(target)                                  # atomic: a reader never sees half a playlist
+
+
+def export(db: Path, music_dir: Path, out_dir: Path, today: date | None = None) -> Summary:
+    out_dir, today = Path(out_dir), today or date.today()
     out_dir.mkdir(parents=True, exist_ok=True)
     s, produced = Summary(), set()
     for pl, fname in _files(load(db)):
         produced.add(fname)
         text, target = render(pl, out_dir, music_dir), out_dir / fname
-        if target.exists() and target.read_text(encoding="utf-8") == text:
+        old = target.read_text(encoding="utf-8") if target.exists() else None
+        if old == text:
             s.unchanged += 1
             continue
-        tmp = target.with_name(target.name + ".tmp")
-        tmp.write_text(text, encoding="utf-8")
-        tmp.replace(target)                              # atomic: a reader never sees half a playlist
+        if old is not None:
+            try:
+                _keep(out_dir / ".history", today, fname, old)
+            except OSError as e:
+                s.errors.append(f"history: {fname} not kept: {e}")
+        _write(target, text)
         s.written += 1
     s.stale = sorted(p.name for p in out_dir.glob("*.m3u8") if p.name not in produced)
+    try:
+        s.pruned = prune_history(out_dir, today)
+    except OSError as e:
+        s.errors.append(f"history: prune failed: {e}")
     return s
+
+
+def _keep(hist: Path, today: date, fname: str, old: str) -> None:
+    """The previous text of `fname` into `.history/<today>/`, unless that day already has it (the first one stays)."""
+    day = hist / today.isoformat()
+    if hist.is_symlink() or day.is_symlink():
+        raise OSError(f"{day} is or lies under a link: not followed")
+    if not (day / fname).exists():
+        day.mkdir(parents=True, exist_ok=True)
+        _write(day / fname, old)
+
+
+def prune_history(out_dir: Path, today: date, days: int = HISTORY_DAYS) -> list[str]:
+    """Removes `.history/<YYYY-MM-DD>/` folders older than `days`; nothing else. A linked `.history` or day folder is
+    left alone (never followed), as is anything not named like a date. Returns the removed folders' names."""
+    hist, cutoff, gone = Path(out_dir) / ".history", today - timedelta(days=days), []
+    if hist.is_symlink() or not hist.is_dir():
+        return gone
+    for d in sorted(hist.iterdir()):
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", d.name) or d.is_symlink() or not d.is_dir():
+            continue
+        try:
+            dated = date.fromisoformat(d.name)
+        except ValueError:                               # 2026-13-45
+            continue
+        if dated < cutoff:
+            shutil.rmtree(d)                             # a real folder under .history; rmtree never follows links in it
+            gone.append(d.name)
+    return gone
 
 
 def parse(text: str) -> list[str]:
@@ -146,6 +211,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{s.written} written, {s.unchanged} unchanged → {out}")
         for name in s.stale:
             print(f"  stale (no playlist any more, kept): {name}")
+        for name in s.pruned:
+            print(f"  history pruned: .history/{name}")
+        for e in s.errors:
+            print(f"  {e}")
         return 0
     problems = check(a.db, a.music, out)
     for p in problems:

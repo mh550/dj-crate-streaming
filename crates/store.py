@@ -1070,6 +1070,16 @@ class CrateStore:
                         (check_stream(tier),))
         self.db.commit()
 
+    def playlist_health(self) -> list[dict]:
+        """The worker's last playlist-health count (scripts.export_playlists.playlist_health, M9 §7); [] until one ran."""
+        r = self.db.execute("SELECT value FROM settings WHERE key='playlist_health'").fetchone()
+        return json.loads(r[0]) if r else []
+
+    def set_playlist_health(self, rows: list[dict]) -> None:
+        self.db.execute("INSERT INTO settings(key, value) VALUES('playlist_health', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                        (json.dumps(rows),))
+        self.db.commit()
+
     # --- events
     def log(self, playlist_id: str | None, song_id: str | None, kind: str, detail: str | None = None) -> None:
         self.db.execute("INSERT INTO events(ts,playlist_id,song_id,kind,detail) VALUES(?,?,?,?,?)",

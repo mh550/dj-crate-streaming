@@ -1,4 +1,5 @@
 """M6 Task 6: the worker consumes approvals (D23), re-checks `verify` rows, prefers the approved candidate."""
+from datetime import date, timedelta
 import shutil
 
 import pytest
@@ -742,3 +743,129 @@ def test_a_failed_replacement_step_leaves_no_open_transaction(world, monkeypatch
         w.advance_replacements([7])
         w.place_due()
     assert seen == [False] and not [e for e in store.events(100) if e["kind"] == "half-done"]
+
+
+# --- R5-01: playlist health after each export (M9 §7) -------------------------------------------------------------
+
+def _health_worker(world, srv, lines, now):
+    return worker(world, srv, lines, export_s=300, clock=lambda: now[0])
+
+
+def _set_missing(world, ids):
+    world["nd"].state.missing = set(ids)
+    world["nd"].state.sync()
+
+
+def test_playlist_health_logs_one_event_per_change(world):
+    lines, now, store = [], [1000.0], world["store"]
+    _set_missing(world, {"s2"})
+    with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
+        wk = _health_worker(world, srv, lines, now)
+        wk.tick()
+        [ev] = _kinds(world, "playlist_health")
+        assert ev["detail"] == "1 entry in Disco Edits points at a missing file; 1 in Sunday Listening"
+        assert store.playlist_health() == [{"id": "pl-1", "name": "Disco Edits", "missing": 1},
+                                           {"id": "pl-3", "name": "Sunday Listening", "missing": 1}]
+        assert (world["music"] / "_playlists" / "Disco Edits.m3u8").exists()       # the export ran first
+        now[0] += 300; wk.tick()                                                   # unchanged: nothing new
+        assert len(_kinds(world, "playlist_health")) == 1
+        _set_missing(world, set())
+        now[0] += 300; wk.tick()
+    assert [e["detail"] for e in _kinds(world, "playlist_health")] == [
+        "no playlist entry points at a missing file",
+        "1 entry in Disco Edits points at a missing file; 1 in Sunday Listening"]
+    assert store.playlist_health() == []
+
+
+def test_playlist_health_counts_only_our_users_playlists(world):
+    """Another account's playlist (amperfy's) is off limits and playlist_edit refuses it: no banner line for it."""
+    state = world["nd"].state
+    state.playlists["pl-9"] = {"id": "pl-9", "name": "Amperfy mix", "comment": "", "owner": "amperfy", "public": False,
+                               "songs": ["s2"]}
+    _set_missing(world, {"s2"})
+    with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
+        _health_worker(world, srv, [], [0.0]).tick()
+    assert [r["id"] for r in world["store"].playlist_health()] == ["pl-1", "pl-3"]
+    [ev] = _kinds(world, "playlist_health")
+    assert "Amperfy" not in ev["detail"]
+
+
+def test_playlist_health_detail_names_each_playlist_with_its_count():
+    from sourcing.worker import health_detail
+    assert health_detail([{"id": "a", "name": "Tea tent", "missing": 2}, {"id": "b", "name": "Chicago 86", "missing": 1}]) \
+        == "2 entries in Tea tent point at missing files; 1 in Chicago 86"
+    assert health_detail([]) == "no playlist entry points at a missing file"
+
+
+def test_a_restarted_worker_repeats_no_health_event(world):
+    _set_missing(world, {"s2"})
+    with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
+        _health_worker(world, srv, [], [0.0]).tick()
+        _health_worker(world, srv, [], [0.0]).tick()                                # a new process, same crates.db
+    assert len(_kinds(world, "playlist_health")) == 1
+
+
+def test_healthy_playlists_on_a_fresh_store_log_nothing(world):
+    with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
+        _health_worker(world, srv, [], [0.0]).tick()
+    assert _kinds(world, "playlist_health") == [] and world["store"].playlist_health() == []
+
+
+def test_a_failed_health_read_is_logged_and_keeps_the_stored_value(world, monkeypatch):
+    lines, store = [], world["store"]
+    store.set_playlist_health([{"id": "pl-1", "name": "Disco Edits", "missing": 1}])
+    monkeypatch.setattr("sourcing.worker.playlist_health", lambda db: (_ for _ in ()).throw(OSError("disk I/O error")))
+    with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
+        _health_worker(world, srv, lines, [0.0]).tick()
+    assert "playlist health failed: OSError: disk I/O error" in lines and lines[-1].startswith("tick:")
+    assert store.playlist_health() == [{"id": "pl-1", "name": "Disco Edits", "missing": 1}]
+    assert _kinds(world, "playlist_health") == []
+
+
+def test_a_failed_export_skips_the_health_count(world, monkeypatch):
+    seen = []
+    monkeypatch.setattr("sourcing.worker.playlist_health", lambda db: seen.append(db) or [])
+    with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
+        worker(world, srv, export_s=300, exporter=lambda *a: (_ for _ in ()).throw(OSError("read-only"))).tick()
+    assert seen == []
+
+
+def test_a_failed_health_write_logs_no_event_and_the_next_export_retries(world, monkeypatch):
+    lines, now, store = [], [0.0], world["store"]
+    _set_missing(world, {"s2"})
+    real = store.set_playlist_health
+    monkeypatch.setattr(store, "set_playlist_health", lambda rows: (_ for _ in ()).throw(RuntimeError("db locked")))
+    with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
+        wk = _health_worker(world, srv, lines, now)
+        wk.tick()
+        assert "playlist health failed: RuntimeError: db locked" in lines and lines[-1].startswith("tick:")
+        store.commit()
+        assert _kinds(world, "playlist_health") == [] and store.playlist_health() == []
+        monkeypatch.setattr(store, "set_playlist_health", real)
+        now[0] += 300; wk.tick()
+    assert len(_kinds(world, "playlist_health")) == 1 and len(store.playlist_health()) == 2
+
+
+# --- R5-02: the export tick keeps the previous .m3u8 in .history (M9 §7) -----------------------------------------
+
+def test_the_export_tick_keeps_the_previous_playlist_file_in_history(world):
+    out = world["music"] / "_playlists"
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "Disco Edits.m3u8").write_text("#EXTM3U\n#PLAYLIST:Disco Edits\n", encoding="utf-8")   # an older version
+    with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
+        _health_worker(world, srv, [], [0.0]).tick()
+    [kept] = (out / ".history").glob("*/Disco Edits.m3u8")
+    assert kept.parent.name in {date.today().isoformat(), (date.today() - timedelta(days=1)).isoformat()}
+    assert kept.read_text(encoding="utf-8") == "#EXTM3U\n#PLAYLIST:Disco Edits\n"
+    assert (out / "Disco Edits.m3u8").read_text(encoding="utf-8") != kept.read_text(encoding="utf-8")
+
+
+def test_a_history_problem_is_logged_and_the_health_count_still_runs(world, monkeypatch):
+    from scripts import export_playlists
+    lines = []
+    monkeypatch.setattr(export_playlists, "prune_history", lambda *a: (_ for _ in ()).throw(OSError("busy")))
+    _set_missing(world, {"s2"})
+    with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
+        worker(world, srv, lines, export_s=300, clock=lambda: 0.0).tick()
+    assert any(ln.startswith("export: history: prune") and "busy" in ln for ln in lines)
+    assert not any(ln.startswith("export failed") for ln in lines) and _kinds(world, "playlist_health")

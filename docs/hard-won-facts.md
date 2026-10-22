@@ -22,6 +22,8 @@ on this system.
 - The Subsonic `path` is virtual; real paths are only in `navidrome.db` (read-only via `scripts.export_playlists.open_ro`).
 - Retagging in place keeps the song id; a move with unchanged tags keeps it; **retag + move between two scans gives a
   new id**, so playlists must be repointed. `ND_AUTOIMPORTPLAYLISTS` is false on purpose (the `.m3u8` exports are backups).
+  The exports follow Navidrome within 5 minutes, so the restore source is `_playlists/.history/<date>/` (the previous
+  file, kept 30 days, R5-02).
 - `getPlaylist` hides songs whose file is missing but their `playlist_tracks` rows keep positions: index edits go through
   `crates/playlist_edit.py`, which cross-checks `navidrome.db` first.
 
