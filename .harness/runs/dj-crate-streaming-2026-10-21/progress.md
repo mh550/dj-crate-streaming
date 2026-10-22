@@ -18,6 +18,16 @@ Michael. The spec is `docs/specs/2026-10-21-guards-and-checks.md`; the brief is 
 
 ---
 
+### 2026-10-21 23:10 · R4-01 · passes
+`sourcing/worker.py` gets `hold_worker_lock(env)`, one wrapper over `hold_lock` (no second flock: `grep -c LOCK_EX` on both scripts → 0).
+`scripts/tag_cleanup.py` `retag|move` and `scripts/dedupe_copies.py` `repoint|trash` hold `<dirname(CRATES_DB)>/worker.lock` for the whole command (try/finally),
+exit 1 with `refused: stop the worker first (docker compose stop worker): it holds <path>`; CRATES_DB unset or not a file → 1 with the set-CRATES_DB message;
+a lock file it can't open (the container's, read-only on the host) → `refused: cannot open …`, not a traceback. `plan`/`refresh-map` stay free; identity_backfill untouched.
+Tests 1,560 → 1,576: refusal with the lock held (no file, manifest or plan byte changed; failed before the fix: real retag ran, 6 dedupe tests red),
+lock held during the command and released after, unset CRATES_DB, plan while locked, `identity_backfill apply --dry-run` while locked. Full suite green, 570 s, 1576 tests.
+Next session (R4-02/R8): live host runs now need `CRATES_DB=/srv/docker/crates/crates.db` and the worker stopped; `dedupe_copies repoint` in the crates container uses `/data/crates.db` (same mount, same lock).
+For Michael (R8 checklist): if `/srv/docker/crates/worker.lock` isn't writable by mh550, the host commands refuse; run them inside the worker container instead, or `chmod 666` the lock (needs whoever owns it).
+
 ### 2026-10-21 23:00 · verify R3
 
 | Feature | Step | What you ran or read | What you saw | Holds |
