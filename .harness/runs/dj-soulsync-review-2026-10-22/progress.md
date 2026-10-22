@@ -8,6 +8,14 @@ Michael steers through `INBOX.md` on this branch (first line `status: run|pause|
 Every session reads `INBOX.md` and this file first, then the spec `docs/specs/2026-10-22-soulsync-review.md` and the
 brief `brief.md` (the brief wins on scope).
 
+### 2026-10-22 07:10 · V1-01 · passes
+- **New:** `docs/research/2026-10-22-soulsync/README.md` (skeleton: `## Summary` "(written by V4-02)", links to 01-09, empty `## Stage-by-stage comparison` / `## Fit to goals` for V3) and `01-map.md` (380+ lines: process model + ASCII diagram, data stores with all music tables grouped by subsystem, settings/credentials, deployment, tests/CI, module map with `wc -l`, MIT license, `## Maintenance health` "(written by V1-02)", then the four comparison headings, **Verdict: adapt**). Docs only; tests 1615 → 1615.
+- **Verified:** the citation check prints no BAD line (≈300 unique citations); an Opus review spot-checked ~190 and found 2 wrong lines (fixed) and some gaps (filled); every uncited claim carries `*unverified*` (4 marks). Suite: `check.sh` green in 582 s, 1615 tests.
+- **Findings V2 should reuse:** the 118 `CREATE TABLE`s are 86 distinct live tables (5 comments, 8 markers, 17 `*_new`, a duplicate `hifi_instances`, `watchlist_podcasts_migrating`). There is no peer table: peer speed memory is in-process with a 1 h TTL (`core/downloads/peer_observation.py:11`). Secrets are Fernet-encrypted in `music_library.db` with the key file on the same volume, and they fall back to **plaintext** `config.json` (`core/settings.py:1225-1258`). No Spotify credential is embedded. Qobuz app secrets are scraped from its web player's bundle.js (`core/qobuz_client.py:218`). `spotipyFree` (GPL-3.0) is a hard dependency in `requirements.txt:95`, although its docstring says optional. No beets anywhere. `:latest` is published on every push to `main`, and CI never tests that merge commit.
+- **Correction to the initializer's notes:** the UI is not only `webui/index.html`: `webui/src/` holds a React 19 + TanStack Router + Vite app (1,321 files) built into `webui/static/dist` (`Dockerfile:4-12`, `:101`). V2-07 must read both. `core/downloads/` has 46 `.py` files, and `api/` has 92 `.py` files recursively.
+- **Questions for Michael:** none new.
+- **Proposed changes:** none.
+
 ### 2026-10-22 · initializer
 
 **This is a research run: documents only.** Every feature writes under `docs/research/2026-10-22-soulsync/`

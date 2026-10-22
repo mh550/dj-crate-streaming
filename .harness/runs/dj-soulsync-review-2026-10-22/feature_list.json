@@ -22,7 +22,7 @@
         ".harness/check.sh is green (docs only, so it must be: every test passes, none newly skipped)"
       ],
       "after": [],
-      "passes": false
+      "passes": true
     },
     {
       "id": "V1-02",
