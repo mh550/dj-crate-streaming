@@ -45,6 +45,9 @@ on this system.
 - Test audio: an `anullsrc` concat silently negotiates down to 8-bit; force `aformat=sample_fmts=…` at every stage
   (`tests/helpers.make_audio`, `convert`).
 - A full-library `verify` takes about 75 minutes with 6 in parallel (CPU-bound).
+- **slskd 0.26.1 keeps a transfer on a plain `DELETE /transfers/downloads/<peer>/<id>`** (it only cancels, 204); the
+  record goes only with `?remove=true`, and an unknown id is 404. Its listing order is not known: fetch follows the
+  record whose id wasn't there before its enqueue (S1-04), never the last one.
 
 ## SQLite
 - `crates.db` and `navidrome.db` are in WAL mode: data can sit in `<db>-wal` while the main file is 4 KB. Copy them

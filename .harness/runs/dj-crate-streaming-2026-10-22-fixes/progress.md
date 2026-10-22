@@ -9,6 +9,14 @@ Michael steers from `INBOX.md` on this branch (status line `run | pause | stop`;
 session reads it at startup. Policy: **build-only** (`.harness/config.sh`) and the brief in `brief.md`: nothing live,
 no docker, no `/srv`, no network, no client UI, PRs only.
 
+### 2026-10-22 18:05 · S1-04 · passes
+
+- **Changed:** `sourcing/fake_slskd.py`: a transfer DELETE acts as slskd 0.26.1 does. Without `?remove=true` it cancels an `InProgress` record (`Completed, Cancelled`) and keeps every record; with `?remove=true` the record goes; both answer 204 with no body; an unknown id is 404. `seed_transfer(..., transfer_id=)`, and a user's transfers are listed sorted by id (the real order isn't captured). `sourcing/slskd_client.py` `remove_download` sends `?remove=true`, and a 404 means already gone. `sourcing/fetch.py` records the ids of this file's transfers right before the enqueue and follows only a new id; it no longer uses `mine[-1]` or the enqueue response. `docs/hard-won-facts.md` gets the slskd fact.
+- **Tests:** 1801 → 1806. `tests/test_fake_slskd.py` +3: plain DELETE keeps, unknown id 404, order by id; the remove case now asserts the record is gone. `tests/test_fetch.py` +2: a `~stale` `Errored` retry ends `ok`, one enqueue, stale record forgotten; this failed first with `download ended: Completed, Errored`. Two surviving stale `Succeeded` records (`!stale`, `~stale`) with `complete=False` end `download timed out`.
+- **Verified:** mutation checks. Without the new-id filter, the `Succeeded` test fails whether fetch reads `mine[0]` or `mine[-1]`. `test_fetch.py`, `test_fake_slskd.py` and `test_worker.py`: 90 passed. Full `check.sh`: green in 661 s, 1806 tests.
+- **Opus review:** no blocking bugs. **Proposed change (S1-06 or S2-05):** the forget loop forgets only `Completed*` records. A still-running transfer of the same file from a timed-out or killed attempt goes into `before`. If slskd refuses the duplicate enqueue, the retry ends `download timed out`; it never files a wrong file. Fix: cancel and forget non-terminal records of the file too (`remove=true`), once slskd's handling of a duplicate enqueue is known. Low: with two new records for one enqueue, fetch reads the lowest id.
+- **Next:** S1-05. No questions for Michael.
+
 ### 2026-10-22 20:05 · S1-03 · passes
 
 - **Changed:** `sourcing/fetch.py` `finish`: when Navidrome lists the filed file under a title that can't be the asked song (`asked_title or title`), the row becomes `review` "filed <X> as <rel>, asked for <Y>". It keeps its names and `library_song_id` (None), gets a `wrong_song` event (path + song id), no rename, no proposals, no placement. This applies to the first filing, the `verify` re-check, play-now and crate copy upgrades (no replacement starts). `RETRYABLE_REVIEW` (`crates/store.py`, `web/app.js`) accepts the reason; `filed_path` is None for it.

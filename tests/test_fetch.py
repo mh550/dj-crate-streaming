@@ -296,6 +296,33 @@ def test_stale_completed_record_does_not_short_circuit_a_retry(world, tmp_path):
     assert len(srv.enqueued) == 1
 
 
+def test_a_retry_tells_its_own_transfer_from_a_stale_record_of_the_same_file(world, tmp_path):
+    """slskd 0.26.1 keeps a record on a plain DELETE and its listing order isn't ours to rely on: the stale `Errored`
+    record of an earlier attempt sorts last ("~"), so `mine[-1]` would read it. Fetch must forget it for real
+    (remove=true) and follow only the record whose id wasn't there before its enqueue."""
+    flac = good_flac_bytes(tmp_path)
+    with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: flac}) as srv:
+        srv.seed_transfer("vinylhead77", GOOD, "Completed, Errored", transfer_id="~stale")
+        new_song(world["nd"], len(flac))
+        r = run(world, srv, approve=True)
+    assert r.status == "ok", r.reason
+    assert len(srv.enqueued) == 1 and [t for t in srv.transfers if t["id"] == "~stale"] == []
+
+
+def test_a_stale_succeeded_record_is_not_taken_for_this_download(world, tmp_path, monkeypatch):
+    """The old record says `Completed, Succeeded` and survives the forget (here the forget doesn't take), but this
+    download never finishes: the row times out instead of filing the old attempt's file."""
+    monkeypatch.setattr(SlskdClient, "remove_download", lambda self, user, tid: None)
+    with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: b"x"}, complete=False) as srv:
+        for tid in ("!stale", "~stale"):                  # sort before and after any uuid: no index picks ours
+            srv.seed_transfer("vinylhead77", GOOD, "Completed, Succeeded", transfer_id=tid)
+        world["dl"].joinpath(*LANDED).parent.mkdir(parents=True)
+        world["dl"].joinpath(*LANDED).write_bytes(b"left by the earlier attempt")
+        r = run(world, srv, approve=True, download_timeout_s=0.2)
+    assert (r.status, r.reason) == ("failed", "download timed out")
+    assert len(srv.enqueued) == 1
+
+
 def test_rows_in_flight_or_done_are_reported_not_refetched(world, tmp_path):
     world["store"].set_track_status("pl-2", "s4", "sourcing", "downloading"); world["store"].commit()
     with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:

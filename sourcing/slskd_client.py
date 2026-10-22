@@ -8,7 +8,8 @@ API shape (slskd v0.2x, verified against the official python wrapper + soularr):
   POST /api/v0/transfers/downloads/{username} [ {"filename": ..., "size": ...} ]
   GET  /api/v0/transfers/downloads/{username} → {username, directories:[{directory, files:[{id, filename, state, ...}]}]}
   GET  /api/v0/transfers/downloads            (all users, list of the same objects)
-  DELETE /api/v0/transfers/downloads/{username}/{id}   (forget a completed transfer)
+  DELETE /api/v0/transfers/downloads/{username}/{id}?remove=true   (forget a transfer; 0.26.1 keeps the record
+                                              without remove=true, and answers 404 for an id it doesn't have)
 Downloads land at <downloads>/<remote parent folder>/<basename>.
 Auth: X-API-Key header (configure an API key in slskd.yml under web.authentication.api_keys).
 """
@@ -84,7 +85,12 @@ class SlskdClient:
             raise
 
     def remove_download(self, username: str, transfer_id: str) -> None:
-        self._req("DELETE", f"/transfers/downloads/{urllib.parse.quote(username)}/{transfer_id}")
+        try:
+            self._req("DELETE", f"/transfers/downloads/{urllib.parse.quote(username)}/{urllib.parse.quote(transfer_id)}"
+                                "?remove=true")
+        except urllib.error.HTTPError as e:     # 404: already gone
+            if e.code != 404:
+                raise
 
 
 def transfer_files(downloads_response: object) -> list[dict]:

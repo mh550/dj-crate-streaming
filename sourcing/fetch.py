@@ -438,11 +438,15 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         for t in transfer_files(slskd.downloads(best.username)):
             if t.get("filename") == best.filename and str(t.get("state", "")).startswith("Completed") and t.get("id"):
                 slskd.remove_download(best.username, t["id"])
+        # ours is the record for this file whose id wasn't there before the enqueue: slskd's listing order and the
+        # enqueue response are not relied on (S1-04)
+        before = {t.get("id") for t in transfer_files(slskd.downloads(best.username)) if t.get("filename") == best.filename}
         slskd.enqueue(best.username, [{"filename": best.filename, "size": best.size}])
         t0 = time.time()
         while True:
-            mine = [t for t in transfer_files(slskd.downloads(best.username)) if t.get("filename") == best.filename]
-            state = str(mine[-1].get("state", "")) if mine else ""
+            mine = [t for t in transfer_files(slskd.downloads(best.username))
+                    if t.get("filename") == best.filename and t.get("id") not in before]
+            state = str(mine[0].get("state", "")) if mine else ""      # none yet: keep waiting (the timeout bounds it)
             if state.startswith("Completed, Succeeded"):
                 landed = _find_landed(downloads_root, best)
                 if landed:

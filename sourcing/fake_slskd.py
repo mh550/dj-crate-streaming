@@ -8,7 +8,8 @@ fixtures/search_responses.sample.json). Enqueueing a file "downloads" it the way
 the bytes land at downloads_dir/<remote parent folder>/<basename>, and transfers are reported
 per user as {username, directories:[{directory, files:[{id, filename, state, size}]}]}.
 complete=False keeps transfers InProgress forever (timeout tests); fail_enqueue=True makes
-POST /transfers/downloads answer 500 (peer gone).
+POST /transfers/downloads answer 500 (peer gone). DELETE of a transfer acts as slskd 0.26.1 does: without
+?remove=true it only cancels (the record stays), with it the record goes; an unknown id is 404.
 """
 from __future__ import annotations
 
@@ -48,9 +49,10 @@ class FakeSlskdServer:
         self.httpd.shutdown()
         self.httpd.server_close()
 
-    def seed_transfer(self, username: str, filename: str, state: str) -> dict:
+    def seed_transfer(self, username: str, filename: str, state: str, transfer_id: str | None = None) -> dict:
         """Pretend an earlier attempt left this record behind (slskd keeps completed transfers)."""
-        t = {"id": str(uuid.uuid4()), "username": username, "filename": filename, "size": 0, "state": state}
+        t = {"id": transfer_id or str(uuid.uuid4()), "username": username, "filename": filename, "size": 0,
+             "state": state}
         self.transfers.append(t)
         return t
 
@@ -67,8 +69,9 @@ class FakeSlskdServer:
         return t
 
     def _user_view(self, username: str) -> dict:
+        # sorted by id: slskd's real order isn't captured, so no code may rely on it (e.g. "the last is the newest")
         dirs: dict[str, list[dict]] = {}
-        for t in self.transfers:
+        for t in sorted(self.transfers, key=lambda t: t["id"]):
             if t["username"] == username:
                 dirs.setdefault(split_remote(t["filename"])[0], []).append(t)
         return {"username": username, "directories": [{"directory": d, "files": fs} for d, fs in dirs.items()]}
@@ -142,12 +145,20 @@ class FakeSlskdServer:
             def do_DELETE(self):
                 if not self._auth():
                     return
-                path = urllib.parse.unquote(self.path)
+                parts = urllib.parse.urlsplit(self.path)
+                path = urllib.parse.unquote(parts.path)
                 m = re.fullmatch(r"/api/v0/transfers/downloads/([^/]+)/([^/]+)", path)
-                if m:
-                    fake.transfers = [t for t in fake.transfers if not (t["username"] == m.group(1) and t["id"] == m.group(2))]
-                else:
+                if not m:
                     fake.searches.pop(path.rsplit("/", 1)[1], None)
-                self._send({})
+                    return self._send({})
+                t = next((t for t in fake.transfers if t["username"] == m.group(1) and t["id"] == m.group(2)), None)
+                if t is None:
+                    return self._send({"error": "not found"}, 404)
+                if "true" in urllib.parse.parse_qs(parts.query).get("remove", []):
+                    fake.transfers.remove(t)
+                elif not t["state"].startswith("Completed"):      # a plain DELETE cancels; the record stays
+                    t["state"] = "Completed, Cancelled"
+                self.send_response(204)
+                self.end_headers()
 
         return H
