@@ -8,6 +8,89 @@ Michael steers through `INBOX.md` on this branch (first line `status: run|pause|
 Every session reads `INBOX.md` and this file first, then the spec `docs/specs/2026-10-22-soulsync-review.md` and the
 brief `brief.md` (the brief wins on scope).
 
+### 2026-10-22 13:25 · verify V2
+
+Independent re-run: 8 features hold, 1 fail (V2-08). Nothing live touched.
+
+| Feature | Step | What you ran or read | What you saw | Holds |
+|---|---|---|---|---|
+| V2-01 | 1 | read 02-intake.md 49-130; sed spotify_client.py | `### Spotify`: authorization code with the user's own app, cites spotify_client/public_api/public_scraper/token_cache/free_metadata; Feb 2026 limits at :104 with cites | yes |
+| V2-01 | 2 | grep '^### ' 02-intake.md | `### Other playlist sources` (131): Tidal PKCE, Deezer, YouTube Music etc., cites source_playlists, mirrored_playlists, core/playlists, services/sync_service | yes |
+| V2-01 | 3 | grep '^### '; grep file names | `### Wishlist and watchlist`, `### Requests`, `### Lidarr compatibility` present with the cited files | yes |
+| V2-01 | 4 | read lines 17-37 | ASCII flow source → mirrored_playlists → auto_sync_playlist → wishlist_tracks → run_full_missing_tracks_process, function names at each arrow | yes |
+| V2-01 | 5 | grep ours: file names | playlist_sources 3, import_playlist 7, spotify_csv 3, cli.py 2, store.py 5, downloads spec 7 line-cited; S2-02, S3-01, S3-02 named | yes |
+| V2-01 | 6 | read 352-404 | Goal C and Goal D judged by name | yes |
+| V2-01 | 7 | `grep -n '^## '` and `grep -n '^\*\*Verdict'` on the file | four headings (8,304,352,405); `**Verdict:** adapt` at 418 | yes |
+| V2-01 | 8 | citation check from progress.md over docs/research/2026-10-22-soulsync/*.md (2,180 unique cites) | no BAD line printed | yes |
+| V2-01 | 9 | grep -c unverified; seeded random cites read with `sed -n` (spotify_client:1645, _pipeline_shared:232, sync_service:1393, ours spotify_csv:1-6) | sampled cites support their sentences; sampled SoulSync lines carry a cite or a mark | yes |
+| V2-01 | 10 | `lib/check.sh`: 'green (cached for this code tree, 1757 tests)' | green, 1757 tests, docs only (cached result; no skip count shown) | yes |
+| V2-02 | 1 | grep file names in 03-matching.md | matching_engine 53, core/matching/, client_match, source_ids, release_identity, edition_grouping, isrc_match, musicbrainz_, acoustid_client all cited | yes |
+| V2-02 | 2 | read 213-236; sed matching_engine.py:46 and :1204-1206 | 4-qualifier table over library/Soulseek/AcoustID with cites; the lines support the 0.30 and 0.08 values | yes |
+| V2-02 | 3 | grep ours cites | import_playlist 12, identity.py 18, identity.md 8, scorer.py 9, amperfy-pivot.md:21 3 | yes |
+| V2-02 | 4 | read 301-380; grep ext-74 | ext-74 answered: base scorer accepts, base-title veto rejects (0.275 vs 0.30), flat-name veto misses, with cites | yes |
+| V2-02 | 5 | `grep -n '^## '` and `grep -n '^\*\*Verdict'` on the file | four headings (10,237,301,381); `**Verdict:** adapt` at 397 | yes |
+| V2-02 | 6 | citation check from progress.md over docs/research/2026-10-22-soulsync/*.md (2,180 unique cites) | no BAD line printed | yes |
+| V2-02 | 7 | grep -c unverified; seeded random cites read with `sed -n` (music_database:12494, ours import_playlist:135-140) | sampled cites support their sentences; sampled SoulSync lines carry a cite or a mark | yes |
+| V2-02 | 8 | `lib/check.sh`: 'green (cached for this code tree, 1757 tests)' | green, 1757 tests, docs only (cached result; no skip count shown) | yes |
+| V2-03a | 1 | grep '^### ' 04-soulseek.md; file names | four headings; `### Search and candidates` cites query_variants, soulseek_client, candidates, candidate_pool, candidate_store | yes |
+| V2-03a | 2 | read 126-152 | `### Scoring`: numeric weights (0.45/0.40/0.15, 0.08 band, 0.58) with cites; prioritize and observed_speed cited | yes |
+| V2-03a | 3 | read 153-241 | `### Album requests and folder choice` cites album_bundle, album_bundle_dispatch, pinned_batch; ASCII flow at 214-220 | yes |
+| V2-03a | 4 | read 242-316 | `### When a track fails`: 3 error / 3 stall / 5 quarantine retries; table against goal E, S2-04, S1-06 | yes |
+| V2-03a | 5 | read 317-343 | `### Peer memory` table: failed_blocklist, peer_observation, soulseek_identity with key/TTL/blocks | yes |
+| V2-03a | 6 | grep ours cites | scorer 11, fetch 11, policy 3, fake_slskd 8, slskd_client 15; the 5-peers/4-releases finding named | yes |
+| V2-03a | 7 | grep 'part 2, transfers' 04-soulseek.md | 0 hits: placeholder was replaced when V2-03b landed (its own step 6) | yes |
+| V2-03a | 8 | citation check from progress.md over docs/research/2026-10-22-soulsync/*.md (2,180 unique cites) | no BAD line printed | yes |
+| V2-03a | 9 | grep -c unverified; seeded random cites read with `sed -n` (monitor:410, peer_observation:53, ours fetch:162) | sampled cites support their sentences; sampled SoulSync lines carry a cite or a mark | yes |
+| V2-03a | 10 | `lib/check.sh`: 'green (cached for this code tree, 1757 tests)' | green, 1757 tests, docs only (cached result; no skip count shown) | yes |
+| V2-03b | 1 | read 344-487; sed soulseek_client.py:838-844 | `### Transfers`: enqueue POST per file plus 7-POST cascade, id lookup, poll, timeouts, 3 DELETE forms, states, ASCII | yes |
+| V2-03b | 2 | read 488-577 | `### Errors and outages` and `### Throttling` (35/220 s, 429 cooldown) with cites | yes |
+| V2-03b | 3 | read 578-634; count numbered rows | 36 rows (≥ 8); prefix :199-212, direct path :315-321; fixed note present | yes |
+| V2-03b | 4 | read 635-661 | `### What our S1-04 and S2 should capture`: enqueue reply, POST users/{peer}/directory, per-transfer record, tied to ids | yes |
+| V2-03b | 5 | grep ours cites | slskd_client 15, fetch 11, hotfix 404 at slskd_client:79-84, S1-04/05/06 | yes |
+| V2-03b | 6 | read 769-833; grep placeholder | 404, DELETE without remove=true, VPN drop each cited; placeholder gone | yes |
+| V2-03b | 7 | `grep -n '^## '` and `grep -n '^\*\*Verdict'` on the file | four headings in order; `**Verdict:** adapt` | yes |
+| V2-03b | 8 | citation check from progress.md over docs/research/2026-10-22-soulsync/*.md (2,180 unique cites) | no BAD line printed | yes |
+| V2-03b | 9 | grep -c unverified 04 = 12; random cites | marks carry a would-verify clause; sampled cites hold | yes |
+| V2-03b | 10 | `lib/check.sh`: 'green (cached for this code tree, 1757 tests)' | green, 1757 tests | yes |
+| V2-04 | 1 | grep '^### ' 05-other-sources.md; read Deezer, Qobuz, HiFi | 12 headings Deezer…Lidarr, each with client-file cites and a `**ToS/legal:**` flag (7 streaming rip, 4 grey, 1 clean) | yes |
+| V2-04 | 2 | grep embedded|hard-coded; read paragraphs | credentials (ARL, token, key) and embedded-secret mechanism with file:line, no values | yes |
+| V2-04 | 3 | read 254-336 | `### How the orchestrator chooses` cites download_orchestrator and registry; ASCII flow present | yes |
+| V2-04 | 4 | read 337-347 and 348-405 | two sentences, Soulseek-only, architecture.md:36-37, fetch.py; streaming-rip/D24 risk; verdict per group | yes |
+| V2-04 | 5 | `grep -n '^## '` and `grep -n '^\*\*Verdict'` on the file | four headings (12,337,348,388); `**Verdict:** no` at 406 | yes |
+| V2-04 | 6 | citation check from progress.md over docs/research/2026-10-22-soulsync/*.md (2,180 unique cites) | no BAD line printed | yes |
+| V2-04 | 7 | grep -c unverified; seeded random cites read with `sed -n` (deezer, qobuz_client:1283, hifi_client:1190, soundcloud_client:11-13, ours verify:233) | sampled cites support their sentences; sampled SoulSync lines carry a cite or a mark | yes |
+| V2-04 | 8 | `lib/check.sh`: 'green (cached for this code tree, 1757 tests)' | green, 1757 tests, docs only (cached result; no skip count shown) | yes |
+| V2-05 | 1 | grep file names in 06-verification.md | validation, post_processing, atomic_album_publish/manifest/recovery, album_consistency, acoustid_verification, quality/, replaygain, quarantine, blocklist cited; audio_length once (audiobook only, said so) | yes |
+| V2-05 | 2 | read 306-337 | summary table (transcode, wrong-song, album consistency, quarantine) and `### Would ext-74 have been caught?` with audio_verification:829-831 | yes |
+| V2-05 | 3 | grep ours cites | verify.py 28, acoustid.py 4, policy.py 4, policy.toml 3, download-validation.md 6, `_acoustid_check`, S1-02, S2-03 | yes |
+| V2-05 | 4 | grep D24, D26 in 06; read 423-483 | difference judged against D24 and D26 by name | yes |
+| V2-05 | 5 | `grep -n '^## '` and `grep -n '^\*\*Verdict'` on the file | four headings (10,338,423,484); `**Verdict:** adapt` at 506 | yes |
+| V2-05 | 6 | citation check from progress.md over docs/research/2026-10-22-soulsync/*.md (2,180 unique cites) | no BAD line printed | yes |
+| V2-05 | 7 | grep -c unverified; seeded random cites read with `sed -n` (album_matching:446, acoustid_verification:99, quality/schema:141, ours musicbrainz:84) | sampled cites support their sentences; sampled SoulSync lines carry a cite or a mark | yes |
+| V2-05 | 8 | `lib/check.sh`: 'green (cached for this code tree, 1757 tests)' | green, 1757 tests, docs only (cached result; no skip count shown) | yes |
+| V2-06 | 1 | grep '^### ' 07-filing-library.md | five `###` question headings (beets, tags, scans, playlist edits, deletes/moves) with cites | yes |
+| V2-06 | 2 | read 14-35 | ASCII flow with template key (settings.py:915-919), tags, scan; notes SoulSync's real order | yes |
+| V2-06 | 3 | grep ours cites | filer 5, playlist_edit 7, trash 2, MOVES.txt, placement 2, CLAUDE.md, hard-won-facts 6, S2-06, D18/D22/D29/D44 | yes |
+| V2-06 | 4 | read 391-416 | table with one row per safety invariant, honours/conflicts/not addressed, each cited | yes |
+| V2-06 | 5 | `grep -n '^## '` and `grep -n '^\*\*Verdict'` on the file | four headings (11,322,391,417); `**Verdict:** no` at 441 | yes |
+| V2-06 | 6 | citation check from progress.md over docs/research/2026-10-22-soulsync/*.md (2,180 unique cites) | no BAD line printed | yes |
+| V2-06 | 7 | grep -c unverified; seeded random cites read with `sed -n` (expired_cleanup:150, web_server:18986, ours CLAUDE.md:11-12) | sampled cites support their sentences; sampled SoulSync lines carry a cite or a mark | yes |
+| V2-06 | 8 | `lib/check.sh`: 'green (cached for this code tree, 1757 tests)' | green, 1757 tests, docs only (cached result; no skip count shown) | yes |
+| V2-07 | 1 | count api/*.py, route decorators, register_blueprint, viewport, manifest, lines in the clone | 63 files, 255+957=1212 routes, 43 blueprints, viewport index.html:6, manifest :91, 12,932 lines: all match 08-ui-api.md | yes |
+| V2-07 | 2 | read 230-328; sed api/request.py:272-278 | three paths (search, pasted link, Shortcut/API) each ending at its record | yes |
+| V2-07 | 3 | read 329-361 | responsive (43 @media), manifest + sw.js, no share_target, unprovable marked | yes |
+| V2-07 | 4 | grep ours cites; read 440-490 | service.py 17, web/ 18, architecture.md 6, S3-01..06; B1, B2, B3 one paragraph each | yes |
+| V2-07 | 5 | `grep -n '^## '` and `grep -n '^\*\*Verdict'` on the file | four headings (9,362,440,491); `**Verdict:** no` at 514 | yes |
+| V2-07 | 6 | citation check from progress.md over docs/research/2026-10-22-soulsync/*.md (2,180 unique cites) | no BAD line printed | yes |
+| V2-07 | 7 | grep -c unverified; seeded random cites read with `sed -n` (play_log:1-7, blocks.py:352, ours worker.py:8) | sampled cites support their sentences; sampled SoulSync lines carry a cite or a mark | yes |
+| V2-07 | 8 | `lib/check.sh`: 'green (cached for this code tree, 1757 tests)' | green, 1757 tests, docs only (cached result; no skip count shown) | yes |
+| V2-08 | 1 | read the V2-08 entry in progress.md for a table | only a prose 'Spot-check' paragraph (21 cites, 20 hold, 1 widened): 2 SoulSync + 1 ours per file but NO table of file, citation, holds; the step requires a table | NO |
+| V2-08 | 2 | citation check from progress.md over docs/research/2026-10-22-soulsync/*.md (2,180 unique cites); read marks | no BAD line; marks 48 → 27 each with a would-verify clause (sampled) | yes |
+| V2-08 | 3 | grep '^## ' 02-08; README links + `ls` | 4 headings and one Verdict each; links 01-08 resolve, 09 is a forward link (V4-01) | yes |
+| V2-08 | 4 | grep beets, retries, transcode, auto-import across 01,05,06,07,08 | consistent: no beets (01=07), 5 quarantine retries (04=06), no on-the-fly transcode with YouTube MP3 320 (05=08), auto-import opt-in (01=07) | yes |
+| V2-08 | 5 | awk: fenced blocks >10 lines, Python tokens inside | 9 long blocks, 3 read: our own ASCII flows; no copied clone code | yes |
+| V2-08 | 6 | `lib/check.sh`: 'green (cached for this code tree, 1757 tests)' | green, 1757 tests | yes |
+
 ### 2026-10-22 13:30 · V2-08 · passes
 - **Changed:** 01-08 under `docs/research/2026-10-22-soulsync/` (about 190 lines touched; docs only, tests 1757 → 1757). every content `*unverified*` mark in 02-08 was re-read (48 before, 27 now): 14 are now cited (5 of them corrected claims), 9 grep-only absences became `*absence inferred*` with the grep stated, several more were narrowed to a cited part, and the remaining 27 keep the mark with a "would be verified by" clause (slskd 0.26 captures for S4-01, iOS/Android, tidalapi/yt-dlp, Mixxx). There are 12 cross-file contradictions, reconciled below. Mechanical checks: the citation check prints no BAD line; 02-08 each have the four `##` headings in order and one `**Verdict:**`; README's `## Sections` links 01-08 and all resolve (09 is V4-01's); every code block is our own ASCII flow, and none holds a Python line (`def|class|return|import|self.` grep = 0).
 - **Spot-check (me, `sed -n`):** 20 hold, 1 partly holds (widened). 02: `spotify_client.py:1547-1548` yes, `refresh_mirrored.py:277-351` yes, ours `cli.py:155-160` yes. 03: `watchlist_scanner.py:2900-2976` yes, `matching_engine.py:1517-1529` yes, ours `identity.md:108-140` yes. 04: `slskd_throttle.py:1-23` yes, `size_limit.py:23-53` yes, ours `scorer.py:246-251` yes. 05: `tidal_download_client.py:396-404` yes, `hifi_client.py:792-806` yes, ours `next-session-design.md:142-143` yes. 06: `silence.py:34-43` yes, `lifecycle.py:1183-1201` **partly** (stopped before the publish call; now `1183-1217`), ours `policy.py:27-33` yes. 07: `pipeline.py:123-135` yes, `paths.py:1222-1223` yes, ours `subsonic/client.py:174-178` yes. 08: `index.html:12687-12688` yes, `play_log.py:1-19` yes, ours `web/app.js:151` yes.
