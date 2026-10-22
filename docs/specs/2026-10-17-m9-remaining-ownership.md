@@ -1,7 +1,7 @@
 # M9: the remaining ownership and identity considerations
 
 **Status:** draft for Michael's review, written 2026-10-16 on `overnight2/2026-10-15` (M8 Parts A–C built, Part D
-play-now in progress). As of 2026-10-21, items 1 and 3 are built (N4, N1); the rest is not built. It follows the binding design in
+play-now in progress). As of 2026-10-22, items 1, 3, 5a (the identity picker), 6 and 7 and small items 8a, 8b, 8c and 8h are built (N4, N1, R7, R4, R5, R6); the rest is not built. It follows the binding design in
 [`2026-10-16-ownership-and-identity.md`](2026-10-16-ownership-and-identity.md) (D18–D23) and changes none of it.
 
 **What M9 is:** the items M6–M8 deliberately left out. They come from the "Open items" of the M7 and M8 plans, the M7
@@ -28,12 +28,12 @@ owner's intent once (a placement, a reviewed tag write, a reviewed trash) and ch
 |---|---|---|---|
 | 1 | A downloaded track goes into its playlist at its Spotify position | M | Q1, Q2 by default (D44); **built (N4)** |
 | 2 | Proposals for playlists tiered later, and for filings made blind | S | yes (Q3) |
-| 3 | Garbage-collect the 102 "copies of one version" groups | L | yes (Q4, Q5) |
+| 3 | Garbage-collect the 102 "copies of one version" groups | L | yes (Q4, Q5); **built (N1)** |
 | 4 | Write the version label into `VERSION`/`TIT3` | M | yes (Q6) |
-| 5 | Pickers: identity `search`/`ambiguous`/`none`, and the 11 import `review` rows | M + M | yes (Q7–Q9) |
-| 6 | Enforce "one beets writer" and "no download without approval" in code | S | defaults (Q10) |
-| 7 | Playlist health check after scans; export history | S | default (Q11) |
-| 8 | Small items (AcoustID cache, "99 Luftballons", crates.db snapshot, pinning, …) | S each | some (Q12–Q14) |
+| 5 | Pickers: identity `search`/`ambiguous`/`none`, and the 11 import `review` rows | M + M | yes (Q7–Q9); **identity picker built (R7)**, import `review` picker not built |
+| 6 | Enforce "one beets writer" and "no download without approval" in code | S | defaults (Q10); **built (R4)** |
+| 7 | Playlist health check after scans; export history | S | default (Q11); **built (R5)** |
+| 8 | Small items (AcoustID cache, "99 Luftballons", crates.db snapshot, pinning, …) | S each | some (Q12–Q14); **8a, 8b, 8c, 8h built (R6)** |
 
 ---
 
@@ -222,6 +222,16 @@ in a choices file beside the proposal until `apply` writes it.
 
 **Size M.**
 
+**Built (R7, 2026-10-22), not live.** Plan `docs/plans/2026-10-21-r7-identity-picker.md`. The crates service serves
+`GET /api/identity` and `POST /api/identity/choice` (`crates/identity_view.py`); the web client's Identity tab shows
+the rows; each tap is stored in `/data/identity/identity-choices.json` and logged as an `identity_pick` event with
+`decided_by=michael`; `identity_backfill apply --choices` merges the taps, checking each one against the row again.
+Q7 and Q8 run with their defaults (D47 *default*): `search` rows are accepted one by one (the class stays out of
+`--classes`), and the only candidate on the file's own album is pre-selected, never applied without a click. The
+plan narrows the buttons above: Accept is for `search` rows only (an `ambiguous`/`none` row has no single pick), and
+Choose for `ambiguous`/`none` only (a `search` row has no candidate list). The live apply is Michael's
+(`docs/next-todos.md` item 6).
+
 ### 5b. The 11 import `review` rows (several versions in the library)
 
 **Problem.** Import found several library versions for these Spotify rows and parked them. Since `40b0d47` they are
@@ -301,14 +311,14 @@ Healing stays manual. The text below is the state before R5.
 
 | Item | Problem / mechanism | Owner / rule | Size |
 |---|---|---|---|
-| 8a AcoustID cache + spacing (M7 m10) | Answers are not cached and not spaced (limit 3 req/s); a re-propose re-fingerprints every file. Cache by path + size + mtime (`acoustid-cache.jsonl`), route through the process-wide limiter at 3/s. | derived cache; the file wins | S |
-| 8b "99 Luftballons" | `strip_trackno` takes "99 " off "99 Luftballons" (`identity.py:266`, used by `parse_filename` and the scorer), so that Soulseek file is ranked down. Strip a bare "NN " only when the rest still fits the wanted title; else keep it. | safe today (missed candidate) | S |
-| 8c Disambiguation-only labels (M7 m3) | A MusicBrainz recording whose version is only in its disambiguation (`12" version`) never fits "Good Times (12'' Version)". Parse with `version_tag=disambiguation`. Recall only. | identity | S |
+| 8a AcoustID cache + spacing (M7 m10) | **Built (R6), not deployed:** `acoustid.Cache` keyed on path + size + `mtime_ns`, one shared 3/s limiter. Answers are not cached and not spaced (limit 3 req/s); a re-propose re-fingerprints every file. Cache by path + size + mtime (`acoustid-cache.jsonl`), route through the process-wide limiter at 3/s. | derived cache; the file wins | S |
+| 8b "99 Luftballons" | **Built (R6), not deployed:** `strip_trackno(s, wanted)`; without `wanted` unchanged. `strip_trackno` takes "99 " off "99 Luftballons" (`identity.py:266`, used by `parse_filename` and the scorer), so that Soulseek file is ranked down. Strip a bare "NN " only when the rest still fits the wanted title; else keep it. | safe today (missed candidate) | S |
+| 8c Disambiguation-only labels (M7 m3) | **Built (R6), not deployed:** `_misfit` compares an unlabelled title with its disambiguation's label. A MusicBrainz recording whose version is only in its disambiguation (`12" version`) never fits "Good Times (12'' Version)". Parse with `version_tag=disambiguation`. Recall only. | identity | S |
 | 8d crates.db snapshot | WAL mode; restic copies the files live; it holds approvals (the one store whose loss loses information). Worker writes `sqlite3 .backup` to `crates.db.snap` hourly, so no root change is needed; restic picks it up. | crates.db (fact 10) | S |
 | 8e Pin images | `navidrome:latest`, `slskd:latest`, `gluetun` untagged. The code depends on 0.64.2 behaviour (relative paths, PID, hidden missing rows). Pin tags; an upgrade re-runs the measured-facts checklist on a throwaway first. | repo config | S |
 | 8f ".1" names | `duplicate_action: keep` files a same-format upgrade as "… .1.flac"; after the old copy is trashed the ".1" stays. `beet move` it only when the file carries a recording id (PID keeps the song id), with a scan between. | beets path rules (fact 3) | S |
 | 8g Filed path in free text | The filed path rides in `reason` and is parsed by regex (`store.py` `filed_path`). Move it to a column; keep the regex for old rows. | crates.db | S |
-| 8h Failed rows duplicate on re-import | `find_external` skips failed unfiled rows, so a re-import queues a second row for the same track. Reuse the failed row (back to `needs_source`). | crates.db | S |
+| 8h Failed rows duplicate on re-import | **Built (R6), not deployed:** `add_external_wanted(reask=…)` from import; event `reasked`; older failed duplicates `superseded`. `find_external` skips failed unfiled rows, so a re-import queues a second row for the same track. Reuse the failed row (back to `needs_source`). | crates.db | S |
 | 8i Identity vocabulary gaps | 35 trailing parentheticals are not read as labels ("(Suite)", "(Interlude)", "(Oh What a Night!)"). Rule on each: label, copy note or part of the name. | identity (fact 2) | S |
 | 8j `repoint: auto` per tier | D23 "later": a `policy:<name>` decider answers version-swap questions for a tier. The vocabulary exists; nothing decides. | Michael (D23) | M |
 

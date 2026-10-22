@@ -13,7 +13,7 @@ Navidrome, slskd and beets. It runs live on this box (compose project `dj`, from
 - Read `docs/hard-won-facts.md` before touching beets, Navidrome scans or playlists.
 
 ## How to verify
-- Suite: `.harness/check.sh` (pytest, paths in scratch, live credentials unset): ~1,523 tests, **about 9-10 minutes** (570 s measured). Subset:
+- Suite: `.harness/check.sh` (pytest, paths in scratch, live credentials unset): ~1,750 tests, **about 11 minutes** (653 s measured). Subset:
   `.harness/check.sh tests/test_trash.py`. Run the files you touch while iterating, the full suite once at the end.
 - Needs python3 ≥ 3.10 and `~/.local/bin/pytest` (`pipx install pytest`); without ffmpeg, flac, fpcalc, beet or
   sqlite3 their tests skip. No dev server: tests use the fake Navidrome/slskd in `tests/`; follow those fakes.
@@ -41,12 +41,10 @@ with `GIT_SHA=<rev>`; `--print` shows it without running. Pass: exit 0 and "ok: 
 (never while stopped), so a bare `check` reports "stale".
 
 ### Snapshots
-- `scripts/snapshot-crates-db.sh` (from the worktree), then copy its output to a run-named file:
-  `cp /srv/docker/crates/crates.db.snap /srv/docker/crates/crates.db.pre-<run-id>.snap`. The script's own file is
-  the nightly backup's and is overwritten at 03:30. Pass: exit 0 and "integrity ok".
-- `sqlite3 /srv/docker/navidrome/navidrome.db ".backup /srv/docker/navidrome/navidrome.db.pre-<run-id>.snap"`.
-  Pass: exit 0, and `sqlite3 <snap> 'pragma integrity_check'` prints `ok`. This is the only consistent copy of
-  navidrome.db: the nightly backup copies its files raw while Navidrome writes.
+- `scripts/snapshot-crates-db.sh --suffix pre-<run-id>` (from the worktree): `sqlite3 .backup` of both databases to
+  `crates.db.pre-<run-id>.snap` and `navidrome.db.pre-<run-id>.snap` beside them. Pass: exit 0 and "integrity ok" for
+  each. Without `--suffix` it writes the nightly backup's `*.snap`, replaced at 03:30. The
+  `.snap` files are the consistent copies; the live database files restic also copies are not.
 
 ### Backups
 Nightly restic (`restic-backup.timer` → `restic-backup.service`): 03:30 + up to 15 min random delay, about 2 min

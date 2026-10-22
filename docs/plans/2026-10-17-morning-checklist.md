@@ -1,3 +1,5 @@
+> **Superseded by [`docs/plans/2026-10-22-morning-checklist.md`](2026-10-22-morning-checklist.md)** (R8 of run dj-crate-streaming-2026-10-21): use that one. This file is kept as it was.
+
 # Morning checklist: the live steps for the dj-2026-10-17 run
 
 > **R8 replaces this checklist** (`docs/plans/2026-10-22-morning-checklist.md`, run dj-crate-streaming-2026-10-21).

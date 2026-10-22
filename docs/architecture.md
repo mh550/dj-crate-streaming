@@ -17,8 +17,9 @@ Legend: **built** = in the code; **live** = also running on the box; **planned**
 | H1-H3 (snapshots, heartbeat, healthchecks, backup job, Gatus, disk timer) | **live** (image `dj-crates:f4882ab85b`), except the H3-03 timer and H3-05's changes to it (merged, not installed) |
 | M7 live proposal (Task 12), gated apply (Task 13) | not done; Task 13 waits for you |
 | M8 lifecycle (Parts A–D: replacement, proposals, play-now; ownership changed by the pivot) | **built, live** since 2026-10-17; the trash-move probe in §9 has not been run (it needs the first real replacement) |
-| N1-N4 (run `dj-2026-10-17`: duplicate cleanup, imported marker in crates.db, vanished-playlist cleanup, placement) | merged into `main`, **not live** except N1's code (never run); live steps in `docs/plans/2026-10-17-morning-checklist.md` |
-| M9 | [`docs/specs/2026-10-17-m9-remaining-ownership.md`](specs/2026-10-17-m9-remaining-ownership.md): item 3 built (N1, not run live), item 1 placement built (N4, not deployed); the rest not built |
+| N1-N4 (run `dj-2026-10-17`: duplicate cleanup, imported marker in crates.db, vanished-playlist cleanup, placement) | merged into `main`, **not live** except N1's code (never run); live steps in `docs/plans/2026-10-22-morning-checklist.md` |
+| R1-R7 (run `dj-crate-streaming-2026-10-21`: doc truth, `live-run.sh`, D35 lossless pairs, guards, playlist health and history, M9 small items, identity picker) | built on `harness/dj-crate-streaming-2026-10-21`, **not deployed**; live steps in `docs/plans/2026-10-22-morning-checklist.md` |
+| M9 | [`docs/specs/2026-10-17-m9-remaining-ownership.md`](specs/2026-10-17-m9-remaining-ownership.md): item 3 built (N1, not run live), item 1 placement built (N4, not deployed), items 5a, 6, 7 and 8a/8b/8c/8h built (R7, R4, R5, R6; not deployed); the rest not built |
 
 Checked live (read-only) when this was written: the worker image has no `deploy/policy.toml` and no
 `scripts/identity_backfill.py`, so every M7 and M8 command below needs a rebuild first. The M8 rebuild has a required
@@ -70,7 +71,8 @@ before swapping versions and adds play-now. (The pivot moved the crate flag's ow
   mediafile 0.12.0). The build context is `CRATES_SRC` in `.env`, i.e. **the repo's working tree** (§10).
 - Only `127.0.0.1` ports are published; `tailscale serve` on the host puts 4533 and 4580 on the tailnet.
 - Who may write what: Navidrome writes only its DB (never files). `crates` writes `crates.db` and Navidrome
-  playlists (the comment attributes, add/create, a proposal's one-slot swap); it has no library mount, so it cannot download or file
+  playlists (the comment attributes, add/create, a proposal's one-slot swap), plus the Identity view's
+  `/data/identity/identity-choices.json` (R7, below); it has no library mount, so it cannot download or file
   (`fetch` refuses, `sourcing/fetch.py:142-148`). The worker is the only process that downloads, runs beets or
   moves files into `/srv/music`. slskd writes only its downloads folder; it sees `/srv/music` read-only and
   never sees `/srv/incoming/library-import` (your originals).
@@ -142,8 +144,11 @@ Other stores:
   every playlist). They mirror Navidrome within 5 minutes, so the restore source is
   **`/srv/music/_playlists/.history/<YYYY-MM-DD>/<name>.m3u8`**: the previous text of each changed file, the first
   one of the day (UTC), kept 30 days (R5, M9 §7). `check` and the stale list ignore `.history/`.
-- **Identity outputs**: `/srv/docker/crates/identity/` (= `/data/identity` in the worker): proposal, report,
-  MB cache, apply logs. Does not exist yet.
+- **Identity outputs**: `/srv/docker/crates/identity/` (= `/data/identity` in the worker and in `crates`,
+  `CRATES_IDENTITY_DIR`): proposal, report, MB cache, apply logs, and `identity-choices.json` (R7: the Identity
+  view's taps, latest per path, written atomically by `crates/identity_view.py`, the only file `crates` writes
+  there). Not checked on the live box since 2026-10-17 (it did not exist then): the R7 plan's "Live steps" step 1
+  checks that it exists and is writable by uid 1000.
 
 ## 4. Key flows
 
@@ -238,13 +243,19 @@ Runs in the worker (`scripts/identity_backfill.py`), because it has `/srv/music`
    label agree, it is not a video, and the length is within 4 s (no length = no fit). Classes: `confirmed`,
    `isrc`, `acoustid`, `search`, `ambiguous`, `conflict`, `none`, `error`. Writes proposal JSON + report + cache.
    ~45–70 min for the library (1 req/1.05 s, 503 retries), resumable from `mb-cache.jsonl`.
-2. **review**: you read the report; set `"skip": true` or `"choose": "<mbid>"` (must be a listed candidate; only
-   on `search`/`ambiguous`/`none` rows) in the JSON.
+2. **review**: in the web client's **Identity view** (R7, built, not live; `crates/identity_view.py`,
+   `GET /api/identity`, `POST /api/identity/choice`): one row per `search`/`ambiguous`/`none`/`conflict`/`error`
+   file with ▶ and the candidates; Accept (a `search` row's recording), Choose (a listed candidate; the only one on
+   the file's own album is pre-selected, Q8), Skip; `conflict`/`error` rows offer only Skip. A tap writes no tag: it
+   is stored in the **choices file** `identity-choices.json` beside the proposal and logged as `identity_pick`
+   (`decided_by=michael`). Or, by hand: set `"skip": true` or `"choose": "<mbid>"` in the proposal JSON.
 3. **apply** (`:873`): default classes `confirmed`, `isrc`, `acoustid` + rows with `choose`; `--classes` may add
-   `search`, `ambiguous`. Per file: refuse if size/mtime/tags changed since propose or a target field is not empty
-   (`_check_file`, `:732`); log first (`apply-<time>.jsonl`, with prior values), `write_minimal` the id fields,
-   read back, verify no other tag changed; first problem stops the run. Then scan and check: song ids unchanged,
-   Navidrome shows the recording id, `.m3u8` exports still match (`export_playlists.check`).
+   `search`, `ambiguous`; `--choices identity-choices.json` adds the picked rows (each choice is checked against
+   the row again: class, size, mtime, candidates; a refused one is never written by its class). Per file: refuse
+   if size/mtime/tags changed since propose or a target field is not empty (`_check_file`, `:732`); log first
+   (`apply-<time>.jsonl`, with prior values), `write_minimal` the id fields, read back, verify no other tag changed;
+   first problem stops the run. Then scan and check: song ids unchanged, Navidrome shows the recording id, `.m3u8`
+   exports still match (`export_playlists.check`).
 4. **revert** (`:958`): newest first, remove a field only where the file still holds exactly the logged value
    (`tag_cleanup.remove_ids`). Re-applying after a revert needs a fresh propose (mtime changed).
 
@@ -363,7 +374,7 @@ docker compose stop worker / start worker          # pause / resume (a stop mid-
 | Identity apply | `… identity_backfill apply /data/identity/identity-proposal.json --dry-run`, then `--yes [--limit 5] [--classes …] [--only GLOB]` |
 | Undo apply | `… identity_backfill revert /data/identity/apply-<time>.jsonl` |
 | Duplicate cleanup | `docker compose exec -T worker python3 -m scripts.duplicate_cleanup plan`, then `repoint [--dry-run] [--limit N]`; with the worker stopped `scripts/live-run.sh python3 -m scripts.duplicate_cleanup trash [--dry-run] [--limit N]` (the deployed image, D45); staged runbook and undo in `docs/worker.md` "Duplicate cleanup" |
-| Tests | `cd ~/projects/dj-crate-streaming && ~/.local/bin/pytest -q` (1,523 tests, about 9-10 minutes) |
+| Tests | `cd ~/projects/dj-crate-streaming && ~/.local/bin/pytest -q` (1,750 tests, about 11 minutes) |
 | Offline demo | `python3 -m crates.cli demo` → http://127.0.0.1:4580 |
 
 Where to look: worker stdout (`docker compose logs worker`), the web client's log tab (`events`), approvals'

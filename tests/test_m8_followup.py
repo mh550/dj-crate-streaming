@@ -194,3 +194,21 @@ def test_playlist_detail_lists_its_external_rows_not_yet_in_the_library(svc):  #
 def test_playlist_detail_wanted_is_empty_without_external_rows(svc):  # noqa: F811
     fake, app, srv = svc
     assert get(srv.url + "/api/playlists/pl-2")[2]["wanted"] == []
+
+
+# --- R6-03 (M9 §8h): a re-import's reused failed row is one Wanted row, and approvable
+def test_wanted_lists_a_reimported_failed_row_once_and_approve_accepts_it(svc):  # noqa: F811
+    from sourcing import import_playlist as ip
+    from tests.test_import_playlist import ROWS, _lib
+    fake, app, srv = svc
+    _lib(fake)
+    c = SubsonicClient(fake.url, "demo", "demo")
+    first = ip.import_playlist("Tea tent", ROWS, c, app.store, source="s")
+    [ext] = [r["song_id"] for r in app.store.external_for_playlist(first.playlist_id) if r["position"] == 2]
+    app.store.set_wanted_status(ext, "failed", "download timed out")
+    ip.import_playlist("Tea tent", ROWS, c, app.store, source="s")
+    rows = [t for t in get(srv.url + "/api/wanted")[2] if t["title"].startswith("Piano Joint")]
+    assert [(t["song_id"], t["status"]) for t in rows] == [(ext, "needs_source")]
+    code, body = post(srv.url + f"/api/wanted/{ext}/approve", {})
+    assert code == 200, body
+    assert app.store.approval(ext)["wanted_id"] == ext

@@ -108,10 +108,14 @@ def _files(pls: list[PL]) -> list[tuple[PL, str]]:
     return [(pl, file_name(pl.name, taken)) for pl in pls]
 
 
-def _write(target: Path, text: str) -> None:
-    tmp = target.with_name(target.name + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    tmp.replace(target)                                  # atomic: a reader never sees half a playlist
+def write_atomic(path: Path, text: str) -> None:
+    """tmp + fsync + replace: a reader never sees half a file, and a power cut leaves the old file or the new one."""
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(text)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, path)
 
 
 def export(db: Path, music_dir: Path, out_dir: Path, today: date | None = None) -> Summary:
@@ -130,7 +134,7 @@ def export(db: Path, music_dir: Path, out_dir: Path, today: date | None = None) 
                 _keep(out_dir / ".history", today, fname, old)
             except OSError as e:
                 s.errors.append(f"history: {fname} not kept: {e}")
-        _write(target, text)
+        write_atomic(target, text)
         s.written += 1
     s.stale = sorted(p.name for p in out_dir.glob("*.m3u8") if p.name not in produced)
     try:
@@ -147,7 +151,7 @@ def _keep(hist: Path, today: date, fname: str, old: str) -> None:
         raise OSError(f"{day} is or lies under a link: not followed")
     if not (day / fname).exists():
         day.mkdir(parents=True, exist_ok=True)
-        _write(day / fname, old)
+        write_atomic(day / fname, old)
 
 
 def prune_history(out_dir: Path, today: date, days: int = HISTORY_DAYS) -> list[str]:

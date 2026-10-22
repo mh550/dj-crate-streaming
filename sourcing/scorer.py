@@ -90,7 +90,7 @@ def ratio(a: str, b: str) -> float:
 
 def name_match(c: Candidate, w: Wanted) -> tuple[float, str]:
     """0..1 similarity between the file (name + folder) and the wanted track."""
-    base = strip_trackno(norm(re.sub(r"\.[^.]+$", "", c.basename)))
+    base = strip_trackno(norm(re.sub(r"\.[^.]+$", "", c.basename)), w.title)
     folder = norm(c.folder)
     artist, title = norm(w.artist), norm(w.title)
 
@@ -159,7 +159,7 @@ def score_candidate(c: Candidate, w: Wanted, policy: QualityPolicy = DEFAULT_POL
 
     # --- version: which version the file is, read from its name (identity.parse_title)
     want = parse_title(w.title, w.artist)
-    got = parse_filename(c.basename, w.artist)
+    got = parse_filename(c.basename, w.artist, w.title)
     other = got.key != want.key
     stand_in = other and stands_in(got, want, policy.accept_versions)     # e.g. a 12" for the radio edit
     if w.copy and other:

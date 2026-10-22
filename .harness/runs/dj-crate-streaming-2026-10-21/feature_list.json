@@ -245,7 +245,7 @@
         "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
       ],
       "after": [],
-      "passes": false
+      "passes": true
     },
     {
       "id": "R6-02",
@@ -261,7 +261,7 @@
         "Commit `R6-02: keep '99 Luftballons'; disambiguation-only versions fit`.",
         "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "R6-03",
@@ -276,7 +276,7 @@
         "Commit `R6-03: re-import reuses a failed row`.",
         "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "R6-04",
@@ -291,7 +291,7 @@
         "Commit `R6-04: review and simplify M9 §8 items`.",
         "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "R7-01",
@@ -306,7 +306,7 @@
         "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
       ],
       "after": [],
-      "passes": false
+      "passes": true
     },
     {
       "id": "R7-02",
@@ -321,7 +321,7 @@
         "Commit `R7-02: identity rows and choices API`.",
         "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "R7-03",
@@ -337,7 +337,7 @@
         "Commit `R7-03: apply --choices merges the picker's choices`.",
         "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "R7-04",
@@ -352,7 +352,7 @@
         "Commit `R7-04: Identity tab`.",
         "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "R7-05",
@@ -367,7 +367,7 @@
         "Commit `R7-05: identity tab screenshots`.",
         "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "R7-06",
@@ -382,7 +382,7 @@
         "Commit `R7-06: review and simplify the identity picker`.",
         "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "R8-01",
@@ -407,7 +407,7 @@
         "R6",
         "R7"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "R8-02",
@@ -423,7 +423,7 @@
         "Commit `R8-02: whole-run review and simplify`.",
         "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
       ],
-      "passes": false
+      "passes": true
     }
   ]
 }

@@ -72,6 +72,14 @@ the fit check. `search` has only names and length, and MB often holds two record
 the searches did), so "exactly one fits" can mean "the other one is not in MB yet", not "this is the one". Stamping a
 wrong id costs more than leaving a file unlabelled (see above), and a file without an id still works.
 
+**The picker (R7).** The rows only you can decide (`search`, `ambiguous`, `none` with candidates, `conflict`, `error`) are in
+the Identity tab of the crates app on your phone: the file's tags with a ▶, and each candidate recording with its
+length, release, MusicBrainz note and a link. You tap Accept (a `search` row's one fit), Choose (one candidate; the
+only one on the file's own album is pre-selected) or Skip (all a `conflict` or `error` row offers). A tap writes no file: it is
+recorded in `identity-choices.json`, bound to the row as you saw it, and logged as an `identity_pick` event.
+`apply --choices` then writes exactly those picks, with every check a hand-edited `choose` gets; a pick on a row
+that a later `propose` changed is refused and you pick again (`docs/worker.md` "Identity backfill").
+
 My suggestion: get the AcoustID key first. It turns many `search` rows into `acoustid` rows with audio proof, which
 shrinks the 239. Then look at a sample of the rest with `apply --classes confirmed,isrc,acoustid,search --limit 20`
 (the log lets `revert` undo it) before deciding on the remainder.
