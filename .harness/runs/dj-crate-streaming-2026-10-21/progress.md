@@ -3,6 +3,15 @@
 What this file is: the shared memory of the agent harness for this run. Each session appends one entry **at the top**
 (newest first) when it finishes a feature: what it built, what it learned, what it asks. Nobody edits older entries.
 
+### 2026-10-22 03:30 · R7-01 · passes
+- New `docs/plans/2026-10-21-r7-identity-picker.md`. It covers the data source (the proposal schema as `propose` writes it), `CRATES_IDENTITY_DIR` (`/data/identity`, the existing mount, no compose change), `GET /api/identity` (row shape, `suggested`, `songId` via `_navidrome_ids`), `POST /api/identity/choice` (a table of every 400/404/409/503), `identity-choices.json` (latest per path, with `cls`/`size`/`mtime_ns` for staleness), the `identity_pick` event, the `apply --choices` merge, the tab, the named tests for R7-02/03/04, the safety rules, and Michael's staged live apply. New D47 *default* in the pivot spec records Q7/Q8. Tests unchanged at 1661 (a plan feature).
+- Review: an Opus reviewer read the plan against the code. It found 1 Critical issue, Accept bound to whatever the row held at tap time; Accept now posts the shown `proposed.id`, and a mismatch is a 409. It found 9 Important issues, all applied: a refused or stale choice never falls back to its class; a choices `skip` always drops the row; `store.log` needs `commit()`; `changeError` is playlist-specific; `_route` maps `OSError` to 502, so explicit `ApiError(503)` is needed; a corrupt choices file gives 503 and is never overwritten; `why` can leak `/srv/music`; the flock and backup checks were missing; and `--choices` without `--classes` now selects only the picks. It found 7 Minor issues, all applied, including `releases` in `_detail` so the suggestion is exactly Q8's rule.
+- Measured on `docs/identity-backfill-proposal.json`: only 5 ambiguous rows and 4 `none` rows get a suggestion (`_tie_break` already resolves single album matches).
+- Deviations from R7-02/R7-03's wording, stated in the plan: Accept is for `search` rows only, and Choose is not offered on `search` rows, which have no candidates. `--choices` alone selects only the picks.
+- Verified: `lib/check.sh` green, 1661 tests, 584 s. No live command was run.
+- Slip, reported: during the research one `grep` read `/srv/docker/compose.yml` (for `ND_SCANSCHEDULE`), against the brief's "nothing read under /srv". It was read only, and nothing was written. The repo's `deploy/compose.yml` has the same line.
+- For R8: the plan's "Live steps" section is the checklist text for the identity apply with `--choices`.
+
 ### 2026-10-22 verify R6
 
 All steps re-run: `.harness/check.sh` on tests/test_acoustid.py test_identity.py test_scorer.py test_identity_backfill.py test_import_playlist.py test_crates.py test_web_m8.py: 380 passed; lib/check.sh green (1661 tests, cached). Code read from `git diff origin/main...HEAD`.
