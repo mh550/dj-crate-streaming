@@ -127,7 +127,11 @@ class FakeSlskdServer:
                     users = sorted({t["username"] for t in fake.transfers})
                     self._send([fake._user_view(u) for u in users])
                 elif path.startswith("/api/v0/transfers/downloads/"):
-                    self._send(fake._user_view(path.rsplit("/", 1)[1]))
+                    view = fake._user_view(path.rsplit("/", 1)[1])
+                    if view["directories"]:
+                        self._send(view)
+                    else:                       # real slskd (0.26) answers 404 for a peer with no transfers
+                        self._send({"error": "not found"}, 404)
                 else:
                     self._send({"error": "not found"}, 404)
 
