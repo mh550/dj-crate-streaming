@@ -1,13 +1,14 @@
 """The Navidrome duplicate cleanup (D31): keep the best copy of each recording, repoint the playlists, trash the rest.
 
-    docker compose exec -T worker python3 -m scripts.duplicate_cleanup plan [--limit N] [--out DIR]
+    docker compose exec -T worker python3 -m scripts.duplicate_cleanup plan [--limit N] [--out DIR] [--hold-lossless]
         → $CLEANUP_DIR/plan.json + report.md (default /data/duplicate-cleanup = /srv/docker/crates/duplicate-cleanup/)
 
 `plan` is read-only: it opens navidrome.db read-only, looks at music_root, and writes only into --out. It recomputes
 the groups from the live navidrome.db every run (scripts.duplicate_report.load + duplicate_groups, never from
 docs/duplicates-report.md); the first file of a group (keep_rank: lossless, then bit rate, then the properly filed
-path) is the keeper. A group is held, listed only, when the keeper's file is not on disk or when an extra is lossless
-beside a lossless keeper (D35: Michael clears that hold by setting "hold" to null in plan.json). `held_by` names
+path) is the keeper. A group is held, listed only, when the keeper's file is not on disk. An extra that is lossless
+beside a lossless keeper is acted on like any other, with a "note" on its group (D35, Michael 2026-10-19: trash the
+extras); `plan --hold-lossless` holds such a group as "both lossless" instead. `held_by` names
 every playlist holding an extra in navidrome.db, hidden rows and other users' playlists included
 (crates.playlist_edit.references), because the trash must wait until none does. `playlists` previews each rewrite
 (scripts.dedupe_copies.remap); repoint does not replay it. An existing plan.json is copied to plan-<its made_at>.json
@@ -109,36 +110,43 @@ def _lossless(row: dict) -> bool:
     return row["suffix"].lower() in LOSSLESS
 
 
-def _hold(keep: dict, extras: list[dict], music_root: Path) -> str | None:
+LOSSLESS_PAIR = "lossless pair: released by Michael 2026-10-19 (D35)"
+
+
+def _hold(keep: dict, extras: list[dict], music_root: Path, hold_lossless: bool) -> tuple[str | None, str | None]:
+    """(hold, note): hold None acts on the group; a lossless pair is released with a note unless hold_lossless."""
     if not (music_root / keep["path"]).is_file():
-        return "keeper missing on disk"
+        return "keeper missing on disk", None
     if _lossless(keep) and any(_lossless(e) for e in extras):
-        return "both lossless"
-    return None
+        return ("both lossless", None) if hold_lossless else (None, LOSSLESS_PAIR)
+    return None, None
 
 
-def build_plan(navidrome_db: Path, music_root: Path, limit: int | None = None) -> dict:
-    """The plan for the current navidrome.db; `limit` keeps the first N unheld groups (held ones are all listed)."""
+def build_plan(navidrome_db: Path, music_root: Path, limit: int | None = None, hold_lossless: bool = False) -> dict:
+    """The plan for the current navidrome.db; `limit` keeps the first N unheld groups (held ones are all listed);
+    `hold_lossless` holds a lossless pair, which D35 otherwise releases."""
     rows, _ = load(navidrome_db)
     picked, unheld = [], 0
     for g in duplicate_groups(rows):
         keep, extras = g[0], g[1:]
-        hold = _hold(keep, extras, Path(music_root))
+        hold, note = _hold(keep, extras, Path(music_root), hold_lossless)
         if hold is None:
             if limit is not None and unheld >= limit:
                 continue
             unheld += 1
-        picked.append((keep, extras, hold))
+        picked.append((keep, extras, hold, note))
     with closing(open_ro(navidrome_db)) as con:          # one snapshot: held_by and the previews agree
         names = dict(con.execute("SELECT id, name FROM playlist"))
         tracks: dict[str, list[str]] = {}
         for pid, sid in con.execute("SELECT playlist_id, media_file_id FROM playlist_tracks ORDER BY playlist_id, id"):
             tracks.setdefault(pid, []).append(sid)
     groups, replace, touched = [], {}, {}
-    for keep, extras, hold in picked:
+    for keep, extras, hold, note in picked:
         pids = [[pid for pid, sids in tracks.items() if e["id"] in sids] for e in extras]   # hidden rows included
         groups.append({"keep": _file(keep), "extras": [
             dict(_file(e), held_by=[names.get(pid) or pid for pid in ps]) for e, ps in zip(extras, pids)], "hold": hold})
+        if note:
+            groups[-1]["note"] = note
         if hold is None:
             replace.update((e["id"], keep["id"]) for e in extras)
             touched.update(dict.fromkeys(pid for ps in pids for pid in ps))
@@ -163,19 +171,34 @@ def _line(label: str, f: dict) -> str:
     return f"- {label} `{f['path']}` · {f['suffix']} {f['bit_rate'] or '?'} kbps · {f['id']}{use}"
 
 
+def _group(g: dict) -> list[str]:
+    return [_line("**keep**", g["keep"])] + [_line("extra", e) for e in g["extras"]] + [""]
+
+
 def render(plan: dict) -> str:
     out = ["# Duplicate cleanup plan", "",
            f"Made {plan['made_at']} by `python3 -m scripts.duplicate_cleanup plan`. Nothing was moved or edited.", "",
            f"- {counts(plan)}", "", "## Groups to act on", "",
            "The keeper stays; every playlist is repointed from each extra to it, then the extras go to the trash.", ""]
-    for g in plan["groups"]:
-        if g["hold"] is None:
-            out += [_line("**keep**", g["keep"])] + [_line("extra", e) for e in g["extras"]] + [""]
+    plain = [g for g in plan["groups"] if g["hold"] is None and g.get("note") != LOSSLESS_PAIR]
+    pairs = [g for g in plan["groups"] if g["hold"] is None and g.get("note") == LOSSLESS_PAIR]
+    for g in plain:
+        out += _group(g)
+    if not plain:
+        out += ["None besides the lossless pairs below." if pairs else "None.", ""]
+    if pairs:
+        out += ["## Lossless pairs, will be trashed", "",
+                "The keeper and at least one extra are lossless (often two masters). Michael released them on 2026-10-19 "
+                "(D35): every extra is repointed and trashed like any other group. To keep them, run "
+                "`plan --hold-lossless`.", ""]
+        for g in pairs:
+            out += _group(g)
     out += ["## Held groups (listed only)", "",
-            'Nothing here is touched. To act on a "both lossless" group, set its "hold" to null in plan.json.', ""]
+            'Nothing here is touched. A "both lossless" group is held only by `plan --hold-lossless`; a plain `plan` '
+            "acts on it.", ""]
     for g in plan["groups"]:
         if g["hold"] is not None:
-            out += [f"**{g['hold']}**", _line("**keep**", g["keep"])] + [_line("extra", e) for e in g["extras"]] + [""]
+            out += [f"**{g['hold']}**"] + _group(g)
     out += ["## Playlists to repoint", ""]
     out += [f"- {p['name']}: {len(p['before'])} → {len(p['after'])} entries" for p in plan["playlists"]]
     return "\n".join(out) + "\n"
@@ -651,6 +674,8 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("plan", help="read-only: write plan.json and report.md")
     p.add_argument("--out", type=Path, default=out_dir)
+    p.add_argument("--hold-lossless", action="store_true",
+                   help='hold a group whose extra is lossless beside a lossless keeper ("both lossless"; D35 acts on it)')
     r = sub.add_parser("repoint", help="repoint every playlist from each extra to its keeper, then scan")
     t = sub.add_parser("trash", help="with the worker stopped: move each extra no playlist holds to the trash, then scan")
     for x in (p, r, t):
@@ -665,7 +690,7 @@ def main(argv=None) -> int:
         x.add_argument("--poll-s", type=float, default=2.0, help=argparse.SUPPRESS)
     a = ap.parse_args(argv)
     if a.cmd == "plan":
-        plan = build_plan(a.navidrome_db, a.music_root, a.limit)
+        plan = build_plan(a.navidrome_db, a.music_root, a.limit, a.hold_lossless)
         print(f"{counts(plan)} → {write_plan(plan, a.out)}")
         return 0
     cfg = Config.from_env()

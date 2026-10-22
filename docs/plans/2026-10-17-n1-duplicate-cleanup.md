@@ -23,6 +23,20 @@ step order and its guards: the keeper is listed and on disk, `references()` is e
 goes through `move_to_trash`, beets forgets the file, a scan follows. The trash is reversible, so the cost of a wrong
 group is one `mv` and one playlist rewrite.
 
+## D35 (2026-10-19, Michael)
+
+Michael answered D35 in the run INBOX on 2026-10-19: "trash the extras … Override the hold default — apply D31
+literally." From R3 (2026-10-21) on, as built in `scripts/duplicate_cleanup.py`:
+- A **lossless pair** (an extra that is lossless beside a lossless keeper) is **released by default**: the group gets
+  `"hold": null` and `"note": "lossless pair: released by Michael 2026-10-19 (D35)"`, and `repoint` and `trash` treat it
+  like any other group (its lossy extras too).
+- The keeper is still `keep_rank`'s first file: lossless, then bit rate, then the properly filed path
+  (`library_map._copy_rank`), so of two flacs the one outside Compilations/Singles/`_` and without a beets ".1" stays.
+- `plan --hold-lossless` keeps the old behaviour: such a group gets `"hold": "both lossless"` and is listed only.
+- `report.md` lists the released pairs in their own section ("Lossless pairs, will be trashed", R3-02), so Michael sees
+  them before `trash`.
+- The "keeper missing on disk" hold is unchanged and wins over the release.
+
 ## Design — `python -m scripts.duplicate_cleanup plan | repoint | trash`
 
 One module, three commands, each safe to run twice. Files live in `$CLEANUP_DIR` (default `/data/duplicate-cleanup`,
@@ -36,7 +50,7 @@ i.e. `/srv/docker/crates/duplicate-cleanup/` on the host, inside the existing `/
 
 ### `plan` (N1-02) — read-only
 
-`build_plan(navidrome_db, music_root) -> dict`, `write_plan(plan, out_dir)`. Keeper = `group[0]`. `held_by` comes from
+`build_plan(navidrome_db, music_root, limit=None, hold_lossless=False) -> dict`, `write_plan(plan, out_dir)`. Keeper = `group[0]`. `held_by` comes from
 `playlist_edit.references(db, extra)` (navidrome.db `playlist_tracks`, so hidden rows on missing files and other users'
 playlists count), resolved to playlist names. `--limit N` keeps the first N unheld groups. Prints one counts line.
 
@@ -54,8 +68,8 @@ playlists count), resolved to playlist names. `--limit N` keeps the first N unhe
 
 - `path` is relative to the music root (navidrome.db's `media_file.path`), as `move_to_trash` wants it.
 - `hold` is `null` (act on it) or one reason; a held group is listed and never touched:
-  - `"both lossless"`: an extra is lossless beside a lossless keeper (**D35**: often two masters; Michael clears the
-    hold by editing it to `null` in `plan.json`, after which `keep_rank`'s order — the properly filed path — decides);
+  - `"both lossless"`: only with `plan --hold-lossless`, an extra is lossless beside a lossless keeper (**D35** as
+    Michael answered it, above: by default such a group is released, with a `note`, and `keep_rank` decides);
   - `"keeper missing on disk"`: `music_root / keep.path` is not a file;
   - `"keeper missing in Navidrome"`: the keeper's `media_file.missing` is set. `load()` returns present rows only, so
     `plan` cannot produce this one; `repoint` and `trash` report it from their own re-check (below).
@@ -65,7 +79,7 @@ playlists count), resolved to playlist names. `--limit N` keeps the first N unhe
   keeper is already there. `repoint` does not replay it; it is for the report and for Michael to read.
 
 **Report** (`report.md`): counts line; groups to act on (keeper, each extra with format, bit rate and playlists);
-held groups with the reason; playlists to repoint with `before → after` entry counts. Not copied into `docs/` by the
+"Lossless pairs, will be trashed" (the groups with the D35 note, only when there are any); held groups with the reason; playlists to repoint with `before → after` entry counts. Not copied into `docs/` by the
 tool (Michael copies it by hand if he wants it in the GitHub app).
 
 ### Recompute before acting (both `repoint` and `trash`)
@@ -203,7 +217,7 @@ crates.db not repointed (…); run again" (N5-02 I1).
 | Refuse while the worker runs | N1-04 | another fd holds `worker.lock` → `CleanupRefused("stop the worker first")` |
 | A pair no longer in one `duplicate_groups` group is skipped | N1-03, N1-04 | retag the extra in the fake after `plan` → `skipped: no longer a duplicate of <keeper>`, no write |
 | Keeper on disk and not missing in navidrome.db | N1-02 (hold), N1-03, N1-04 | keeper file absent → held at plan; keeper removed from the fake / marked missing after plan → `skipped: keeper missing` |
-| Held groups are never touched | N1-02, N1-03, N1-04 | two flac copies → `both lossless`, no `playlists` entry, repoint/trash skip it |
+| Held groups are never touched | N1-02, N1-03, N1-04 | two flac copies with `--hold-lossless` → `both lossless`, no `playlists` entry, repoint/trash skip it (by default, D35, they are released with a `note`) |
 | Every move has its `MOVES.txt` line before it happens | N1-04 | read back `mv <quoted trash path> <quoted library path>`; `before=` hook sees the line already written |
 | Every playlist edit has its reverse line before the write | N1-03 | log lines exist with the fixture's `before` even when the fake's `updatePlaylist` raises; replaying them newest first restores the fixture order |
 | Only `playlist_edit` edits playlists | N1-03 | `srv.state.requests` holds no `updatePlaylist` outside `repoint_everywhere`'s; `--dry-run` sends none |
@@ -243,17 +257,18 @@ mirror, which is why the repoint jsonl, not the exports, is the playlist undo.
 1. **Before:** `scripts/snapshot-crates-db.sh --suffix pre-<run>` (crates.db and navidrome.db, each integrity-checked);
    note the last restic run and the running image; **check** is green.
 2. `docker compose exec -T worker python3 -m scripts.duplicate_cleanup plan` → read `duplicate-cleanup/report.md`;
-   clear any `both lossless` hold you want acted on by setting it to `null` in `plan.json`.
+   read its lossless pairs (D35: released by default; `plan --hold-lossless` holds them instead).
 3. `docker compose exec -T worker python3 -m scripts.duplicate_cleanup repoint --dry-run`, then `repoint --limit 5`
    (it waits for its scan), **check**; `--limit 50`, check; all, check. Then
    `docker compose exec -T crates python3 -m crates.cli reconcile`.
 4. `docker compose stop worker`; `docker compose run --rm --no-deps worker python3 -m scripts.duplicate_cleanup trash --dry-run`;
    `trash --limit 5` (it waits for its scan), **check**; `--limit 50`, check; all, check. Every refusal is read before
    going on.
-5. `docker compose up -d worker`. Expected end state: 831 − 115 + the extras of held groups songs listed (**730** if
-   the 9 `both lossless` groups stay held: they hold 14 extras, 9 lossless and 5 lossy, and a hold covers the whole
-   group), 0 playlist rows on a missing file, check green. Do not purge missing files in Navidrome until you are sure:
-   the purge is what makes a restored file come back under a new id.
+5. `docker compose up -d worker`. Expected end state: 831 − 115 + the extras of held groups songs listed (**716** with
+   D35 as Michael answered it, every group acted on; **730** with `--hold-lossless`, the 9 `both lossless` groups held: they hold
+   14 extras, 9 lossless and 5 lossy, and a hold covers the whole group), 0 playlist rows on a missing file, check
+   green. Do not purge missing files in Navidrome until you are sure: the purge is what makes a restored file come
+   back under a new id.
 
 ## Review focus
 
