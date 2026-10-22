@@ -188,8 +188,9 @@ def render(plan: dict) -> str:
         out += ["None besides the lossless pairs below." if pairs else "None.", ""]
     if pairs:
         out += ["## Lossless pairs, will be trashed", "",
-                "Keeper and extra are both lossless (often two masters). Michael released them on 2026-10-19 (D35): "
-                "they are repointed and trashed like any other group. To keep them, run `plan --hold-lossless`.", ""]
+                "The keeper and at least one extra are lossless (often two masters). Michael released them on 2026-10-19 "
+                "(D35): every extra is repointed and trashed like any other group. To keep them, run "
+                "`plan --hold-lossless`.", ""]
         for g in pairs:
             out += _group(g)
     out += ["## Held groups (listed only)", "",

@@ -57,7 +57,7 @@ The trash step stays at `--dry-run` until you lift that: review findings I1 and 
 
 1. Plan: `docker compose exec -T worker python3 -m scripts.duplicate_cleanup plan`; read
    `/srv/docker/crates/duplicate-cleanup/report.md`. Its section "Lossless pairs, will be trashed" lists the
-   groups with two lossless copies (9 on 2026-10-17; one whose keeper file is missing is held instead): you said
+   groups with two lossless copies (9 on 2026-10-17; a pair whose keeper file is missing is held instead): you said
    2026-10-19 to trash those extras too (D35), so nothing needs editing. To keep them after all, run
    `plan --hold-lossless` instead.
    *Undo:* nothing is written; `plan` keeps the old file as `plan-<made_at>.json`.
