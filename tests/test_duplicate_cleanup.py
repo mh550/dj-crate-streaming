@@ -18,6 +18,7 @@ from subsonic.fake_server import FakeSubsonicServer
 S9 = {"id": "s9", "title": "Move Your Body", "artist": "Marshall Jefferson", "album": "The House Music Anthem",
       "duration": 383, "bitRate": 900, "suffix": "flac", "size": 40000000,
       "path": "Marshall Jefferson/The House Music Anthem/01 - Move Your Body.flac"}
+S3 = "Marshall Jefferson/The House Music Anthem/01 - Move Your Body.mp3"
 
 
 def add_song(srv, song, music=None):
@@ -110,8 +111,43 @@ def test_a_lossless_pair_is_released_by_default_with_the_d35_note(lib):
     assert {p["id"]: p["after"] for p in plan["playlists"]} == {"pl-1": ["s1", "s2", "s9"], "pl-2": ["s9", "s4", "s5"]}
     assert dc.counts(plan).startswith("1 group to act on (2 extras, 1 in a playlist), 0 held")
     report = dc.render(plan)
-    acting = report.split("## Groups to act on")[1].split("## Held groups")[0]
-    assert S9["path"] in acting and "Compilations/House/05 - Move Your Body.flac" in acting
+    pairs = report.split("## Lossless pairs, will be trashed")[1].split("## Held groups")[0]
+    assert S9["path"] in pairs and "Compilations/House/05 - Move Your Body.flac" in pairs
+
+
+def only_a_lossless_pair(srv, music):
+    """s9 and s10 alone (s3 gone, its playlist rows now s10's): the plan's only group is a released lossless pair."""
+    lossless_pair(srv, music)
+    for p in srv.state.playlists.values():
+        p["songs"] = ["s10" if s == "s3" else s for s in p["songs"]]
+    del srv.state.songs["s3"]
+    (music / S3).unlink()
+    srv.state.sync()
+
+
+def test_report_md_lists_lossless_pairs_in_their_own_section_before_the_held_groups(lib, tmp_path):
+    srv, db, music = lib
+    only_a_lossless_pair(srv, music)
+    out = tmp_path / "cleanup"
+    dc.write_plan(dc.build_plan(db, music), out)
+    report = (out / "report.md").read_text()
+    head = "## Lossless pairs, will be trashed"
+    assert report.count(head) == 1
+    assert report.index("## Groups to act on") < report.index(head) < report.index("## Held groups")
+    pairs = report.split(head)[1].split("## Held groups")[0]
+    assert f"**keep** `{S9['path']}`" in pairs
+    assert "extra `Compilations/House/05 - Move Your Body.flac`" in pairs and "in playlists: Disco Edits, Chicago 86" in pairs
+    assert "--hold-lossless" in pairs
+    acting = report.split("## Groups to act on")[1].split(head)[0]
+    assert "Move Your Body" not in acting and "None besides the lossless pairs below." in acting   # listed once
+
+
+def test_a_plan_without_lossless_pairs_has_no_such_section(lib, tmp_path):
+    srv, db, music = lib
+    report = dc.render(dc.build_plan(db, music))
+    assert "Lossless pairs" not in report and "None besides" not in report
+    lossless_pair(srv, music)
+    assert "Lossless pairs" not in dc.render(dc.build_plan(db, music, hold_lossless=True))
 
 
 def test_a_lossy_pair_has_no_note(lib):
@@ -374,6 +410,28 @@ def test_repoint_twice_sends_no_second_update_but_scans_again(lib, tmp_path):
     assert updates(srv) == [] and len(scans(srv)) == 1 and not (tmp_path / "r2.jsonl").exists()
 
 
+def test_a_released_lossless_pair_is_repointed_like_a_lossy_extra(lib, tmp_path):
+    srv, db, music = lib
+    only_a_lossless_pair(srv, music)
+    plan = dc.build_plan(db, music)
+    assert [g.get("note") for g in plan["groups"]] == [dc.LOSSLESS_PAIR]
+    srv.state.requests.clear()
+    assert run(srv, db, plan, tmp_path / "r.jsonl") == {"s10": "repointed 2 playlists", "(scan)": "done"}
+    assert songs(srv) == {"pl-1": ["s1", "s2", "s9"], "pl-2": ["s9", "s4", "s5"]}
+    assert [(x["playlist_id"], x["extra"], x["keeper"], x["after"]) for x in log_lines(tmp_path / "r.jsonl")] == [
+        ("pl-1", "s10", "s9", ["s1", "s2", "s9"]), ("pl-2", "s10", "s9", ["s9", "s4", "s5"])]
+    assert len(scans(srv)) == 1
+
+
+def test_a_hold_lossless_plan_is_skipped_by_repoint(lib, tmp_path):
+    srv, db, music = lib
+    only_a_lossless_pair(srv, music)
+    plan = dc.build_plan(db, music, hold_lossless=True)
+    srv.state.requests.clear()
+    assert run(srv, db, plan, tmp_path / "r.jsonl") == {"s10": "skipped: held (both lossless)"}
+    assert srv.state.requests == []
+
+
 def test_limit_acts_on_the_first_groups_only(lib, tmp_path):
     srv, db, music = lib
     second_group(srv, music)
@@ -517,8 +575,6 @@ import shutil
 from crates.store import CrateStore
 from crates.trash import move_to_trash, restore
 from sourcing.worker import hold_lock
-
-S3 = "Marshall Jefferson/The House Music Anthem/01 - Move Your Body.mp3"
 
 
 @pytest.fixture
@@ -811,6 +867,28 @@ def test_a_held_group_is_never_trashed(tr):
     plan = json.loads(json.dumps(tr.plan))
     plan["groups"][0]["hold"] = "both lossless"
     assert tr.run(plan) == {"s3": "skipped: held (both lossless)"} and (tr.music / S3).is_file()
+
+
+def lossless_trash(lib, tmp_path, hold_lossless, dry_run=True):
+    """The released (or, with hold_lossless, held) lossless pair after repoint; returns trash's result."""
+    srv, db, music = lib
+    only_a_lossless_pair(srv, music)
+    plan = dc.build_plan(db, music, hold_lossless=hold_lossless)
+    (tmp_path / "cleanup").mkdir()
+    dc.repoint(plan, _client(srv), db, tmp_path / "cleanup" / "repoint-1.jsonl", poll_s=0)
+    (tmp_path / "trash").mkdir()
+    return dc.trash(plan, _client(srv), db, music, tmp_path / "trash", tmp_path / "worker.lock", forget=lambda p: True,
+                    log_path=tmp_path / "cleanup" / "trash-1.jsonl", dry_run=dry_run, poll_s=0)
+
+
+def test_a_released_lossless_pair_is_trashed_like_a_lossy_extra(lib, tmp_path):
+    assert lossless_trash(lib, tmp_path, hold_lossless=False) == {"s10": "dry run: would move"}
+
+
+def test_a_hold_lossless_plan_is_skipped_by_trash(lib, tmp_path):
+    held = {"s10": "skipped: held (both lossless)"}
+    assert lossless_trash(lib, tmp_path, hold_lossless=True, dry_run=False) == held
+    assert (lib[2] / "Compilations/House/05 - Move Your Body.flac").is_file() and not any((tmp_path / "trash").iterdir())
 
 
 def test_limit_trashes_the_first_groups_only(tr):

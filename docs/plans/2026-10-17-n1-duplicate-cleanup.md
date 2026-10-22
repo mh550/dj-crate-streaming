@@ -79,7 +79,7 @@ playlists count), resolved to playlist names. `--limit N` keeps the first N unhe
   keeper is already there. `repoint` does not replay it; it is for the report and for Michael to read.
 
 **Report** (`report.md`): counts line; groups to act on (keeper, each extra with format, bit rate and playlists);
-held groups with the reason; playlists to repoint with `before → after` entry counts. Not copied into `docs/` by the
+"Lossless pairs, will be trashed" (the groups with the D35 note, only when there are any); held groups with the reason; playlists to repoint with `before → after` entry counts. Not copied into `docs/` by the
 tool (Michael copies it by hand if he wants it in the GitHub app).
 
 ### Recompute before acting (both `repoint` and `trash`)
@@ -265,7 +265,7 @@ mirror, which is why the repoint jsonl, not the exports, is the playlist undo.
    `trash --limit 5` (it waits for its scan), **check**; `--limit 50`, check; all, check. Every refusal is read before
    going on.
 5. `docker compose up -d worker`. Expected end state: 831 − 115 + the extras of held groups songs listed (**716** with
-   D35's default, every group acted on; **730** with `--hold-lossless`, the 9 `both lossless` groups held: they hold
+   D35 as Michael answered it, every group acted on; **730** with `--hold-lossless`, the 9 `both lossless` groups held: they hold
    14 extras, 9 lossless and 5 lossy, and a hold covers the whole group), 0 playlist rows on a missing file, check
    green. Do not purge missing files in Navidrome until you are sure: the purge is what makes a restored file come
    back under a new id.

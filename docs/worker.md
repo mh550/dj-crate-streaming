@@ -429,9 +429,10 @@ snapshots: `scripts/snapshot-crates-db.sh --suffix pre-<run>` writes `crates.db.
 docker compose exec -T worker python3 -m scripts.duplicate_cleanup plan
 ```
 
-Read `duplicate-cleanup/report.md`. Groups whose keeper file is not on disk, and groups with two lossless copies,
-are held and listed only (D35). To act on a "both lossless" group, set its `"hold"` to `null` in `plan.json`. Leave
-"keeper missing on disk" holds alone. A re-run of `plan` keeps the old `plan.json` as `plan-<made_at>.json`.
+Read `duplicate-cleanup/report.md`. Its section "Lossless pairs, will be trashed" lists the groups with two lossless
+copies: Michael chose on 2026-10-19 to trash those extras too (D35), so `repoint` and `trash` act on them. To keep
+them instead, run `plan --hold-lossless`: they are then held as "both lossless" and listed only. Groups whose keeper
+file is not on disk are always held; leave them alone. A re-run of `plan` keeps the old `plan.json` as `plan-<made_at>.json`.
 
 **3. Repoint (the worker may keep running).**
 
@@ -518,7 +519,7 @@ Every line trash can print, and what to do (N is "1 playlist entry" or "N playli
 | `moved to <trash path>` | Done. `(beets still lists it)` after it: beets' forget failed; the next run retries it. |
 | `dry run: would move` | The real run would move it. |
 | `already gone` | An earlier run moved it, or it is gone otherwise; no playlist holds it. |
-| `skipped: held (<why>)` | The plan holds the group (D35). |
+| `skipped: held (<why>)` | The plan holds the group: keeper missing on disk, or "both lossless" from `plan --hold-lossless` (D35). |
 | `skipped: moved since the plan (now <path>)` | navidrome.db lists the extra elsewhere now. Re-run `plan`. |
 | `skipped: keeper missing` | The keeper is not a present row or not a file on disk. Leave it; re-run `plan`. |
 | `skipped: no longer a duplicate of <keeper>` | A retag since the plan. Re-run `plan`. |
@@ -538,7 +539,7 @@ Every line trash can print, and what to do (N is "1 playlist entry" or "N playli
 | `no beets here (DJ_WORKER is not 1): …` (stderr) | Not run in `run --rm worker`: beets keeps rows for the trashed paths. |
 | `event not logged (…): …` (stderr) | crates.db was busy; the jsonl logs stay the record. |
 
-Expected end state: 730 songs listed if the 9 "both lossless" groups stay held, 0 playlist rows on a missing file,
+Expected end state: 716 songs listed (730 after `plan --hold-lossless`, the 9 "both lossless" groups held), 0 playlist rows on a missing file,
 **check** green. Do not purge missing files in Navidrome until you are sure: the purge is what makes a restored file
 come back under a new id.
 

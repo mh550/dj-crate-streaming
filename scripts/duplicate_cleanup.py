@@ -171,19 +171,33 @@ def _line(label: str, f: dict) -> str:
     return f"- {label} `{f['path']}` · {f['suffix']} {f['bit_rate'] or '?'} kbps · {f['id']}{use}"
 
 
+def _group(g: dict) -> list[str]:
+    return [_line("**keep**", g["keep"])] + [_line("extra", e) for e in g["extras"]] + [""]
+
+
 def render(plan: dict) -> str:
     out = ["# Duplicate cleanup plan", "",
            f"Made {plan['made_at']} by `python3 -m scripts.duplicate_cleanup plan`. Nothing was moved or edited.", "",
            f"- {counts(plan)}", "", "## Groups to act on", "",
            "The keeper stays; every playlist is repointed from each extra to it, then the extras go to the trash.", ""]
-    for g in plan["groups"]:
-        if g["hold"] is None:
-            out += [_line("**keep**", g["keep"])] + [_line("extra", e) for e in g["extras"]] + [""]
+    plain = [g for g in plan["groups"] if g["hold"] is None and "note" not in g]
+    pairs = [g for g in plan["groups"] if g["hold"] is None and "note" in g]
+    for g in plain:
+        out += _group(g)
+    if not plain:
+        out += ["None besides the lossless pairs below." if pairs else "None.", ""]
+    if pairs:
+        out += ["## Lossless pairs, will be trashed", "",
+                "Keeper and extra are both lossless (often two masters). Michael released them on 2026-10-19 (D35): "
+                "they are repointed and trashed like any other group. To keep them, run `plan --hold-lossless`.", ""]
+        for g in pairs:
+            out += _group(g)
     out += ["## Held groups (listed only)", "",
-            'Nothing here is touched. To act on a "both lossless" group, set its "hold" to null in plan.json.', ""]
+            'Nothing here is touched. A "both lossless" group is held only by `plan --hold-lossless`; a plain `plan` '
+            "acts on it.", ""]
     for g in plan["groups"]:
         if g["hold"] is not None:
-            out += [f"**{g['hold']}**", _line("**keep**", g["keep"])] + [_line("extra", e) for e in g["extras"]] + [""]
+            out += [f"**{g['hold']}**"] + _group(g)
     out += ["## Playlists to repoint", ""]
     out += [f"- {p['name']}: {len(p['before'])} → {len(p['after'])} entries" for p in plan["playlists"]]
     return "\n".join(out) + "\n"
