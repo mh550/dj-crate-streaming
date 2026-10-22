@@ -268,7 +268,7 @@ JSON, a wishlist row's data) already carries the key at top level; read from the
 **Per album.** Inside the bundle (`SoulSync:core/soulseek_client.py:2099-2154`):
 - the chosen folder's transfers end `complete`, `partial` (all terminal, some failed), `failed`, `timeout` (6 h
   default, `SoulSync:core/download_plugins/album_bundle.py:61-65`) or `unresolved` (slskd says done, no local file
-  after 45 s). A peer frozen for 180 s has its stuck transfers cancelled with `remove=True` and counted failed
+  after 45 s). When nothing in the bundle has moved for 180 s, its stuck transfers are cancelled with `remove=True` and counted failed
   (`SoulSync:core/soulseek_client.py:2405-2626`);
 - unless `unresolved`, it walks up to **4** alternative folders in pre-flight order, **each of which must cover every
   track still owed**; a folder that cannot is skipped, not used partly (`SoulSync:core/soulseek_client.py:2197-2259`);

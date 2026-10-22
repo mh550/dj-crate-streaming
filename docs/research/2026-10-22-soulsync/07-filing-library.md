@@ -98,8 +98,8 @@ snapshot the embedded art in memory, `clear_pictures()`, **`tags.clear()` and sa
   The recording lookup uses title, artist, artist MBID, file duration and the file's ISRC
   (`SoulSync:core/metadata/source.py:396-450`);
 - streaming-source ids as `TXXX`/plain keys (Spotify, iTunes, Deezer, Tidal, Qobuz, HiFi, JioSaavn, AudioDB, Genius,
-  Beatport), each with its own toggle, default on (`SoulSync:core/metadata/source.py:124-167`,
-  `SoulSync:core/metadata/source.py:218-219`);
+  Beatport), each with its own toggle, default on (`SoulSync:core/metadata/source.py:124-168`,
+  `SoulSync:core/metadata/source.py:218-219`; Beatport's id at `SoulSync:core/metadata/source.py:1433-1434`);
 - BPM (`TBPM`), key (`TKEY`, Beatport), AudioDB mood/style, a merged genre list of at most 5, copyright, label, and
   Last.fm/Genius/Bandcamp URLs; the first source with a value wins (`SoulSync:core/metadata/source.py:1248-1440`). The
   lookup order is `metadata_enhancement.post_process_order` (`SoulSync:core/settings.py:797`);
