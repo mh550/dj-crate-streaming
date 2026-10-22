@@ -354,7 +354,7 @@ def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: C
         for m, lead in pending:
             ext = queued_as[m.row.position] = store.add_external_wanted(lead, m.row.title, album=m.row.album, duration_s=m.row.duration_s,
                                             source=source, playlist_id=playlist_id, position=m.row.position, tier=tier,
-                                            default_tier=at)
+                                            default_tier=at, reask=name)   # a failed row is asked again (M9 §8h)
             if m.status == "ambiguous" and store.external(ext)["status"] in ("needs_source", "review"):
                 store.set_external_status(ext, "review", f"ambiguous ({m.why}): " + ", ".join(m.candidates))
         store.record_import_order(playlist_id, [         # N4: the newest real import is the playlist's order

@@ -480,3 +480,43 @@ def test_a_filed_track_wanted_by_two_imports_is_due_in_both():
         store.set_external_status(ext, "ok", "filed")
         assert sorted((d["playlist_id"], d["wanted_id"], d["song_id"]) for d in store.due_placements()) == sorted(
             [(a.playlist_id, ext, "k9"), (b.playlist_id, ext, "k9")])
+
+
+def test_a_reimport_reuses_a_failed_row_instead_of_queuing_a_second():
+    # M9 §8h (R6-03): the failed, unfiled row goes back to needs_source with its own ext-N id.
+    with FakeSubsonicServer() as srv:
+        _lib(srv)
+        c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
+        first = ip.import_playlist("Tea tent", ROWS, c, store, source="s")
+        [ext] = [r["song_id"] for r in store.external_for_playlist(first.playlist_id) if r["position"] == 2]
+        store.set_wanted_status(ext, "failed", "download timed out")
+        count = store.db.execute("SELECT count(*) FROM external_wanted").fetchone()[0]
+        ip.import_playlist("Tea tent", ROWS, c, store, source="s")
+        row = store.external(ext)
+        assert (row["status"], row["reason"]) == ("needs_source", "re-asked by import of Tea tent")
+        assert store.db.execute("SELECT count(*) FROM external_wanted").fetchone()[0] == count
+        assert (2, None, ext) in _order(store, first.playlist_id)
+        assert [r["song_id"] for r in store.wanted() if r["title"].startswith("Piano Joint")] == [ext]
+
+
+def test_a_reimported_failed_ambiguous_row_is_a_review_row_again():
+    with FakeSubsonicServer() as srv:
+        _lib(srv)
+        c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
+        first = ip.import_playlist("Tea tent", ROWS, c, store, source="s")
+        [ext] = [r["song_id"] for r in store.external_for_playlist(first.playlist_id) if r["position"] == 4]
+        store.set_wanted_status(ext, "failed", "download timed out")
+        ip.import_playlist("Tea tent", ROWS, c, store, source="s")
+        assert store.external(ext)["status"] == "review" and store.external_count() == 2
+        assert store.external(ext)["reason"].startswith("ambiguous (several versions")
+
+
+def test_a_dry_run_reimport_leaves_a_failed_row_failed():
+    with FakeSubsonicServer() as srv:
+        _lib(srv)
+        c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
+        first = ip.import_playlist("Tea tent", ROWS, c, store, source="s")
+        [ext] = [r["song_id"] for r in store.external_for_playlist(first.playlist_id) if r["position"] == 2]
+        store.set_wanted_status(ext, "failed", "download timed out")
+        ip.import_playlist("Tea tent", ROWS, c, store, source="s", dry_run=True)
+        assert store.external(ext)["status"] == "failed"

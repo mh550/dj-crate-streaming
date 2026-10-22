@@ -628,7 +628,9 @@ profile for `dj-crates-web` decides. It is the default only for a database that 
   `playlist_gone` (reconcile); `pick`, `tagged`, `filed`, `renamed`, `reference`, `kept_both`, `upgrade_queued`,
   `proposal`, `replace` (approvals and copy replacement); `interrupted` (an approval cut off by a restart); `placed`,
   `not_placed` (placement); `playlist_health` (the export step: which playlists have entries on a missing song, logged
-  only when that list changes).
+  only when that list changes); `reasked` (import-playlist: a re-import put a failed, unfiled row back to
+  `needs_source` with its own id instead of queuing a second one, M9 §8h; the detail keeps the old reason) and
+  `superseded` (an older failed duplicate of that row, queued before §8h, set to `removed`; detail: the old reason).
 
 ```
 cd /srv/docker
