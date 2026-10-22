@@ -3,6 +3,35 @@
 What this file is: the shared memory of the agent harness for this run. Each session appends one entry **at the top**
 (newest first) when it finishes a feature: what it built, what it learned, what it asks. Nobody edits older entries.
 
+### 2026-10-22 verify R6
+
+All steps re-run: `.harness/check.sh` on tests/test_acoustid.py test_identity.py test_scorer.py test_identity_backfill.py test_import_playlist.py test_crates.py test_web_m8.py: 380 passed; lib/check.sh green (1661 tests, cached). Code read from `git diff origin/main...HEAD`.
+
+| Feature | Step | What you ran or read | What you saw | Holds |
+|---|---|---|---|---|
+| R6-01 | 1 | read sourcing/acoustid.py | `Cache` (path,size,mtime_ns; last line wins; fsync append), `make_lookup(key,cache,clock,sleep)`, `_SHARED = Limiter()` at 1/3 s, `reset_shared_limiter`, key only in POST body | yes |
+| R6-01 | 2 | read scripts/identity_backfill.py:63,488; test at :1240-1250 | `ACOUSTID_CACHE` constant used in `propose`; apply/revert test asserts the cache file is never opened | yes |
+| R6-01 | 3 | tests/test_acoustid.py: test_a_cached_file_is_neither_..., test_a_changed_mtime_or_size_..., test_a_corrupt_or_torn_cache_line_..., test_lookups_are_spaced_..., test_the_key_never_reaches_the_cache_file | all pass; assert 1 opener call/1 line, 2nd+3rd call after mtime/size change, corrupt skipped, slept == [1/3-0.1, 1/3], "s3cret-key" not in file | yes |
+| R6-01 | 4 | tests/test_identity_backfill.py::test_a_second_propose_asks_acoustid_nothing_new | passes; second propose `len(asked) == 2` unchanged (zero new calls), retag asks again | yes |
+| R6-01 | 5 | `git log` | commit `4cc568e R6-01: AcoustID cache and 3 req/s limiter` | yes |
+| R6-01 | 6 | lib/check.sh; branch vs origin | green, 1661 tests; branch pushed (only HARNESS commits ahead) | yes |
+| R6-02 | 1 | read sourcing/identity.py diff; tests/test_identity.py strip_trackno cases | wanted-aware bare `NN ` rule; `99 Luftballons`→kept, `01 99 Luftballons`→`99 Luftballons`, `03 - `/`03. `/`A1 ` strip as before; parse_filename passes wanted; scorer.py:93,156 and fetch.py:414 pass the title | yes |
+| R6-02 | 2 | tests/test_scorer.py::test_99_luftballons_is_a_title_match (3 filenames incl. `Nena - 99 Luftballons.flac`) | passes; asserts not rejected and reason `name 1.00` | yes |
+| R6-02 | 3 | tests/test_identity_backfill.py::test_a_disambiguation_only_version_fits_a_file_titled_with_it, ..._without_a_disambiguation_is_unchanged | pass; `12" version` fits `(12'' Version)` file (cls search), misfits plain (none); no-disambiguation unchanged | yes |
+| R6-02 | 4 | full identity_backfill tests, `git diff` of existing tests | all green; only additions to existing tests; `sort` prefers title-fits so no confirmed/isrc row changes | yes |
+| R6-02 | 5 | `git log` | commit `54833e1 R6-02: keep '99 Luftballons'; disambiguation-only versions fit` | yes |
+| R6-02 | 6 | lib/check.sh; branch vs origin | green, 1661 tests; pushed | yes |
+| R6-03 | 1 | read crates/store.py diff | `find_external(..., include_failed)` returns newest failed unfiled row; `_reask` sets needs_source `re-asked by import of <playlist>`, same ext-N, `reasked` event; filed rows stay live; removed never revived | yes |
+| R6-03 | 2 | tests/test_import_playlist.py::test_a_reimport_reuses_a_failed_row_...; tests/test_crates.py::test_a_reask_* (5 tests) | pass; same ext id, status/reason match, count(*) unchanged, `(2, None, ext)` in import_order; store tests cover direct path | yes |
+| R6-03 | 3 | tests/test_m8_followup.py::test_wanted_lists_a_reimported_failed_row_once_and_approve_accepts_it | passes; `/api/wanted` shows one row `needs_source`, POST approve → 200 | yes |
+| R6-03 | 4 | `git log` | commit `987193c R6-03: re-import reuses a failed row` | yes |
+| R6-03 | 5 | lib/check.sh; branch vs origin | green, 1661 tests; pushed | yes |
+| R6-04 | 1 | read the §8 diff (19 files) for each listed point | key not in cache/messages; cache keyed on `st_mtime_ns`+size; `_SHARED` module-level shared by two make_lookups (tested); strip_trackno without wanted unchanged (parametrized test); 8c only via title-fit-first; 8h ignores `removed` | yes |
+| R6-04 | 2 | tests added post-review: test_a_disambiguation_only_duplicate_never_spoils..., test_an_import_after_its_playlist_was_deleted_queues_the_track_again, test_a_reask_prefers_a_live_row_and_never_revives_... | present and pass, fix in `sort`/`find_external` | yes |
+| R6-04 | 3 | read docs/specs/...m9-remaining-ownership.md, docs/identity.md, docs/worker.md diffs | 8a,8b,8c,8h say built (R6); identity.md has track-number and disambiguation rules; worker.md names `acoustid-cache.jsonl` | yes |
+| R6-04 | 4 | `git log` | commit `684edbe R6-04: review and simplify M9 §8 items` | yes |
+| R6-04 | 5 | lib/check.sh; branch vs origin | green, 1661 tests; pushed | yes |
+
 ### 2026-10-22 03:10 · R6-04 · passes
 - Review: an Opus reviewer read scratch `r6.diff` (+ `r6-extra.diff` for musicbrainz.py/cli.py). The 6 checks: key never on disk or printed, cache key size + `mtime_ns`, one process-wide limiter, `strip_trackno` without `wanted` identical (200k-string fuzz against the old `sub`), and 8h never revives `removed`: all hold. 8c recall-only did **not** hold.
 - Fixed test-first: (I2) `scripts/identity_backfill.py` `sort`: a disambiguation-only fit counts only when nothing fits by its title, so a unique `isrc`/`search` pick of before 8c can no longer become `ambiguous` (the R6-02 test that pinned the tie is replaced). (I1) `crates/store.py` `find_external(include_failed=True)` (the import path): a `removed` row ("playlist deleted") never answers, so a re-import after a deleted playlist queues a fresh row; the removed one stays untouched. (Minor) `_reask` keeps an older duplicate holding an approval and repoints `import_order` to the survivor.

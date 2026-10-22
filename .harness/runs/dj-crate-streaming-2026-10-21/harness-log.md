@@ -32,3 +32,4 @@
 - 2026-10-22 01:38 · R6-02 · claude-opus-5-5 · passes=true · 22 min · 16/26 passing
 - 2026-10-22 02:25 · R6-03 · claude-opus-5-5 · passes=true · 47 min · 17/26 passing
 - 2026-10-22 02:55 · R6-04 · claude-opus-5-5 · passes=true · 29 min · 18/26 passing
+- 2026-10-22 02:55 · merged main into harness/dj-crate-streaming-2026-10-21
