@@ -8,6 +8,27 @@ Michael steers through `INBOX.md` on this branch (first line `status: run|pause|
 Every session reads `INBOX.md` and this file first, then the spec `docs/specs/2026-10-22-soulsync-review.md` and the
 brief `brief.md` (the brief wins on scope).
 
+### 2026-10-22 16:00 · verify V3
+
+Independent re-run, both features hold (14 steps). Nothing live touched, no code or doc edited. Citation check on README: no BAD line. Sampled ~25 cites against the clone and our files; all supported their sentences.
+
+| Feature | Step | What you ran or read | What you saw | Holds |
+|---|---|---|---|---|
+| V3-01 | 1 | awk-style count of `| **` rows in lines 32-52; read header and every row; sampled cites (matching_engine 1307-1335, monitor 690/759/936, gunicorn 4-6, automation_engine 77-83/238-243, settings 745-748) | 11 rows in the listed order, 4 columns as required; mechanism cells link a section anchor or cite; sampled lines support the cells | yes |
+| V3-01 | 2 | read `### The 2026-10-21 failure classes` (53-126) | 5 numbered items, each with SoulSync / Ours did / Planned bullets, cites to the downloads spec findings table (23-50, 25, 27, 44-50) and S1/S2 features | yes |
+| V3-01 | 3 | read `### Michael's decisions`; `sed -n` of design.md 61/72/76 and pivot spec 19,21,22,24,26,30,39 | table has D7, D18, D22/D29, D24, D26, D27, D31/D35, D44 with five-word gloss, verdict and cites; spec lines match the named decisions | yes |
+| V3-01 | 4 | read Operations row; `sed -n` CLAUDE.md 43-68; SoulSync docker-compose.yml 8-9, automation_engine 238-243; grep for fcntl/filelock stated as *absence inferred* | ours cell cites CLAUDE.md Live system (deploy, restic, lock, Check); SoulSync cell cites Dockerfile, compose, entrypoint.sh, backup and lock evidence; lines match | yes |
+| V3-01 | 5 | progress.md citation loop over README.md | no BAD line | yes |
+| V3-01 | 6 | `grep -c unverified` (13 in README); read all of 32-145 | uncited statements carry `*unverified*` or *absence inferred*; sampled mechanism sentences all have cite or link | yes |
+| V3-01 | 7 | `lib/check.sh` | green (cached for this tree), 1757 tests; docs only | yes |
+| V3-02 | 1 | `grep -n '^### '` (171,229,267,292,337); B options vs spec lines 35-37 | five parts B/C/D/E/Crates; B has one paragraph each for options 1-3 matching spec names; Crates covers sync, Mixxx, D24, D26, D7 | yes |
+| V3-02 | 2 | read each part's first line and Cost line; read lines 146-170 | each part starts `**SoulSync: partly/has/no.**`; each ends `from SoulSync: … / build ours: …` with one-sentence reasons; harness night defined once at 154 | yes |
+| V3-02 | 3 | read E (292-336); spec 41-42 | spec's three steps quoted and marked Present / Different / Present-with-difference with cites; links 04-soulseek.md#when-a-track-fails | yes |
+| V3-02 | 4 | read Crates (337-399); sampled playlist_edit.py:38, architecture.md:76-77, navidrome_client 1216-1226, sync/playlist_edit 96-108 | states shared Navidrome playlists yes if shared account, beets index not directly, two writers vs D18, links 07-filing-library.md; cites match | yes |
+| V3-02 | 5 | progress.md citation loop | no BAD line | yes |
+| V3-02 | 6 | grep unverified; sampled request.py:287-306, monitor 410-413, release_identity 80-83, web_server 16757-16762, enrichment 110-123 | unverified marks on estimates, native app, forks, Mixxx, crate concept; sampled cites support their sentences | yes |
+| V3-02 | 7 | `lib/check.sh` | green (cached), 1757 tests | yes |
+
 ### 2026-10-22 14:27 · V3-02 · passes
 
 - **What changed:** README.md `## Fit to goals` (docs only; 1757 tests before and after). It defines "harness night" once, cites the S-run as 23 features ≈ 3 nights, and names one fixed setup cost (≈ 1 night) shared by the "run SoulSync" routes. Then five `### ` parts, each with a bold verdict line and one cost line per goal (B has one per option). **B: partly** (option 1 only, in part: 1.5 / 0.5 nights; options 2 and 3 have nothing to take: 2-3 and ≥ 5 nights either way). **C: partly** (2 + a fork / 1.5). **D: has** (1.5 / 0.5). **E: partly** (1.5 / 1): step 1 present, step 2 different (up to 4 switches, no same-release rule, no distrust), step 3 present with the folder drifting. **Crates: no** (not reachable without a fork / 0 more): it would reconcile same-named playlists on a shared account, its admin profile could reach `amperfy`'s playlists, and it is a second library writer beside beets (D18).
