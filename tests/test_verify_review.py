@@ -129,3 +129,22 @@ def test_an_estimated_mp3_length_defers_to_the_decoded_length(d):
     assert v.measurements["duration_s"] > 20 and abs(v.measurements["decoded_s"] - 11) < 0.2
     assert not V.verify(vbr, 30, tier="low").ok                     # the real length is still checked
     assert not V.verify(vbr, 11).ok                                 # header-only can't know better: unchanged
+
+
+def test_every_band_branch_is_a_mapped_output(tmp_path, monkeypatch):
+    """ffmpeg 7.1 (the image's Debian 13 build) panics "Assertion best_input >= 0 failed" on a firequalizer branch
+    that ends in anullsink; it failed every live download's decode on 2026-10-21. The host's 6.1 never did."""
+    seen = {}
+
+    def run(cmd, **kw):
+        seen.setdefault(cmd[0], cmd)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+    monkeypatch.setattr(V.subprocess, "run", run)
+    edges = V.band_edges(48000)
+    V.analyse(tmp_path / "x.flac", 48000, 60)
+    cmd = seen["ffmpeg"]
+    graph = cmd[cmd.index("-filter_complex") + 1]
+    assert "anullsink" not in graph
+    maps = [cmd[i + 1] for i, a in enumerate(cmd) if a == "-map"]
+    assert maps == [f"[o{i}]" for i in range(len(edges) + 1)]
+    assert all(f"[o{i}]" in graph for i in range(len(edges) + 1))
