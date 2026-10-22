@@ -325,6 +325,13 @@ from that clean checkout (see "Deploying, and what healthy means"; not `docker c
 | `MUSIC_ROOT`, `DOWNLOADS_ROOT` | `/srv/music`, `/srv/incoming/soulseek` | as before |
 | `DJ_WORKER`, `ACOUSTID_KEY`, `BEETSDIR`, `CRATES_DB` | | as before |
 
+Host scripts that write beets' `library.db` take the same lock, so they run only with the worker stopped:
+`scripts/tag_cleanup.py retag|move` and `scripts/dedupe_copies.py repoint|trash` hold `<dirname(CRATES_DB)>/worker.lock`
+for the whole command (on the host `CRATES_DB=/srv/docker/crates/crates.db`) and otherwise exit 1 with
+`refused: stop the worker first (docker compose stop worker): it holds …/worker.lock`; with `CRATES_DB` unset they
+exit 1 and ask for it. `plan` and `refresh-map` stay free; `identity_backfill apply` stays outside the lock. Only the
+worker downloads: `sourcing.cli rank` no longer has `--download` (it exits 2 and names Preview + Approve).
+
 The crates container reads `CRATES_TRASH` (`/trash`, read-only: status shows its size) and `NAVIDROME_DB` (the same
 file, mounted read-only: playlist edits and proposal answers need it). Navidrome's database is opened with
 `mode=ro`; if it cannot be opened, those calls answer 503 or refuse, and nothing is written.

@@ -46,9 +46,11 @@ from __future__ import annotations
 
 import fcntl
 import os
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 from crates import placement
 from crates.reconcile import ReconcileBusy
@@ -71,6 +73,30 @@ def hold_lock(path: Path) -> int:
         os.close(fd)
         raise WorkerRunning(f"worker already running (lock {path} is held)") from None
     return fd
+
+
+def with_worker_lock(run: Callable[[], int], env=os.environ) -> int:
+    """For a host script that writes beets or the library (M9 §6: tag_cleanup retag|move, dedupe_copies
+    repoint|trash): `run()` while holding the worker's own lock, <dirname(CRATES_DB)>/worker.lock (D36), so it never
+    runs beside the worker; the lock is released when `run` returns or raises. 1, with the reason on stderr and `run`
+    never called, when CRATES_DB names no database or the worker holds the lock."""
+    db = env.get("CRATES_DB")
+    if not db or not Path(db).is_file():                   # never a stray lock beside some other folder
+        print("set CRATES_DB to the crate service's database (its folder holds worker.lock)", file=sys.stderr)
+        return 1
+    path = Path(db).parent / "worker.lock"
+    try:
+        fd = hold_lock(path)
+    except WorkerRunning:
+        print(f"refused: stop the worker first (docker compose stop worker): it holds {path}", file=sys.stderr)
+        return 1
+    except OSError as e:                                   # e.g. the container's lock file, read-only on the host
+        print(f"refused: cannot open {path} ({e.strerror}); run it as a user who can", file=sys.stderr)
+        return 1
+    try:
+        return run()
+    finally:
+        os.close(fd)
 
 
 @dataclass

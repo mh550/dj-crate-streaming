@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from crates.store import CrateStore
 from sourcing import cli
 from sourcing.fake_slskd import FakeSlskdServer
@@ -111,3 +113,15 @@ def test_approve_of_a_non_retryable_review_row_is_refused_and_changes_nothing(tm
     store = CrateStore(db)
     assert rc == 1 and "needs a pick first" in err
     assert store.approval(ext) is None and store.external(ext)["tier"] == tier
+
+
+def test_rank_download_is_gone_and_names_preview_and_approve(capsys):
+    fx = str(Path(__file__).resolve().parent.parent / "fixtures" / "search_responses.sample.json")
+    args = ["rank", "--fixture", fx, "--artist", "Chic", "--title", "Good Times", "--duration", "501"]
+    with pytest.raises(SystemExit) as e:
+        cli.main(args + ["--download"])
+    err = capsys.readouterr().err
+    assert e.value.code == 2
+    assert "rank no longer downloads: use Preview + Approve in the web client (the worker downloads, D23)" in err
+    assert cli.main(args) == 0                                     # without it, rank still ranks the fixture
+    assert "03 - Good Times.flac" in capsys.readouterr().out

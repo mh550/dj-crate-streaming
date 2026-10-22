@@ -380,6 +380,43 @@ def test_worker_lock_is_released_when_once_ends(tmp_path, monkeypatch):
         assert cli.main(["worker", "--once"]) == 0
 
 
+# M9 §6: the one guard tag_cleanup retag|move and dedupe_copies repoint|trash share.
+def test_with_worker_lock_holds_the_worker_lock_while_it_runs_and_releases_it_after(tmp_path):
+    import os
+    from sourcing.worker import WorkerRunning, hold_lock, with_worker_lock
+    db = tmp_path / "crates.db"
+    db.touch()
+
+    def body():
+        with pytest.raises(WorkerRunning):                                 # a worker starting now would refuse
+            hold_lock(tmp_path / "worker.lock")
+        return 7
+    assert with_worker_lock(body, {"CRATES_DB": str(db)}) == 7
+
+    def boom():
+        raise RuntimeError("boom")
+    with pytest.raises(RuntimeError):
+        with_worker_lock(boom, {"CRATES_DB": str(db)})
+    os.close(hold_lock(tmp_path / "worker.lock"))                          # released, even after an exception
+
+
+def test_with_worker_lock_refuses_while_the_worker_holds_it_or_without_crates_db(tmp_path, capsys):
+    import os
+    from sourcing.worker import hold_lock, with_worker_lock
+    db = tmp_path / "crates.db"
+    db.touch()
+    fd = hold_lock(tmp_path / "worker.lock")
+    try:
+        assert with_worker_lock(lambda: pytest.fail("ran beside the worker"), {"CRATES_DB": str(db)}) == 1
+    finally:
+        os.close(fd)
+    assert f"refused: stop the worker first (docker compose stop worker): it holds {tmp_path / 'worker.lock'}" \
+        in capsys.readouterr().err
+    for env in ({}, {"CRATES_DB": str(tmp_path / "missing.db")}):
+        assert with_worker_lock(lambda: pytest.fail("ran without the lock"), env) == 1
+        assert "set CRATES_DB to the crate service's database" in capsys.readouterr().err
+
+
 def test_cli_worker_refuses_to_start_outside_the_worker_container(tmp_path, monkeypatch, capsys):
     monkeypatch.delenv("DJ_WORKER", raising=False)
     with FakeSubsonicServer() as nd, FakeSlskdServer(RESPONSES, tmp_path / "dl", files={}) as sl:

@@ -1,7 +1,7 @@
 r"""CLI: rank candidates for a wanted track, from a fixture file or a live slskd.
 
   python -m sourcing.cli rank --fixture fixtures/search_responses.sample.json --artist Chic --title "Good Times" --duration 501 [--tier low]
-  python -m sourcing.cli rank --slskd http://server:5030 --api-key $SLSKD_KEY --artist Chic --title "Good Times" [--download]
+  python -m sourcing.cli rank --slskd http://server:5030 --api-key $SLSKD_KEY --artist Chic --title "Good Times"   # ranks only; downloads go through Preview + Approve (D23)
   python -m sourcing.cli verify /srv/incoming/03\ -\ Good\ Times.flac --duration 501 [--tier crate] [--reference old.flac] [--json]
   python -m sourcing.cli fetch --wanted s4 [--approve [--wait]] [--tier T]   # search+score; --approve only records an approval for the worker; tier: the row's
   python -m sourcing.cli worker [--once] [--no-reconcile]   # D18: spend approvals (download, verify, file with beets), re-check `verify` rows, reconcile; WORKER_POLL_S (30), WORKER_RECHECK_S (300), WORKER_RECONCILE_S (600), WORKER_EXPORT_S (300)
@@ -122,7 +122,6 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--year", type=int)
     r.add_argument("--fixture", help="JSON file shaped like slskd search responses (offline mode)")
     add_slskd_args(r)
-    r.add_argument("--download", action="store_true", help="enqueue the top candidate (live mode only)")
     r.add_argument("--save", help="live mode: write the raw search responses here (rank them again with --fixture)")
     r.add_argument("--json", action="store_true")
     r.add_argument("--limit", type=int, default=10)
@@ -165,6 +164,9 @@ def main(argv: list[str] | None = None) -> int:
     rt.add_argument("--to", dest="to_tier", choices=list(TIERS), required=True)
     rt.add_argument("--dry-run", action="store_true")
 
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["rank"] and "--download" in argv:   # retired (M9 §6): only the worker downloads
+        r.error("rank no longer downloads: use Preview + Approve in the web client (the worker downloads, D23)")
     a = ap.parse_args(argv)
 
     if a.cmd == "retier":
@@ -303,7 +305,6 @@ def main(argv: list[str] | None = None) -> int:
     wanted = Wanted(a.artist, a.title, a.album, a.duration, a.year)
     if a.fixture:
         responses = json.loads(Path(a.fixture).read_text())
-        client = None
     elif a.slskd:
         if not a.api_key:
             print("need --api-key or $SLSKD_API_KEY", file=sys.stderr); return 1
@@ -325,9 +326,6 @@ def main(argv: list[str] | None = None) -> int:
         print(f"wanted: {wanted.artist} — {wanted.title}" + (f" ({wanted.duration_s:.0f}s)" if wanted.duration_s else ""))
         print(explain(cands, a.limit))
     best = next((c for c in cands if not c.rejected), None)
-    if a.download and client and best:
-        client.enqueue(best.username, [{"filename": best.filename, "size": best.size}])
-        print(f"enqueued from {best.username}: {best.basename}")
     return 0 if best else 3
 
 

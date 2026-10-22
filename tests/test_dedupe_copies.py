@@ -1,5 +1,6 @@
 import csv
 import json
+import os
 import shutil
 import sqlite3
 import subprocess
@@ -206,3 +207,71 @@ def test_restore_records_where_the_damaged_copy_went(tmp_path):
     entry = {"path_before": str(current), "before": {"title": ""}, "after": {"title": "T"}}
     trp.restore(entry, original, music_root=tmp_path / "music", trash_root=tmp_path / "trash")
     assert entry["trashed_to"] == str(tmp_path / "trash/A/x (2).flac")
+
+
+# M9 §6: repoint and trash change playlists and the library, so they run only with the worker stopped (worker.lock).
+from sourcing.worker import WorkerRunning, hold_lock                  # noqa: E402
+
+STOP_WORKER = "refused: stop the worker first (docker compose stop worker): it holds"
+
+
+@pytest.fixture
+def crates_db(tmp_path, monkeypatch):
+    db = tmp_path / "crates" / "crates.db"
+    db.parent.mkdir()
+    db.touch()
+    monkeypatch.setenv("CRATES_DB", str(db))
+    return db
+
+
+def _args(cmd, world):
+    music, nd, lm, tmp = world
+    return [cmd, "--plan", str(tmp / "plan.json"), "--library-map", str(lm), "--music", str(music),
+            "--navidrome-db", str(nd), "--report", str(tmp / "report.md"), "--trash", str(tmp / "trash")]
+
+
+@pytest.mark.parametrize("cmd", ["repoint", "trash"])
+def test_repoint_and_trash_refuse_while_the_worker_holds_its_lock(world, crates_db, capsys, monkeypatch, cmd):
+    music, nd, lm, tmp = world
+    dc.plan(lm, music, nd, tmp / "plan.json", tmp / "report.md")
+    before = {p: p.read_bytes() for p in [*music.rglob("*"), nd, lm, tmp / "plan.json"] if p.is_file()}
+    monkeypatch.setattr(dc, cmd, lambda *a: pytest.fail("ran while the worker holds the lock"))
+    fd = hold_lock(crates_db.parent / "worker.lock")
+    try:
+        assert dc.main(_args(cmd, world)) == 1
+    finally:
+        os.close(fd)
+    assert f"{STOP_WORKER} {crates_db.parent / 'worker.lock'}" in capsys.readouterr().err
+    assert {p: p.read_bytes() for p in before} == before and not (tmp / "trash").exists()
+
+
+@pytest.mark.parametrize("cmd", ["repoint", "trash"])
+def test_repoint_and_trash_hold_the_worker_lock_for_the_whole_command(world, crates_db, monkeypatch, cmd):
+    music, nd, lm, tmp = world
+    dc.plan(lm, music, nd, tmp / "plan.json", tmp / "report.md")
+    ran = []
+
+    def body(*a):
+        with pytest.raises(WorkerRunning):                                 # a worker starting now would refuse
+            hold_lock(crates_db.parent / "worker.lock")
+        ran.append(cmd)
+        return [], []
+    monkeypatch.setattr(dc, cmd, body)
+    assert dc.main(_args(cmd, world)) == 0 and ran == [cmd]
+    os.close(hold_lock(crates_db.parent / "worker.lock"))                  # and released when it ends
+
+
+@pytest.mark.parametrize("cmd", ["repoint", "trash"])
+def test_repoint_and_trash_need_crates_db(world, monkeypatch, capsys, cmd):
+    monkeypatch.delenv("CRATES_DB", raising=False)
+    monkeypatch.setattr(dc, cmd, lambda *a: pytest.fail("ran without the lock"))
+    assert dc.main(_args(cmd, world)) == 1
+    assert "set CRATES_DB to the crate service's database (its folder holds worker.lock)" in capsys.readouterr().err
+
+
+def test_plan_never_takes_the_worker_lock(world, crates_db):
+    fd = hold_lock(crates_db.parent / "worker.lock")
+    try:
+        assert dc.main(_args("plan", world)) == 0
+    finally:
+        os.close(fd)
