@@ -13,7 +13,7 @@ Navidrome, slskd and beets. It runs live on this box (compose project `dj`, from
 - Read `docs/hard-won-facts.md` before touching beets, Navidrome scans or playlists.
 
 ## How to verify
-- Suite: `.harness/check.sh` (pytest, paths in scratch, live credentials unset): ~1,120 tests, **~7 minutes**. Subset:
+- Suite: `.harness/check.sh` (pytest, paths in scratch, live credentials unset): ~1,523 tests, **about 9-10 minutes** (570 s measured). Subset:
   `.harness/check.sh tests/test_trash.py`. Run the files you touch while iterating, the full suite once at the end.
 - Needs python3 ≥ 3.10 and `~/.local/bin/pytest` (`pipx install pytest`); without ffmpeg, flac, fpcalc, beet or
   sqlite3 their tests skip. No dev server: tests use the fake Navidrome/slskd in `tests/`; follow those fakes.
@@ -70,9 +70,10 @@ long (2026-10-17: 03:39–03:41, snapshot `da26a815` of /srv/music, /srv/docker,
 - Duplicate cleanup: `docs/worker.md` → "Duplicate cleanup" (merged into `main` with N1, PR #5).
   Reverse logs in `/srv/docker/crates/duplicate-cleanup/` (`repoint-<time>.jsonl`, `trash-<time>.jsonl`) and
   `/srv/_trash/<day>/MOVES.txt`. `plan` and every `repoint` stage may run.
-- **`duplicate_cleanup trash` must not run beyond `--dry-run` until review findings I1 (trash must refuse unless a
-  Navidrome scan finished after the newest repoint log) and I2 (verify the file on disk is still the planned file,
-  size vs `media_file.size`) are fixed**, and `lastScan` is confirmed on live Navidrome. See
+- **`duplicate_cleanup trash`:** review findings I1 and I2 are fixed in `scripts/duplicate_cleanup.py`: I1 is
+  `_scanned_since_repoint` (trash refuses unless a Navidrome scan finished after the newest repoint log), I2 is the
+  size check in `trash` (`planned_size` vs `media_file.size`). It stays at `--dry-run` until a live
+  `trash --dry-run` has confirmed `lastScan` on Navidrome and Michael lifts it. See
   `~/projects/agent-harness/journal/runs/dj-2026-10-17.md`.
 
 ### Never

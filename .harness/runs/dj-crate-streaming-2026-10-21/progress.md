@@ -18,6 +18,12 @@ Michael. The spec is `docs/specs/2026-10-21-guards-and-checks.md`; the brief is 
 
 ---
 
+### 2026-10-21 R1-01 · passes
+Docs only (CLAUDE.md, next-todos, architecture, M9 spec header, hard-won-facts); no code file changed.
+CLAUDE.md now says I1 (`_scanned_since_repoint`) and I2 (`planned_size` check) are fixed, trash stays at `--dry-run`
+until a live dry run confirms `lastScan` and Michael lifts it. Test count 1,523 → 1,523; suite green in 553 s.
+Verified with the greps from the steps (all match; `1,120` and `running now` count 0).
+
 ## 2026-10-21 initializer (Fable) — feature list written
 
 **Features per milestone:** R1 doc truth 2 · R2 live-run.sh 2 · R3 D35 as answered 3 · R4 M9 §6 guards 3 ·

@@ -48,7 +48,7 @@ on this system.
 - `crates.db` and `navidrome.db` are in WAL mode: data can sit in `<db>-wal` while the main file is 4 KB. Copy them
   only with `scripts/snapshot-crates-db.sh` (`sqlite3 .backup`, both databases since H1); `--suffix <run>` gives a
   run its own restore point. The nightly restic job runs it first, from `~/projects/dj-crate-streaming`, so
-  `navidrome.db.snap` exists only once that checkout has this version (H2 installs a fixed copy instead).
+  `navidrome.db.snap` exists only once that checkout has this version (H2 installs a fixed copy instead). The H2 backup script is installed, so the nightly snapshot runs the installed copy (`/usr/local/sbin/restic-backup`), not the checkout.
 
 ## Learned in the N1-N4 run (2026-10-19)
 - **The fake `navidrome.db` mirror must carry every column a script SELECTs.** `subsonic/fake_server.py`

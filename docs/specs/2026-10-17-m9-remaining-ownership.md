@@ -1,7 +1,7 @@
 # M9: the remaining ownership and identity considerations
 
 **Status:** draft for Michael's review, written 2026-10-16 on `overnight2/2026-10-15` (M8 Parts A–C built, Part D
-play-now in progress). Nothing here is built. It follows the binding design in
+play-now in progress). As of 2026-10-21, items 1 and 3 are built (N4, N1); the rest is not built. It follows the binding design in
 [`2026-10-16-ownership-and-identity.md`](2026-10-16-ownership-and-identity.md) (D18–D23) and changes none of it.
 
 **What M9 is:** the items M6–M8 deliberately left out. They come from the "Open items" of the M7 and M8 plans, the M7
