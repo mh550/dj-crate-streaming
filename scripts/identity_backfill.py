@@ -268,8 +268,11 @@ def _same_album(f: FileFacts):
 
 
 def _detail(r: Recording) -> dict:
+    """A candidate as the report and the picker show it; `releases` (all of them) is what the picker's suggestion
+    compares with the file's album, as `_same_album` does. `apply` never reads it."""
     return {"id": r.id, "title": r.title, "length_s": r.length_s, "artist": r.artist,
-            "release": r.releases[0] if r.releases else "", "disambiguation": r.disambiguation}
+            "release": r.releases[0] if r.releases else "", "releases": list(r.releases),
+            "disambiguation": r.disambiguation}
 
 
 def _set_pick(p: Proposal, r: Recording) -> None:
@@ -472,7 +475,7 @@ def check_out_dir(music_root: Path, out_dir: Path) -> None:
         raise ValueError(f"--out {out_dir} is inside the library {music_root}; choose a directory outside it")
 
 
-def _write_atomic(path: Path, text: str) -> None:
+def write_atomic(path: Path, text: str) -> None:
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(text, encoding="utf-8")
     tmp.replace(path)
@@ -515,7 +518,7 @@ def propose(music_root: Path, out_dir: Path, mb: MusicBrainz, *, lookup=None, li
     doc = {"created": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
            "music_root": str(music_root), "counts": {c: counts[c] for c in CLASSES},
            "proposals": [asdict(p) for p in proposals]}
-    _write_atomic(out_dir / PROPOSAL, json.dumps(doc, ensure_ascii=False, indent=1) + "\n")
+    write_atomic(out_dir / PROPOSAL, json.dumps(doc, ensure_ascii=False, indent=1) + "\n")
     write_report(proposals, facts, out_dir / REPORT)
     return proposals
 
@@ -643,7 +646,7 @@ def write_report(proposals: list[Proposal], facts: list[FileFacts], path: Path) 
         out += [f"- {_md(t)}" + (f" (×{n})" if n > 1 else "") for t, n in sorted(unread.items())]
     else:
         out += ["", "No title ends in a parenthetical that identity left unread."]
-    _write_atomic(Path(path), "\n".join(out) + "\n")
+    write_atomic(Path(path), "\n".join(out) + "\n")
 
 
 # ── apply / revert: the one path in M7 that writes library tags ───────────────────────────────────────────────
@@ -673,6 +676,38 @@ def _canon(v) -> str:
         return ""
     v = v.lower()
     return v if _MBID.fullmatch(v) else ""
+
+
+CHOICES = "identity-choices.json"                         # the picker's taps, beside the proposal (R7)
+CHOICE_ACTIONS = ("accept", "choose", "skip")
+
+
+def choice_problem(row: dict, choice) -> str:
+    """"" when a recorded picker choice still fits its proposal row, else why not: the one definition of a stale
+    choice (the crates service shows it, `apply --choices` refuses it). A choice is bound to the row as it was at the
+    tap: its class, size and mtime, and for an accept the recording the page showed."""
+    if not isinstance(choice, dict) or choice.get("action") not in CHOICE_ACTIONS:
+        return "is not an accept, choose or skip"
+    if choice.get("decided_by") != "michael":
+        return f"is decided_by {choice.get('decided_by')!r}, not michael"
+    if any(choice.get(k) != row.get(k) for k in ("cls", "size", "mtime_ns")):
+        return "was made on an older proposal row (class, size or mtime changed)"
+    action, cls, mbid = choice["action"], row.get("cls"), choice.get("mbid")
+    if action == "skip":
+        return "" if mbid is None else "a skip has no mbid"
+    if cls in ("conflict", "error"):
+        return f"{cls} rows can only be skipped"
+    if mbid != _canon(mbid):
+        return f"mbid {mbid!r} is not canonical"
+    if action == "accept":
+        if cls != "search":
+            return "accept is for search rows"
+        if mbid != _canon((row.get("write") or {}).get("mb_trackid")):
+            return f"accepted {mbid} is no longer the row's pick"
+        return ""
+    if cls not in CHOOSABLE or mbid not in {_canon(c) for c in row.get("candidates") or []}:
+        return f"choose {mbid} is not one of the row's candidates"
+    return ""
 
 
 def _same(values: list[str], v: str) -> bool:

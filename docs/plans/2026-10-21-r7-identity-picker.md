@@ -104,7 +104,8 @@ works with or without a key.
   it.
 - The picker rows are the proposal rows whose class is `search`, `ambiguous`, `conflict` or `error`, plus `none`
   rows that have candidates. `confirmed`/`isrc`/`acoustid` rows are applied by default and are not in the picker.
-  A `none` row without candidates offers nothing to pick.
+  A `none` row without candidates offers nothing to pick. A row with `skip: true` in the proposal JSON is left out
+  too (R7-02 review): that skip is final in `apply`, so a tap on it could do nothing.
 
 ### `GET /api/identity[?class=<cls>]`
 
@@ -137,7 +138,8 @@ works with or without a key.
   (`sourcing.identity.loose`, as `_same_album`). It is `null` when none or several match, and always `null` on
   `search`, `conflict` and `error` rows.
 - `why` is shown with the proposal's `music_root` prefix removed (`<music_root>/` → ""). An `error` row's
-  `unreadable: …` text comes from an exception and can hold the absolute path.
+  `unreadable: …` text comes from an exception and can hold the absolute path. Any other quoted absolute path (an
+  AcoustID cache error names `/data/identity/…`) is shown as `'…/<name>'` (R7-02 review).
 - `songId` is `_navidrome_ids(NAVIDROME_DB).get(path)`, read once per request. It is `null` when `NAVIDROME_DB` is
   unset, or the path is not in Navidrome or is missing there. A `sqlite3.Error` gives the existing 503.
 - `choice` is the recorded choice for the path, or `null`. `stale` is true when it no longer fits the row (see the
@@ -157,20 +159,24 @@ The service answers each case as follows:
 | Case | Answer |
 |---|---|
 | no proposal file | 404 (as GET) |
-| proposal or choices file unreadable or not valid JSON | 503 `ApiError`; the choices file is **never** overwritten then |
+| proposal or choices file unreadable, not valid JSON, or a row field of the wrong type | 503 `ApiError`; the choices file is **never** overwritten then |
 | body not a JSON object | 400 `body must be a JSON object` |
 | `path` missing, not a string, or not a picker row | 400 `not in the identity proposal: <path>` |
 | `action` not one of the three | 400 `action must be accept, choose or skip` |
 | `accept`/`choose` on a `conflict`/`error` row | **409** `<cls> rows can only be skipped` |
 | `accept` on a row that is not `search` | 400 `accept is for search rows; choose a candidate` |
+| `accept` with `mbid` missing or not a MusicBrainz id | 400 `accept needs the mbid of the recording the page showed` |
 | `accept` whose `mbid` is not the row's `write.mb_trackid` | **409** `the proposal changed since the page loaded; reload` |
 | `choose` on a `search` row | 400 `a search row is accepted or skipped (it has no candidates)` |
-| `choose` with `mbid` missing, not canonical, or not among the row's `candidates` (canonical compare) | 400 `<mbid> is not one of the row's candidates` |
+| `choose` without `mbid` | 400 `choose needs the mbid of one of the row's candidates` |
+| `choose` with `mbid` not canonical, or not among the row's `candidates` (canonical compare) | 400 `<mbid> is not one of the row's candidates` |
 | otherwise | 200 `{"path", "choice": {…}}` |
 
 On a 200, the service first writes the choices file, then runs `store.log(...)` and `store.commit()`. It does all
 three under `CrateApp._lock`, which serializes the read-modify-write; the service is one process. A failed write
-(`OSError`) is raised as `ApiError(503, "could not save the choice: …")`, and no event is logged.
+(`OSError`) is raised as `ApiError(503, "could not save the choice: …")`, and no event is logged. If crates.db
+refuses the event (`sqlite3.Error`, e.g. busy), the event is rolled back and the answer is 503 `the choice is saved,
+but its identity_pick event could not be logged (…): tap it again to log it` (R7-02 review).
 
 ### The choices file `<identity_dir>/identity-choices.json`
 
@@ -190,8 +196,8 @@ three under `CrateApp._lock`, which serializes the read-modify-write; the servic
 - `cls`, `size` and `mtime_ns` are the row's at the time of the click. If any of them differs from the current
   row, the choice is **stale**. So is an accepted `mbid` that is no longer the row's `write.mb_trackid`, or a chosen
   one no longer among its `candidates`. Michael picks again. `choice_problem` is the one definition of stale. It
-  also rejects a malformed entry: an unknown action, a non-canonical `mbid`, or `accept` on a row that is not
-  `search`.
+  also rejects a malformed entry: an unknown action, a `decided_by` other than `michael`, a non-canonical `mbid`
+  (strictly: lowercase, no spaces), a skip with an `mbid`, or `accept` on a row that is not `search`.
 - `decided_by` is always `michael`: the picker has one user, and nothing else writes the file.
 - Written as one whole file by tmp + replace, so `apply` reading it while the service writes sees one version or
   the other.

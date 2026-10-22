@@ -342,7 +342,10 @@ worker downloads: `sourcing.cli rank` no longer has `--download` (it exits 2 and
 
 The crates container reads `CRATES_TRASH` (`/trash`, read-only: status shows its size) and `NAVIDROME_DB` (the same
 file, mounted read-only: playlist edits and proposal answers need it). Navidrome's database is opened with
-`mode=ro`; if it cannot be opened, those calls answer 503 or refuse, and nothing is written.
+`mode=ro`; if it cannot be opened, those calls answer 503 or refuse, and nothing is written. It also reads `CRATES_IDENTITY_DIR`
+(default `/data/identity`, the worker's identity output on the same mount): the Identity picker's `GET /api/identity`
+serves `identity-proposal.json` from there, and `POST /api/identity/choice` writes `identity-choices.json` there, the
+only file it writes (R7).
 
 ## Identity backfill (runs in the worker)
 
