@@ -28,3 +28,6 @@
 - 2026-10-22 16:00 · V4-01 · claude-opus-5-5 · passes=true · 21 min · 14/15 passing
 - 2026-10-22 16:15 · V4-02 · claude-opus-5-5 · passes=true · 14 min · 15/15 passing
 - 2026-10-22 16:16 · V4 verified and tagged run/dj-soulsync-review-2026-10-22/V4
+- 2026-10-22 16:16 · V4 proposed for merging · https://github.com/mh550/dj-crate-streaming/pull/26
+- 2026-10-22 16:16 · every feature passes
+- 2026-10-22 16:16 · run ended (done): 15/15 passing · 25 sessions (25 real) · 15 features passed · $165.03 · 9.3 h · by kind: init 1 ($3.39), coding 18 ($158.61), verify 6 ($3.03) · by model: claude-fable-5-1 1 ($3.39), claude-opus-5-5 17 ($158.32), claude-sonnet-5-5 7 ($3.33)
