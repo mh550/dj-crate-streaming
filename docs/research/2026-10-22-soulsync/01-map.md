@@ -339,7 +339,107 @@ at the run's base), so a port would be the first licence text in the tree. Two r
 
 ## Maintenance health
 
-(written by V1-02)
+All figures were read on **2026-10-22** with `gh api` (read-only GET, logged in as mh550).
+The clone is depth 1 (`git -C ~/research/soulsync-src/SoulSync log` shows one commit, 34bf7cf9c741), so it says nothing
+about history; every number below comes from the GitHub API, nothing was run from the clone. Counts move daily.
+
+### Releases
+
+| Figure | Value | Command (2026-10-22) |
+|---|---|---|
+| Releases, all pages | **101** (oldest `v0.65`, 2025-08-21; none are prereleases) | `gh api --paginate 'repos/Nezreka/SoulSync/releases?per_page=100' --jq '.[].tag_name'` piped to `wc -l` (one page of 100 plus 1) |
+| Median days between the latest 20 | **2.16** (mean 2.43) | same call, gaps between the 20 newest `published_at` values |
+
+Latest 10 tags (same call):
+
+| Tag | Published |
+|---|---|
+| 3.5.9 | 2026-10-22 |
+| 3.5.8 | 2026-10-20 |
+| 3.5.7 | 2026-10-17 |
+| 3.5.6 | 2026-10-15 |
+| 3.5.5 | 2026-10-15 |
+| 3.5.4 | 2026-10-13 |
+| 3.5.3 | 2026-10-09 |
+| 3.5.2 | 2026-10-07 |
+| 3.5.1 | 2026-10-07 |
+| 3.5.0 | 2026-10-04 |
+
+About one release every two days, and 3.5.0 → 3.5.9 took 18 days. Cadence is a sign of an active maintainer, not of
+tested stability: CI never tests the merge commit that `:latest` is built from (see Tests and CI above).
+
+### Contributors
+
+`gh api 'repos/Nezreka/SoulSync/contributors?per_page=100'` (2026-10-22): 41 contributors, 8,544 contributions in total.
+
+| # | Login | Contributions | Share |
+|---|---|---|---|
+| 1 | Nezreka | 7,590 | **88.8%** |
+| 2 | kettui | 258 | 3.0% |
+| 3 | Thundernerd | 167 | 2.0% |
+| 4 | mandos21 | 68 | 0.8% |
+| 5 | nick2000713 | 65 | 0.8% |
+
+**Bus factor: 1.** One account wrote about nine in ten of the contributions and the next contributor has 3%, so if
+Nezreka stops, the project effectively stops (we would be maintaining a fork). In the last 30 days the commit *author
+names* are led by "BoulderBadgeDad" (917 of the 1,592 commits), then "Nez" (260), Thundernerd (167), "Claude" (42),
+mandos21 (39), from `gh api --paginate 'repos/Nezreka/SoulSync/commits?since=2026-09-22T00:00:00Z&per_page=100' --jq '.[].commit.author.name' | sort | uniq -c | sort -rn`.
+That the "BoulderBadgeDad" and "Nez" names belong to the Nezreka login is *unverified* (the API's login field was not
+compared with author names); the "Claude" commits show AI-assisted authoring is in use.
+
+### Issues, PRs, stars
+
+| Figure | Value | Command (2026-10-22) |
+|---|---|---|
+| `open_issues_count` (issues + PRs) | 30 | `gh api repos/Nezreka/SoulSync --jq .open_issues_count` |
+| Open PRs | 14 | `gh api 'search/issues?q=repo:Nezreka/SoulSync+is:pr+is:open' --jq .total_count` |
+| Open issues | 16 | `gh api 'search/issues?q=repo:Nezreka/SoulSync+is:issue+is:open' --jq .total_count` |
+| Stars / forks | 2,309 / 131 | `gh api repos/Nezreka/SoulSync --jq '[.stargazers_count,.forks_count]'` |
+| Created / last push | 2025-07-09 / 2026-10-22T02:03Z | `gh api repos/Nezreka/SoulSync --jq '[.created_at,.pushed_at]'` |
+
+Five most recently closed issues (`gh api 'search/issues?q=repo:Nezreka/SoulSync+is:issue+is:closed&sort=updated&order=desc&per_page=5' --jq '.items[]|[.number,.closed_at,.title]|@tsv'`):
+
+| # | Closed (UTC) | Title |
+|---|---|---|
+| 1817 | 2026-10-21 22:39 | Bug: YouTube Music tracks rejected by matching engine despite exact artist/title match |
+| 1810 | 2026-10-21 21:17 | [Bug] Redownload with "delete old file" leaves two catalog rows pointing to the replacement when its path changes |
+| 1807 | 2026-10-21 14:29 | Randomly downloading movies and shows |
+| 1805 | 2026-10-21 04:26 | [FEATURE REQUEST] Configurable Duration Mismatch Tolerance Setting |
+| 1804 | 2026-10-21 03:08 | [BUG] AcoustID & Metadata Match False Positives across Downloads and Imports |
+
+Issues are closed within a day or so, so the tracker is responsive. Three of five are about matching and
+verification (our V2-02 / V2-05 topics) and one about duplicate catalog rows after replace (our duplicate-cleanup
+topic).
+
+### Size of recent change
+
+- **Commits in the last 30 days (since 2026-09-22): 1,592**, 377 of them merge commits. Commands:
+  `gh api --paginate 'repos/Nezreka/SoulSync/commits?since=2026-09-22T00:00:00Z&per_page=100' --jq length | paste -sd+ | bc` and the same
+  with `--jq '.[]|select(.parents|length>1)|1' | wc -l`. The count includes commits that arrived through merged branches.
+- Five newest merge commits to `main` (`gh api 'repos/Nezreka/SoulSync/commits?per_page=30' --jq '.[]|select(.parents|length>1)'`, then
+  `gh api repos/Nezreka/SoulSync/commits/<sha> --jq '[.stats.additions,.stats.deletions,(.files|length)]'`):
+
+| Merge commit | Date (UTC) | Files | + lines | − lines | Touches `core/soulseek_client.py` or `core/downloads/` |
+|---|---|---|---|---|---|
+| 34bf7cf9c7 (#1821 dev→main, the clone's HEAD) | 2026-10-22 02:01 | 275 | 37,273 | 14,355 | `core/downloads/review_reject.py`, `row_art.py`, `status.py` |
+| 7145bfa9e8 (#1820) | 2026-10-22 01:05 | 13 | 506 | 21 | no |
+| edd65e9d92 (#1819) | 2026-10-22 01:05 | 3 | 122 | 0 | no |
+| 09a5fb07ca (#1818) | 2026-10-22 01:05 | 7 | 444 | 16 | no |
+| bc047f4e4e (#1812) | 2026-10-21 21:39 | 1 | 493 | 493 | no |
+
+  The first row is a dev→main release merge: 275 files and 37k added lines in one commit, so "one release" can be a
+  large drop, not a small step. (The API lists at most 300 files per commit; 275 is under that.)
+- **How often the internals we cite changed**, `gh api --paginate 'repos/Nezreka/SoulSync/commits?path=<p>&since=2026-09-22T00:00:00Z&per_page=100' --jq length`:
+  `core/soulseek_client.py` **8 commits** in 30 days (latest `ec0e61323d`, 2026-10-06, so it has been stable for 16 days);
+  `core/downloads/` **71 commits** (latest `abeb005f8e`, 2026-10-21). Only the newest merge commit touches
+  `core/downloads/`. Line numbers cited in this report will drift in `core/downloads/` within days; they are valid at
+  34bf7cf9c741 only.
+
+### What this means for us
+
+Active and responsive, but a single-maintainer project with a release every two days and very large merges. Adopting
+it as a dependency means tracking a fast-moving target; reading it for ideas (the brief's purpose) is safe. The bus
+factor and the unreviewed `:latest` publication are the two risks for any "run SoulSync alongside" option in V3/V4.
 
 ## How ours does it
 

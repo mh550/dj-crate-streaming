@@ -8,6 +8,13 @@ Michael steers through `INBOX.md` on this branch (first line `status: run|pause|
 Every session reads `INBOX.md` and this file first, then the spec `docs/specs/2026-10-22-soulsync-review.md` and the
 brief `brief.md` (the brief wins on scope).
 
+### 2026-10-22 · V1-02 · passes
+- **New:** `## Maintenance health` in `docs/research/2026-10-22-soulsync/01-map.md` (releases, contributors, issues/PRs/stars, size of recent change), every figure with its `gh api` call, read 2026-10-22. Docs only; tests 1615 → 1615.
+- **Numbers:** 101 releases (median 2.16 days between the latest 20); 41 contributors, Nezreka 7,590 of 8,544 (88.8%), bus factor 1; 16 open issues, 14 open PRs, 2,309 stars; 1,592 commits in 30 days (377 merges); `core/soulseek_client.py` 8 commits in 30 days (last 10-06), `core/downloads/` 71 (last 10-21); newest merge #1821 is 275 files, +37,273/−14,355.
+- **Verified:** suite green in 580 s, 1615 tests. Release prerelease flags checked from the saved output (all false).
+- **For later sessions:** `core/downloads/` churns daily, so cited line numbers are valid at 34bf7cf9c741 only (stated in the section). Commit author names ("BoulderBadgeDad", "Nez", "Claude") differ from the API login; I marked the identity *unverified*.
+- **Questions for Michael:** none. **Proposed changes:** none.
+
 ### 2026-10-22 07:10 · V1-01 · passes
 - **New:** `docs/research/2026-10-22-soulsync/README.md` (skeleton: `## Summary` "(written by V4-02)", links to 01-09, empty `## Stage-by-stage comparison` / `## Fit to goals` for V3) and `01-map.md` (380+ lines: process model + ASCII diagram, data stores with all music tables grouped by subsystem, settings/credentials, deployment, tests/CI, module map with `wc -l`, MIT license, `## Maintenance health` "(written by V1-02)", then the four comparison headings, **Verdict: adapt**). Docs only; tests 1615 → 1615.
 - **Verified:** the citation check prints no BAD line (≈300 unique citations); an Opus review spot-checked ~190 and found 2 wrong lines (fixed) and some gaps (filled); every uncited claim carries `*unverified*` (4 marks). Suite: `check.sh` green in 582 s, 1615 tests.

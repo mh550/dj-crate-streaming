@@ -38,7 +38,7 @@
         "Every figure has the date it was read (2026-10-22 or later) and the command beside it; nothing was executed from the clone (`git -C ~/research/soulsync-src/SoulSync log` is depth-1 and useless for history: the section says so).",
         ".harness/check.sh is green (docs only, so it must be: every test passes, none newly skipped)"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "V2-01",
