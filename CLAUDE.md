@@ -72,7 +72,7 @@ long (2026-10-17: 03:39–03:41, snapshot `da26a815` of /srv/music, /srv/docker,
   `/srv/_trash/<day>/MOVES.txt`. `plan` and every `repoint` stage may run.
 - **`duplicate_cleanup trash`:** review findings I1 and I2 are fixed in `scripts/duplicate_cleanup.py`: I1 is
   `_scanned_since_repoint` (trash refuses unless a Navidrome scan finished after the newest repoint log), I2 is the
-  size check in `trash` (`planned_size` vs `media_file.size`). It stays at `--dry-run` until a live
+  size check in `trash` (the size on disk vs `media_file.size` and the plan's `planned_size`). It stays at `--dry-run` until a live
   `trash --dry-run` has confirmed `lastScan` on Navidrome and Michael lifts it. See
   `~/projects/agent-harness/journal/runs/dj-2026-10-17.md`.
 

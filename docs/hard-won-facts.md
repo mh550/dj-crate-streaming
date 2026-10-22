@@ -14,7 +14,7 @@ on this system.
   allowed the rebuild, read-only SQLite (`mode=ro`) on `navidrome.db` and `crates.db`.
 - **`git add -A` sweeps scratch files in.** Write scratch output elsewhere, check `git show --stat HEAD` before pushing.
   Soulseek peer names stay out of logs and UI (p1, p2, …).
-- **Tests:** `~/.local/bin/pytest -q` (1,523 tests, 7-9 minutes). Fakes must mirror captured live responses
+- **Tests:** `~/.local/bin/pytest -q` (1,523 tests, about 9-10 minutes). Fakes must mirror captured live responses
   (`fixtures/`). The suite reads a frozen old policy (`tests/fixtures/policy-legacy.toml`) and runs the older
   comment-owned mode (`CRATES_OWNER=comment`) by default via `tests/conftest.py`; new-mode tests are in `tests/test_app_owner.py`.
 
@@ -47,8 +47,9 @@ on this system.
 ## SQLite
 - `crates.db` and `navidrome.db` are in WAL mode: data can sit in `<db>-wal` while the main file is 4 KB. Copy them
   only with `scripts/snapshot-crates-db.sh` (`sqlite3 .backup`, both databases since H1); `--suffix <run>` gives a
-  run its own restore point. The nightly restic job runs it first, from `~/projects/dj-crate-streaming`, so
-  `navidrome.db.snap` exists only once that checkout has this version (H2 installs a fixed copy instead). The H2 backup script is installed, so the nightly snapshot runs the installed copy (`/usr/local/sbin/restic-backup`), not the checkout.
+  run its own restore point. The nightly restic job (`/usr/local/sbin/restic-backup`, installed from
+  `deploy/restic-backup` by H2) runs it first, from its installed copy `/usr/local/lib/dj-crates/snapshot-crates-db.sh`,
+  not from a checkout; a change to the script reaches the backup only when Michael reinstalls it.
 
 ## Learned in the N1-N4 run (2026-10-19)
 - **The fake `navidrome.db` mirror must carry every column a script SELECTs.** `subsonic/fake_server.py`

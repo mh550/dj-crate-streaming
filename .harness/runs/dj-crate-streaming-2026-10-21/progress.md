@@ -18,6 +18,17 @@ Michael. The spec is `docs/specs/2026-10-21-guards-and-checks.md`; the brief is 
 
 ---
 
+### 2026-10-21 R1-02 · passes
+Reviewed every sentence R1-01 changed (`git diff origin/main...HEAD -- CLAUDE.md docs/` in scratch `r1.diff`); docs only.
+Held: `_scanned_since_repoint`/`_scan_time`, PRs #5–#13 merged (`git log --merges origin/main`), 1,523 collected,
+image/merged/not-deployed claims vs the spec's facts, §11 superseded questions 1/2/5/8/10 (D24, D27, D26).
+Fixed: (1) CLAUDE.md I2 now says size on disk vs `media_file.size` **and** `planned_size`; (2) hard-won-facts named
+the wrong installed file: the nightly snapshot runs `/usr/local/lib/dj-crates/snapshot-crates-db.sh` (both installed
+copies `cmp`-identical to the repo); (3) README, architecture §8, hard-won-facts said 7 / 7-9 min → about 9-10 minutes;
+(4) next-todos + architecture: H3-05's health-push changes are merged, not installed (spec facts). Tests 1,523 → 1,523; suite green in 558 s.
+Proposed change: the step's `.harness/check.sh --collect-only -q | tail -1` prints a warning link, not the count
+(check.sh already passes `-q`); use `.harness/check.sh --collect-only | tail -1` ("1523 tests collected").
+
 ### 2026-10-21 R1-01 · passes
 Docs only (CLAUDE.md, next-todos, architecture, M9 spec header, hard-won-facts); no code file changed.
 CLAUDE.md now says I1 (`_scanned_since_repoint`) and I2 (`planned_size` check) are fixed, trash stays at `--dry-run`
