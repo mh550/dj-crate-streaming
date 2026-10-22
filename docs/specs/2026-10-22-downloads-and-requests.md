@@ -1,6 +1,6 @@
 # Download fixes, album requests and a request API (2026-10-22 run, milestones S1–S4)
 
-Written 2026-10-22 00:50–01:40 from a read-only look at the live system (crates `/api/events`, `/api/wanted/<id>`,
+Written 2026-10-22 00:50–01:05 from a read-only look at the live system (crates `/api/events`, `/api/wanted/<id>`,
 `docker logs` of `dj-crates-1`, `dj-worker-1`, `dj-slskd-1`, `dj-gluetun-1`) and offline repros on the hotfix code.
 **Build-only:** nothing here runs live. Every live step goes into the downloads checklist (S4) for Michael. The pivot
 spec wins on conflict. Identity follows `docs/identity.md` and M9. D26 (source the exact track) and D7 (Soulseek
