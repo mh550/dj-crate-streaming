@@ -1,0 +1,740 @@
+{
+ "created": "2026-10-22T04:59:29.615Z",
+ "count": 11,
+ "offset": 0,
+ "releases": [
+  {
+   "id": "3c9a52ee-ee0a-3362-a563-d9d28b02a53e",
+   "score": 100,
+   "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+   "artist-credit-id": "0d75c79a-1110-360b-bf38-6e9e640860b9",
+   "count": 1,
+   "title": "I’m Still in Love With You",
+   "status": "Official",
+   "text-representation": {
+    "language": "eng",
+    "script": "Latn"
+   },
+   "artist-credit": [
+    {
+     "name": "Al Green",
+     "artist": {
+      "id": "fb7272ba-f130-4f0a-934d-6eeea4c18c9a",
+      "name": "Al Green",
+      "sort-name": "Green, Al",
+      "disambiguation": "US soul singer, songwriter, pastor and record producer"
+     }
+    }
+   ],
+   "release-group": {
+    "id": "4a40960b-44b3-313c-8540-cde054d41bd9",
+    "type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "title": "I’m Still in Love With You",
+    "primary-type": "Album"
+   },
+   "date": "1993",
+   "country": "US",
+   "release-events": [
+    {
+     "date": "1993",
+     "area": {
+      "id": "489ce91b-6658-3307-9877-795b68554c98",
+      "name": "United States",
+      "sort-name": "United States",
+      "iso-3166-1-codes": [
+       "US"
+      ]
+     }
+    }
+   ],
+   "barcode": "724382762720",
+   "asin": "B000002TN9",
+   "label-info": [
+    {
+     "catalog-number": "7243-8-27627-2-0",
+     "label": {
+      "id": "14227f2c-ac23-4746-bf83-d54e29051004",
+      "name": "The Right Stuff"
+     }
+    },
+    {
+     "catalog-number": "T2-27627",
+     "label": {
+      "id": "14227f2c-ac23-4746-bf83-d54e29051004",
+      "name": "The Right Stuff"
+     }
+    }
+   ],
+   "track-count": 9,
+   "media": [
+    {
+     "id": "44b46d89-67f7-37e0-9b71-7106e3592931",
+     "format": "CD",
+     "disc-count": 3,
+     "track-count": 9
+    }
+   ],
+   "tags": [
+    {
+     "count": 1,
+     "name": "soul"
+    },
+    {
+     "count": 1,
+     "name": "funk soul"
+    }
+   ]
+  },
+  {
+   "id": "18068679-fd83-422e-b929-bd4428d951a9",
+   "score": 100,
+   "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+   "artist-credit-id": "0d75c79a-1110-360b-bf38-6e9e640860b9",
+   "count": 1,
+   "title": "I’m Still in Love With You",
+   "status": "Official",
+   "text-representation": {
+    "language": "eng",
+    "script": "Latn"
+   },
+   "artist-credit": [
+    {
+     "name": "Al Green",
+     "artist": {
+      "id": "fb7272ba-f130-4f0a-934d-6eeea4c18c9a",
+      "name": "Al Green",
+      "sort-name": "Green, Al",
+      "disambiguation": "US soul singer, songwriter, pastor and record producer"
+     }
+    }
+   ],
+   "release-group": {
+    "id": "4a40960b-44b3-313c-8540-cde054d41bd9",
+    "type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "title": "I’m Still in Love With You",
+    "primary-type": "Album"
+   },
+   "date": "2009-06-23",
+   "country": "US",
+   "release-events": [
+    {
+     "date": "2009-06-23",
+     "area": {
+      "id": "489ce91b-6658-3307-9877-795b68554c98",
+      "name": "United States",
+      "sort-name": "United States",
+      "iso-3166-1-codes": [
+       "US"
+      ]
+     }
+    }
+   ],
+   "barcode": "767981113616",
+   "label-info": [
+    {
+     "catalog-number": "FPH1136-1",
+     "label": {
+      "id": "76da5b47-69e8-49e7-a2fc-62d296b6224f",
+      "name": "Fat Possum Records"
+     }
+    }
+   ],
+   "track-count": 9,
+   "media": [
+    {
+     "id": "017ae57b-4ea7-3469-89fd-c3c35f5618e5",
+     "format": "12\" Vinyl",
+     "disc-count": 0,
+     "track-count": 9
+    }
+   ]
+  },
+  {
+   "id": "095b1ca3-34ba-4d14-8eba-602fe6c1a5a1",
+   "score": 100,
+   "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+   "packaging-id": "119eba76-b343-3e02-a292-f0f00644bb9b",
+   "artist-credit-id": "0d75c79a-1110-360b-bf38-6e9e640860b9",
+   "count": 1,
+   "title": "I’m Still In Love With You",
+   "status": "Official",
+   "packaging": "None",
+   "text-representation": {
+    "language": "eng",
+    "script": "Latn"
+   },
+   "artist-credit": [
+    {
+     "name": "Al Green",
+     "artist": {
+      "id": "fb7272ba-f130-4f0a-934d-6eeea4c18c9a",
+      "name": "Al Green",
+      "sort-name": "Green, Al",
+      "disambiguation": "US soul singer, songwriter, pastor and record producer"
+     }
+    }
+   ],
+   "release-group": {
+    "id": "4a40960b-44b3-313c-8540-cde054d41bd9",
+    "type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "title": "I’m Still in Love With You",
+    "primary-type": "Album"
+   },
+   "date": "2019-12-20",
+   "country": "XW",
+   "release-events": [
+    {
+     "date": "2019-12-20",
+     "area": {
+      "id": "525d4e18-3d00-31b9-a58b-a146a916de8f",
+      "name": "[Worldwide]",
+      "sort-name": "[Worldwide]",
+      "iso-3166-1-codes": [
+       "XW"
+      ]
+     }
+    }
+   ],
+   "label-info": [
+    {
+     "label": {
+      "id": "19eeed5a-1dbe-40bc-b6e9-5979a3a903d8",
+      "name": "Hi Records"
+     }
+    }
+   ],
+   "track-count": 9,
+   "media": [
+    {
+     "id": "c99f242e-5ceb-350b-be32-cde7f33aed7d",
+     "format": "Digital Media",
+     "disc-count": 0,
+     "track-count": 9
+    }
+   ],
+   "tags": [
+    {
+     "count": 4,
+     "name": "soul"
+    },
+    {
+     "count": 3,
+     "name": "gospel"
+    },
+    {
+     "count": 2,
+     "name": "memphis"
+    },
+    {
+     "count": 3,
+     "name": "r&b"
+    },
+    {
+     "count": 2,
+     "name": "r&b/soul"
+    },
+    {
+     "count": 2,
+     "name": "memphis-soul"
+    }
+   ]
+  },
+  {
+   "id": "15e4ea1a-3fb2-4e41-bf8e-ca38bea4075f",
+   "score": 100,
+   "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+   "packaging-id": "8f931351-d2e2-310f-afc6-37b89ddba246",
+   "artist-credit-id": "0d75c79a-1110-360b-bf38-6e9e640860b9",
+   "count": 1,
+   "title": "I’m Still in Love With You",
+   "status": "Official",
+   "packaging": "Digipak",
+   "text-representation": {
+    "language": "eng",
+    "script": "Latn"
+   },
+   "artist-credit": [
+    {
+     "name": "Al Green",
+     "artist": {
+      "id": "fb7272ba-f130-4f0a-934d-6eeea4c18c9a",
+      "name": "Al Green",
+      "sort-name": "Green, Al",
+      "disambiguation": "US soul singer, songwriter, pastor and record producer"
+     }
+    }
+   ],
+   "release-group": {
+    "id": "4a40960b-44b3-313c-8540-cde054d41bd9",
+    "type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "title": "I’m Still in Love With You",
+    "primary-type": "Album"
+   },
+   "date": "2009",
+   "country": "US",
+   "release-events": [
+    {
+     "date": "2009",
+     "area": {
+      "id": "489ce91b-6658-3307-9877-795b68554c98",
+      "name": "United States",
+      "sort-name": "United States",
+      "iso-3166-1-codes": [
+       "US"
+      ]
+     }
+    }
+   ],
+   "barcode": "767981113623",
+   "label-info": [
+    {
+     "catalog-number": "FPH1136-2",
+     "label": {
+      "id": "19eeed5a-1dbe-40bc-b6e9-5979a3a903d8",
+      "name": "Hi Records"
+     }
+    },
+    {
+     "catalog-number": "FPH1136-2",
+     "label": {
+      "id": "76da5b47-69e8-49e7-a2fc-62d296b6224f",
+      "name": "Fat Possum Records"
+     }
+    }
+   ],
+   "track-count": 9,
+   "media": [
+    {
+     "id": "0fcc62ea-7087-39fc-83ac-e8b99ef81705",
+     "format": "CD",
+     "disc-count": 1,
+     "track-count": 9
+    }
+   ]
+  },
+  {
+   "id": "b084438f-e7ef-4af5-ab20-bb3d599e52d7",
+   "score": 100,
+   "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+   "artist-credit-id": "0d75c79a-1110-360b-bf38-6e9e640860b9",
+   "count": 1,
+   "title": "I’m Still in Love With You",
+   "status": "Official",
+   "disambiguation": "50th Anniversary Edition, Green Smoke Colored",
+   "text-representation": {
+    "language": "eng",
+    "script": "Latn"
+   },
+   "artist-credit": [
+    {
+     "name": "Al Green",
+     "artist": {
+      "id": "fb7272ba-f130-4f0a-934d-6eeea4c18c9a",
+      "name": "Al Green",
+      "sort-name": "Green, Al",
+      "disambiguation": "US soul singer, songwriter, pastor and record producer"
+     }
+    }
+   ],
+   "release-group": {
+    "id": "4a40960b-44b3-313c-8540-cde054d41bd9",
+    "type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "title": "I’m Still in Love With You",
+    "primary-type": "Album"
+   },
+   "date": "2022",
+   "country": "US",
+   "release-events": [
+    {
+     "date": "2022",
+     "area": {
+      "id": "489ce91b-6658-3307-9877-795b68554c98",
+      "name": "United States",
+      "sort-name": "United States",
+      "iso-3166-1-codes": [
+       "US"
+      ]
+     }
+    }
+   ],
+   "barcode": "767981113630",
+   "label-info": [
+    {
+     "catalog-number": "FPH1136-3",
+     "label": {
+      "id": "76da5b47-69e8-49e7-a2fc-62d296b6224f",
+      "name": "Fat Possum Records"
+     }
+    },
+    {
+     "catalog-number": "FPH1136-1",
+     "label": {
+      "id": "19eeed5a-1dbe-40bc-b6e9-5979a3a903d8",
+      "name": "Hi Records"
+     }
+    }
+   ],
+   "track-count": 9,
+   "media": [
+    {
+     "id": "7cda5c07-a889-3e09-ab30-e0f1b257a19a",
+     "format": "12\" Vinyl",
+     "disc-count": 0,
+     "track-count": 9
+    }
+   ]
+  },
+  {
+   "id": "d68fa866-1a6c-41fb-a4fe-2dc6b1d77263",
+   "score": 100,
+   "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+   "packaging-id": "ec27701a-4a22-37f4-bfac-6616e0f9750a",
+   "artist-credit-id": "0d75c79a-1110-360b-bf38-6e9e640860b9",
+   "count": 1,
+   "title": "I’m Still in Love With You",
+   "status": "Official",
+   "packaging": "Jewel Case",
+   "text-representation": {
+    "language": "eng",
+    "script": "Latn"
+   },
+   "artist-credit": [
+    {
+     "name": "Al Green",
+     "artist": {
+      "id": "fb7272ba-f130-4f0a-934d-6eeea4c18c9a",
+      "name": "Al Green",
+      "sort-name": "Green, Al",
+      "disambiguation": "US soul singer, songwriter, pastor and record producer"
+     }
+    }
+   ],
+   "release-group": {
+    "id": "4a40960b-44b3-313c-8540-cde054d41bd9",
+    "type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "title": "I’m Still in Love With You",
+    "primary-type": "Album"
+   },
+   "date": "2003-02-11",
+   "country": "US",
+   "release-events": [
+    {
+     "date": "2003-02-11",
+     "area": {
+      "id": "489ce91b-6658-3307-9877-795b68554c98",
+      "name": "United States",
+      "sort-name": "United States",
+      "iso-3166-1-codes": [
+       "US"
+      ]
+     }
+    }
+   ],
+   "barcode": "724354267727",
+   "asin": "B000087DSN",
+   "label-info": [
+    {
+     "catalog-number": "72435-42677-2-7",
+     "label": {
+      "id": "19eeed5a-1dbe-40bc-b6e9-5979a3a903d8",
+      "name": "Hi Records"
+     }
+    }
+   ],
+   "track-count": 11,
+   "media": [
+    {
+     "id": "3c5711f9-5134-3405-8021-058aff8f0590",
+     "format": "CD",
+     "disc-count": 1,
+     "track-count": 11
+    }
+   ]
+  },
+  {
+   "id": "4c95ac93-1334-47d7-9f21-1fcdf67d17d3",
+   "score": 100,
+   "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+   "packaging-id": "f7101ce3-0384-39ce-9fde-fbbd0044d35f",
+   "artist-credit-id": "0d75c79a-1110-360b-bf38-6e9e640860b9",
+   "count": 1,
+   "title": "I’m Still in Love With You",
+   "status": "Official",
+   "packaging": "Cardboard/Paper Sleeve",
+   "text-representation": {
+    "language": "eng",
+    "script": "Latn"
+   },
+   "artist-credit": [
+    {
+     "name": "Al Green",
+     "artist": {
+      "id": "fb7272ba-f130-4f0a-934d-6eeea4c18c9a",
+      "name": "Al Green",
+      "sort-name": "Green, Al",
+      "disambiguation": "US soul singer, songwriter, pastor and record producer"
+     }
+    }
+   ],
+   "release-group": {
+    "id": "4a40960b-44b3-313c-8540-cde054d41bd9",
+    "type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "title": "I’m Still in Love With You",
+    "primary-type": "Album"
+   },
+   "date": "1972-10-23",
+   "country": "US",
+   "release-events": [
+    {
+     "date": "1972-10-23",
+     "area": {
+      "id": "489ce91b-6658-3307-9877-795b68554c98",
+      "name": "United States",
+      "sort-name": "United States",
+      "iso-3166-1-codes": [
+       "US"
+      ]
+     }
+    }
+   ],
+   "label-info": [
+    {
+     "catalog-number": "XSHL 32074",
+     "label": {
+      "id": "19eeed5a-1dbe-40bc-b6e9-5979a3a903d8",
+      "name": "Hi Records"
+     }
+    }
+   ],
+   "track-count": 9,
+   "media": [
+    {
+     "id": "2832af88-81ed-3bf7-aff1-1475f11ffb85",
+     "format": "12\" Vinyl",
+     "disc-count": 0,
+     "track-count": 9
+    }
+   ],
+   "tags": [
+    {
+     "count": 2,
+     "name": "soul"
+    }
+   ]
+  },
+  {
+   "id": "c875ae04-801b-444e-8a1f-afd38162412d",
+   "score": 100,
+   "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+   "packaging-id": "f7101ce3-0384-39ce-9fde-fbbd0044d35f",
+   "artist-credit-id": "0d75c79a-1110-360b-bf38-6e9e640860b9",
+   "count": 1,
+   "title": "I'm Still in Love With You",
+   "status": "Official",
+   "disambiguation": "W - Waddell Press",
+   "packaging": "Cardboard/Paper Sleeve",
+   "text-representation": {
+    "language": "eng",
+    "script": "Latn"
+   },
+   "artist-credit": [
+    {
+     "name": "Al Green",
+     "artist": {
+      "id": "fb7272ba-f130-4f0a-934d-6eeea4c18c9a",
+      "name": "Al Green",
+      "sort-name": "Green, Al",
+      "disambiguation": "US soul singer, songwriter, pastor and record producer"
+     }
+    }
+   ],
+   "release-group": {
+    "id": "4a40960b-44b3-313c-8540-cde054d41bd9",
+    "type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "title": "I’m Still in Love With You",
+    "primary-type": "Album"
+   },
+   "date": "1972",
+   "country": "US",
+   "release-events": [
+    {
+     "date": "1972",
+     "area": {
+      "id": "489ce91b-6658-3307-9877-795b68554c98",
+      "name": "United States",
+      "sort-name": "United States",
+      "iso-3166-1-codes": [
+       "US"
+      ]
+     }
+    }
+   ],
+   "barcode": "",
+   "label-info": [
+    {
+     "catalog-number": "XSHL 32074",
+     "label": {
+      "id": "19eeed5a-1dbe-40bc-b6e9-5979a3a903d8",
+      "name": "Hi Records"
+     }
+    }
+   ],
+   "track-count": 9,
+   "media": [
+    {
+     "id": "80426cfd-e41f-48a9-b13a-5cf3572d3c8b",
+     "format": "12\" Vinyl",
+     "disc-count": 0,
+     "track-count": 9
+    }
+   ]
+  },
+  {
+   "id": "5ee0b926-4c9d-4be3-b504-a634cf0338f5",
+   "score": 100,
+   "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+   "packaging-id": "119eba76-b343-3e02-a292-f0f00644bb9b",
+   "artist-credit-id": "0d75c79a-1110-360b-bf38-6e9e640860b9",
+   "count": 1,
+   "title": "I'm Still in Love with You",
+   "status": "Official",
+   "packaging": "None",
+   "text-representation": {
+    "language": "eng",
+    "script": "Latn"
+   },
+   "artist-credit": [
+    {
+     "name": "Al Green",
+     "artist": {
+      "id": "fb7272ba-f130-4f0a-934d-6eeea4c18c9a",
+      "name": "Al Green",
+      "sort-name": "Green, Al",
+      "disambiguation": "US soul singer, songwriter, pastor and record producer"
+     }
+    }
+   ],
+   "release-group": {
+    "id": "4a40960b-44b3-313c-8540-cde054d41bd9",
+    "type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "title": "I’m Still in Love With You",
+    "primary-type": "Album"
+   },
+   "date": "",
+   "country": "XW",
+   "release-events": [
+    {
+     "date": "",
+     "area": {
+      "id": "525d4e18-3d00-31b9-a58b-a146a916de8f",
+      "name": "[Worldwide]",
+      "sort-name": "[Worldwide]",
+      "iso-3166-1-codes": [
+       "XW"
+      ]
+     }
+    }
+   ],
+   "barcode": "886445997743",
+   "label-info": [
+    {
+     "label": {
+      "id": "76da5b47-69e8-49e7-a2fc-62d296b6224f",
+      "name": "Fat Possum Records"
+     }
+    }
+   ],
+   "track-count": 9,
+   "media": [
+    {
+     "id": "5a8b2290-a2bb-48d0-a2cf-dbd240d824f6",
+     "format": "Digital Media",
+     "disc-count": 0,
+     "track-count": 9
+    }
+   ]
+  },
+  {
+   "id": "197991db-79de-49f1-9bf5-5f7707a345c9",
+   "score": 87,
+   "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+   "packaging-id": "ec27701a-4a22-37f4-bfac-6616e0f9750a",
+   "artist-credit-id": "0d75c79a-1110-360b-bf38-6e9e640860b9",
+   "count": 1,
+   "title": "I'm Still in Love With You & Call Me",
+   "status": "Official",
+   "packaging": "Jewel Case",
+   "text-representation": {
+    "language": "eng",
+    "script": "Latn"
+   },
+   "artist-credit": [
+    {
+     "name": "Al Green",
+     "artist": {
+      "id": "fb7272ba-f130-4f0a-934d-6eeea4c18c9a",
+      "name": "Al Green",
+      "sort-name": "Green, Al",
+      "disambiguation": "US soul singer, songwriter, pastor and record producer"
+     }
+    }
+   ],
+   "release-group": {
+    "id": "96a1b966-1f05-4349-a795-0c9bd1863a27",
+    "type-id": "dd2a21e1-0c00-3729-a7a0-de60b84eb5d1",
+    "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+    "title": "I'm Still in Love With You & Call Me",
+    "primary-type": "Album",
+    "secondary-types": [
+     "Compilation"
+    ],
+    "secondary-type-ids": [
+     "dd2a21e1-0c00-3729-a7a0-de60b84eb5d1"
+    ]
+   },
+   "date": "",
+   "country": "GB",
+   "release-events": [
+    {
+     "date": "",
+     "area": {
+      "id": "8a754a16-0027-3a29-b6d7-2b40ea0481ed",
+      "name": "United Kingdom",
+      "sort-name": "United Kingdom",
+      "iso-3166-1-codes": [
+       "GB"
+      ]
+     }
+    }
+   ],
+   "barcode": "5014757271113",
+   "label-info": [
+    {
+     "catalog-number": "HI UK CD 111",
+     "label": {
+      "id": "19eeed5a-1dbe-40bc-b6e9-5979a3a903d8",
+      "name": "Hi Records"
+     }
+    }
+   ],
+   "track-count": 18,
+   "media": [
+    {
+     "id": "c337a3e7-0124-35fc-be04-83a6d9af62af",
+     "format": "CD",
+     "disc-count": 1,
+     "track-count": 18
+    }
+   ]
+  }
+ ]
+}
