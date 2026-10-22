@@ -3,6 +3,34 @@
 What this file is: the shared memory of the agent harness for this run. Each session appends one entry **at the top**
 (newest first) when it finishes a feature: what it built, what it learned, what it asks. Nobody edits older entries.
 
+### 2026-10-22 · verify R5
+
+| Feature | Step | What you ran or read | What you saw | Holds |
+|---|---|---|---|---|
+| R5-01 | 1 | read scripts/export_playlists.py:74-85 `playlist_health`; test_playlist_health_counts_entries_on_missing_files_per_playlist, _counts_an_entry_whose_song_navidrome_no_longer_has, _opens_the_database_read_only; grep fake_server.py schema | pure fn via `open_ro`, LEFT JOIN media_file (m.id NULL or missing), grouped, ordered by name; `missing` and `rules` columns exist in NAVIDROME_SCHEMA and the fake's INSERT; tests assert pl-1/pl-3 rows, unknown id counted, open_ro used. Smart playlists excluded (D46 addition, not in step, harmless) | yes |
+| R5-01 | 2 | read crates/store.py:1073-1080, sourcing/worker.py `health`/`health_detail`; test_playlist_health_logs_one_event_per_change, _a_restarted_worker_repeats_no_health_event, _a_failed_health_read_is_logged_and_keeps_the_stored_value | settings key `playlist_health` JSON; runs after successful export only; event only when rows differ; detail strings match the step ('2 entries in Tea tent point at missing files; 1 in Chicago 86', empty text); restart repeats nothing; failure logs `playlist health failed: …` and keeps value | yes |
+| R5-01 | 3 | read crates/service.py:122; test_status_carries_playlist_health | `playlistHealth` in status, `[]` before any count, equals stored rows after set | yes |
+| R5-01 | 4 | ran 31 selected tests (health/history/export) in test_export_playlists, test_worker, test_service, test_web_m8: all pass; read the asserts | fake with missing={'s2'} → pl-1 Disco Edits and pl-3 Sunday Listening; unknown media_file row counts; tick → one event, second tick none, fix → empty-set event; /api/status carries it | yes |
+| R5-01 | 5 | `git log origin/main..HEAD` | `8779e6e R5-01: playlist health after each export (event + /api/status)` present | yes |
+| R5-01 | 6 | `lib/check.sh`; `git ls-remote origin` | green, 1610 tests; remote branch at 612d3b6, contains R5 commits | yes |
+| R5-02 | 1 | read export() and `_keep` in scripts/export_playlists.py:120-150; test_a_changed_playlist_keeps_its_previous_file_in_todays_history, test_an_unchanged_export_makes_no_history | copy only when target exists and text differs, only if the day's file is absent; unchanged copies nothing; new playlist makes no `.history`; third change same day keeps the first | yes |
+| R5-02 | 2 | read `prune_history`:153-170; test_prune_history_removes_only_dated_folders_older_than_30_days, _without_history_and_through_a_linked_history…, test_an_old_day_folder_holding_links…; test_export_prunes_old_history | only `YYYY-MM-DD` dirs under out_dir/.history, symlinked .history/day skipped, missing .history fine, called at end of export | yes |
+| R5-02 | 3 | read test_history_files_are_neither_stale_nor_checked | history file exists; `s.stale == []` and `check()` == [] | yes |
+| R5-02 | 4 | read the tests above plus tests/test_worker.py test_the_export_tick_keeps_the_previous_playlist_file_in_history | 31-day removed, 30/29 kept, notes/ and old-mtime live file kept, outside dir and music tree unchanged; worker tick produces history file | yes |
+| R5-02 | 5 | grep docs/worker.md:37-39, docs/hard-won-facts.md, docs/architecture.md:143 | worker.md step 4 mentions history and the 30-day prune; hard-won-facts also has a history line (matched by the grep on `.history`/`history`) | yes |
+| R5-02 | 6 | `git log origin/main..HEAD` | `20e37a2 R5-02: .m3u8 history before each rewrite, pruned after 30 days` present | yes |
+| R5-02 | 7 | `lib/check.sh`; ls-remote | green 1610; pushed | yes |
+| R5-03 | 1 | read web/index.html:22, web/app.js:32-50 `healthLines`/`loadStatus`, web/app.css:14 `.banner` | `<div id="health" class="banner hidden">` under header; one line per playlist, singular for 1; hidden when empty; banner full width, overflow-wrap:anywhere, no fixed px width | yes |
+| R5-03 | 2 | ran tests/test_web_health.py (6 passed); read page/script/status asserts | #health present after header, script reads playlistHealth and has 'point at missing files'; node-run healthLines gives '2 entries in Tea tent point at missing files'; status after worker export with missing s2 returns the two rows | yes |
+| R5-03 | 3 | viewed docs/screenshots/r5-health-banner.png (375×812); read progress entry | Playlists tab open; two-line banner '2 entries in Disco Edits point at missing files' / '1 entry in Sunday Listening points at a missing file'; no horizontal overflow; progress entry describes it | yes |
+| R5-03 | 4 | `git log origin/main..HEAD` | `079d310 R5-03: playlist-health banner in the web client` present | yes |
+| R5-03 | 5 | `lib/check.sh`; ls-remote | green 1610; pushed | yes |
+| R5-04 | 1 | ls $HARNESS_SCRATCH/r5.diff; read prune/health code against the checklist | r5.diff exists (40 KB); rmtree only on a real date-named dir directly under .history, links skipped; `open_ro` mode=ro; count includes missing=1 and absent media_file; one event per change; service.status passes health through `public` | yes |
+| R5-04 | 2 | read tests test_an_old_day_folder_holding_links…, test_status_playlist_health_goes_through_public, test_a_failed_health_write_logs_no_event…, test_a_failing_history_never_stops_the_export; commit 76bb908 diff stat | fixes (public(), link-safety, history errors never stop export, rollback on failed write) have tests in the same commit | yes |
+| R5-04 | 3 | read m9-remaining-ownership.md:271-277, architecture.md:121-122,143,361, worker.md:37-42,630 | §7 marked 'Built (R5)' with Q11 30-day default; settings table lists `playlist_health`; `.history` folder named; worker.md event list has `playlist_health` | yes |
+| R5-04 | 4 | `git show --stat 76bb908` | commit `R5-04: review and simplify playlist health and history` present | yes |
+| R5-04 | 5 | `lib/check.sh`; ls-remote | green 1610; remote at 612d3b6 | yes |
+
 ### 2026-10-21 · verify R4
 
 | Feature | Step | What you ran or read | What you saw | Holds |
