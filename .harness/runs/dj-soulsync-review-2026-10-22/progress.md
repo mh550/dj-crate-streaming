@@ -8,6 +8,14 @@ Michael steers through `INBOX.md` on this branch (first line `status: run|pause|
 Every session reads `INBOX.md` and this file first, then the spec `docs/specs/2026-10-22-soulsync-review.md` and the
 brief `brief.md` (the brief wins on scope).
 
+### 2026-10-22 08:30 · V2-01 · passes
+- **New:** `docs/research/2026-10-22-soulsync/02-intake.md` (~410 lines): Spotify (auth-code flow with the user's own app, no embedded id; embed scrape + SpotipyFree without credentials; the Feb 2026 handling: `/items` before `/tracks`, followed-playlist 403, Premium-owner 403), the 12 playlist-source adapters and mirrored playlists (no default refresh schedule; pipeline refresh → identify → sync → wishlist), wishlist (30 min, retries forever with 4 h/24 h/7 d backoff), watchlist (24 h, track-by-track adds, auto-download on by default), member requests (wishlist rows pending admin approval; album|track only), the Lidarr shim, an ASCII flow; ours (playlist_sources, import-playlist, seed-spotify, `external_wanted`, S2-01/02/07, S3); judged on C and D. **Verdict: adapt.** Docs only; tests 1757 → 1757.
+- **Verified:** citation check prints no BAD line; 5 `*unverified*` + 4 `*absence inferred*` marks. An Opus review opened ~150 citations and found 13 wrong or overstated (Lidarr call site, album-click path, ban-escalation range, `store.py:69`, wishlist insert line, iTunes route, 350 ms/10,000 constants, spotipyFree "hard dependency", "matched in the library" = manual matches only, Wing It opt-in, seed-spotify does not re-ask, Qobuz/Last.fm missing, empty-fetch guard): all fixed and re-checked with `sed -n`. Suite: `check.sh` green in 650 s, 1757 tests (on the final tree).
+- **For V2-08 (cross-file disagreement):** 01-map.md calls `spotipyFree` a hard dependency; `SoulSync:requirements.txt:92-94` and `SoulSync:core/spotify_public_api.py:11-15` say it is soft-imported, "never a hard runtime requirement". 02-intake says the latter; 01-map needs the same wording.
+- **For V2-03a/V3:** the wishlist run submits album batches (`SoulSync:core/wishlist/processing.py:211-279`) but a wishlist row is one track with the album only inside `spotify_data` JSON; whether a batch pins one folder is V2-03a's question. `core/downloads/master.py:run_full_missing_tracks_process` was not traced.
+- **Likely SoulSync bug (not run):** `SoulSync:api/playlists.py:82-86` calls `.get()` on the `Playlist` dataclass `get_playlist_by_id` returns.
+- **Questions for Michael:** none new. **Proposed changes:** none.
+
 ### 2026-10-22 · verify V1
 
 | Feature | Step | What you ran or read | What you saw | Holds |
