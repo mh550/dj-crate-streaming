@@ -131,11 +131,12 @@ marks a consequence derived from cited lines but not run. Music only: `api/video
 - **API keys:** `sk_` + `token_urlsafe(32)`, stored as SHA-256 and compared with `hmac.compare_digest`
   (`SoulSync:api/auth.py:104-121`, `SoulSync:api/auth.py:148-163`); scope `admin` (the default) or `read`
   (`SoulSync:api/auth.py:40-101`). An admin key acts as admin profile 1 with download rights
-  (`SoulSync:api/auth.py:166-178`). `@require_api_key` sits on 112 routes (`grep -c '@require_api_key' api/*.py`
-  summed), documented in `Support/API.md` (2,689 lines).
+  (`SoulSync:api/auth.py:166-178`). `@require_api_key` sits on 112 routes, 86 of them music (`grep -c '@require_api_key' api/*.py`
+  summed; `api/video_v1.py` has 26), documented in `Support/API.md` (2,689 lines).
 - **Login mode exempts `/api/v1/*` wholesale** (`SoulSync:core/security/login_gate.py:47-48`), and
   `POST /api/v1/api-keys/bootstrap` has no decorator and mints the first key while none exist
-  (`SoulSync:api/settings.py:120-138`, `SoulSync:api/key_store.py:62-71`). Read from code: on a login-mode install that
+  (`SoulSync:api/settings.py:120-138`, `SoulSync:api/key_store.py:62-71`); the launch-PIN and profile gates exempt
+  `/api/v1/` too (`SoulSync:core/security/launch_lock.py:81`, `SoulSync:web_server.py:822-826`). Read from code: on a login-mode install that
   never made a key, an anonymous caller could mint an admin key (the blueprint is mounted at `/api/v1`,
   `SoulSync:web_server.py:1829`, and a key defaults to `admin`, `SoulSync:api/auth.py:104`; *unverified*, nothing was
   run: would be verified by an unauthenticated `POST /api/v1/api-keys/bootstrap` to a fresh login-mode instance).
@@ -475,7 +476,7 @@ low-tier copy (`ours:crates/service.py:253-279`). A B2 proxy would have to turn 
 that approval, not into a silent download.
 
 **B3: a native fork (Cassette/Minidisc, or Yuzic).** SoulSync has no native app and no Subsonic surface, so a native
-Subsonic client would still talk to Navidrome and reach SoulSync only through `/api/v1` (112 key-gated routes,
+Subsonic client would still talk to Navidrome and reach SoulSync only through `/api/v1` (112 key-gated routes, 86 of them music,
 `Support/API.md`) or MCP. The lesson is its API, not its app: a documented, key-scoped API (`SoulSync:api/auth.py:40-101`)
 with request status a client can poll (`SoulSync:api/request.py:432-462`). Ours plans the same through S3-03 and S3-05,
 but with no auth: "Same auth and exposure as today's `/api/*`"

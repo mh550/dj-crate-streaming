@@ -8,6 +8,70 @@ Michael steers through `INBOX.md` on this branch (first line `status: run|pause|
 Every session reads `INBOX.md` and this file first, then the spec `docs/specs/2026-10-22-soulsync-review.md` and the
 brief `brief.md` (the brief wins on scope).
 
+### 2026-10-22 15:26 · V4-02 · passes
+
+- **What changed:** README.md `## Summary` (47 lines): the verdict (c), `### Top 5 findings` (D7, the second library writer, maintenance pace, the album path for E, ext-74), `### Next steps` (the 7 steps of 09 `## Recommendation`) and the line "Questions for Michael: see 09-recommendations.md". `## Sections` now also links README.md itself. Review fixes are in 01, 02, 03, 06, 08, 09 and README, and `docs/next-todos.md` has one new line under `## State at hand-off` ("verdict: port pieces, never adopt SoulSync"). Docs only: 1757 tests before and after.
+- **Review:** two Opus subagents read the whole folder. One checked a seeded sample of 30 cites (`random.seed(4022)`, 2 SoulSync + 1 ours per file, across all 10 files: 20 SoulSync, 10 ours; table below) and reported 12 findings. The other checked every `*unverified*` mark (second table). I re-read each claim I acted on in the clone or our tree before editing.
+- **Findings fixed:** (1) 09:95 and Q8 quoted D7 as text it does not contain; now word for word from `next-session-design.md:61`. (2) README Operations called SoulSync's integrity-checked backup "a good idea for our `.snap`"; ours already does it (`snapshot-crates-db.sh:16-18`), matching 09:143. (3) README Intake said "synced on a schedule"; 02:194-200 says there is no built-in schedule, so the cell now says that. (4) 01:452 cite moved to `architecture.md:76-77`. (5) 08:134/478: 112 key-gated routes, 86 of them music (26 in `api/video_v1.py`, counted with grep). (6) The 0.62 floor is at `master.py:43`, not 44 (README ×3, 02:388). (7) 06:333 pointed to a section that does not exist ("ext-74 answer"); it now names 03 `## The difference that matters`, step 2. (8) README:64 now gives both hotfix SHAs (`6238ee5` deployed, `19fedea` in this branch; checked with `merge-base --is-ancestor`). (9) 01:465 now reads 70 test files and 1,757 tests. (10) 09:111 adds row 3's bytes check. (11) 03:346 S1-01 is at `:62-67`. (12) The README summary placeholder is filled.
+- **Verified:** the citation check printed no BAD line. The summary is 47 lines (awk, `## Summary` to `## Sections`). `anchors.py` printed "links ok", and all 10 `## Sections` links resolve. `grep -rnoE '[A-Za-z0-9]{32,}'` finds nothing. `git diff --stat origin/main..HEAD -- docs/next-todos.md` shows 1 file, 1 insertion. Suite: `lib/check.sh` printed "green in 650 s, 1757 tests" (docs only).
+- **Step 5 (the literal check does not hold; the intent does):** `git diff --stat origin/main..HEAD` also lists 16 pre-run files (`sourcing/*.py`, `tests/*.py`, fixtures, two specs, `.harness/config.sh`). They come from commits made before the run started that are not in `main` yet: PR #16's hotfix (`19fedea`..`59c6f6a`), the S-run spec (`1632d2d`..`5057e42`) and the run's spec `d558d22`. The run's own commits touch only the three allowed paths: `git log --first-parent --no-merges --name-only 6fb134e..HEAD` (43 commits), filtered, prints none. **Proposed change:** reword V4-02 step 5 (and the matching check in any later run) to use that command, or diff against `d558d22` with first-parent.
+- **Questions for Michael:** none new; the 10 questions in 09 stand. **Next:** V4 is complete. The harness's verify V4 and the PR come next.
+
+#### Citation spot-check (line numbers are from before this session's edits)
+
+| # | File:line | Citation | Sentence checked | Holds | Fix |
+|---|---|---|---|---|---|
+| 1 | 01:168 | `SoulSync:database/music_database.py:3416` | `discovery_recent_albums` table | yes | |
+| 2 | 01:79 | `SoulSync:core/musicbrainz_worker.py:64` | MusicBrainz worker thread | yes | |
+| 3 | 01:452 | `ours:docs/architecture.md:72-75` | worker is the only process that downloads/runs beets | **no** (wording at 76-77) | cite → `:76-77` |
+| 4 | 02:167 | `SoulSync:core/beatport/next_data.py:175-232` | Beatport tracks carry mix, remixers, label, BPM, key, ISRC | yes | |
+| 5 | 02:85 | `SoulSync:core/spotify_public_scraper.py:181-182` | embed scraper caps at ~100 tracks | yes | |
+| 6 | 02:330 | `ours:crates/store.py:105-108` | nothing downloads without an `approvals` row (D23) | yes | |
+| 7 | 03:206 | `SoulSync:core/matching/audio_verification.py:26-29` | AcoustID thresholds 0.80 / 0.70 / 0.60 | yes | |
+| 8 | 03:108 | `SoulSync:database/music_database.py:13401-13438` | album ownership = editions + completeness | partly (13433-38 is the next function) | range → `13401-13431` |
+| 9 | 03:294 | `ours:docs/identity.md:135` | 0.8 is "confident" | yes | |
+| 10 | 04:141 | `SoulSync:core/download_plugins/types.py:67-111` | quality_score weights | yes | |
+| 11 | 04:468 | `SoulSync:core/downloads/monitor.py:1119` | task resets to `searching` | yes | |
+| 12 | 04:665 | `ours:sourcing/slskd_client.py:40-44` | 8 s search, queue length 50 | yes | |
+| 13 | 05:251 | `SoulSync:core/lidarr_download_client.py:76-77` | Lidarr needs URL + API key | yes | |
+| 14 | 05:184 | `SoulSync:core/bandcamp_client.py:222-223` | Bandcamp needs no key | yes | |
+| 15 | 05:352 | `ours:sourcing/verify.py:233` | transcode/fake hi-res hard under strict | yes | |
+| 16 | 06:64 | `SoulSync:core/imports/file_integrity.py:472-549` | zero-length header: < 0.8 × expected fails | yes | |
+| 17 | 06:293 | `SoulSync:core/downloads/master.py:915-939` | entity blocklist in the queue guard | yes | |
+| 18 | 06:359 | `ours:sourcing/verify.py:291-294` | length ±4.0 s on every tier | partly (4.0 s lives elsewhere) | added `ours:sourcing/policy.py:33`, `ours:sourcing/verify.py:249` |
+| 19 | 07:214 | `SoulSync:core/sync/mirrored_server_link.py:57-176` | mirror follows stored id, else name | yes | |
+| 20 | 07:208 | `SoulSync:web_server.py:18873-18884` | single add rewrites the whole list | yes | |
+| 21 | 07:428 | `ours:scripts/duplicate_cleanup.py:405-410` | cleanup refuses during a scan | yes | |
+| 22 | 08:120 | `SoulSync:database/music_database.py:5904-5920` | profiles table, Admin seeded | yes | |
+| 23 | 08:188 | `SoulSync:core/settings.py:668-671` | MCP off by default | yes | |
+| 24 | 08:386 | `ours:crates/service.py:250` | approvals recorded as "michael" | yes | |
+| 25 | 09:204 | `SoulSync:database/music_database.py:807-817` | album only in a JSON blob on a track row | yes | |
+| 26 | 09:201 | `SoulSync:core/soulseek_client.py:2668-2690` | has a login probe | yes | |
+| 27 | 09:87 | `ours:docs/specs/2026-10-13-next-session-design.md:72` | worker is the only writer (with architecture.md:76-77) | partly (D18 gives the gist, the co-cite the wording) | none needed: the pair holds |
+| 28 | README:45 | `SoulSync:core/soulseek_client.py:235-306` | every non-2xx becomes None | yes | |
+| 29 | README:246 | `SoulSync:core/wishlist/processing.py:1076-1091` | member rows wait for admin approval | yes | |
+| 30 | README:51 | `ours:docs/specs/2026-10-22-downloads-and-requests.md:178` | S2-06 old tag values in the event | yes | |
+
+Totals: 26 yes, 3 partly, 1 no. The no and two of the partlies are fixed; #27 holds as a pair.
+
+#### Every `*unverified*` mark (50; line numbers are from before this session's edits; the header legends are excluded)
+
+Resolved (4): 01:117 (worker count: `SoulSync:wsgi.py:3-6`, `SoulSync:docs/performance-1245.md:51`). README:175 (no native app), README:341 (no crate concept) and README:351 (no Mixxx) are now *absence inferred*, with the `find`/grep re-run: 0 project files, a chat-badge test only, and 0 hits.
+
+Kept, with a would-verify clause added (9): 01:228 (pinned `tidalapi` `Session`, `SoulSync:requirements.txt:81`), 01:388 (`.author.login` against the author name), 08:140 (the launch-PIN and profile gate exemptions are now cited; still not run), README:60 (S4-01 `GET /transfers/downloads/<id>`), README:164 (the first setup run's length), README:211 (Navidrome's request log under Amperfy), README:223 (the forks' server-API code), 09:45 (time two rebases), 09:237 (SoulSync's real bound, 60 s / 35 %, now cited at `SoulSync:core/matching/acoustid_candidates.py:118-124`).
+
+Kept as they were, each already naming what verifies it (37):
+- 02:92 (installed spotipyFree), 02:373 (Shortcut test).
+- 04:87 (search-timeout capture), 04:338 (parse logging), 04:349 (enqueue `path` test), 04:356 (swagger/routes), 04:367 (S4-01 enqueue reply), 04:384, 04:605 and 04:796 (S4-01 per-id GET), 04:543 (`GET /server` plus a search), 04:554 (429 test), 04:816 (`isLoggedIn` log).
+- 05:64 (`tidalapi.Session` 0.8.11), 05:171 (yt-dlp's extractor; not in the clone, so not citable here), 05:368 (Opus → MP3 encode).
+- 06:89 (FLAC-encode test), 06:104 (ffmpeg run), 06:303 (logging), 06:503 (Mixxx preferences).
+- 07:240 (end-to-end Navidrome run).
+- 08:274 (member POST), 08:322 (extension repo), 08:358 (iPhone), 08:471 (octo-fiesta's source), 08:504 (the phone).
+- README:103 (04's log), README:155 (question 1), README:161 (a run doing the work), README:201 (the phone), README:252 (08's test).
+- 09:14 (question 1); 09:15, 09:43 ×2, 09:56 and 09:111 (estimates under 09:15's blanket clause).
+
+Wrong: 0.
+
 ### 2026-10-22 14:54 · V4-01 · passes
 
 - **What changed:** new `docs/research/2026-10-22-soulsync/09-recommendations.md` (342 lines, 134 unique cites). It is docs only, so the test count stays at 1757. It weighs four options, each with a table of effort, risk, maintenance, licence and what changes in ours. (b) names 4 integration points and the 4 conflicts. (c) has a 15-row module table. **Recommendation: (c)**, port pieces re-written in our own words, with 7 ordered steps. The 23 S-rows are 12 keep, 11 change, 0 drop, and each change row has a `### Spec delta` marked "draft, not applied". `## Questions for Michael` has 10 questions, each with its assumption and where it is used.

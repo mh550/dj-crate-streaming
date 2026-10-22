@@ -330,7 +330,7 @@ Spotify's 196 s and the file's 195 s agree, because MusicBrainz has track 1 at 1
   ASCII titles (`SoulSync:core/matching/audio_verification.py:794-827`). This is read from code and the 10-21 numbers,
   not run; 03-matching.md has the hand estimate.
 - **Before download** the base-title veto would have rejected the candidate on its filename (0.275 < 0.30) on the per-track search path only (the folder-reuse path has no veto, 04-soulseek.md), but not
-  under a flat `Artist - Album - 09 - Title` name (03-matching.md, "ext-74 answer"). That is matching, not verification.
+  under a flat `Artist - Album - 09 - Title` name (03-matching.md `## The difference that matters`, step 2). That is matching, not verification.
 
 So the protection that would have caught ext-74 is the **title-based** AcoustID FAIL, exactly what S1-02 plans; it is
 off in a default SoulSync install.
@@ -356,7 +356,7 @@ alac) or lossy at 256 kbps or more (mp3 / m4a); ogg, opus, wma refused; verifica
 |---|---|---|---|---|
 | 1 | file exists | — | every tier | `ours:sourcing/verify.py:279-281` |
 | 2 | header readable: FLAC STREAMINFO parsed by hand, else ffprobe | — | every tier | `ours:sourcing/verify.py:43-89`, `ours:sourcing/verify.py:282-285` |
-| 3 | length vs the row's expected length (Spotify/MusicBrainz) | ±4.0 s | every tier | `ours:sourcing/verify.py:291-294`, `ours:sourcing/verify.py:303-305` |
+| 3 | length vs the row's expected length (Spotify/MusicBrainz) | ±4.0 s | every tier | `ours:sourcing/verify.py:291-294`, `ours:sourcing/verify.py:303-305`; the 4.0 s is `ours:sourcing/policy.py:33`, applied at `ours:sourcing/verify.py:249` |
 | 3b | a new version (no expected length): arrived length vs the peer's listing | max(10 s, 5 %) | every tier | `ours:sourcing/verify.py:296-301` |
 | 4 | FLAC implied bitrate (size × 8 / length) | < 500 kbps; overruled to a warning when the measured spectrum is full band | strict | `ours:sourcing/verify.py:306-310`, `ours:sourcing/verify.py:257-262` |
 | 5 | sample rate | < 44.1 kHz | strict | `ours:sourcing/verify.py:311-312` |

@@ -42,7 +42,7 @@ for playlists and placement.
 |---|---|
 | Effort | **≥ 4 harness nights** (≈ 4-8 human days, 1-2 weeks; *unverified*): the fixed setup (1), then a fork to restore D7, D24, D26 and D44, which config cannot reach (≥ 2, README `### Crates for DJing` cost line), then rewiring crates' approvals, placement and identity onto SoulSync's database and paths (≥ 1, *unverified*). |
 | Risk | A **second library writer and no beets**: it files under its own template, deletes or overwrites on a collision (`SoulSync:core/settings.py:915-919`; 07-filing-library.md `### What it writes into tags, and when`), and its duplicate repair bins the other copies even when a playlist holds them, with no repoint (`SoulSync:core/library/duplicate_keep.py:36-54`, `SoulSync:core/repair_worker.py:4071-4091`), against D18 (`ours:docs/specs/2026-10-13-next-session-design.md:72`) and invariant 1 (`ours:CLAUDE.md:11-12`). **Tags lost**: it clears every tag and rewrites from whichever source matched (`SoulSync:core/metadata/enrichment.py:110-123`), and Mixxx reads those tags (`ours:docs/specs/2026-10-16-ownership-and-identity.md:24`). **D24**: its quality gate reads the header's claim (`SoulSync:core/quality/schema.py:171-172`) and nothing after download detects a transcode (06-verification.md `## The difference that matters`). **D26**: an extended mix or radio edit stands in for the plain cut (`SoulSync:core/matching_engine.py:1246-1248`). **D7**: the wishlist runs every 30 min from install (`SoulSync:core/automation_engine.py:77-83`). **Playlists**: its reconcile removes what Michael added (`SoulSync:core/sync/playlist_edit.py:96-108`). **Trash**: quarantine is purged every 12 h (`SoulSync:core/automation_engine.py:244-250`). **Upgrade risk**: a floating image built from untested commits (`SoulSync:docker-compose.yml:8-9`). |
-| Ongoing maintenance | A fork rebased on a release about every 2 days (Maintenance pace, above), carrying patches into `core/downloads/` at its 71 commits a month. Each rebase is at least an hour of review and conflicts (*unverified*). If the one maintainer stops, the fork is ours alone. |
+| Ongoing maintenance | A fork rebased on a release about every 2 days (Maintenance pace, above), carrying patches into `core/downloads/` at its 71 commits a month. Each rebase is at least an hour of review and conflicts (*unverified*: timing the first two rebases onto upstream releases would verify it). If the one maintainer stops, the fork is ours alone. |
 | Licensing | A fork is a copy: keep `license.txt` whole. Shipping its image brings `spotipyFree`'s GPL-3.0 (`SoulSync:requirements.txt:88-95`). |
 | What changes or is lost in ours | Lost: `sourcing/scorer.py`, `sourcing/fetch.py`, `sourcing/verify.py` (D24's decode checks, `ours:sourcing/verify.py:433-447`), `sourcing/filer.py` and beets (`ours:sourcing/filer.py:1-5`), the approvals table (`ours:crates/store.py:105-108`), the four tested invariants, and the queued S1-S4 run. Kept but rewired: `crates/placement.py` and `crates/playlist_edit.py`. Gained: twelve intake source keys (`SoulSync:core/playlists/sources/bootstrap.py:46-116`), a 24-page UI (`SoulSync:webui/src/platform/shell/route-manifest.ts:29-61`), album batches today (`SoulSync:core/wishlist/processing.py:211`). |
 
@@ -92,7 +92,7 @@ placement and playlists. The fixed setup is the confinement.
   and overwrites it (`SoulSync:core/navidrome_client.py:1216-1233`), and its reconcile removes entries the source lacks
   (`SoulSync:core/sync/playlist_edit.py:96-108`). On Michael's account a crate with a mirror's name would be adopted and
   rewritten; it needs its own user with playlist sync off.
-- **The approval gate (D7).** "Automatic downloads only after Michael's approval"
+- **The approval gate (D7).** "Automatic downloads only after Michael has approved at least one manual download and said go"
   (`ours:docs/specs/2026-10-13-next-session-design.md:61`). SoulSync's admin paths download at once or on the
   30-minute timer (`SoulSync:api/request.py:287-306`, `SoulSync:core/automation_engine.py:77-83`) and retry without
   a new approval (`SoulSync:core/wishlist/retry_backoff.py:7-17`). Approval exists only for member profiles
@@ -108,7 +108,7 @@ copying in this run; `ours:docs/specs/2026-10-22-soulsync-review.md:21-24`).
 
 | Aspect | (c) Port specific pieces |
 |---|---|
-| Effort | **≈ 1 harness night on top of the queued 3** (≈ 1-2 human days; *unverified*): the rows marked "inside S…" fold into S-features already planned and add about 0.25 night to the S2-S4 run (step 4); the rest (rows 4, 6, 10, 12 and the byte-based stall guard, which wait for a capture or for B) go to a follow-up spec of about 0.75 night (step 6). |
+| Effort | **≈ 1 harness night on top of the queued 3** (≈ 1-2 human days; *unverified*): the rows marked "inside S…" fold into S-features already planned and add about 0.25 night to the S2-S4 run (step 4); the rest (rows 4, 6, 10, 12, row 3's bytes check and the byte-based stall guard, which wait for a capture or for B) go to a follow-up spec of about 0.75 night (step 6). |
 | Risk | A re-written piece carries SoulSync's assumptions into ours: its thresholds were tuned against its fuzzy scores (`SoulSync:core/matching_engine.py:1517-1529`), so a ported rule is re-derived on our key rules and our fixtures, never taken with its numbers. Ported slskd behaviour is untested against slskd 0.26.1 until the S4 captures (04-soulseek.md `### What our S1-04 and S2 should capture`). |
 | Ongoing maintenance | None from upstream: no runtime dependency and no fork. Upstream's pace matters only if we re-read it later (the cited lines drift within days, `ours:docs/research/2026-10-22-soulsync/01-map.md:435`). |
 | Licensing | Re-written in our words: no notice. If any line is copied, add `THIRD_PARTY_NOTICES` with SoulSync's copyright line and permission notice (`SoulSync:license.txt:1-18`); it would be the first licence text in our tree (`ours:docs/research/2026-10-22-soulsync/01-map.md:333`). |
@@ -234,7 +234,7 @@ need.
 > is a warning ("AcoustID's matches do not fit this file's length"), not a finding. Test: a lookup naming another title
 > at 0.9 with all lengths 60 s off gives a warning.
 
-(The 10 s figure is a draft value, *unverified*; SoulSync's own bound is in `SoulSync:core/matching/acoustid_candidates.py:171-186`
+(The 10 s figure is a draft value, *unverified*; SoulSync's own bound is 60 s or 35 % (`SoulSync:core/matching/acoustid_candidates.py:118-124`), used by the tie rule at `SoulSync:core/matching/acoustid_candidates.py:171-186`
 and the S1 session should set ours from our fixtures.)
 
 ### Spec delta: S1-04
@@ -337,6 +337,6 @@ the pivot spec; a later run that applies a delta records the ones it needs there
 | 5 | Does Spotify stay "his own developer app only"? (initializer 5) | yes; SoulSync's public and scraper paths are lessons only | (c) row 9, the S3-06 delta, step 7 |
 | 6 | Should the web client get a service worker and a `share_target`? (V2-07) | yes, as a small follow-up once B is answered; nothing built now | (c) row 12, step 6 |
 | 7 | Hold an album's verified files in `.staging` until the job ends, so Navidrome never shows half an album? (V2-05) | no: file each row as it lands (today's behaviour) | the S2-05 and S2-06 rows and deltas |
-| 8 | Does D7 mean "every download needs an approval"? Its text is "automatic downloads only after one manual approval and go" (V3-01) | yes: nothing downloads without his approval, and a retry counts against the same approval | (a) and (b) conflicts, the S1-06 row |
+| 8 | Does D7 mean "every download needs an approval"? Its text is "Automatic downloads only after Michael has approved at least one manual download and said go" (V3-01) | yes: nothing downloads without his approval, and a retry counts against the same approval | (a) and (b) conflicts, the S1-06 row |
 | 9 | Should ours log in to Spotify with his own app (authorization code) so private playlists are reachable? (V3-02's goal C cost) | no for the queued runs: Client Credentials only (S3-06); the login is a later feature of about 0.5 harness night | the S3-06 row, step 7 |
 | 10 | Should the eleven spec deltas be applied before the S-runs start? (this feature) | yes, all eleven as drafted, by a short docs session before each run; none applied by this run | `## Recommendation` steps 1 and 3, `## What it means for the queued runs` |
