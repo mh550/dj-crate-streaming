@@ -8,6 +8,14 @@ Michael steers through `INBOX.md` on this branch (first line `status: run|pause|
 Every session reads `INBOX.md` and this file first, then the spec `docs/specs/2026-10-22-soulsync-review.md` and the
 brief `brief.md` (the brief wins on scope).
 
+### 2026-10-22 14:54 · V4-01 · passes
+
+- **What changed:** new `docs/research/2026-10-22-soulsync/09-recommendations.md` (342 lines, 134 unique cites). It is docs only, so the test count stays at 1757. It weighs four options, each with a table of effort, risk, maintenance, licence and what changes in ours. (b) names 4 integration points and the 4 conflicts. (c) has a 15-row module table. **Recommendation: (c)**, port pieces re-written in our own words, with 7 ordered steps. The 23 S-rows are 12 keep, 11 change, 0 drop, and each change row has a `### Spec delta` marked "draft, not applied". `## Questions for Michael` has 10 questions, each with its assumption and where it is used.
+- **New finding for (b):** SoulSync's slskd cleanups default to scope `own` (`core/soulseek_client.py:1370-1380`). Ours is the risk: fetch's "forget earlier attempts" loop DELETEs any finished record of the same filename. Once S1-04 adds `remove=true`, that would really delete another client's record, so the S1-04 delta limits the loop to our own ids.
+- **Verified:** the citation check printed no BAD line. Every `NN-file.md`/README heading the file names exists (grep -x). There are 23 S-rows, and every change row has its delta. An Opus review spot-checked 67 cites: 54 held, 12 held partly, and 1 did not (`repair_worker.py:4071-4091` does check playlists; the text now uses the README's D31/D35 wording). It found 2 high, 5 medium and 8 low issues, and all are fixed. The main fix: deltas that depended on uncaptured shapes (`GET /server`, `bytesTransferred`) moved to a post-capture follow-up (step 6), so S1-06 became keep. I re-read 6 of the reviewer's claims in the clone and the fixtures. Suite: `lib/check.sh` printed "green in 650 s, 1757 tests" (1757 passed, 2 warnings, none newly skipped).
+- **Next session (V4-02):** the README summary can take its verdict and next steps from `## Recommendation`. The S1 branch still does not exist (`git ls-remote`).
+- **Questions for Michael:** two new ones in 09, Q9 (Spotify authorization-code login: default no for the queued runs) and Q10 (apply the 11 deltas before the S-runs: default yes). Q8, the reading of D7, is carried over from V3-01's note. **Proposed changes:** none.
+
 ### 2026-10-22 16:00 · verify V3
 
 Independent re-run, both features hold (14 steps). Nothing live touched, no code or doc edited. Citation check on README: no BAD line. Sampled ~25 cites against the clone and our files; all supported their sentences.
