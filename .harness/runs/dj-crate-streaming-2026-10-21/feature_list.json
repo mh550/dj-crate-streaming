@@ -150,7 +150,7 @@
         "Commit `R4-02: retire rank --download; M9 §6 docs`.",
         "`.harness/check.sh` is green (full suite, about 1,523+ tests, 9-10 min); the commit is pushed to harness/dj-crate-streaming-2026-10-21"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "R4-03",

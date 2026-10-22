@@ -18,6 +18,15 @@ Michael. The spec is `docs/specs/2026-10-21-guards-and-checks.md`; the brief is 
 
 ---
 
+### 2026-10-21 23:40 · R4-02 · passes
+`sourcing/cli.py`: `rank --download` and its enqueue block are deleted (also the dead `client = None`); `rank … --download` now exits 2 from
+argparse (`r.error`, an argv check before parsing) with `rank no longer downloads: use Preview + Approve in the web client (the worker downloads, D23)`; usage header has no `[--download]`.
+Tests 1,576 → 1,577: `test_rank_download_is_gone_and_names_preview_and_approve` (failed first: no SystemExit), plus plain `rank` still ranks the sample fixture.
+`grep -rn -- '--download' tests/ sourcing/ scripts/ docs/worker.md` → only the refusal check, its test and the worker.md line saying it is gone.
+Docs: M9 §6 "Built (R4), not deployed" (both guards + removed flag); architecture §7 row "Only the worker downloads; host scripts write beets only with the worker stopped"; quirks 14/15 updated; worker.md "Settings the worker reads" names the guard.
+Full suite green, 567 s, 1577 tests. Next (R4-03): review diff from origin/main; the two `hold_worker_lock` imports per script (lines 34/39, 47/53) look worth a look.
+For Michael (R8): nothing live in this feature; it ships with the next deploy.
+
 ### 2026-10-21 23:10 · R4-01 · passes
 `sourcing/worker.py` gets `hold_worker_lock(env)`, one wrapper over `hold_lock` (no second flock: `grep -c LOCK_EX` on both scripts → 0).
 `scripts/tag_cleanup.py` `retag|move` and `scripts/dedupe_copies.py` `repoint|trash` hold `<dirname(CRATES_DB)>/worker.lock` for the whole command (try/finally),
