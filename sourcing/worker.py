@@ -29,7 +29,8 @@ Each tick:
      refusal (a hidden row, an edit meanwhile) is retried after `recheck_s`, then each wait doubles up to a day
      (placement.retry_wait), the 12th gives up with a `not_placed` event; an error of the step is logged and the tick goes on;
   4. every `export_s` seconds (WORKER_EXPORT_S, 300 in the CLI; 0 = never) the playlists are exported as `.m3u8`
-     into <music>/_playlists (scripts.export_playlists rewrites only changed files), so repoints, proposal swaps and
+     into <music>/_playlists (scripts.export_playlists rewrites only changed files, the day's first previous version
+     kept in _playlists/.history/<date>/, pruned after 30 days), so repoints, proposal swaps and
      Michael's own edits reach the files. After an export that worked, the playlist entries on a missing or unknown
      media_file are counted per playlist (scripts.export_playlists.playlist_health, M9 §7); when that set differs
      from the stored one (the `playlist_health` setting, read by /api/status) it is stored and one `playlist_health`

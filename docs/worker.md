@@ -33,8 +33,11 @@ of at most one second and ends early when a play-now approval is waiting (see "P
    "Placement"): one guarded edit per playlist and track; a refused one is retried later, less often each time.
 7. **Export.** At most once every `WORKER_EXPORT_S` seconds (300 by default; 0 turns it off) the playlists are
    written as `.m3u8` into `/srv/music/_playlists`, changed files only, so repoints, swaps and your own edits reach
-   the backup files. After an export that worked, it counts per playlist the entries on a missing or unknown song
-   (the ones Navidrome hides; read-only `navidrome.db`). When that list changes it is stored for `/api/status`
+   the backup files. Before a changed file is rewritten, its previous version goes to
+   `_playlists/.history/<YYYY-MM-DD>/` (the first one of the day; later rewrites that day keep it), and day folders
+   older than 30 days are pruned (only date-named folders under `.history/`; links are not followed). After an
+   export that worked, it counts per playlist the entries on a missing or unknown song (the ones Navidrome hides;
+   read-only `navidrome.db`). When that list changes it is stored for `/api/status`
    (`playlistHealth`) and one `playlist_health` event says so ("2 entries in Tea tent point at missing files; 1 in
    Chicago 86", or "no playlist entry points at a missing file" once they are gone). An unchanged list logs nothing.
    Healing a hidden entry stays manual (M9 §7).
@@ -562,7 +565,11 @@ come back under a new id.
 - **A repointed playlist:** first get its files back and scanned. Then replay its lines of `repoint-<time>.jsonl`
   **newest first**, each as `playlist_edit.rewrite(client, db, playlist_id, after, before)`. The oldest line's
   `before` is the playlist as it was.
-- The `.m3u8` exports are not an undo source: every check re-exports them.
+- **A playlist that lost entries:** `/srv/music/_playlists/.history/<YYYY-MM-DD>/<name>.m3u8` is the playlist as it
+  was before that day's first rewrite (30 days kept; hidden entries keep their old paths). Its entries are relative to
+  `_playlists/`, so copy it there under another name (`cp -n`) to open it in a player or compare it (the export then
+  lists it as stale until you delete it). The live `.m3u8` files themselves are not an undo source: every export
+  rewrites them to match Navidrome.
 
 ## Editing the policy
 

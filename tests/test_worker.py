@@ -1,4 +1,5 @@
 """M6 Task 6: the worker consumes approvals (D23), re-checks `verify` rows, prefers the approved candidate."""
+from datetime import date, timedelta
 import shutil
 
 import pytest
@@ -830,3 +831,17 @@ def test_a_failed_health_write_logs_no_event_and_the_next_export_retries(world, 
         monkeypatch.setattr(store, "set_playlist_health", real)
         now[0] += 300; wk.tick()
     assert len(_kinds(world, "playlist_health")) == 1 and len(store.playlist_health()) == 2
+
+
+# --- R5-02: the export tick keeps the previous .m3u8 in .history (M9 §7) -----------------------------------------
+
+def test_the_export_tick_keeps_the_previous_playlist_file_in_history(world):
+    out = world["music"] / "_playlists"
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "Disco Edits.m3u8").write_text("#EXTM3U\n#PLAYLIST:Disco Edits\n", encoding="utf-8")   # an older version
+    with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
+        _health_worker(world, srv, [], [0.0]).tick()
+    [kept] = (out / ".history").glob("*/Disco Edits.m3u8")
+    assert kept.parent.name in {date.today().isoformat(), (date.today() - timedelta(days=1)).isoformat()}
+    assert kept.read_text(encoding="utf-8") == "#EXTM3U\n#PLAYLIST:Disco Edits\n"
+    assert (out / "Disco Edits.m3u8").read_text(encoding="utf-8") != kept.read_text(encoding="utf-8")

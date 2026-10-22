@@ -1,5 +1,6 @@
 import os
 import sqlite3
+from datetime import date
 from pathlib import Path
 
 from scripts import export_playlists as ep
@@ -126,3 +127,97 @@ def test_playlist_health_opens_the_database_read_only(tmp_path):
         assert [r["id"] for r in ep.playlist_health(db)] == ["pl-1", "pl-3"]
     finally:
         os.chmod(db, 0o644)
+
+
+# --- R5-02: .m3u8 history before each rewrite, pruned after 30 days (M9 §7) ----------------------------------------
+
+DAY = date(2026, 10, 21)
+
+
+def _rename_track(db, title):
+    con = sqlite3.connect(db); con.execute("update media_file set title=? where id='a'", (title,)); con.commit(); con.close()
+
+
+def test_a_changed_playlist_keeps_its_previous_file_in_todays_history(tmp_path):
+    db, music, out = lib(tmp_path)
+    ep.export(db, music, out, today=DAY)
+    assert not (out / ".history").exists()                     # new playlists make no history
+    first = (out / "firstset？.m3u8").read_text(encoding="utf-8")
+    _rename_track(db, "Good Times (Edit)")
+    assert ep.export(db, music, out, today=DAY).written == 2
+    day = out / ".history" / "2026-10-21"
+    assert sorted(p.name for p in day.iterdir()) == ["firstset？.m3u8", "playlists - perfect songs.m3u8"]
+    assert (day / "firstset？.m3u8").read_text(encoding="utf-8") == first      # "empty" was unchanged: not copied
+    _rename_track(db, "Good Times (Dub)")                       # a third version the same day keeps the first
+    ep.export(db, music, out, today=DAY)
+    assert (day / "firstset？.m3u8").read_text(encoding="utf-8") == first
+    assert "Good Times (Dub)" in (out / "firstset？.m3u8").read_text(encoding="utf-8")
+    _rename_track(db, "Good Times (Live)")                      # the next day starts its own folder
+    ep.export(db, music, out, today=date(2026, 10, 22))
+    assert "Good Times (Dub)" in (out / ".history" / "2026-10-22" / "firstset？.m3u8").read_text(encoding="utf-8")
+    assert not list(out.rglob("*.tmp"))
+
+
+def test_an_unchanged_export_makes_no_history(tmp_path):
+    db, music, out = lib(tmp_path)
+    ep.export(db, music, out, today=DAY)
+    ep.export(db, music, out, today=DAY)
+    assert not (out / ".history").exists()
+
+
+def test_history_files_are_neither_stale_nor_checked(tmp_path):
+    db, music, out = lib(tmp_path)
+    ep.export(db, music, out, today=DAY)
+    _rename_track(db, "Good Times (Edit)")
+    s = ep.export(db, music, out, today=DAY)
+    assert (out / ".history" / "2026-10-21" / "firstset？.m3u8").exists()
+    assert s.stale == [] and ep.check(db, music, out) == []
+
+
+def _tree(root):
+    return {p.relative_to(root).as_posix(): (p.read_bytes() if p.is_file() and not p.is_symlink() else None)
+            for p in sorted(root.rglob("*"))}
+
+
+def test_prune_history_removes_only_dated_folders_older_than_30_days(tmp_path):
+    db, music, out = lib(tmp_path)
+    ep.export(db, music, out, today=DAY)
+    hist = out / ".history"
+    for name in ("2026-09-20", "2026-09-21", "2026-09-22", "notes", "2026-13-45"):      # 31, 30, 29 days old
+        (hist / name).mkdir(parents=True); (hist / name / "x.m3u8").write_text("#EXTM3U\n")
+    (hist / "2026-09-01.m3u8").write_text("a file named like a date")
+    old = out / "playlists - perfect songs.m3u8"
+    os.utime(old, (0, 0))                                       # an old live file: not history, never pruned
+    outside = tmp_path / "elsewhere" / "2026-01-01"
+    outside.mkdir(parents=True); (outside / "keep.flac").write_bytes(b"x")
+    (hist / "2026-01-02").symlink_to(outside, target_is_directory=True)               # old-dated link: not followed
+    music_before = {k: v for k, v in _tree(music).items() if not k.startswith("_playlists/.history")}
+    ep.prune_history(out, DAY)
+    assert sorted(p.name for p in hist.iterdir()) == ["2026-01-02", "2026-09-01.m3u8", "2026-09-21", "2026-09-22",
+                                                      "2026-13-45", "notes"]
+    assert (outside / "keep.flac").read_bytes() == b"x" and (hist / "2026-01-02").is_symlink()
+    assert {k: v for k, v in _tree(music).items() if not k.startswith("_playlists/.history")} == music_before
+    assert old.exists()
+
+
+def test_prune_history_without_history_and_through_a_linked_history_does_nothing(tmp_path):
+    out = tmp_path / "_playlists"
+    out.mkdir()
+    ep.prune_history(out, DAY)                                  # no .history yet: fine
+    elsewhere = tmp_path / "elsewhere"
+    (elsewhere / "2020-01-01").mkdir(parents=True)
+    (out / ".history").symlink_to(elsewhere, target_is_directory=True)
+    ep.prune_history(out, DAY)
+    assert (elsewhere / "2020-01-01").is_dir()
+
+
+def test_export_prunes_old_history(tmp_path, capsys):
+    db, music, out = lib(tmp_path)
+    (out / ".history" / "2026-09-01").mkdir(parents=True)
+    (out / ".history" / "2026-10-01").mkdir(parents=True)
+    assert ep.export(db, music, out, today=DAY).pruned == ["2026-09-01"]
+    assert sorted(p.name for p in (out / ".history").iterdir()) == ["2026-10-01"]
+    assert "history pruned" not in capsys.readouterr().out
+    (out / ".history" / "2000-01-01").mkdir()
+    assert ep.main(["export", "--db", str(db), "--music", str(music)]) == 0
+    assert "history pruned: .history/2000-01-01" in capsys.readouterr().out
