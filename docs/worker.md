@@ -406,14 +406,15 @@ repoints every playlist from the other copies to it, and moves the other files t
 in three commands: `plan` (read-only), `repoint`, `trash`. All of them take their paths from the worker's environment,
 so no path flags are needed. The design, with every check, is in `docs/plans/2026-10-17-n1-duplicate-cleanup.md`.
 
-All commands run from `/srv/docker`. Output goes to `/data/duplicate-cleanup/` in the container, which is
+`docker compose` commands run from `/srv/docker`, `scripts/live-run.sh` and `scripts/live-check.sh` from a checkout of
+this repo. Output goes to `/data/duplicate-cleanup/` in the container, which is
 `/srv/docker/crates/duplicate-cleanup/` on the host. Stop at the first surprise and undo from the logs (below).
 
 **check** below means `scripts/live-check.sh` (from a checkout of this repo), which runs
 `docker compose run --rm --no-deps worker sh -c 'python3 -m scripts.export_playlists export && python3 -m scripts.export_playlists check'`
 in the deployed image. `scripts/live-run.sh <command…>` runs any one-off worker command that way (D45): it reads the
-revision label of `dj-worker-1` (running or stopped), refuses when it is missing, `dev` or its `dj-crates:<rev>` image
-is gone, and passes `GIT_SHA=<rev>`, so the one-off never runs `dj-crates:dev`. `--print` shows the command only.
+revision label of `dj-worker-1` (running or stopped), refuses when it is missing, `dev`, not a hex sha or its
+`dj-crates:<rev>` image is gone, and passes `GIT_SHA=<rev>`, so the one-off never runs `dj-crates:dev`. `--print` shows the command only.
 Only the worker image mounts `/srv/music`. The worker exports only every 300 s, and not at all while it is stopped, so
 a check without a fresh export reports "stale".
 

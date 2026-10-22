@@ -65,7 +65,7 @@ def test_the_happy_path_runs_compose_in_the_deployed_image_with_the_command_verb
     out = _run(stub, LIVE_RUN, "python3", "-m", "scripts.duplicate_cleanup", "trash", "--dry-run")
     assert out.returncode == 0, out.stderr
     assert out.stdout.splitlines()[0] == f"live-run: image dj-crates:{REV}"
-    assert out.calls[0]["argv"] == ["inspect", "-f", '{{index .Config.Labels "org.opencontainers.image.revision"}}',
+    assert out.calls[0]["argv"] == ["inspect", "--type", "container", "-f", '{{index .Config.Labels "org.opencontainers.image.revision"}}',
                                     "dj-worker-1"]
     assert ["image", "inspect", f"dj-crates:{REV}"] in [c["argv"] for c in out.calls]
     assert len(out.compose) == 1
@@ -100,7 +100,7 @@ def test_a_git_sha_in_the_callers_environment_does_not_win(stub):
 
 
 @pytest.mark.parametrize("env, reason", [
-    ({"STUB_NO_CONTAINER": "1"}, "no container dj-worker-1"),
+    ({"STUB_NO_CONTAINER": "1"}, "docker inspect dj-worker-1 failed"),
     ({"STUB_REVISION": ""}, "has no org.opencontainers.image.revision label"),
     ({"STUB_REVISION": "<no value>"}, "has no org.opencontainers.image.revision label"),   # Go's missing-key text
     ({"STUB_REVISION": "dev"}, "was built as 'dev'"),
@@ -140,7 +140,7 @@ def test_no_docker_on_path_is_refused(stub):
     (stub / "bin" / "docker").unlink()
     out = _run(stub, LIVE_RUN, "true", PATH=f"{stub / 'bin'}:/nonexistent")
     assert out.returncode == 1
-    assert "live-run: refused: docker is not on PATH" in out.stderr
+    assert out.stderr.strip().splitlines() == ["live-run: refused: docker is not on PATH"], out.stderr
 
 
 def test_live_check_runs_export_then_check_through_live_run(stub):
@@ -170,3 +170,25 @@ def test_live_check_refuses_like_live_run(stub):
     out = _run(stub, LIVE_CHECK, STUB_REVISION="dev")
     assert out.returncode == 1
     assert out.compose == []
+
+
+@pytest.mark.parametrize("args", [("",), ("--print", "junk"), ("--print", ""), ("junk",)])
+def test_live_check_refuses_any_argument_but_a_lone_print(stub, args):
+    out = _run(stub, LIVE_CHECK, *args)
+    assert out.returncode == 2
+    assert "usage" in out.stderr
+    assert out.calls == []
+
+
+def test_the_revision_is_read_from_the_container_not_an_image_or_volume_of_that_name(stub):
+    out = _run(stub, LIVE_RUN, "true")
+    assert out.calls[0]["argv"][:3] == ["inspect", "--type", "container"]
+
+
+@pytest.mark.parametrize("label", ["development", "v1.2.3", "0123456789 "])
+def test_a_label_that_is_not_a_hex_sha_is_refused(stub, label):
+    out = _run(stub, LIVE_RUN, "true", STUB_REVISION=label)
+    assert out.returncode == 1
+    assert out.compose == []
+    lines = out.stderr.strip().splitlines()
+    assert len(lines) == 1 and "not a commit sha" in lines[0], out.stderr
