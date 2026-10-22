@@ -18,6 +18,13 @@ Michael. The spec is `docs/specs/2026-10-21-guards-and-checks.md`; the brief is 
 
 ---
 
+### 2026-10-22 00:20 · R4-03 · passes
+Reviewed `git diff origin/main...HEAD` (guards + rank docs, 480 lines, `$HARNESS_SCRATCH/r4.diff`) myself and with an Opus reviewer: lock fd held through `_run` (try/finally), path `Path(CRATES_DB).parent/"worker.lock"` = the worker's own (sourcing/cli.py:266), refusal before any write (only argparse runs first), `plan`/`refresh-map` free, no new flock. No Critical/Important findings.
+Simplified: `sourcing/worker.py` `with_worker_lock(run, env)` replaces `hold_worker_lock` and the two identical 7-line guard blocks; both scripts now `return with_worker_lock(lambda: _run(a))`. Docs (architecture §7 row, M9 §6) name it.
+Tests 1,577 → 1,579: tests/test_worker.py `test_with_worker_lock_holds_…_and_releases_it_after` (also after an exception; failed first: ImportError) and `…_refuses_while_the_worker_holds_it_or_without_crates_db`. Full suite green, 567 s, 1579 tests. Host `/usr/bin/python3` loads both scripts' `--help` in `-m` and file form.
+For Michael (R8): nothing live; ships with the next deploy.
+Proposed changes (Minor, not done): `rank --downl` (abbreviation) gets argparse's generic error, not the Preview + Approve text; `scripts/duplicate_cleanup.py:698-721` still has its own CRATES_DB/worker.lock setup (pre-R4, needs `crates_db` for events) and could move onto `with_worker_lock`; the scripts' `except ImportError` fallback would mask a real import error from `sourcing.worker`'s dependencies.
+
 ### 2026-10-21 23:40 · R4-02 · passes
 `sourcing/cli.py`: `rank --download` and its enqueue block are deleted (also the dead `client = None`); `rank … --download` now exits 2 from
 argparse (`r.error`, an argv check before parsing) with `rank no longer downloads: use Preview + Approve in the web client (the worker downloads, D23)`; usage header has no `[--download]`.
