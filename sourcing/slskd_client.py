@@ -55,8 +55,15 @@ class SlskdClient:
             time.sleep(poll_s)
         return self.search_state(sid)
 
-    def search_responses(self, sid: str) -> list[dict]:
-        return self._req("GET", f"/searches/{sid}/responses") or []  # type: ignore[return-value]
+    def search_responses(self, sid: str, expect: int = 0, poll_s: float = 1.0, tries: int = 5) -> list[dict]:
+        """`expect`: the state's responseCount. Live slskd once answered a finished search with 250 counted
+        responses as [] (2026-10-21), so an empty read of a search that counted some is read again."""
+        got = self._req("GET", f"/searches/{sid}/responses") or []
+        while not got and expect > 0 and tries > 0:
+            time.sleep(poll_s)
+            tries -= 1
+            got = self._req("GET", f"/searches/{sid}/responses") or []
+        return got  # type: ignore[return-value]
 
     def delete_search(self, sid: str) -> None:
         self._req("DELETE", f"/searches/{sid}")

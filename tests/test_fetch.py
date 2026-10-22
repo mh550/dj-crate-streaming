@@ -121,6 +121,15 @@ def test_fetch_download_timeout_fails_cleanly(world, tmp_path):
     assert not (world["music"] / "Chic").exists()        # nothing filed (the old copy s4 lives there)
 
 
+def test_responses_read_empty_after_completion_are_read_again(world):
+    """Live slskd (2026-10-21) once answered a finished search ("Completed, ResponseLimitReached", responseCount
+    250) with [] on the first read; ext-76 then failed as "no acceptable candidate" in 2 s."""
+    with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
+        srv.empty_reads = 2
+        r = run(world, srv, approve=False)
+    assert r.status == "needs_source" and r.pick is not None and r.pick.username == "vinylhead77", r.reason
+
+
 def test_fetch_no_acceptable_candidate_leaves_needs_source(world):
     locked = [dict(r, files=[dict(f, isLocked=True) for f in r["files"]]) for r in RESPONSES]
     with FakeSlskdServer(locked, world["dl"], files={}) as srv:
