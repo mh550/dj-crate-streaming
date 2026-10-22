@@ -73,11 +73,14 @@ def _path_ids(db: Path) -> dict[str, str]:
 
 def playlist_health(db: Path) -> list[dict]:
     """Playlists holding entries getPlaylist hides (the playlist_edit skew condition): rows on a media_file that is
-    missing or gone. One {"id", "name", "missing"} each, by name; empty when every entry plays (M9 §7)."""
+    missing or gone. One {"id", "name", "missing"} each, by name; empty when every entry plays (M9 §7). Smart
+    playlists are left out (Navidrome refills them from their rules; playlist_edit refuses them). Every owner's
+    playlists count: the worker keeps only its user's (owner_id is a user id, not a name)."""
     with closing(open_ro(db)) as con:
         rows = con.execute(
             "SELECT p.id, p.name, COUNT(*) FROM playlist p JOIN playlist_tracks t ON t.playlist_id = p.id"
-            " LEFT JOIN media_file m ON m.id = t.media_file_id WHERE m.id IS NULL OR COALESCE(m.missing, 0)"
+            " LEFT JOIN media_file m ON m.id = t.media_file_id WHERE (m.id IS NULL OR COALESCE(m.missing, 0))"
+            " AND COALESCE(TRIM(p.rules), '') IN ('', 'null')"
             " GROUP BY p.id, p.name ORDER BY p.name COLLATE NOCASE, p.id").fetchall()
     return [{"id": pid, "name": name, "missing": n} for pid, name, n in rows]
 

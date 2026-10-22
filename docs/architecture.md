@@ -118,8 +118,8 @@ song id for a crate row, or `ext-N` for an external row.
 | `approvals` | `approved_by`, candidate JSON, tier, `used_at`, `result` | Approve, worker |
 | `previews` | last search-and-rank per wanted id | Preview |
 | `verifications` | last `verify` result per wanted id | worker |
-| `events` | append-only log (`approved`, `pick`, `filed`, `renamed`, `reference`…) | everything |
-| `settings` | `stream_tier` (absent = `server`) | web client |
+| `events` | append-only log (`approved`, `pick`, `filed`, `renamed`, `reference`, `playlist_health`…) | everything |
+| `settings` | `stream_tier` (absent = `server`); `playlist_health`: JSON list of `{id, name, missing}`, our user's non-smart playlists (D46) with entries on a missing or unknown song (absent = never counted, `/api/status` `playlistHealth` `[]`) | web client; worker (after each export, R5) |
 
 Row statuses: `needs_source → sourcing → verify → ok | failed`, plus `removed` (left a crate) and `review`
 (import found several versions; a person must pick). A filed file's path rides **in the reason text**
@@ -137,8 +137,11 @@ Other stores:
   also flag a crate. Only `crates/attrs.py` writes our tokens; the rest of your comment is never touched.
 - **Trash**: `/srv/_trash/<date>/<path>` with `MOVES.txt` of reverse `mv`s. Never emptied by code.
   M3's `scripts/dedupe_copies.py` and (M8) the worker's copy replacement write it; the worker mounts it rw.
-- **`.m3u8` exports**: `/srv/music/_playlists/*.m3u8`, written by `scripts/export_playlists.py export` (by hand
-  today). Navidrome's auto-import of them is off on purpose (it would duplicate every playlist).
+- **`.m3u8` exports**: `/srv/music/_playlists/*.m3u8`, written by `scripts/export_playlists.py export` (the worker
+  every `WORKER_EXPORT_S` = 300 s, or by hand). Navidrome's auto-import of them is off on purpose (it would duplicate
+  every playlist). They mirror Navidrome within 5 minutes, so the restore source is
+  **`/srv/music/_playlists/.history/<YYYY-MM-DD>/<name>.m3u8`**: the previous text of each changed file, the first
+  one of the day (UTC), kept 30 days (R5, M9 §7). `check` and the stale list ignore `.history/`.
 - **Identity outputs**: `/srv/docker/crates/identity/` (= `/data/identity` in the worker): proposal, report,
   MB cache, apply logs. Does not exist yet.
 
@@ -355,6 +358,7 @@ docker compose stop worker / start worker          # pause / resume (a stop mid-
 | Answer a version / copy question | Wanted tab (Swap / Keep), or `docker compose exec -T crates python -m crates.cli proposals [--all]`, `proposals accept\|decline <id>` |
 | Undo a trashed copy | run its reverse `mv` line from `/srv/_trash/<day>/MOVES.txt` on the host (`docs/worker.md`) |
 | Export / check playlists | `docker compose exec -T worker python -m scripts.export_playlists export` (or `check`) |
+| Playlist health / old playlist versions | the crates page's banner (or `/api/status` `playlistHealth`) names playlists with entries on a missing song; the `playlist_health` event logs each change. An older version of a playlist is `/srv/music/_playlists/.history/<YYYY-MM-DD>/<name>.m3u8` (30 days; restore by hand, `docs/worker.md` "A playlist that lost entries") |
 | Identity propose | `docker compose exec -T worker python -m scripts.identity_backfill propose [--limit 40]` |
 | Identity apply | `… identity_backfill apply /data/identity/identity-proposal.json --dry-run`, then `--yes [--limit 5] [--classes …] [--only GLOB]` |
 | Undo apply | `… identity_backfill revert /data/identity/apply-<time>.jsonl` |

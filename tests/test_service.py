@@ -184,3 +184,10 @@ def test_status_carries_playlist_health(svc):
     rows = [{"id": "pl-1", "name": "Disco Edits", "missing": 1}, {"id": "pl-3", "name": "Sunday Listening", "missing": 1}]
     app.store.set_playlist_health(rows)
     assert get(srv.url + "/api/status")[2]["playlistHealth"] == rows
+
+
+def test_status_playlist_health_goes_through_public(svc):
+    """R5-04: a playlist named after a path shows no absolute path (store.public, like the Wanted tab's reasons)."""
+    fake, app, srv = svc
+    app.store.set_playlist_health([{"id": "pl-1", "name": "from /srv/music/_playlists/old.m3u8", "missing": 2}])
+    assert get(srv.url + "/api/status")[2]["playlistHealth"] == [{"id": "pl-1", "name": "from old.m3u8", "missing": 2}]

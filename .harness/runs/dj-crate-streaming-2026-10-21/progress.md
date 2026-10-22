@@ -40,6 +40,15 @@ Michael. The spec is `docs/specs/2026-10-21-guards-and-checks.md`; the brief is 
 
 ---
 
+### 2026-10-22 01:20 · R5-04 · passes
+Opus review of `git diff origin/main...HEAD` (R5, `$HARNESS_SCRATCH/r5.diff`, 778 lines): no Critical. Prune bounded to date-named real dirs directly under `.history` (fd-based `rmtree`, links not followed), `open_ro` is `mode=ro`, the LEFT JOIN counts `missing=1` and absent `media_file` rows, one event per change (restart logs nothing), banner is `textContent` only: all fine.
+Important I1 fixed test-first: the count named every account's playlists (amperfy's included) and smart ones, none of which `playlist_edit` can heal. `Worker.health` now keeps rows whose playlist `getPlaylists` lists with `owner == client.user`; `playlist_health` leaves out non-empty `rules`. Recorded as **D46 *default*** in the pivot spec. Also `/api/status` `playlistHealth` goes through `store.public`; the read-only test now asserts `open_ro` is used and that `open_ro` refuses a write on a 0644 file (chmod 0444 could not catch a rw open).
+Docs: M9 spec §7 "Built (R5), not deployed" with Q11's 30-day default; architecture §3 `settings` row lists `playlist_health`, "Other stores" and an §8 row name `_playlists/.history/<date>/`; worker.md step 7 names the scope, and "how to watch it" gets a list of the worker's events incl. `playlist_health`.
+Tests 1,606 → 1,610 (test_export_playlists +2, test_worker +1, test_service +1; each new one failed first). Full suite green, 597 s, 1610 tests.
+Left (Minor, not done): M2 `_write` follows a planted `.tmp` link (as the live folder always did); M3 a prune failing partway loses the names already removed; M4 a scan in progress could give a two-event blip; M5 `getattr(s, "errors", ())` exists for test exporters that return None.
+Question for Michael: D46 — should the banner also count other accounts' playlists (amperfy's)? Default: no, ours only. For R8: nothing live; ships with the next deploy.
+Proposed changes: none.
+
 ### 2026-10-22 00:40 · R5-03 · passes
 `web/index.html` `<div id="health" class="banner hidden"></div>` under the header; `web/app.js` `healthLines(rows)` (pure, between `// health:begin`/`// health:end`) words one line per playlist, "2 entries in X point at missing files" / "1 entry in X points at a missing file" (the worker's `health_detail` wording); `loadStatus` fills the banner with `el()` (textContent, never markup) and hides it when `playlistHealth` is empty or absent; status reloads on `visibilitychange` so a phone tab left open catches the worker's next count. `web/app.css` `.banner`: no width, `overflow-wrap:anywhere`, warn-coloured left edge.
 Tests 1,600 → 1,606 (new tests/test_web_health.py): `#health` sits between `</header>` and the tabs; `loadStatus` reads `playlistHealth`, toggles `hidden` on an empty list, has no `HTML`; the CSS rule; `healthLines` run under node (plural, singular, `[]`, missing key); `/api/status` after a real worker tick on the fake with `missing={'s2'}` carries pl-1 Disco Edits 1 + pl-3 Sunday Listening 1. The four web tests failed first; the status one passed already (R5-01 backend). Full suite green, 585 s, 1606 tests.

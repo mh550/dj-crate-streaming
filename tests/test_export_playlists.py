@@ -3,6 +3,8 @@ import sqlite3
 from datetime import date
 from pathlib import Path
 
+import pytest
+
 from scripts import export_playlists as ep
 
 # Column names copied from the live navidrome.db schema (2026-10-14); only the ones the script reads.
@@ -120,13 +122,30 @@ def test_playlist_health_counts_an_entry_whose_song_navidrome_no_longer_has(tmp_
     assert ep.playlist_health(db) == [{"id": "pl-2", "name": "Chicago 86", "missing": 2}]
 
 
-def test_playlist_health_opens_the_database_read_only(tmp_path):
+def test_playlist_health_opens_the_database_read_only(tmp_path, monkeypatch):
     db = fake_mirror(tmp_path, missing={"s2"})
-    os.chmod(db, 0o444)
+    opened = []
+    monkeypatch.setattr(ep, "open_ro", lambda d: opened.append(d) or sqlite3.connect(f"{Path(d).resolve().as_uri()}?mode=ro", uri=True))
+    assert [r["id"] for r in ep.playlist_health(db)] == ["pl-1", "pl-3"] and opened == [db]
+
+
+def test_open_ro_refuses_writes_on_a_writable_file(tmp_path):
+    db = fake_mirror(tmp_path)                       # 0644: chmod would hide a read-write open (SQLite falls back)
+    con = ep.open_ro(db)
     try:
-        assert [r["id"] for r in ep.playlist_health(db)] == ["pl-1", "pl-3"]
+        with pytest.raises(sqlite3.OperationalError, match="readonly"):
+            con.execute("CREATE TABLE x (a)")
     finally:
-        os.chmod(db, 0o644)
+        con.close()
+
+
+def test_playlist_health_leaves_out_smart_playlists(tmp_path):
+    """Navidrome refills a smart playlist from its rules and playlist_edit refuses to touch one: nothing to heal."""
+    from subsonic.fake_server import FakeState
+    state = FakeState(db_path=tmp_path / "fake-navidrome.db")
+    state.missing, state.smart = {"s2"}, {"pl-3"}
+    state.sync()
+    assert ep.playlist_health(state.db_path) == [{"id": "pl-1", "name": "Disco Edits", "missing": 1}]
 
 
 # --- R5-02: .m3u8 history before each rewrite, pruned after 30 days (M9 §7) ----------------------------------------

@@ -38,7 +38,7 @@ of at most one second and ends early when a play-now approval is waiting (see "P
    older than 30 days are pruned (only date-named folders under `.history/`; links are not followed). The date is
    the container's (UTC, no `TZ` is set). A history problem is logged as `export: history: …` and never stops the
    export. After an export that worked, it counts per playlist the entries on a missing or unknown song (the ones
-   Navidrome hides; read-only `navidrome.db`). When that list changes it is stored for `/api/status`
+   Navidrome hides; read-only `navidrome.db`), in its own user's playlists only, smart playlists left out (D46). When that list changes it is stored for `/api/status`
    (`playlistHealth`) and one `playlist_health` event says so ("2 entries in Tea tent point at missing files; 1 in
    Chicago 86", or "no playlist entry points at a missing file" once they are gone). An unchanged list logs nothing.
    Healing a hidden entry stays manual (M9 §7).
@@ -624,6 +624,11 @@ profile for `dj-crates-web` decides. It is the default only for a database that 
   as uid 1000 (`mkdir -p /srv/incoming/soulseek/.incomplete`, no sudo). Otherwise compose creates the mount source as
   root, and slskd checks for the incomplete folder but does not create it: it refuses to start and restarts in a loop.
 - Soulseek peer names never appear in events, logs or the web client: file basenames only.
+- Events the worker writes (crates.db `events`, the web client's log tab): `status`, `attrs`, `reconcile`,
+  `playlist_gone` (reconcile); `pick`, `tagged`, `filed`, `renamed`, `reference`, `kept_both`, `upgrade_queued`,
+  `proposal`, `replace` (approvals and copy replacement); `interrupted` (an approval cut off by a restart); `placed`,
+  `not_placed` (placement); `playlist_health` (the export step: which playlists have entries on a missing song, logged
+  only when that list changes).
 
 ```
 cd /srv/docker

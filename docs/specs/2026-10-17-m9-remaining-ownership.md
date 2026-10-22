@@ -268,6 +268,15 @@ stays outside the lock. The problem text below is the state before R4.
 
 ## 7. Playlist checks after scans; export
 
+**Built (R5), not deployed.** Q11's default stands: 30 days of history. After each export that worked, the worker
+counts per playlist the `playlist_tracks` rows on a `missing=1` or absent `media_file` (`export_playlists.playlist_health`,
+read-only `navidrome.db`; only our user's playlists, no smart ones, D46), stores the list in crates.db `settings` key `playlist_health` and logs one `playlist_health`
+event when it changes ("2 entries in Tea tent point at missing files; 1 in Chicago 86"); `/api/status` carries it as
+`playlistHealth` and the web client shows it as a banner under the header. Before a changed `.m3u8` is rewritten the
+export keeps the old text in `_playlists/.history/<YYYY-MM-DD>/<name>.m3u8` (the first version of the day);
+`prune_history` removes date-named day folders older than 30 days, only under `.history/`, links not followed.
+Healing stays manual. The text below is the state before R5.
+
 **Problem.** Spec facts 4 and 5 promise a playlist check after every scan and an export after each change.
 - Export: **now covered.** The worker re-exports every `WORKER_EXPORT_S` = 300 s, rewriting only changed files
   *(checked, `sourcing/worker.py:142-155`)*.

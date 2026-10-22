@@ -250,7 +250,9 @@ class Worker:
     def health(self, db: Path) -> None:
         """Step 4b: one `playlist_health` event when the set of playlists with hidden entries (or a count) changed."""
         try:
-            rows = playlist_health(db)
+            nav = self.common["navidrome"]                 # only our user's playlists: others' are off limits (D46)
+            mine = {p.id for p in nav.playlists() if p.owner == nav.user}
+            rows = [r for r in playlist_health(db) if r["id"] in mine]
             if rows == self.store.playlist_health():
                 return
             detail = health_detail(rows)

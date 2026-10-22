@@ -119,7 +119,7 @@ class CrateApp:
                 "user": self.cfg.username, "serverType": info.get("type"), "serverVersion": info.get("serverVersion"),
                 "openSubsonic": info.get("openSubsonic"), "crates": len(self.store.all(enabled_only=True)),
                 "wanted": len(self.store.wanted()), "workerHeartbeatAge": self.worker_heartbeat_age(),
-                "trash": trash.summary(self.cfg.trash_dir), "playlistHealth": self.store.playlist_health(),
+                "trash": trash.summary(self.cfg.trash_dir), "playlistHealth": public(self.store.playlist_health()),
                 "policy": {"preferred": self.policy.preferred, "allow": self.policy.allow, "deny": self.policy.deny,
                            "minLossyBitrate": self.policy.min_lossy_bitrate}}
 

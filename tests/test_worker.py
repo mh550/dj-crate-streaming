@@ -777,6 +777,19 @@ def test_playlist_health_logs_one_event_per_change(world):
     assert store.playlist_health() == []
 
 
+def test_playlist_health_counts_only_our_users_playlists(world):
+    """Another account's playlist (amperfy's) is off limits and playlist_edit refuses it: no banner line for it."""
+    state = world["nd"].state
+    state.playlists["pl-9"] = {"id": "pl-9", "name": "Amperfy mix", "comment": "", "owner": "amperfy", "public": False,
+                               "songs": ["s2"]}
+    _set_missing(world, {"s2"})
+    with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
+        _health_worker(world, srv, [], [0.0]).tick()
+    assert [r["id"] for r in world["store"].playlist_health()] == ["pl-1", "pl-3"]
+    [ev] = _kinds(world, "playlist_health")
+    assert "Amperfy" not in ev["detail"]
+
+
 def test_playlist_health_detail_names_each_playlist_with_its_count():
     from sourcing.worker import health_detail
     assert health_detail([{"id": "a", "name": "Tea tent", "missing": 2}, {"id": "b", "name": "Chicago 86", "missing": 1}]) \
