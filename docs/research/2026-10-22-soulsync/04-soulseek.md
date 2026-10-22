@@ -809,7 +809,7 @@ planned, not as built.
   S1-04's rule (a record whose id was not there before the enqueue) is stricter than both `mine[-1]` and SoulSync's
   last-wins key. Keep the rule, and add the two things SoulSync does: remove on every cancel, and remove our own
   record once the file is filed.
-- **Failure class: VPN drop mid-transfer.** SoulSync retries a `Completed, Errored` transfer within 5 s, up to 3
+- **Failure class: VPN drop mid-transfer.** SoulSync retries a `Completed, Errored` transfer at once, then ≥ 5 s apart, up to 3
   times, each time with a fresh search on any peer, and the wishlist retries later
   (`SoulSync:core/downloads/monitor.py:922-985`). So it recovers on its own, beyond D7's bound. It never checks that
   slskd is logged in again before retrying, although it has the probe (`SoulSync:core/soulseek_client.py:2668-2690`).
