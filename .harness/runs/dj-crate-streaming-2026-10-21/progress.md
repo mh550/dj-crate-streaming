@@ -18,6 +18,29 @@ Michael. The spec is `docs/specs/2026-10-21-guards-and-checks.md`; the brief is 
 
 ---
 
+### 2026-10-21 23:00 · verify R3
+
+| Feature | Step | What you ran or read | What you saw | Holds |
+|---|---|---|---|---|
+| R3-01 | 1 | read plan §'D35 (2026-10-19, Michael)' lines 26-38 and hold bullets ~71; `git merge-base --is-ancestor 555898f 0b095d1` | section has lossless released by default, keeper = keep_rank first, --hold-lossless, report section; bullet no longer says Michael edits plan.json; plan commit 555898f precedes code commit 0b095d1 | yes |
+| R3-01 | 2 | read scripts/duplicate_cleanup.py `_hold`, `build_plan`, argparse `--hold-lossless` | `_hold(..., hold_lossless)` returns (None, LOSSLESS_PAIR note) by default, ('both lossless', None) when True; keeper-missing check first and unchanged; `plan --hold-lossless` passes it through | yes |
+| R3-01 | 3 | read tests/test_duplicate_cleanup.py test_a_lossless_pair_is_released_by_default_with_the_d35_note, test_two_lossless_copies_are_held_with_hold_lossless…, test_plan_hold_lossless_through_the_cli; ran `.harness/check.sh tests/test_duplicate_cleanup.py` | 117 passed; asserts hold None + note, hold=='both lossless' with hold_lossless=True, CLI --hold-lossless gives 'both lossless'; the old hold test now uses hold_lossless=True; rest unchanged | yes |
+| R3-01 | 4 | read test line 112 `dc.counts(plan).startswith('1 group to act on (2 extras…), 0 held')`; read `counts`/`render` | counts uses hold is None so a released pair is counted; render lists it | yes |
+| R3-01 | 5 | `git log` for commit message | 0b095d1 'R3-01: D35 as answered: lossless pairs released by default, --hold-lossless keeps the hold' | yes |
+| R3-01 | 6 | harness check `/home/mh550/projects/agent-harness/lib/check.sh`; `git branch -r --contains HEAD` | green, 1560 tests (cached for this tree); branch pushed state checked via fetch/ancestry | yes |
+| R3-02 | 1 | read `render`; test_report_md_lists_lossless_pairs_in_their_own_section_before_the_held_groups, test_a_plan_without_lossless_pairs_has_no_such_section | heading 'Lossless pairs, will be trashed' placed before 'Held groups'; asserts S9 path and 'Move Your Body' path inside the section; absent when no pair | yes |
+| R3-02 | 2 | read test_a_released_lossless_pair_is_repointed_like_a_lossy_extra, test_a_released_lossless_pair_is_trashed_like_a_lossy_extra (line 893) | repoint to keeper like lossy; trash dry-run == {'s10': 'dry run: would move'}; passes in suite run | yes |
+| R3-02 | 3 | read test_a_hold_lossless_plan_is_skipped_by_repoint / _by_trash; held tests at lines ~457, ~877 | both give 'skipped: held (both lossless)'; older held tests remain | yes |
+| R3-02 | 4 | `grep -c 'D35 \*default\*' docs/specs/2026-10-17-amperfy-pivot.md`; read D35 row line 30 | prints 0; row reads as Michael's 2026-10-19 answer, lossless extras trashed, --hold-lossless for old hold | yes |
+| R3-02 | 5 | `grep -n 'hold-lossless\|hold.*null' docs/worker.md` | matches at lines 3, 10, 434, 522, 542; no instruction to set hold to null; names the report section | yes |
+| R3-02 | 6 | `git log` for commit message | 4aa40bb 'R3-02: lossless-pair report section; D35 recorded as answered' | yes |
+| R3-02 | 7 | harness check green (1560 tests); ancestry on origin branch | green | yes |
+| R3-03 | 1 | read r3.diff scope (`git diff origin/main...HEAD` on the 5 files, 457 lines); grep for references/recompute/keep_rank in the diff; read build_plan, `.get('note')` use in render | `references()` calls untouched; build_plan still recomputes via load+duplicate_groups; keeper is group first (keep_rank); reverse-log code not in diff; render uses g.get('note') so old plan.json without note loads | yes |
+| R3-03 | 2 | progress entry R3-03, `git show 2401066`; test_only_the_d35_note_puts_a_group_under_lossless_pairs | no Critical/Important; one Important-ish render fix has its test; single `_hold` decides hold, no second vocabulary | yes |
+| R3-03 | 3 | `.harness/check.sh tests/test_duplicate_cleanup.py`; read tests named in architecture row 326 (held group never touched, another user's playlist blocks, running scan refuses, worker lock, put-back, reverse replay) | 117 passed; those tests exist (e.g. test_a_held_group_is_never_trashed, test_another_users_playlist_alone_blocks_the_move, test_the_reverse_log_replayed_newest_first…) | yes |
+| R3-03 | 4 | `git log` | 2401066 'R3-03: review and simplify D35' | yes |
+| R3-03 | 5 | harness check green 1560 tests | green | yes |
+
 ### 2026-10-21 · R3-03 · passes
 Opus review of `r3.diff` (scratch; the 5 files from origin/main...HEAD): no Critical/Important. Holds: `references()`
 checks untouched (trash :586, `_put_back`, already-gone, `recheck_moved`); repoint/trash take the hold from plan.json only,
