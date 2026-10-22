@@ -18,6 +18,24 @@ Michael. The spec is `docs/specs/2026-10-21-guards-and-checks.md`; the brief is 
 
 ---
 
+### 2026-10-21 · verify R1
+
+| Feature | Step | What you ran or read | What you saw | Holds |
+|---|---|---|---|---|
+| R1-01 | 1 | `grep -n 'I1' CLAUDE.md`; `grep -n _scanned_since_repoint scripts/duplicate_cleanup.py` | CLAUDE.md:73-77 names I1/I2, `_scanned_since_repoint`, size check vs `media_file.size`/`planned_size`, dry-run until `lastScan` confirmed and Michael lifts; function defined at line 400 | yes |
+| R1-01 | 2 | `grep -n '1,523' CLAUDE.md`; `grep -c '1,120' CLAUDE.md` | line 16 says ~1,523 tests, 9-10 minutes (570 s); count of 1,120 = 0 | yes |
+| R1-01 | 3 | `grep -n f4882ab85b docs/next-todos.md`; read line 24 | 2026-10-21 paragraph: live image, N1/N1F/H1/H2/H3-01..04, PRs #5-#13, H1-H3 live except H3-03 timer, N2-N5 merged not deployed, N1 never run | yes |
+| R1-01 | 4 | `grep -n supersedes docs/architecture.md`; `grep -c 'running now'`; read status table diff | §11 note line 560 (questions 1,2,5,8,10); running-now count 0; M7 review done, H1-H3 row, N1-N4 merged not live except N1 code | yes |
+| R1-01 | 5 | `grep -n 'items 1 and 3' docs/specs/2026-10-17-m9-remaining-ownership.md` | line 4: items 1 and 3 built (N4, N1), rest not built | yes |
+| R1-01 | 6 | `grep -n 'installed copy' docs/hard-won-facts.md` | line 51 names installed copy /usr/local/lib/dj-crates/snapshot-crates-db.sh (CLAUDE.md names /usr/local/sbin/restic-backup for the backup job; not contradictory). Did not read /srv (build-only) | yes |
+| R1-01 | 7 | `git diff --stat origin/main...HEAD -- '*.py' '*.sh' '*.js' '*.html'` | empty; changed files are only CLAUDE.md, README, docs, .harness run files | yes |
+| R1-01 | 8 | `git log` for CLAUDE.md/docs | commit 84d785f 'R1-01: doc truth (live image, merged PRs, I1/I2 fixed, test count)' | yes |
+| R1-01 | 9 | `/home/mh550/projects/agent-harness/lib/check.sh`; `git status -sb` | check: green (1523 tests); branch in sync with origin, nothing ahead | yes |
+| R1-02 | 1 | read diff of CLAUDE.md/docs; `git log --merges origin/main`; `.harness/check.sh --collect-only | tail -1`; spec facts lines 8-25 | PRs #5-#13 merge commits present; 1523 tests collected; image/not-deployed/H3-03 claims match spec facts; `_scan_time`/`planned_size` exist in code | yes |
+| R1-02 | 2 | `grep -rn '1,523' README.md docs/architecture.md docs/hard-won-facts.md CLAUDE.md` | all four files match, each with about 9-10 minutes | yes |
+| R1-02 | 3 | `git log`  | commit bb8cf81 'R1-02: review doc truth ...'; findings recorded in R1-02 entry | yes |
+| R1-02 | 4 | check.sh (cached green, 1523); `git status -sb` | green; pushed, branch not ahead of origin | yes |
+
 ### 2026-10-21 R1-02 · passes
 Reviewed every sentence R1-01 changed (`git diff origin/main...HEAD -- CLAUDE.md docs/` in scratch `r1.diff`); docs only.
 Held: `_scanned_since_repoint`/`_scan_time`, PRs #5–#13 merged (`git log --merges origin/main`), 1,523 collected,
