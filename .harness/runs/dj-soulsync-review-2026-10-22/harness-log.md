@@ -27,3 +27,4 @@
 - 2026-10-22 15:39 · verify V4: V4-02 failed the re-check, back in the queue (one more attempt)
 - 2026-10-22 16:00 · V4-01 · claude-opus-5-5 · passes=true · 21 min · 14/15 passing
 - 2026-10-22 16:15 · V4-02 · claude-opus-5-5 · passes=true · 14 min · 15/15 passing
+- 2026-10-22 16:16 · V4 verified and tagged run/dj-soulsync-review-2026-10-22/V4
