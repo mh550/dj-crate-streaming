@@ -195,10 +195,14 @@ def analyse(path: Path, sample_rate: int | None, duration_s: float | None = None
     chains = [f"[x0]astats=measure_perchannel=none,{SILENCE}[o0]"]
     for i, e in enumerate(edges, 1):
         chains.append(f"[x{i}]firequalizer=gain='if(gte(f,{e * 1000}),0,-120)':delay=0.02:accuracy=20,"
-                      f"astats=measure_perchannel=none,anullsink")
+                      f"astats=measure_perchannel=none[o{i}]")
     graph = f"asplit={n}" + "".join(f"[x{i}]" for i in range(n)) + ";" + ";".join(chains)
+    # Every band is its own null output. ffmpeg 7.1 (the image's Debian 13 build) panics with "Assertion
+    # best_input >= 0 failed" when a firequalizer branch ends in anullsink: its delay flushes after the input ends.
     cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-nostats", "-loglevel", "level+info", "-i", str(path),
-           "-filter_complex", graph, "-map", "[o0]", "-f", "null", "-"]
+           "-filter_complex", graph]
+    for i in range(n):
+        cmd += ["-map", f"[o{i}]", "-f", "null", "-"]
     run = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout, **TEXT)
     m = parse_ffmpeg(run.stderr, edges)
     if run.returncode and not m["errors"]:
