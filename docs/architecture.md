@@ -17,8 +17,9 @@ Legend: **built** = in the code; **live** = also running on the box; **planned**
 | H1-H3 (snapshots, heartbeat, healthchecks, backup job, Gatus, disk timer) | **live** (image `dj-crates:f4882ab85b`), except the H3-03 timer and H3-05's changes to it (merged, not installed) |
 | M7 live proposal (Task 12), gated apply (Task 13) | not done; Task 13 waits for you |
 | M8 lifecycle (Parts A–D: replacement, proposals, play-now; ownership changed by the pivot) | **built, live** since 2026-10-17; the trash-move probe in §9 has not been run (it needs the first real replacement) |
-| N1-N4 (run `dj-2026-10-17`: duplicate cleanup, imported marker in crates.db, vanished-playlist cleanup, placement) | merged into `main`, **not live** except N1's code (never run); live steps in `docs/plans/2026-10-17-morning-checklist.md` |
-| M9 | [`docs/specs/2026-10-17-m9-remaining-ownership.md`](specs/2026-10-17-m9-remaining-ownership.md): item 3 built (N1, not run live), item 1 placement built (N4, not deployed); the rest not built |
+| N1-N4 (run `dj-2026-10-17`: duplicate cleanup, imported marker in crates.db, vanished-playlist cleanup, placement) | merged into `main`, **not live** except N1's code (never run); live steps in `docs/plans/2026-10-22-morning-checklist.md` |
+| R1-R7 (run `dj-crate-streaming-2026-10-21`: doc truth, `live-run.sh`, D35 lossless pairs, guards, playlist health and history, M9 small items, identity picker) | built on `harness/dj-crate-streaming-2026-10-21`, **not deployed**; live steps in `docs/plans/2026-10-22-morning-checklist.md` |
+| M9 | [`docs/specs/2026-10-17-m9-remaining-ownership.md`](specs/2026-10-17-m9-remaining-ownership.md): item 3 built (N1, not run live), item 1 placement built (N4, not deployed), items 5a, 6, 7 and 8a/8b/8c/8h built (R7, R4, R5, R6; not deployed); the rest not built |
 
 Checked live (read-only) when this was written: the worker image has no `deploy/policy.toml` and no
 `scripts/identity_backfill.py`, so every M7 and M8 command below needs a rebuild first. The M8 rebuild has a required
@@ -373,7 +374,7 @@ docker compose stop worker / start worker          # pause / resume (a stop mid-
 | Identity apply | `… identity_backfill apply /data/identity/identity-proposal.json --dry-run`, then `--yes [--limit 5] [--classes …] [--only GLOB]` |
 | Undo apply | `… identity_backfill revert /data/identity/apply-<time>.jsonl` |
 | Duplicate cleanup | `docker compose exec -T worker python3 -m scripts.duplicate_cleanup plan`, then `repoint [--dry-run] [--limit N]`; with the worker stopped `scripts/live-run.sh python3 -m scripts.duplicate_cleanup trash [--dry-run] [--limit N]` (the deployed image, D45); staged runbook and undo in `docs/worker.md` "Duplicate cleanup" |
-| Tests | `cd ~/projects/dj-crate-streaming && ~/.local/bin/pytest -q` (1,523 tests, about 9-10 minutes) |
+| Tests | `cd ~/projects/dj-crate-streaming && ~/.local/bin/pytest -q` (1,750 tests, about 11 minutes) |
 | Offline demo | `python3 -m crates.cli demo` → http://127.0.0.1:4580 |
 
 Where to look: worker stdout (`docker compose logs worker`), the web client's log tab (`events`), approvals'

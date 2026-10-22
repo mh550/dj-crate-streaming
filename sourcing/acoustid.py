@@ -122,10 +122,9 @@ def lookup(path: Path, key: str, *, timeout: float = 10, opener=urllib.request.u
         return parse(json.loads(r.read().decode("utf-8", errors="replace")))
 
 
-def make_lookup(key: str, cache: Cache | None = None, clock: Callable[[], float] = time.monotonic,
-                sleep: Callable[[float], None] = time.sleep, *,
+def make_lookup(key: str, clock: Callable[[], float] = time.monotonic, sleep: Callable[[float], None] = time.sleep, *,
                 opener=urllib.request.urlopen) -> Callable[[Path], list[dict]]:
-    """`path -> recordings` for `key`, spaced by the shared limiter; with a cache, unchanged files cost nothing."""
+    """`path -> recordings` for `key`, spaced by the shared limiter; wrap it in `cached` to skip unchanged files."""
     def run(path: Path) -> list[dict]:
         return lookup(path, key, opener=opener, clock=clock, sleep=sleep)
-    return run if cache is None else cached(run, cache)
+    return run

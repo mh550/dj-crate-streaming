@@ -46,6 +46,7 @@ from collections import Counter
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from scripts.export_playlists import write_atomic
 from sourcing import acoustid
 from sourcing.identity import Copy, is_placeholder, lead_artist, loose, parse_title, version_groups
 from sourcing.musicbrainz import MusicBrainz, Recording
@@ -473,16 +474,6 @@ def check_out_dir(music_root: Path, out_dir: Path) -> None:
     """The proposal never lands in the library: Navidrome would scan it, and the library stays read-only here."""
     if Path(out_dir).resolve().is_relative_to(Path(music_root).resolve()):
         raise ValueError(f"--out {out_dir} is inside the library {music_root}; choose a directory outside it")
-
-
-def write_atomic(path: Path, text: str) -> None:
-    """tmp + fsync + replace: a power cut leaves the old file or the new one, never an empty one."""
-    tmp = path.with_name(path.name + ".tmp")
-    with open(tmp, "w", encoding="utf-8") as fh:
-        fh.write(text)
-        fh.flush()
-        os.fsync(fh.fileno())
-    os.replace(tmp, path)
 
 
 def propose(music_root: Path, out_dir: Path, mb: MusicBrainz, *, lookup=None, limit: int | None = None,
@@ -1028,7 +1019,8 @@ def apply(proposal: Path, music_root: Path, *, log: Path, classes: set[str] | No
 
 def _rows_to_apply(proposals: list, classes, only, picks: dict | None, rep: ApplyReport, say) -> tuple[list, dict]:
     """The selected rows in proposal order, and {path: log note} for those from a choice. Without picks, as before;
-    with them, the accepted and chosen rows plus `classes` (none by default), never a row the picker skipped."""
+    with them, the accepted and chosen rows plus `classes` (none by default), never a row the picker skipped; a
+    JSON `choose` without a choice is reported as skipped."""
     if picks is None:
         return [r for r in proposals if _selected(r, classes, only)], {}
 
@@ -1046,6 +1038,9 @@ def _rows_to_apply(proposals: list, classes, only, picks: dict | None, rep: Appl
         if not isinstance(rel, str) or rel not in picks:
             if classes is not None and _selected(r, classes, only):
                 rows.append(r)
+            elif r.get("choose") and _selected(r, None, only):     # what a run without --choices would write
+                refuse(rel, f"choices: {rel} has a choose in the proposal but no choice; not applied "
+                            "(pick it in the Identity tab)")
             continue
         if rel in seen or not wanted(rel):
             continue

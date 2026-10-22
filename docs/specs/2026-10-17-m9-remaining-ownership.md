@@ -1,7 +1,7 @@
 # M9: the remaining ownership and identity considerations
 
 **Status:** draft for Michael's review, written 2026-10-16 on `overnight2/2026-10-15` (M8 Parts A–C built, Part D
-play-now in progress). As of 2026-10-22, items 1, 3, 6 and 7 and small items 8a, 8b, 8c and 8h are built (N4, N1, R4, R5, R6); the rest is not built. It follows the binding design in
+play-now in progress). As of 2026-10-22, items 1, 3, 5a (the identity picker), 6 and 7 and small items 8a, 8b, 8c and 8h are built (N4, N1, R7, R4, R5, R6); the rest is not built. It follows the binding design in
 [`2026-10-16-ownership-and-identity.md`](2026-10-16-ownership-and-identity.md) (D18–D23) and changes none of it.
 
 **What M9 is:** the items M6–M8 deliberately left out. They come from the "Open items" of the M7 and M8 plans, the M7
@@ -28,11 +28,11 @@ owner's intent once (a placement, a reviewed tag write, a reviewed trash) and ch
 |---|---|---|---|
 | 1 | A downloaded track goes into its playlist at its Spotify position | M | Q1, Q2 by default (D44); **built (N4)** |
 | 2 | Proposals for playlists tiered later, and for filings made blind | S | yes (Q3) |
-| 3 | Garbage-collect the 102 "copies of one version" groups | L | yes (Q4, Q5) |
+| 3 | Garbage-collect the 102 "copies of one version" groups | L | yes (Q4, Q5); **built (N1)** |
 | 4 | Write the version label into `VERSION`/`TIT3` | M | yes (Q6) |
-| 5 | Pickers: identity `search`/`ambiguous`/`none`, and the 11 import `review` rows | M + M | yes (Q7–Q9) |
-| 6 | Enforce "one beets writer" and "no download without approval" in code | S | defaults (Q10) |
-| 7 | Playlist health check after scans; export history | S | default (Q11) |
+| 5 | Pickers: identity `search`/`ambiguous`/`none`, and the 11 import `review` rows | M + M | yes (Q7–Q9); **identity picker built (R7)**, import `review` picker not built |
+| 6 | Enforce "one beets writer" and "no download without approval" in code | S | defaults (Q10); **built (R4)** |
+| 7 | Playlist health check after scans; export history | S | default (Q11); **built (R5)** |
 | 8 | Small items (AcoustID cache, "99 Luftballons", crates.db snapshot, pinning, …) | S each | some (Q12–Q14); **8a, 8b, 8c, 8h built (R6)** |
 
 ---
