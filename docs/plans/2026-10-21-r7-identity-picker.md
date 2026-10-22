@@ -243,6 +243,12 @@ on that; this one also keeps a `--limit 5` run to the picks.
    <x>`. `_intended` then runs its unchanged check ("not one of the row's candidates; refused"), so a choice is
    checked against the candidates twice: when it is recorded, and when it is applied.
 
+Amended in R7-03 (review): an `accept` also drops a hand-typed JSON `choose` (reported like step 6), so the
+recording written is the one Michael accepted. A picked path that occurs more than once in the proposal is refused
+(`choices: <path> occurs N times in the proposal; refused`), since the picker keeps only the last such row.
+`choice_problem` also refuses a `choose` on a `search` row and an empty `mbid`, as the service does. A refusal that
+`_intended` gives keeps its text in `rep.skipped` and is printed as `choices: <path>: <reason>`.
+
 **What a refused choice does.** The row is **never** selected by its class instead. It goes into `rep.skipped` with
 its reason, like any other skip. Skips do not change the exit code. That is today's rule: only `problems` make
 `apply` exit 1.

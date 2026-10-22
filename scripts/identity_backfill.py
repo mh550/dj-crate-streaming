@@ -662,6 +662,7 @@ class ApplyReport:
     skipped: list[tuple[str, str]] = field(default_factory=list)   # (path, reason): never written
     problems: list[str] = field(default_factory=list)          # something wrong around a write: the CLI exits 1
     fields: dict[str, dict[str, str]] = field(default_factory=dict)   # path -> exactly what was (would be) written
+    chosen: dict[str, str] = field(default_factory=dict)       # path -> the picker's action, for rows from --choices
 
 
 LENGTH_TOL_S = 0.5
@@ -697,7 +698,7 @@ def choice_problem(row: dict, choice) -> str:
         return "" if mbid is None else "a skip has no mbid"
     if cls in ("conflict", "error"):
         return f"{cls} rows can only be skipped"
-    if mbid != _canon(mbid):
+    if not _canon(mbid) or mbid != _canon(mbid):
         return f"mbid {mbid!r} is not canonical"
     if action == "accept":
         if cls != "search":
@@ -705,9 +706,46 @@ def choice_problem(row: dict, choice) -> str:
         if mbid != _canon((row.get("write") or {}).get("mb_trackid")):
             return f"accepted {mbid} is no longer the row's pick"
         return ""
+    if cls == "search":
+        return "a search row is accepted or skipped"
     if cls not in CHOOSABLE or mbid not in {_canon(c) for c in row.get("candidates") or []}:
         return f"choose {mbid} is not one of the row's candidates"
     return ""
+
+
+def read_choices(path: Path) -> dict:
+    """{path: entry} from the picker's choices file; ValueError when it is missing, not JSON or has no choices
+    object (apply never guesses what Michael picked)."""
+    try:
+        doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        raise ValueError(f"cannot read {path}: {type(e).__name__}: {e}") from None
+    if not isinstance(doc, dict) or not isinstance(doc.get("choices"), dict):
+        raise ValueError(f"{path} has no \"choices\" object")
+    return doc["choices"]
+
+
+def _with_choice(row: dict, choice) -> tuple[dict | None, str]:
+    """(the row to apply, "") for an accept or choose that still fits, else (None, why). A skip, a refused or a stale
+    choice drops the row: it never falls back to its class. A choose goes through `_intended` first, so a wrong id
+    reads exactly as a hand-typed one; `choice_problem` then catches what is stale or malformed."""
+    rel, cls = row.get("path"), row.get("cls")
+    action = choice.get("action") if isinstance(choice, dict) else None
+    if row.get("skip"):
+        return None, f"choices: {rel} is skipped in the proposal"
+    if action == "skip":
+        return None, f"choices: {rel} is skipped by the picker"
+    if cls in ("conflict", "error"):
+        return None, f"choices: {rel} is {cls}; refused"
+    if action == "accept":                                   # the Accept, not a hand-typed choose, decides
+        row = {k: v for k, v in row.items() if k != "choose"}
+    if action == "choose" and choice.get("mbid"):            # without one, choice_problem says why
+        row = {**row, "choose": choice["mbid"]}
+        _, why = _intended(row)
+        if why:
+            return None, why
+    problem = choice_problem(row, choice)
+    return (None, f"choices: {rel} {problem}; pick again") if problem else (row, "")
 
 
 def _same(values: list[str], v: str) -> bool:
@@ -867,7 +905,8 @@ def _scan(navidrome, timeout_s: float, poll_s: float) -> str:
     return f"{problem}; id and playlist checks not run" if problem else ""
 
 
-def _write_one(p: Path, rel: str, row: dict, write: dict[str, str], log: Path, writer) -> tuple[str, str]:
+def _write_one(p: Path, rel: str, row: dict, write: dict[str, str], log: Path, writer,
+               note: dict | None = None) -> tuple[str, str]:
     """Log, write, confirm one file: (state, problem). state is "untouched" (stopped before the writer),
     "skipped" (a target field filled in since the check: problem is the skip reason, the run goes on),
     "failed" (the writer raised: the file may be half-written) or "written"; problem is "" when confirmed."""
@@ -882,7 +921,8 @@ def _write_one(p: Path, rel: str, row: dict, write: dict[str, str], log: Path, w
         return "skipped", f"already has {', '.join(filled)} (filled in since the check); not written"
     try:
         _append(log, {"event": "write", "path": rel, "cls": row.get("cls"), "written": write,
-                      "prior": {k: before[k] for k in write}, "size": st.st_size, "mtime_ns": st.st_mtime_ns})
+                      "prior": {k: before[k] for k in write}, "size": st.st_size, "mtime_ns": st.st_mtime_ns,
+                      **(note or {})})
     except OSError as e:
         return "untouched", f"cannot write the revert log {log} ({type(e).__name__}: {e}); {rel} not written"
     try:
@@ -912,18 +952,21 @@ def _write_one(p: Path, rel: str, row: dict, write: dict[str, str], log: Path, w
 
 def apply(proposal: Path, music_root: Path, *, log: Path, classes: set[str] | None = None, dry_run: bool = False,
           writer=None, navidrome=None, navidrome_db: Path | None = None, scan_timeout_s: float = 600,
-          poll_s: float = 2, limit: int | None = None, only=(), say=lambda s: None) -> ApplyReport:
+          poll_s: float = 2, limit: int | None = None, only=(), choices: Path | None = None,
+          say=lambda s: None) -> ApplyReport:
     """Write the reviewed rows' id fields (at most `limit` files, paths matching `only`), then let Navidrome scan
     and check that its song ids held, that it reads the recording ids, and that the exported playlists still
     match. The first failed or unconfirmed write stops the run before the scan: a surprise on the library is not
-    repeated, and Michael reverts the log first."""
+    repeated, and Michael reverts the log first. `choices` (the picker's file) selects the rows Michael accepted
+    or chose, plus `classes` when given, and drops the rows he skipped."""
     music_root, log = Path(music_root), Path(log)
     if classes is not None and set(classes) - APPLY_CLASSES:
         raise ValueError(f"--classes may name only {', '.join(sorted(APPLY_CLASSES))}, not "
                          f"{', '.join(sorted(set(classes) - APPLY_CLASSES))} (a none row is applied by its choose)")
+    picks = read_choices(choices) if choices is not None else None
     doc = json.loads(Path(proposal).read_text(encoding="utf-8"))
-    rows = [r for r in (doc["proposals"] if isinstance(doc, dict) else doc) if _selected(r, classes, only)]
     rep = ApplyReport()
+    rows, notes = _rows_to_apply(doc["proposals"] if isinstance(doc, dict) else doc, classes, only, picks, rep, say)
     made_for = doc.get("music_root") if isinstance(doc, dict) else None
     if made_for and Path(made_for) != music_root:
         say(f"note: the proposal was made for {made_for}, applying to {music_root}")
@@ -954,7 +997,7 @@ def apply(proposal: Path, music_root: Path, *, log: Path, classes: set[str] | No
             rep.written.append(rel)
             rep.fields[rel] = write
             continue
-        state, problem = _write_one(music_root / rel, rel, row, write, log, writer)
+        state, problem = _write_one(music_root / rel, rel, row, write, log, writer, notes.get(rel))
         if state == "skipped":
             rep.skipped.append((rel, problem))
             say(f"skipped {rel}: {problem}")
@@ -977,6 +1020,49 @@ def apply(proposal: Path, music_root: Path, *, log: Path, classes: set[str] | No
         rep.problems.append(f"post-write check failed ({type(e).__name__}: {e}); {len(rep.written)} files written; "
                             f"revert log {log}")
     return rep
+
+
+def _rows_to_apply(proposals: list, classes, only, picks: dict | None, rep: ApplyReport, say) -> tuple[list, dict]:
+    """The selected rows in proposal order, and {path: log note} for those from a choice. Without picks, as before;
+    with them, the accepted and chosen rows plus `classes` (none by default), never a row the picker skipped."""
+    if picks is None:
+        return [r for r in proposals if _selected(r, classes, only)], {}
+
+    def wanted(rel) -> bool:
+        return not only or any(fnmatch.fnmatchcase(str(rel), g) for g in only)
+
+    def refuse(rel, why):                                    # _intended's reasons stay as they are, with the path
+        rep.skipped.append((rel, why))
+        say(why if why.startswith(f"choices: {rel} ") else f"choices: {rel}: {why}")
+
+    held = Counter(r.get("path") for r in proposals if isinstance(r.get("path"), str))
+    rows, notes, seen = [], {}, set()
+    for r in proposals:
+        rel = r.get("path")
+        if not isinstance(rel, str) or rel not in picks:
+            if classes is not None and _selected(r, classes, only):
+                rows.append(r)
+            continue
+        if rel in seen or not wanted(rel):
+            continue
+        seen.add(rel)
+        if held[rel] > 1:                                    # which row was tapped? the picker keeps the last
+            refuse(rel, f"choices: {rel} occurs {held[rel]} times in the proposal; refused")
+            continue
+        choice = picks[rel]
+        row, why = _with_choice(r, choice)
+        if row is None:
+            refuse(rel, why)
+            continue
+        if r.get("choose") and _canon(r["choose"]) != _canon(row.get("choose")):
+            say(f"choices: {rel} overrides the proposal's choose {r['choose']}")
+        rows.append(row)
+        rep.chosen[rel] = choice["action"]
+        notes[rel] = {"choice": choice["action"], "decided_by": choice["decided_by"]}
+    for rel in picks:
+        if rel not in seen and wanted(rel):
+            refuse(rel, f"choices: {rel} is not in the proposal; ignored")
+    return rows, notes
 
 
 def _post_write_checks(rep: ApplyReport, music_root: Path, navidrome, navidrome_db: Path | None, before: dict,
@@ -1078,6 +1164,12 @@ def _apply_cli(a, navidrome) -> int:
         print("apply writes library tags: add --yes to write, or --dry-run to see what it would write",
               file=sys.stderr)
         return 2
+    if a.choices is not None:
+        try:
+            read_choices(a.choices)                          # refuse before reading any library file
+        except ValueError as e:
+            print(f"--choices: {e}", file=sys.stderr)
+            return 2
     log = a.log or Path("/data/identity") / f"apply-{datetime.datetime.now():%Y%m%dT%H%M%S}.jsonl"
     try:
         check_out_dir(a.music, log.parent)
@@ -1098,7 +1190,7 @@ def _apply_cli(a, navidrome) -> int:
     logged = log.stat().st_size if log.exists() else -1     # a reused --log: only lines this run adds count
     try:
         rep = apply(a.proposal, a.music, log=log, classes=classes, dry_run=a.dry_run, navidrome=navidrome,
-                    navidrome_db=db, poll_s=a.poll, limit=a.limit, only=a.only or (),
+                    navidrome_db=db, poll_s=a.poll, limit=a.limit, only=a.only or (), choices=a.choices,
                     say=lambda s: print(s, flush=True))
     except Exception as e:           # before any write (the proposal or navidrome.db unreadable), or, if the log
         started = partial = (not a.dry_run and log.exists()  # grew, after one: then say where the revert log is
@@ -1107,7 +1199,8 @@ def _apply_cli(a, navidrome) -> int:
                             + (f"; check the files in the revert log {log}" if started else ""))
     if a.dry_run:
         for rel, write in rep.fields.items():
-            print(f"would write {rel}: " + " ".join(f"{k}={v}" for k, v in write.items()))
+            print(f"would write {rel}: " + " ".join(f"{k}={v}" for k, v in write.items())
+                  + (f" (choice: {rep.chosen[rel]}, decided_by michael)" if rel in rep.chosen else ""))
     for x in rep.problems:
         print(f"PROBLEM: {x}")
     written = "an unknown number of files (see the revert log)" if partial else len(rep.written)
@@ -1131,6 +1224,8 @@ def main(argv: list[str] | None = None, *, opener=None, sleep=None, navidrome=No
     aa.add_argument("--yes", action="store_true", help="really write the library")
     aa.add_argument("--limit", type=int, default=None, help="write at most N files")
     aa.add_argument("--only", action="append", metavar="GLOB", help="only rows whose path matches (repeatable)")
+    aa.add_argument("--choices", type=Path, default=None, metavar="FILE",
+                    help=f"the picker's {CHOICES}: apply its accepts and chooses (plus --classes), drop its skips")
     aa.add_argument("--music", type=Path, default=music)
     aa.add_argument("--navidrome-db", type=Path,
                     default=Path(os.environ.get("NAVIDROME_DB") or "/srv/docker/navidrome/navidrome.db"))
