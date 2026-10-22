@@ -368,6 +368,8 @@ def _classify(f: FileFacts, mb, lookup, p: Proposal) -> None:
     near: dict[str, Recording] = {}                          # fit except the lead artist: for review, never applied
 
     def sort(recs: list[Recording]) -> list[Recording]:
+        """The fitting recordings. One that fits only by its disambiguation (§8c) counts only when none fits by its
+        title, so §8c adds recall and never turns a unique pick into a tie."""
         fit = []
         for r in recs:
             miss = _misfit(f, t, r)
@@ -375,7 +377,8 @@ def _classify(f: FileFacts, mb, lookup, p: Proposal) -> None:
                 fit.append(r)
             elif miss.startswith(_LEAD):
                 near.setdefault(r.id, r)
-        return fit
+        by_title = [r for r in fit if parse_title(r.title, r.artist).key == t.key]
+        return by_title or fit
 
     isrc = _isrc(f.isrc)
     if f.isrc and not isrc:

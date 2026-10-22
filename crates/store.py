@@ -652,7 +652,8 @@ class CrateStore:
     def find_external(self, artist: str, title: str, include_failed: bool = False) -> dict | None:
         """A live (not failed) external row for the same lead artist/title (_same_external), else a `removed` one.
         A failed row whose file was filed (filed_path) counts as live: re-seeding must not queue a second download
-        of it. With include_failed, the newest failed unfiled row comes before a removed one (M9 §8h)."""
+        of it. With include_failed (an import asking again), the newest failed unfiled row answers, and a removed one
+        never does: the import queues a fresh row and the removed one stays as it was (M9 §8h, R6 review)."""
         live, failed, removed = None, None, None
         for r in self._same_external(artist, title):
             if r["status"] == "removed":
@@ -661,7 +662,7 @@ class CrateStore:
                 failed = r                       # the newest: the one a later import queued and import_order names
             else:
                 live = live or r
-        r = live or (failed if include_failed else None) or removed
+        r = live or (failed if include_failed else removed)
         return self._ext_row(r) if r else None
 
     def add_external_wanted(self, artist: str, title: str, album: str | None = None, duration_s: float | None = None,
@@ -689,7 +690,8 @@ class CrateStore:
         """Ask a failed, unfiled row again instead of queuing a second one: back to needs_source with its own id,
         the import's tier, album and length, and no preview of the attempt that failed (approve would reuse its
         pick). One `reasked` event keeps the old reason. Older failed duplicates (queued before §8h) become
-        `removed`, superseded by this row, each with a `superseded` event naming its old reason."""
+        `removed`, superseded by this row, each with a `superseded` event naming its old reason, and any import_order
+        naming them names this row; one with an approval waiting or being fetched is kept (Michael's yes stays)."""
         ext = row["song_id"]
         self.set_external_status(ext, "needs_source", f"re-asked by import of {by}")
         self.log(playlist_id, ext, "reasked", f"was failed: {row['reason'] or ''}")
@@ -698,9 +700,12 @@ class CrateStore:
                         (album, int(duration_s) if duration_s else None, _ext_pk(ext)))
         self.db.execute("DELETE FROM previews WHERE song_id=?", (ext,))
         for r in self._same_external(artist, title):
-            if r["status"] == "failed" and filed_path(r["reason"]) is None and f"ext-{r['id']}" != ext:
-                self.set_external_status(f"ext-{r['id']}", "removed", f"superseded by {ext}")
-                self.log(r["playlist_id"], f"ext-{r['id']}", "superseded", f"by {ext}; was failed: {r['reason'] or ''}")
+            old = f"ext-{r['id']}"
+            if (r["status"] == "failed" and filed_path(r["reason"]) is None and old != ext
+                    and self.approval_in_progress(old) is None):
+                self.set_external_status(old, "removed", f"superseded by {ext}")
+                self.log(r["playlist_id"], old, "superseded", f"by {ext}; was failed: {r['reason'] or ''}")
+                self.db.execute("UPDATE import_order SET wanted_id=? WHERE wanted_id=?", (ext, old))
 
     def set_external_tier(self, ext_id: str, tier: str) -> None:
         """Change the tier an external row is sourced at; logged when it changes."""

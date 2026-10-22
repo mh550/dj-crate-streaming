@@ -510,10 +510,14 @@ def test_a_reask_prefers_a_live_row_and_never_revives_a_filed_or_removed_one():
     s.set_wanted_status(filed, "failed", "Navidrome never indexed A/B/x.flac; file is in the library")
     assert s.add_external_wanted("Chic", "Good Times", reask="Tea tent") == filed
     assert s.external(filed)["status"] == "failed" and _events(s, filed, "reasked") == []
-    gone = s.add_external_wanted("Sade", "Smooth Operator")
-    s.set_wanted_status(gone, "removed", "removed by Michael")
-    assert s.add_external_wanted("Sade", "Smooth Operator", reask="Tea tent") == gone
-    assert s.external(gone)["status"] == "removed" and _events(s, gone, "reasked") == []
+    gone = s.add_external_wanted("Sade", "Smooth Operator", playlist_id="pl-3", position=1)
+    s.forget_playlist("pl-3")
+    fresh = s.add_external_wanted("Sade", "Smooth Operator", playlist_id="pl-9", position=4, reask="Tea tent")
+    assert fresh != gone and s.external(fresh)["status"] == "needs_source"     # R6 review: an import asks again
+    row = s.external(gone)
+    assert (row["status"], row["reason"], row["playlist_id"], row["position"]) == ("removed", "playlist deleted", "pl-3", 1)
+    assert _events(s, gone, "reasked") == []
+    assert s.add_external_wanted("Sade", "Smooth Operator") == fresh                     # and once only
 
 
 def test_a_reask_revives_the_newest_of_several_failed_rows_and_supersedes_the_rest():
@@ -529,6 +533,26 @@ def test_a_reask_revives_the_newest_of_several_failed_rows_and_supersedes_the_re
     assert _events(s, old, "superseded") == [("pl-1", f"by {new}; was failed: download timed out")]
     assert [r["song_id"] for r in s.wanted()] == [new]
     assert s.add_external_wanted("Chic", "Good Times", reask="Tea tent") == new    # the removed row never shadows it
+
+
+def test_a_reask_keeps_an_older_duplicate_with_a_waiting_approval_and_repoints_import_order():
+    # R6 review: Michael's yes is never superseded (as forget_playlist and upgrade_busy keep it), and another
+    # playlist's import_order follows the surviving row.
+    s = CrateStore()
+    old = s.add_external_wanted("Chic", "Good Times", playlist_id="pl-1", position=2)
+    s.set_wanted_status(old, "failed", "download timed out")
+    approved = s.add_external_wanted("Chic", "Le Freak", playlist_id="pl-1", position=3)
+    s.set_wanted_status(approved, "failed", "download timed out")
+    s.record_import_order("pl-1", [(2, None, old), (3, None, approved)])
+    new = s.add_external_wanted("Chic", "Good Times", playlist_id="pl-3", position=1)
+    s.set_wanted_status(new, "failed", "no candidate")
+    newer = s.add_external_wanted("Chic", "Le Freak", playlist_id="pl-3", position=2)
+    s.set_wanted_status(newer, "failed", "no candidate")
+    s.approve(approved, "michael", None, "medium")
+    s.add_external_wanted("Chic", "Good Times", playlist_id="pl-3", position=1, reask="Tea tent")
+    s.add_external_wanted("Chic", "Le Freak", playlist_id="pl-3", position=2, reask="Tea tent")
+    assert s.external(old)["status"] == "removed" and s.external(approved)["status"] == "failed"
+    assert [(r["position"], r["wanted_id"]) for r in s.import_order("pl-1")] == [(2, new), (3, approved)]
 
 
 def test_a_newer_failed_row_is_reasked_past_an_older_removed_one():

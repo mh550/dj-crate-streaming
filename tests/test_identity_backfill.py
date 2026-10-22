@@ -1303,13 +1303,28 @@ def test_a_disambiguation_never_relabels_a_title_that_has_a_label(tmp_path, temp
     assert pr.cls == "none"
 
 
-def test_a_disambiguation_only_duplicate_of_a_labelled_recording_stays_ambiguous(tmp_path, template):
-    """More recall can mean a tie: MusicBrainz duplicates are never resolved by guessing."""
+def test_a_disambiguation_only_duplicate_never_spoils_a_labelled_recordings_pick(tmp_path, template):
+    """Recall only (R6 review): a recording that fits by its disambiguation counts only when none fits by its title,
+    so the unique `isrc` or `search` pick of before §8c stays unique."""
     music = tmp_path / "music"
     titled = _fixture_recording(id=RA, title='My Love Is Free (12" Version)', length=8000)
     dup = _fixture_recording(id=RB, disambiguation='12" version', length=8000)
     f = tagged(music, "a.flac", template, artist="Double Exposure", title="My Love Is Free (12'' Version)")
     pr = ib.classify(facts(music, f), FakeMB([titled, dup], searches={"My Love Is Free": [titled, dup]}))
+    assert pr.cls == "search" and pr.recording == RA and pr.write["mb_trackid"] == RA
+    g = tagged(music, "b.flac", template, artist="Double Exposure", title="My Love Is Free (12'' Version)",
+               isrc="USSA49310048")
+    pr = ib.classify(facts(music, g), FakeMB([titled, dup], isrcs={"USSA49310048": [titled, dup]}))
+    assert pr.cls == "isrc" and pr.recording == RA
+
+
+def test_two_disambiguation_only_fits_stay_ambiguous(tmp_path, template):
+    """More recall can mean a tie: MusicBrainz duplicates are never resolved by guessing."""
+    music = tmp_path / "music"
+    a = _fixture_recording(id=RA, disambiguation='12" version', length=8000)
+    b = _fixture_recording(id=RB, disambiguation='12" version', length=8000)
+    f = tagged(music, "a.flac", template, artist="Double Exposure", title="My Love Is Free (12'' Version)")
+    pr = ib.classify(facts(music, f), FakeMB([a, b], searches={"My Love Is Free": [a, b]}))
     assert pr.cls == "ambiguous" and set(pr.candidates) == {RA, RB} and pr.write == {}
 
 
