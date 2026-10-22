@@ -1337,3 +1337,263 @@ def test_a_credited_disambiguation_fits_only_that_credit(tmp_path, template):
     his = tagged(music, "b.flac", template, artist="Double Exposure", title="My Love Is Free (Tom Moulton Mix)")
     pr = ib.classify(facts(music, his), FakeMB([moulton], searches={"My Love Is Free": [moulton]}))
     assert pr.cls == "search" and pr.recording == moulton.id
+
+
+# ── apply --choices (R7-03): the picker's taps merged into the proposal, behind the same checks ──────────────────
+#
+# Choice entries have the shape crates/identity_view.record writes. Dry runs only, except the one log test, which
+# writes the tmp fixture copy as the other apply tests do.
+
+def pick(row: dict, action: str, mbid=None, **over) -> dict:
+    """A choices-file entry for row as the picker records it at the tap."""
+    return {"action": action, "mbid": mbid, "cls": row["cls"], "size": row["size"], "mtime_ns": row["mtime_ns"],
+            "at": "2026-10-22T08:00:00+00:00", "decided_by": "michael", **over}
+
+
+def choices_file(tmp_path: Path, entries: dict) -> Path:
+    path = tmp_path / "out" / ib.CHOICES
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"created": "x", "choices": entries}))
+    return path
+
+
+def picker_library(tmp_path, template):
+    """One row of each kind the picker sees, plus a default-class row nobody tapped."""
+    music = tmp_path / "music"
+    p = {n: rich(music, f"K/{n}.flac", template) for n in ("isrc", "search", "ambiguous", "none", "conflict")}
+    rows = {"isrc": row_for(music, p["isrc"], "isrc"),
+            "search": row_for(music, p["search"], "search", write={"mb_trackid": R1}),
+            "ambiguous": row_for(music, p["ambiguous"], "ambiguous", write={}, candidates=[RA, RB]),
+            "none": row_for(music, p["none"], "none", write={}, candidates=[RB]),
+            "conflict": row_for(music, p["conflict"], "conflict", write={})}
+    return music, rows
+
+
+def test_choices_accept_selects_a_search_row_without_classes(tmp_path, template):
+    music, rows = picker_library(tmp_path, template)
+    ch = choices_file(tmp_path, {"K/search.flac": pick(rows["search"], "accept", R1)})
+    rep = apply(tmp_path, music, list(rows.values()), dry_run=True, choices=ch)
+    assert rep.written == ["K/search.flac"] and rep.fields["K/search.flac"] == {"mb_trackid": R1}
+    assert rep.chosen == {"K/search.flac": "accept"}
+
+
+def test_choices_without_classes_selects_only_the_picks(tmp_path, template):
+    music, rows = picker_library(tmp_path, template)
+    rows["ambiguous"]["choose"] = RA                       # a hand-typed JSON choose without a tap: left out too
+    ch = choices_file(tmp_path, {"K/none.flac": pick(rows["none"], "choose", RB)})
+    rep = apply(tmp_path, music, list(rows.values()), dry_run=True, choices=ch)
+    assert rep.written == ["K/none.flac"]                  # not the isrc row, not the JSON choose
+    assert apply(tmp_path, music, list(rows.values()), dry_run=True).written == ["K/isrc.flac", "K/ambiguous.flac"]
+
+
+def test_choices_with_classes_adds_the_picks(tmp_path, template):
+    music, rows = picker_library(tmp_path, template)
+    ch = choices_file(tmp_path, {"K/search.flac": pick(rows["search"], "accept", R1)})
+    rep = apply(tmp_path, music, list(rows.values()), dry_run=True, choices=ch, classes={"isrc"})
+    assert rep.written == ["K/isrc.flac", "K/search.flac"] and rep.chosen == {"K/search.flac": "accept"}
+
+
+def test_choices_choose_sets_the_chosen_id(tmp_path, template):
+    music, rows = picker_library(tmp_path, template)
+    ch = choices_file(tmp_path, {"K/ambiguous.flac": pick(rows["ambiguous"], "choose", RB)})
+    rep = apply(tmp_path, music, list(rows.values()), dry_run=True, choices=ch)
+    assert rep.written == ["K/ambiguous.flac"] and rep.fields["K/ambiguous.flac"] == {"mb_trackid": RB}
+    assert rep.chosen == {"K/ambiguous.flac": "choose"}
+
+
+def test_choices_skip_drops_a_default_class_row(tmp_path, template):
+    music, rows = picker_library(tmp_path, template)
+    ch = choices_file(tmp_path, {"K/isrc.flac": pick(rows["isrc"], "skip")})
+    for classes in (None, {"isrc"}):
+        rep = apply(tmp_path, music, list(rows.values()), dry_run=True, choices=ch, classes=classes)
+        assert "K/isrc.flac" not in rep.written and rep.chosen == {}
+
+
+def test_choices_wrong_mbid_is_refused_with_the_existing_message(tmp_path, template):
+    music, rows = picker_library(tmp_path, template)
+    ch = choices_file(tmp_path, {"K/ambiguous.flac": pick(rows["ambiguous"], "choose", OTHER)})
+    said = []
+    rep = apply(tmp_path, music, list(rows.values()), dry_run=True, choices=ch, classes={"ambiguous"},
+                say=said.append)
+    assert rep.written == []
+    assert dict(rep.skipped)["K/ambiguous.flac"] == f"choose '{OTHER}' is not one of the row's candidates; refused"
+    assert f"choices: K/ambiguous.flac: choose '{OTHER}' is not one of the row's candidates; refused" in said
+
+
+def test_choices_on_conflict_are_refused(tmp_path, template):
+    music, rows = picker_library(tmp_path, template)
+    for action in ("accept", "choose"):
+        ch = choices_file(tmp_path, {"K/conflict.flac": pick(rows["conflict"], action, RA)})
+        said = []
+        rep = apply(tmp_path, music, list(rows.values()), dry_run=True, choices=ch, say=said.append)
+        assert rep.written == [] and "choices: K/conflict.flac is conflict; refused" in said
+        assert dict(rep.skipped)["K/conflict.flac"] == "choices: K/conflict.flac is conflict; refused"
+
+
+def test_choices_stale_row_is_refused(tmp_path, template):
+    music, rows = picker_library(tmp_path, template)
+    old = pick(rows["search"], "accept", R1, mtime_ns=rows["search"]["mtime_ns"] - 1)    # tapped before a re-propose
+    ch = choices_file(tmp_path, {"K/search.flac": old})
+    rep = apply(tmp_path, music, list(rows.values()), dry_run=True, choices=ch, classes={"search"})
+    assert rep.written == []                               # never falls back to its class
+    assert dict(rep.skipped)["K/search.flac"] == ("choices: K/search.flac was made on an older proposal row "
+                                                  "(class, size or mtime changed); pick again")
+
+
+def test_choices_stale_skip_still_drops_the_row(tmp_path, template):
+    music, rows = picker_library(tmp_path, template)
+    old = pick(rows["isrc"], "skip", cls="search", size=1)
+    ch = choices_file(tmp_path, {"K/isrc.flac": old})
+    rep = apply(tmp_path, music, list(rows.values()), dry_run=True, choices=ch, classes={"isrc"})
+    assert "K/isrc.flac" not in rep.written
+
+
+def test_choices_override_a_json_choose_and_say_so(tmp_path, template):
+    music, rows = picker_library(tmp_path, template)
+    rows["ambiguous"]["choose"] = RA
+    ch = choices_file(tmp_path, {"K/ambiguous.flac": pick(rows["ambiguous"], "choose", RB)})
+    said = []
+    rep = apply(tmp_path, music, list(rows.values()), dry_run=True, choices=ch, say=said.append)
+    assert rep.fields == {"K/ambiguous.flac": {"mb_trackid": RB}}
+    assert f"choices: K/ambiguous.flac overrides the proposal's choose {RA}" in said
+
+
+def test_choices_malformed_entry_is_refused(tmp_path, template):
+    music, rows = picker_library(tmp_path, template)
+    extra = rich(music, "K/bare.flac", template)
+    rows["bare"] = row_for(music, extra, "ambiguous", write={}, candidates=[RA, RB])
+    rows["object"] = row_for(music, rich(music, "K/object.flac", template), "search", write={"mb_trackid": R1})
+    cases = {"K/search.flac": (pick(rows["search"], "bless", R1), "is not an accept, choose or skip"),
+             "K/object.flac": ("accept", "is not an accept, choose or skip"),
+             "K/none.flac": (pick(rows["none"], "choose", RB.upper()), "is not canonical"),
+             "K/bare.flac": (pick(rows["bare"], "choose"), "mbid None is not canonical"),
+             "K/ambiguous.flac": (pick(rows["ambiguous"], "accept", RA), "accept is for search rows"),
+             "K/isrc.flac": (pick(rows["isrc"], "accept", R1, decided_by="worker"), "not michael")}
+    ch = choices_file(tmp_path, {k: v[0] for k, v in cases.items()})
+    rep = apply(tmp_path, music, list(rows.values()), dry_run=True, choices=ch, classes={"isrc", "search"})
+    assert rep.written == [] and rep.chosen == {}
+    why = dict(rep.skipped)
+    for rel, (_, reason) in cases.items():
+        assert why[rel].startswith(f"choices: {rel} ") and reason in why[rel] and why[rel].endswith("; pick again")
+
+
+def test_choice_problem_is_shared(tmp_path, template, monkeypatch):
+    from crates import identity_view
+    assert identity_view.choice_problem is ib.choice_problem
+    music, rows = picker_library(tmp_path, template)
+    ch = choices_file(tmp_path, {"K/search.flac": pick(rows["search"], "accept", R1)})
+    monkeypatch.setattr(ib, "choice_problem", lambda row, choice: "is vetoed")
+    rep = apply(tmp_path, music, list(rows.values()), dry_run=True, choices=ch)
+    assert rep.written == [] and dict(rep.skipped)["K/search.flac"] == "choices: K/search.flac is vetoed; pick again"
+
+
+def test_choices_unknown_path_is_reported(tmp_path, template):
+    music, rows = picker_library(tmp_path, template)
+    ch = choices_file(tmp_path, {"K/gone.flac": {"action": "skip", "mbid": None, "decided_by": "michael"},
+                                 "K/search.flac": pick(rows["search"], "accept", R1)})
+    said = []
+    rep = apply(tmp_path, music, list(rows.values()), dry_run=True, choices=ch, say=said.append)
+    assert rep.written == ["K/search.flac"]
+    assert dict(rep.skipped)["K/gone.flac"] == "choices: K/gone.flac is not in the proposal; ignored"
+    assert "choices: K/gone.flac is not in the proposal; ignored" in said
+
+
+def test_choices_json_skip_is_final(tmp_path, template):
+    music, rows = picker_library(tmp_path, template)
+    rows["search"]["skip"] = True
+    ch = choices_file(tmp_path, {"K/search.flac": pick(rows["search"], "accept", R1)})
+    rep = apply(tmp_path, music, list(rows.values()), dry_run=True, choices=ch)
+    assert rep.written == []
+    assert dict(rep.skipped)["K/search.flac"] == "choices: K/search.flac is skipped in the proposal"
+
+
+def test_choices_dry_run_changes_nothing_on_disk(tmp_path, template):
+    music, rows = picker_library(tmp_path, template)
+    ch = choices_file(tmp_path, {"K/search.flac": pick(rows["search"], "accept", R1),
+                                 "K/ambiguous.flac": pick(rows["ambiguous"], "choose", RA),
+                                 "K/isrc.flac": pick(rows["isrc"], "skip")})
+    shas, tags = sha(music), {p: dump(p) for p in music.rglob("*.flac")}
+    before_out = sorted(p.name for p in (tmp_path / "out").iterdir())
+    rep = apply(tmp_path, music, list(rows.values()), dry_run=True, choices=ch)
+    assert rep.written == ["K/search.flac", "K/ambiguous.flac"]
+    assert sha(music) == shas and {p: dump(p) for p in music.rglob("*.flac")} == tags
+    assert sorted(p.name for p in (tmp_path / "out").iterdir()) == before_out + ["identity-proposal.json"]
+
+
+def test_choices_cli_dry_run_names_rows_from_choices(tmp_path, template, capsys):
+    music, rows = picker_library(tmp_path, template)
+    prop = proposal_file(tmp_path, list(rows.values()))
+    ch = choices_file(tmp_path, {"K/search.flac": pick(rows["search"], "accept", R1),
+                                 "K/ambiguous.flac": pick(rows["ambiguous"], "choose", RB)})
+    shas = sha(music)
+    rc = ib.main(["apply", str(prop), "--music", str(music), "--choices", str(ch), "--classes", "isrc",
+                  "--dry-run", "--log", str(tmp_path / "out" / "a.jsonl")])
+    out = capsys.readouterr().out
+    assert rc == 0 and sha(music) == shas
+    assert f"would write K/search.flac: mb_trackid={R1} (choice: accept, decided_by michael)" in out
+    assert f"would write K/ambiguous.flac: mb_trackid={RB} (choice: choose, decided_by michael)" in out
+    assert f"would write K/isrc.flac: mb_trackid={R1}\n" in out
+
+
+def test_choices_file_missing_or_malformed_exits_2(tmp_path, template, capsys):
+    music, rows = picker_library(tmp_path, template)
+    prop = proposal_file(tmp_path, list(rows.values()))
+    bad = tmp_path / "out" / "bad.json"
+    for text in ("{not json", "[]", '{"created": "x"}', '{"choices": []}'):
+        bad.write_text(text)
+        rc = ib.main(["apply", str(prop), "--music", str(music), "--choices", str(bad), "--dry-run"])
+        assert rc == 2 and "--choices" in capsys.readouterr().err
+    rc = ib.main(["apply", str(prop), "--music", str(music), "--choices", str(tmp_path / "nope.json"), "--dry-run"])
+    assert rc == 2 and "--choices" in capsys.readouterr().err
+    with pytest.raises(ValueError):
+        ib.apply(prop, music, log=tmp_path / "out" / "a.jsonl", dry_run=True, choices=bad)
+
+
+def test_apply_log_carries_decided_by(tmp_path, template):
+    music, rows = picker_library(tmp_path, template)
+    ch = choices_file(tmp_path, {"K/ambiguous.flac": pick(rows["ambiguous"], "choose", RB)})
+    log = tmp_path / "out" / "apply.jsonl"
+    rep = apply(tmp_path, music, list(rows.values()), choices=ch, log=log, classes={"isrc"})
+    assert rep.problems == [] and rep.written == ["K/isrc.flac", "K/ambiguous.flac"]
+    writes = {e["path"]: e for e in map(json.loads, log.read_text().splitlines()) if e["event"] == "write"}
+    assert writes["K/ambiguous.flac"]["choice"] == "choose" and writes["K/ambiguous.flac"]["decided_by"] == "michael"
+    assert "choice" not in writes["K/isrc.flac"] and "decided_by" not in writes["K/isrc.flac"]
+    assert ib.read_ids(music / "K/ambiguous.flac")["mb_trackid"] == [RB]
+    assert ib.revert(log, music) == 2                       # revert ignores the extra keys
+    assert ib.read_ids(music / "K/ambiguous.flac")["mb_trackid"] == []
+
+
+def test_choices_accept_overrides_a_json_choose_and_says_so(tmp_path, template):
+    music, rows = picker_library(tmp_path, template)
+    rows["search"].update(candidates=[R1, RB], choose=RB)             # hand-typed: the Accept must win
+    ch = choices_file(tmp_path, {"K/search.flac": pick(rows["search"], "accept", R1)})
+    said = []
+    rep = apply(tmp_path, music, list(rows.values()), dry_run=True, choices=ch, say=said.append)
+    assert rep.fields == {"K/search.flac": {"mb_trackid": R1}} and rep.chosen == {"K/search.flac": "accept"}
+    assert f"choices: K/search.flac overrides the proposal's choose {RB}" in said
+
+
+def test_choices_on_a_path_the_proposal_holds_twice_are_refused(tmp_path, template):
+    music, rows = picker_library(tmp_path, template)
+    ch = choices_file(tmp_path, {"K/search.flac": pick(rows["search"], "accept", R1)})
+    rep = apply(tmp_path, music, list(rows.values()) + [dict(rows["search"])], dry_run=True, choices=ch)
+    assert rep.written == [] and rep.chosen == {}
+    assert dict(rep.skipped)["K/search.flac"] == "choices: K/search.flac occurs 2 times in the proposal; refused"
+
+
+def test_choice_problem_refuses_an_empty_mbid_and_a_choose_on_search():
+    row = {"path": "K/a.flac", "cls": "search", "size": 1, "mtime_ns": 2, "write": {}, "candidates": [RA]}
+    base = {"cls": "search", "size": 1, "mtime_ns": 2, "decided_by": "michael"}
+    assert "not canonical" in ib.choice_problem(row, {**base, "action": "accept", "mbid": ""})
+    assert ib.choice_problem(row, {**base, "action": "choose", "mbid": RA}) == "a search row is accepted or skipped"
+
+
+def test_choices_respect_only_and_never_write_an_error_row(tmp_path, template):
+    music, rows = picker_library(tmp_path, template)
+    rows["conflict"]["cls"] = "error"
+    ch = choices_file(tmp_path, {"K/search.flac": pick(rows["search"], "accept", R1),
+                                 "K/conflict.flac": pick(rows["conflict"], "accept", R1),
+                                 "K/ambiguous.flac": pick(rows["ambiguous"], "choose", RA)})
+    rep = apply(tmp_path, music, list(rows.values()), dry_run=True, choices=ch, only=["K/a*", "K/c*"])
+    assert rep.written == ["K/ambiguous.flac"]
+    assert dict(rep.skipped) == {"K/conflict.flac": "choices: K/conflict.flac is error; refused"}

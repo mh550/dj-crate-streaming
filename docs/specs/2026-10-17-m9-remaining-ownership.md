@@ -222,6 +222,16 @@ in a choices file beside the proposal until `apply` writes it.
 
 **Size M.**
 
+**Built (R7, 2026-10-22), not live.** Plan `docs/plans/2026-10-21-r7-identity-picker.md`. The crates service serves
+`GET /api/identity` and `POST /api/identity/choice` (`crates/identity_view.py`); the web client's Identity tab shows
+the rows; each tap is stored in `/data/identity/identity-choices.json` and logged as an `identity_pick` event with
+`decided_by=michael`; `identity_backfill apply --choices` merges the taps, checking each one against the row again.
+Q7 and Q8 run with their defaults (D47 *default*): `search` rows are accepted one by one (the class stays out of
+`--classes`), and the only candidate on the file's own album is pre-selected, never applied without a click. The
+plan narrows the buttons above: Accept is for `search` rows only (an `ambiguous`/`none` row has no single pick), and
+Choose for `ambiguous`/`none` only (a `search` row has no candidate list). The live apply is Michael's
+(`docs/next-todos.md` item 6).
+
 ### 5b. The 11 import `review` rows (several versions in the library)
 
 **Problem.** Import found several library versions for these Spotify rows and parked them. Since `40b0d47` they are

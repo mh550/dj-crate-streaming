@@ -70,7 +70,8 @@ before swapping versions and adds play-now. (The pivot moved the crate flag's ow
   mediafile 0.12.0). The build context is `CRATES_SRC` in `.env`, i.e. **the repo's working tree** (§10).
 - Only `127.0.0.1` ports are published; `tailscale serve` on the host puts 4533 and 4580 on the tailnet.
 - Who may write what: Navidrome writes only its DB (never files). `crates` writes `crates.db` and Navidrome
-  playlists (the comment attributes, add/create, a proposal's one-slot swap); it has no library mount, so it cannot download or file
+  playlists (the comment attributes, add/create, a proposal's one-slot swap), plus the Identity view's
+  `/data/identity/identity-choices.json` (R7, below); it has no library mount, so it cannot download or file
   (`fetch` refuses, `sourcing/fetch.py:142-148`). The worker is the only process that downloads, runs beets or
   moves files into `/srv/music`. slskd writes only its downloads folder; it sees `/srv/music` read-only and
   never sees `/srv/incoming/library-import` (your originals).
@@ -142,8 +143,11 @@ Other stores:
   every playlist). They mirror Navidrome within 5 minutes, so the restore source is
   **`/srv/music/_playlists/.history/<YYYY-MM-DD>/<name>.m3u8`**: the previous text of each changed file, the first
   one of the day (UTC), kept 30 days (R5, M9 §7). `check` and the stale list ignore `.history/`.
-- **Identity outputs**: `/srv/docker/crates/identity/` (= `/data/identity` in the worker): proposal, report,
-  MB cache, apply logs. Does not exist yet.
+- **Identity outputs**: `/srv/docker/crates/identity/` (= `/data/identity` in the worker and in `crates`,
+  `CRATES_IDENTITY_DIR`): proposal, report, MB cache, apply logs, and `identity-choices.json` (R7: the Identity
+  view's taps, latest per path, written atomically by `crates/identity_view.py`, the only file `crates` writes
+  there). Not checked on the live box since 2026-10-17 (it did not exist then): the R7 plan's "Live steps" step 1
+  checks that it exists and is writable by uid 1000.
 
 ## 4. Key flows
 
@@ -238,13 +242,19 @@ Runs in the worker (`scripts/identity_backfill.py`), because it has `/srv/music`
    label agree, it is not a video, and the length is within 4 s (no length = no fit). Classes: `confirmed`,
    `isrc`, `acoustid`, `search`, `ambiguous`, `conflict`, `none`, `error`. Writes proposal JSON + report + cache.
    ~45–70 min for the library (1 req/1.05 s, 503 retries), resumable from `mb-cache.jsonl`.
-2. **review**: you read the report; set `"skip": true` or `"choose": "<mbid>"` (must be a listed candidate; only
-   on `search`/`ambiguous`/`none` rows) in the JSON.
+2. **review**: in the web client's **Identity view** (R7, built, not live; `crates/identity_view.py`,
+   `GET /api/identity`, `POST /api/identity/choice`): one row per `search`/`ambiguous`/`none`/`conflict`/`error`
+   file with ▶ and the candidates; Accept (a `search` row's recording), Choose (a listed candidate; the only one on
+   the file's own album is pre-selected, Q8), Skip; `conflict`/`error` rows offer only Skip. A tap writes no tag: it
+   is stored in the **choices file** `identity-choices.json` beside the proposal and logged as `identity_pick`
+   (`decided_by=michael`). Or, by hand: set `"skip": true` or `"choose": "<mbid>"` in the proposal JSON.
 3. **apply** (`:873`): default classes `confirmed`, `isrc`, `acoustid` + rows with `choose`; `--classes` may add
-   `search`, `ambiguous`. Per file: refuse if size/mtime/tags changed since propose or a target field is not empty
-   (`_check_file`, `:732`); log first (`apply-<time>.jsonl`, with prior values), `write_minimal` the id fields,
-   read back, verify no other tag changed; first problem stops the run. Then scan and check: song ids unchanged,
-   Navidrome shows the recording id, `.m3u8` exports still match (`export_playlists.check`).
+   `search`, `ambiguous`; `--choices identity-choices.json` adds the picked rows (each choice is checked against
+   the row again: class, size, mtime, candidates; a refused one is never written by its class). Per file: refuse
+   if size/mtime/tags changed since propose or a target field is not empty (`_check_file`, `:732`); log first
+   (`apply-<time>.jsonl`, with prior values), `write_minimal` the id fields, read back, verify no other tag changed;
+   first problem stops the run. Then scan and check: song ids unchanged, Navidrome shows the recording id, `.m3u8`
+   exports still match (`export_playlists.check`).
 4. **revert** (`:958`): newest first, remove a field only where the file still holds exactly the logged value
    (`tag_cleanup.remove_ids`). Re-applying after a revert needs a fresh propose (mtime changed).
 

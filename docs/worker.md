@@ -342,7 +342,10 @@ worker downloads: `sourcing.cli rank` no longer has `--download` (it exits 2 and
 
 The crates container reads `CRATES_TRASH` (`/trash`, read-only: status shows its size) and `NAVIDROME_DB` (the same
 file, mounted read-only: playlist edits and proposal answers need it). Navidrome's database is opened with
-`mode=ro`; if it cannot be opened, those calls answer 503 or refuse, and nothing is written.
+`mode=ro`; if it cannot be opened, those calls answer 503 or refuse, and nothing is written. It also reads `CRATES_IDENTITY_DIR`
+(default `/data/identity`, the worker's identity output on the same mount): the Identity picker's `GET /api/identity`
+serves `identity-proposal.json` from there, and `POST /api/identity/choice` writes `identity-choices.json` there, the
+only file it writes (R7).
 
 ## Identity backfill (runs in the worker)
 
@@ -374,8 +377,9 @@ docker compose exec -T worker python -m scripts.identity_backfill propose --limi
   modification time, so a second propose asks only about changed files. Delete it to ask again for every file (an
   answer of "not in AcoustID" is kept too). The key is never written to it. `apply` and `revert` do not read it.
 
-**2. Review.** Open `identity-backfill-report.md` (`/srv/docker/crates/identity/`). It lists each class with the files in
-it and a MusicBrainz link for each pick. Then, in `identity-proposal.json`:
+**2. Review.** The easy way is the crates app's **Identity** tab (below, "Apply the picker's choices"). By hand: open
+`identity-backfill-report.md` (`/srv/docker/crates/identity/`). It lists each class with the files in it and a
+MusicBrainz link for each pick. Then, in `identity-proposal.json`:
 - set `"skip": true` on any row you do not want written;
 - on an `ambiguous` row (or a `none` row with candidates), set `"choose": "<recording id>"` to one of its listed
   candidates. Any other id is refused;
@@ -405,6 +409,33 @@ docker compose exec -T worker python -m scripts.identity_backfill apply /data/id
   `python3 scripts/export_playlists.py check` first: a playlist that was already stale shows up as a problem.
   `--no-navidrome` skips this.
 - It exits 1 when any check reports a problem. The first failed write stops the run.
+
+**Apply the picker's choices.** The Identity tab of the crates app records each Accept, Choose and Skip in
+`/data/identity/identity-choices.json` (nothing is written to a file then). `--choices` applies them:
+
+```
+docker compose exec -T worker python -m scripts.identity_backfill apply /data/identity/identity-proposal.json --choices /data/identity/identity-choices.json --dry-run
+```
+
+- Without `--classes` it selects **only** the rows you accepted or chose. With `--classes` it adds those classes' rows.
+  `--limit` and `--only` apply to all of them alike.
+- **The live apply with `--choices` is Michael's step** (`docs/next-todos.md` item 6; the harness never runs it): the
+  staged steps (dry run, `--limit 5`, all, scan and check after each, `revert` with the run's log) are in
+  `docs/plans/2026-10-21-r7-identity-picker.md` "Live steps".
+- Accept takes a `search` row's proposed recording, Choose sets the row's `choose` to the tapped candidate, Skip
+  drops the row, whatever its class. The choices file wins over a hand-typed `"choose"`, for an Accept too (the run
+  says so); a `"skip": true` in the proposal still wins over everything. A path the proposal holds twice is refused.
+- A choice is refused, and its row is not written by its class either, when it no longer fits the row: the row's
+  class, size or modification time changed since the tap (a new `propose`), the accepted recording is no longer the
+  row's pick, or the chosen id is not one of the candidates (the same message as a hand-typed `choose`). Accept or
+  Choose on a `conflict` or `error` row is refused. Each refusal is printed as `choices: <path> …`, and a choice for
+  a path the proposal lacks as `… is not in the proposal; ignored`. Pick again in the tab after a new `propose`.
+  A row that a new `propose` moved out of the picker (a `search` row that became `acoustid`, say) is no longer in
+  the tab, so its old choice stays refused (or, for a skip, keeps dropping the row): apply such rows without
+  `--choices`, or delete their entries from the choices file first.
+- The dry run marks those rows `(choice: accept, decided_by michael)`. A real run adds `"choice"` and
+  `"decided_by": "michael"` to their lines in the apply log; `revert` works as before.
+- A missing or unreadable choices file stops the command (exit 2) before any library file is read.
 
 **Undo.**
 
