@@ -29,7 +29,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from sourcing.identity import lead_artist, loose
+from sourcing.identity import can_be_song, lead_artist, loose
 from sourcing.policy import DEFAULT_TIER, STREAM_DEFAULT, check_stream, check_tier, max_tier
 
 SCHEMA = """
@@ -186,10 +186,12 @@ def in_flight(status: str, reason: str | None) -> bool:
 
 
 # A `review` row is a question. Copy replacement (sourcing.replace / fetch) and proposals leave rows in `review` with
-# one of these reasons when a better copy was filed but did not replace the old one; approving such a row is a fresh
-# download attempt. Any other review reason (import-playlist's "ambiguous …": several library versions fit) waits
-# for a pick between versions that already exist, and a download would not answer it.
-RETRYABLE_REVIEW = re.compile(r"kept beside |declined replacement #\d+|replacement #\d+ not made:|filed beside ")
+# one of these reasons when a better copy was filed but did not replace the old one, and fetch when Navidrome lists the
+# filed file as another song than the one asked for (S1-03); approving such a row is a fresh download attempt. Any
+# other review reason (import-playlist's "ambiguous …": several library versions fit) waits for a pick between versions
+# that already exist, and a download would not answer it.
+RETRYABLE_REVIEW = re.compile(r"kept beside |declined replacement #\d+|replacement #\d+ not made:|filed beside |"
+                              r"filed .+ as .+, asked for ")
 
 
 def retryable_review(reason: str | None) -> bool:
@@ -978,6 +980,82 @@ class CrateStore:
         """Close an external upgrade row because a tiered playlist holds its song: that playlist row is the one
         request for a better file now (fetch refuses a `removed` row)."""
         self.set_external_status(ext_id, "removed", self.SUPERSEDED)
+
+    def reopen_external(self, ext_id: str, apply: bool) -> dict:
+        """Put an external row filed as the wrong song (ext-74, S1-08) back to `needs_source`: the asked names return
+        (a row without them keeps its own), the library song and the provisional flag clear, its placements go so the
+        right file is placed when it arrives (D49; the wrong song's playlist entries stay), and its preview goes so an
+        approval cannot reuse the wrong pick. One `reopened` event holds the old values as JSON: the reverse. Touches
+        crates.db only. Refused (ValueError): not an `ext-<n>` id, no such row, a `removed` row, a row in flight
+        (in_flight: a download, a filed file not yet indexed, a question; a retryable `review` is not one), an
+        approval waiting or being fetched, an open copy replacement, a placement being written, a row already open.
+        Returns {id, old, new, playlists, applied}, `playlists` being every import slot the row will be placed into;
+        changes nothing unless `apply`, which checks and writes under one write lock (the worker writes too)."""
+        if not re.fullmatch(r"ext-\d+", ext_id or ""):
+            raise ValueError(f"{ext_id!r} is not an external row id (ext-<n>)")
+        began = apply and not self.db.in_transaction
+        if began:
+            self.db.execute("BEGIN IMMEDIATE")
+        try:
+            plan = self._reopen_plan(ext_id)
+            if apply:
+                old, new = plan["old"], plan["new"]
+                self.db.execute("UPDATE external_wanted SET artist=?, title=?, library_song_id=NULL, provisional=0, "
+                                "updated_at=? WHERE id=?", (new["artist"], new["title"], time.time(), _ext_pk(ext_id)))
+                self.set_external_status(ext_id, "needs_source", new["reason"])
+                self.db.execute("DELETE FROM placements WHERE wanted_id=?", (ext_id,))
+                self.db.execute("DELETE FROM previews WHERE song_id=?", (ext_id,))
+                self.log(plan["playlist_id"], ext_id, "reopened", json.dumps(old))
+                self.commit()
+        except BaseException:
+            if began:
+                self.db.rollback()
+            raise
+        del plan["playlist_id"]
+        return plan | {"applied": apply}
+
+    def _reopen_plan(self, ext_id: str) -> dict:
+        row = self.external(ext_id)
+        if row is None:
+            raise ValueError(f"{ext_id}: no such row")
+        status, reason = row["status"], row["reason"]
+        if status == "removed":
+            raise ValueError(f"{ext_id} is removed ({reason or ''})")
+        if in_flight(status, reason) and not (status == "review" and retryable_review(reason)):
+            raise ValueError(f"{ext_id} is {status} ({reason or ''}): " + (
+                "a download is in flight; wait for its outcome" if status in ("sourcing", "verify") else
+                "its file is filed; the worker re-checks it" if status == "failed" else
+                "a question waits; answer it first"))
+        approval = self.approval_in_progress(ext_id)
+        if approval:
+            raise ValueError(f"{ext_id}: approval #{approval['id']} is waiting or being fetched; wait for its outcome")
+        job = self.db.execute(f"SELECT id, state FROM replacements WHERE wanted_id=? AND state IN "
+                              f"({','.join('?' * len(REPLACEMENT_OPEN))}) ORDER BY id LIMIT 1",
+                              (ext_id, *REPLACEMENT_OPEN)).fetchone()
+        if job:
+            raise ValueError(f"{ext_id}: copy replacement #{job['id']} is at {job['state']}; wait for it to finish")
+        places = [dict(r) for r in self.db.execute(
+            "SELECT playlist_id, song_id, state, attempts, detail, updated_at FROM placements WHERE wanted_id=? "
+            "ORDER BY playlist_id", (ext_id,))]
+        writing = [p["playlist_id"] for p in places if p["state"] == "writing"]
+        if writing:
+            raise ValueError(f"{ext_id}: its placement into {', '.join(writing)} is writing; try after the worker's next tick")
+        artist = row["asked_artist"] if row["asked_artist"] is not None else row["artist"]
+        title = row["asked_title"] if row["asked_title"] is not None else row["title"]
+        if row["provisional"] and row["library_song_id"] and can_be_song(row["title"], title):
+            # play-now's low copy of the asked song: reopened, the library check (S1-07) would take it as the row's
+            raise ValueError(f"{ext_id}: its provisional copy {row['library_song_id']} is the asked song; "
+                             "it waits for its upgrade, nothing to reopen")
+        filed = row["library_song_id"] is not None or (artist, title) != (row["artist"], row["title"])
+        if status == "needs_source" and not filed and not places:
+            raise ValueError(f"{ext_id} is already needs_source with its asked names; nothing to reopen")
+        old = {k: row[k] for k in ("artist", "title", "library_song_id", "provisional", "status", "reason")}
+        old["placements"] = places
+        new_reason = f"reopened: was {status}" + (f" (filed as {row['artist']} – {row['title']})" if filed else "")
+        new = {"artist": artist, "title": title, "library_song_id": None, "provisional": 0, "status": "needs_source",
+               "reason": new_reason, "placements": []}
+        playlists = [(o["playlist_id"], o["position"]) for o in self.import_order_for(ext_id)]
+        return {"id": ext_id, "old": old, "new": new, "playlists": playlists, "playlist_id": row["playlist_id"]}
 
     def set_external_status(self, ext_id: str, status: str, reason: str | None = None) -> None:
         assert status in STATUSES, status

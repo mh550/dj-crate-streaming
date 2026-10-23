@@ -1,0 +1,474 @@
+{
+ "asin": "B000002TN9",
+ "packaging-id": null,
+ "packaging": null,
+ "cover-art-archive": {
+  "count": 4,
+  "artwork": true,
+  "darkened": false,
+  "front": true,
+  "back": true
+ },
+ "disambiguation": "",
+ "release-events": [
+  {
+   "date": "1993",
+   "area": {
+    "iso-3166-1-codes": [
+     "US"
+    ],
+    "name": "United States",
+    "sort-name": "United States",
+    "type": null,
+    "disambiguation": "",
+    "id": "489ce91b-6658-3307-9877-795b68554c98",
+    "type-id": null
+   }
+  }
+ ],
+ "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+ "artist-credit": [
+  {
+   "joinphrase": "",
+   "artist": {
+    "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+    "country": "US",
+    "id": "fb7272ba-f130-4f0a-934d-6eeea4c18c9a",
+    "type": "Person",
+    "disambiguation": "US soul singer, songwriter, pastor and record producer",
+    "sort-name": "Green, Al",
+    "name": "Al Green"
+   },
+   "name": "Al Green"
+  }
+ ],
+ "status": "Official",
+ "country": "US",
+ "title": "I’m Still in Love With You",
+ "date": "1993",
+ "id": "3c9a52ee-ee0a-3362-a563-d9d28b02a53e",
+ "barcode": "724382762720",
+ "media": [
+  {
+   "track-count": 9,
+   "format": "CD",
+   "tracks": [
+    {
+     "recording": {
+      "first-release-date": "1972-10-23",
+      "artist-credit": [
+       {
+        "name": "Al Green",
+        "joinphrase": "",
+        "artist": {
+         "disambiguation": "US soul singer, songwriter, pastor and record producer",
+         "type": "Person",
+         "country": "US",
+         "id": "fb7272ba-f130-4f0a-934d-6eeea4c18c9a",
+         "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+         "name": "Al Green",
+         "sort-name": "Green, Al"
+        }
+       }
+      ],
+      "length": 193973,
+      "video": false,
+      "id": "cdac1a50-8ba6-4edd-8137-618928580d38",
+      "title": "I’m Still in Love With You",
+      "disambiguation": ""
+     },
+     "number": "1",
+     "artist-credit": [
+      {
+       "artist": {
+        "sort-name": "Green, Al",
+        "name": "Al Green",
+        "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+        "disambiguation": "US soul singer, songwriter, pastor and record producer",
+        "type": "Person",
+        "country": "US",
+        "id": "fb7272ba-f130-4f0a-934d-6eeea4c18c9a"
+       },
+       "joinphrase": "",
+       "name": "Al Green"
+      }
+     ],
+     "length": 195733,
+     "position": 1,
+     "id": "67158b8e-3c88-3bb3-a1cc-53c061671861",
+     "title": "I’m Still in Love With You"
+    },
+    {
+     "length": 176373,
+     "position": 2,
+     "title": "I’m Glad You’re Mine",
+     "id": "253be153-c237-3a12-8f7f-a53d69af6832",
+     "recording": {
+      "disambiguation": "",
+      "title": "I'm Glad You're Mone",
+      "id": "5e565603-9a47-4ad2-bb28-c727b70b6fe0",
+      "video": false,
+      "length": 176373,
+      "artist-credit": [
+       {
+        "name": "Al Green",
+        "joinphrase": "",
+        "artist": {
+         "name": "Al Green",
+         "sort-name": "Green, Al",
+         "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+         "id": "fb7272ba-f130-4f0a-934d-6eeea4c18c9a",
+         "country": "US",
+         "disambiguation": "US soul singer, songwriter, pastor and record producer",
+         "type": "Person"
+        }
+       }
+      ],
+      "first-release-date": "1972-10-23"
+     },
+     "number": "2",
+     "artist-credit": [
+      {
+       "name": "Al Green",
+       "artist": {
+        "name": "Al Green",
+        "sort-name": "Green, Al",
+        "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+        "disambiguation": "US soul singer, songwriter, pastor and record producer",
+        "type": "Person",
+        "country": "US",
+        "id": "fb7272ba-f130-4f0a-934d-6eeea4c18c9a"
+       },
+       "joinphrase": ""
+      }
+     ]
+    },
+    {
+     "recording": {
+      "length": 303533,
+      "video": false,
+      "first-release-date": "1972-10-23",
+      "artist-credit": [
+       {
+        "name": "Al Green",
+        "artist": {
+         "name": "Al Green",
+         "sort-name": "Green, Al",
+         "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+         "country": "US",
+         "id": "fb7272ba-f130-4f0a-934d-6eeea4c18c9a",
+         "type": "Person",
+         "disambiguation": "US soul singer, songwriter, pastor and record producer"
+        },
+        "joinphrase": ""
+       }
+      ],
+      "disambiguation": "",
+      "id": "eed211fe-122d-4c48-ace0-f85aab5d5ade",
+      "title": "Love and Happiness"
+     },
+     "number": "3",
+     "artist-credit": [
+      {
+       "name": "Al Green",
+       "artist": {
+        "name": "Al Green",
+        "sort-name": "Green, Al",
+        "disambiguation": "US soul singer, songwriter, pastor and record producer",
+        "type": "Person",
+        "country": "US",
+        "id": "fb7272ba-f130-4f0a-934d-6eeea4c18c9a",
+        "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df"
+       },
+       "joinphrase": ""
+      }
+     ],
+     "position": 3,
+     "title": "Love and Happiness",
+     "id": "a6106aac-5118-3f83-99f3-4f1415e9ba53",
+     "length": 309866
+    },
+    {
+     "id": "94cc320f-f9fd-3325-ac01-1ba4723dd048",
+     "title": "What a Wonderful Thing Love Is",
+     "position": 4,
+     "length": 218333,
+     "artist-credit": [
+      {
+       "artist": {
+        "type": "Person",
+        "disambiguation": "US soul singer, songwriter, pastor and record producer",
+        "country": "US",
+        "id": "fb7272ba-f130-4f0a-934d-6eeea4c18c9a",
+        "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+        "name": "Al Green",
+        "sort-name": "Green, Al"
+       },
+       "joinphrase": "",
+       "name": "Al Green"
+      }
+     ],
+     "recording": {
+      "disambiguation": "",
+      "id": "64399625-45d3-47bb-ad78-91b40764bb91",
+      "title": "What a Wonderful Thing Love Is",
+      "video": false,
+      "length": 218333,
+      "first-release-date": "1972-10-23",
+      "artist-credit": [
+       {
+        "name": "Al Green",
+        "joinphrase": "",
+        "artist": {
+         "disambiguation": "US soul singer, songwriter, pastor and record producer",
+         "type": "Person",
+         "country": "US",
+         "id": "fb7272ba-f130-4f0a-934d-6eeea4c18c9a",
+         "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+         "name": "Al Green",
+         "sort-name": "Green, Al"
+        }
+       }
+      ]
+     },
+     "number": "4"
+    },
+    {
+     "number": "5",
+     "recording": {
+      "disambiguation": "",
+      "title": "Simply Beautiful",
+      "id": "209c122a-c3d5-4492-82c5-2f1350dfba42",
+      "length": 252000,
+      "video": false,
+      "artist-credit": [
+       {
+        "joinphrase": "",
+        "artist": {
+         "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+         "country": "US",
+         "id": "fb7272ba-f130-4f0a-934d-6eeea4c18c9a",
+         "disambiguation": "US soul singer, songwriter, pastor and record producer",
+         "type": "Person",
+         "sort-name": "Green, Al",
+         "name": "Al Green"
+        },
+        "name": "Al Green"
+       }
+      ],
+      "first-release-date": "1972-10-23"
+     },
+     "artist-credit": [
+      {
+       "artist": {
+        "type": "Person",
+        "disambiguation": "US soul singer, songwriter, pastor and record producer",
+        "country": "US",
+        "id": "fb7272ba-f130-4f0a-934d-6eeea4c18c9a",
+        "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+        "name": "Al Green",
+        "sort-name": "Green, Al"
+       },
+       "joinphrase": "",
+       "name": "Al Green"
+      }
+     ],
+     "position": 5,
+     "title": "Simply Beautiful",
+     "id": "b412cf59-a5bb-356f-8bfc-d71d8da49c54",
+     "length": 249893
+    },
+    {
+     "recording": {
+      "first-release-date": "1972-10-23",
+      "artist-credit": [
+       {
+        "name": "Al Green",
+        "artist": {
+         "name": "Al Green",
+         "sort-name": "Green, Al",
+         "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+         "disambiguation": "US soul singer, songwriter, pastor and record producer",
+         "type": "Person",
+         "id": "fb7272ba-f130-4f0a-934d-6eeea4c18c9a",
+         "country": "US"
+        },
+        "joinphrase": ""
+       }
+      ],
+      "length": 203000,
+      "video": false,
+      "id": "1473b0bc-05b4-4951-b80d-4b4f01de89f3",
+      "title": "Oh, Pretty Woman",
+      "disambiguation": ""
+     },
+     "number": "6",
+     "artist-credit": [
+      {
+       "artist": {
+        "name": "Al Green",
+        "sort-name": "Green, Al",
+        "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+        "id": "fb7272ba-f130-4f0a-934d-6eeea4c18c9a",
+        "country": "US",
+        "type": "Person",
+        "disambiguation": "US soul singer, songwriter, pastor and record producer"
+       },
+       "joinphrase": "",
+       "name": "Al Green"
+      }
+     ],
+     "length": 200040,
+     "position": 6,
+     "id": "824b1fed-c5e2-3353-add9-db9edef2710c",
+     "title": "Oh, Pretty Woman"
+    },
+    {
+     "length": 387666,
+     "title": "For the Good Times",
+     "id": "63a4765c-5c62-3a47-bdb8-6e542c4ed283",
+     "position": 7,
+     "artist-credit": [
+      {
+       "name": "Al Green",
+       "joinphrase": "",
+       "artist": {
+        "name": "Al Green",
+        "sort-name": "Green, Al",
+        "country": "US",
+        "id": "fb7272ba-f130-4f0a-934d-6eeea4c18c9a",
+        "disambiguation": "US soul singer, songwriter, pastor and record producer",
+        "type": "Person",
+        "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df"
+       }
+      }
+     ],
+     "recording": {
+      "disambiguation": "",
+      "id": "9262a2c6-f543-4eb5-bb61-995deee78e44",
+      "title": "For the Good Times",
+      "video": false,
+      "length": 387773,
+      "first-release-date": "1972-10-23",
+      "artist-credit": [
+       {
+        "name": "Al Green",
+        "artist": {
+         "sort-name": "Green, Al",
+         "name": "Al Green",
+         "id": "fb7272ba-f130-4f0a-934d-6eeea4c18c9a",
+         "country": "US",
+         "type": "Person",
+         "disambiguation": "US soul singer, songwriter, pastor and record producer",
+         "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df"
+        },
+        "joinphrase": ""
+       }
+      ]
+     },
+     "number": "7"
+    },
+    {
+     "length": 186626,
+     "position": 8,
+     "id": "ee627c7c-945b-3340-b9c8-34c86941c33a",
+     "title": "Look What You Done for Me",
+     "recording": {
+      "first-release-date": "1972-10-23",
+      "artist-credit": [
+       {
+        "artist": {
+         "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+         "country": "US",
+         "id": "fb7272ba-f130-4f0a-934d-6eeea4c18c9a",
+         "disambiguation": "US soul singer, songwriter, pastor and record producer",
+         "type": "Person",
+         "sort-name": "Green, Al",
+         "name": "Al Green"
+        },
+        "joinphrase": "",
+        "name": "Al Green"
+       }
+      ],
+      "video": false,
+      "length": 186333,
+      "id": "017ee9fa-8d9d-4a51-82d1-47420fa9e402",
+      "title": "Look What You Done for Me",
+      "disambiguation": ""
+     },
+     "number": "8",
+     "artist-credit": [
+      {
+       "joinphrase": "",
+       "artist": {
+        "sort-name": "Green, Al",
+        "name": "Al Green",
+        "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+        "type": "Person",
+        "disambiguation": "US soul singer, songwriter, pastor and record producer",
+        "id": "fb7272ba-f130-4f0a-934d-6eeea4c18c9a",
+        "country": "US"
+       },
+       "name": "Al Green"
+      }
+     ]
+    },
+    {
+     "artist-credit": [
+      {
+       "name": "Al Green",
+       "artist": {
+        "disambiguation": "US soul singer, songwriter, pastor and record producer",
+        "type": "Person",
+        "id": "fb7272ba-f130-4f0a-934d-6eeea4c18c9a",
+        "country": "US",
+        "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+        "name": "Al Green",
+        "sort-name": "Green, Al"
+       },
+       "joinphrase": ""
+      }
+     ],
+     "number": "9",
+     "recording": {
+      "artist-credit": [
+       {
+        "artist": {
+         "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+         "type": "Person",
+         "disambiguation": "US soul singer, songwriter, pastor and record producer",
+         "id": "fb7272ba-f130-4f0a-934d-6eeea4c18c9a",
+         "country": "US",
+         "sort-name": "Green, Al",
+         "name": "Al Green"
+        },
+        "joinphrase": "",
+        "name": "Al Green"
+       }
+      ],
+      "first-release-date": "1972-10-23",
+      "length": 198000,
+      "video": false,
+      "title": "One of These Good Old Days",
+      "id": "83f06455-c0d5-4321-a0e4-89b7e249e6c0",
+      "disambiguation": ""
+     },
+     "id": "71ffcc1e-23e7-33cf-98c7-3cc602ab776b",
+     "title": "One of These Good Old Days",
+     "position": 9,
+     "length": 195640
+    }
+   ],
+   "track-offset": 0,
+   "position": 1,
+   "id": "44b46d89-67f7-37e0-9b71-7106e3592931",
+   "title": "",
+   "format-id": "9712d52a-4509-3d4b-a1a2-67c88c643e31"
+  }
+ ],
+ "text-representation": {
+  "script": "Latn",
+  "language": "eng"
+ },
+ "quality": "normal"
+}

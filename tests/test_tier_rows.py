@@ -13,6 +13,7 @@ from sourcing.policy import STREAM, TIERS
 from sourcing.slskd_client import SlskdClient
 from subsonic.client import SubsonicClient
 from subsonic.fake_server import FakeSubsonicServer
+from tests.test_fetch import not_in_library  # noqa: F401  (fixture)
 from tests.test_service import get, post, svc  # noqa: F401  (fixture)
 from tests.test_tiers import FAST_MP3, SLOW_FLAC
 
@@ -95,6 +96,7 @@ def _fetch(world, wid, **kw):
                      poll_s=0.01, download_timeout_s=1, scan_timeout_s=1, **kw)
 
 
+@pytest.mark.usefixtures("not_in_library")
 def test_fetch_scores_with_the_rows_tier(world):
     low = world["store"].add_external_wanted("Chic", "Good Times", duration_s=501, tier="low")
     assert _fetch(world, low).pick.username == "fastpeer"
@@ -109,6 +111,7 @@ def _cli_env(monkeypatch, tmp_path, nd, sl):
         monkeypatch.setenv(k, v)
 
 
+@pytest.mark.usefixtures("not_in_library")
 def test_fetch_cli_tier_overrides_external_and_is_refused_on_crate_rows(tmp_path, monkeypatch, capsys):
     with FakeSubsonicServer() as nd, FakeSlskdServer([FAST_MP3, SLOW_FLAC], tmp_path / "dl", files={}) as sl:
         nd.state.songs["s4"].update(title="Good Times", artist="Chic")

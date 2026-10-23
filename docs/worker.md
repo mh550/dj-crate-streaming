@@ -67,6 +67,26 @@ path in its reason, so the re-check picks it up and nothing downloads a second c
 2. Press **Approve**. The row reads "approved · waiting for worker" until the next tick takes it, then
    "worker: <outcome>".
 
+One approval may try a second source. When the transfer ends `Completed, Errored|TimedOut|Rejected|Cancelled`, or
+slskd is unreachable or answers 5xx (a VPN drop), the worker downloads the next acceptable candidate from another
+peer, after a 20 s pause (`RETRY_PAUSE_S`: gluetun's drop logs slskd out for about 10 s). A `retry` event says so
+("<file>: <why>; trying another peer"). A second failure fails the row with both attempts in the reason. Our own
+timeout, a 4xx and a verify failure are never retried this way. A failed attempt (our timeout included) cancels and
+forgets its own transfer in slskd (`?remove=true`), so a late file can't land unfiled.
+
+Before searching for an external row, Preview and Approve ask Navidrome as `import-playlist` does
+(`import_playlist.match`, no stand-ins). A same-recording or same-version hit makes the row `ok` ("already in the
+library: <title> (<song id>)") with that library song and a `matched` event; nothing is downloaded, and placement
+puts it in its imported playlist. A doubt (several versions, another length or label) or Navidrome being down
+searches as before; the outage is a `matched` event "library not asked: …". `wanted reopen` (below) undoes a wrong link.
+
+A download whose filed song can't be the asked one (ext-74: asked "I'm Still In Love With You", Navidrome lists
+"One of These Good Old Days") is not renamed and not placed: the row becomes `review` "filed <X> as <rel>, asked for
+<Y>" with a `wrong_song` event (path and song id). Approving it again downloads again (D48); `wanted reopen` (below)
+puts it back to `needs_source` instead. The events these steps leave, none naming a peer: `matched` (library hit or
+"library not asked"), `retry` (the second source), `wrong_song` (filed as another song), `reopened` (the reverse of a
+reopen).
+
 Every download carries an approval record (D23): who approved, the candidate, the tier and the time. Today the only
 `approved_by` value is `michael` (the Approve button, and `sourcing.cli fetch --approve`). Later values are
 `policy:<name>` and `agent:<id>`: new approvers, not a redesign.
@@ -98,6 +118,31 @@ path; library paths are relative to `/srv/music`.
 
 Approvals are claimed atomically. A second approval for the same row supersedes the first; a superseded or already
 taken approval is skipped, with a `skipped <id>: approval #N already used` line in the log.
+
+### Reopen a row filed as the wrong song
+
+`python3 -m crates.cli wanted reopen <ext-id> [--apply]` (S1-08, ext-74) puts an external row back to `needs_source`:
+the asked names return (a row without them keeps its own), `library_song_id` and `provisional` clear, the reason
+reads `reopened: was <status> (filed as <artist> – <title>)`, and its preview goes, so an Approve cannot reuse the
+wrong pick. Its `placements` rows are deleted, so placement puts the right file into its imported playlists when it
+arrives (D49). It talks to crates.db only: no file is touched, and the wrong song's playlist entries stay (remove one
+by hand if it should go). Without `--apply` it prints the plan and ends `dry run: add --apply to write this`. It
+refuses (exit 1, the reason on stderr) a row that is not `ext-<n>`, missing or `removed`; a download in flight
+(`sourcing`, `verify`); a filed file Navidrome has not indexed yet (`failed` "Navidrome never indexed …", re-checked,
+never downloaded again); a question (`review` other than a retryable one, such as an import's "ambiguous …"); an
+approval waiting or being fetched; an open copy replacement; a placement `writing`; a play-now row whose provisional
+copy is the asked song (it waits for its upgrade; the library check would take that copy as the row's); and a row
+already `needs_source` with its asked names. A `CRATES_DB`/`--db` with no file there is refused, not created. `--apply` checks and writes under one crates.db write lock; a worker holding it too long gives
+"database is locked" and exit 1, nothing written. The plan lists every import slot the row will be placed into once
+the right file arrives: a slot another import queued while the row bore the wrong names is among them.
+
+The reverse is the `reopened` event, whose detail is the JSON of the old `artist`, `title`, `library_song_id`,
+`provisional`, `status`, `reason` and `placements`. Read it with
+`SELECT detail FROM events WHERE kind='reopened' AND song_id='ext-<n>' ORDER BY id DESC LIMIT 1`, then, with the
+worker stopped, put the values back by hand:
+`UPDATE external_wanted SET artist=?, title=?, library_song_id=?, provisional=?, status=?, reason=? WHERE id=<n>`
+and one `INSERT INTO placements(wanted_id, playlist_id, song_id, state, attempts, detail, updated_at) VALUES('ext-<n>', …)`
+per listed placement. A preview is not restored; Preview searches again.
 
 ## Filing
 

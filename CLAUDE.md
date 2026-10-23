@@ -13,7 +13,7 @@ Navidrome, slskd and beets. It runs live on this box (compose project `dj`, from
 - Read `docs/hard-won-facts.md` before touching beets, Navidrome scans or playlists.
 
 ## How to verify
-- Suite: `.harness/check.sh` (pytest, paths in scratch, live credentials unset): ~1,750 tests, **about 11 minutes** (653 s measured). Subset:
+- Suite: `.harness/check.sh` (pytest, paths in scratch, live credentials unset): ~1,870 tests, **about 11-12 minutes** (687 s measured). Subset:
   `.harness/check.sh tests/test_trash.py`. Run the files you touch while iterating, the full suite once at the end.
 - Needs python3 ≥ 3.10 and `~/.local/bin/pytest` (`pipx install pytest`); without ffmpeg, flac, fpcalc, beet or
   sqlite3 their tests skip. No dev server: tests use the fake Navidrome/slskd in `tests/`; follow those fakes.
