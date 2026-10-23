@@ -44,7 +44,8 @@ Anything that trashes files or writes tags needs a reviewed plan file and a reve
   it goes to `review` (S1-03, D48); slskd forgets with `?remove=true` and fetch follows only its own new transfer
   (S1-04); slskd errors name the step and endpoint, never the peer (S1-05); one more peer on a transfer error or a VPN
   drop (S1-06); the library is asked before downloading (S1-07); `crates.cli wanted reopen` (S1-08, D49). The live
-  steps: `plans/2026-10-22-downloads-checklist.md` (S1-09).
+  steps, each with its check and undo:
+  [`plans/2026-10-22-downloads-checklist.md`](plans/2026-10-22-downloads-checklist.md) (S1-09).
 
 ## In order
 

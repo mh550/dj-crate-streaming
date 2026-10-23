@@ -100,6 +100,8 @@ Undo: `cp -p /srv/docker/.env.pre-2026-10-22 /srv/docker/.env`.
 
 ## 4. Deploy `main` from a fresh worktree
 
+PR #16 must be on main first (see `docs/plans/2026-10-22-downloads-checklist.md` step 1).
+
 Do the "Snapshots first" checks of the conventions now. Then:
 
 ```
