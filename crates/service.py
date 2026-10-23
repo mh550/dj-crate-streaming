@@ -26,9 +26,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from sourcing import requests as requests_
 from sourcing.fetch import fetch
+from sourcing.import_playlist import NameCollision
 from sourcing.policy import DEFAULT_POLICY, STREAM, QualityPolicy, check_stream
 from sourcing.slskd_client import SlskdClient
+from sourcing.spotify_csv import fetch_entity as spotify_fetch_entity
 from subsonic.client import SubsonicClient, SubsonicError
 from .reconcile import CommentNotKept, NameMarked, ReconcileBusy, Reconciler
 from . import identity_view, proposals, trash
@@ -90,8 +93,9 @@ class CrateApp:
     """Everything the HTTP layer needs, so it can also be driven directly from tests/CLI."""
 
     def __init__(self, cfg: Config, policy: QualityPolicy = DEFAULT_POLICY, store: CrateStore | None = None,
-                 slskd: SlskdClient | None = None):
+                 slskd: SlskdClient | None = None, fetch_entity=spotify_fetch_entity):
         self.cfg = cfg
+        self.fetch_entity = fetch_entity      # a Spotify link's embed (sourcing.spotify_csv; tests inject a stub)
         self.api = SubsonicClient(cfg.subsonic_url, cfg.username, cfg.password)
         self.media = SubsonicClient(cfg.public_url or cfg.subsonic_url, cfg.username, cfg.password, client_name=STREAM_CLIENT_NAME)
         if store is None:
@@ -185,6 +189,31 @@ class CrateApp:
         if crate:
             return self.set_crate(pl.id, True)
         return self.reconciler.crate_view(pl)
+
+    # --- requests (S3): an album, track or playlist asked for as one; downloads nothing (approve does, D7)
+    def add_request(self, body) -> tuple[dict, bool]:
+        """`{"url": <Spotify link>}` → (the request view, created). Bad body or link → 400; Spotify unreachable → 502;
+        another user's playlist of that name → 409. The fetch runs outside the lock (it may retry for seconds)."""
+        url = body.get("url") if isinstance(body, dict) else None
+        if not isinstance(url, str) or not url.strip():
+            raise ApiError(400, "url is required")
+        try:
+            link = requests_.fetch_link(url, fetch=self.fetch_entity)
+        except requests_.UnknownLink as e:
+            raise ApiError(400, str(e)) from None
+        except requests_.SpotifyUnreachable as e:
+            raise ApiError(502, public(str(e))) from None
+        with self._lock:
+            try:
+                added = requests_.add_link(self.store, self.api, link)
+            except NameCollision as e:
+                raise ApiError(409, str(e)) from None
+        out = requests_.view(added.request) if added.request else {"request": None, "rows": []}
+        if added.report is not None:
+            r = added.report
+            out["playlist"] = {"id": r.playlist_id, "name": r.name, "matched": r.matched, "wanted": r.wanted,
+                               "ambiguous": r.ambiguous}
+        return out, added.created
 
     # --- approvals (D23): a preview searches and ranks but never downloads; an approval is what lets the worker
     def _not_in_progress(self, wanted_id: str) -> dict:
@@ -467,6 +496,9 @@ def make_handler(app: CrateApp):
                     return self._redirect(app.cover_url(p[1], int(sz) if sz else None))
             elif method == "POST":
                 body = self._body()
+                if head == "requests" and len(p) == 1:
+                    out, created = app.add_request(body)
+                    return self._json(out, 201 if created else 200)
                 if head == "playlists" and len(p) == 3 and p[2] == "crate":
                     return self._json(app.set_crate(p[1], bool(body.get("enabled", True))))
                 if head == "playlists" and len(p) == 3 and p[2] == "tier":

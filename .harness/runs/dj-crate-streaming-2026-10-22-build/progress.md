@@ -9,6 +9,25 @@ Michael steers from `INBOX.md` on this branch (status line `run | pause | stop`;
 session reads it at startup. Policy: **build-only** (`.harness/config.sh`) and the brief in `brief.md`: nothing live,
 no docker, no `/srv`, no network, no client UI, PRs only (open, never merge).
 
+### 2026-10-23 05:10 · S3-01 · passes
+
+- **What changed:** `POST /api/requests {"url"}`. Code in `sourcing/requests.py` (`parse_link`, `fetch_link`, `add_link`, `view`, `UnknownLink`, `SpotifyUnreachable`) and `crates/service.py` (`CrateApp(fetch_entity=…)`, `add_request`, the route). New `tests/test_requests_api.py` (39 tests). Suite went from 2124 to **2163** tests, green in 816 s.
+- **Behaviour:**
+  - An album or track answers 201 with `{request, rows}` in camelCase, through `public`.
+  - The same link again (URL, `intl-xx/`, `?si=` or URI form) answers 200 with the same body, and Spotify is fetched once per call.
+  - A playlist is imported with `merge=True` and then becomes add_playlist's request; the reply also has `playlist {id, name, matched, wanted, ambiguous}`. A playlist the library already has whole answers 200 with `request: null`.
+  - Errors: 400 `url is required`, 400 `unknown link kind: <host|kind>`, 409 for another user's playlist of that name, 502 `cannot reach Spotify (…)` for a fetch error or an unreadable embed.
+- **Verified:** step 5 subset (`test_requests_api`, `test_service`, `test_import_playlist`): 92 passed. Full `check.sh`: green, 2163 tests.
+- **Opus review (0 Critical, 1 Important, 4 Minor), all done test-first:**
+  - I1 (Important): an `IncompleteRead` or `TypeError` from the page left the client with no HTTP response. Fixed: any fetch failure is now a 502.
+  - M2: an embed this code can't read used to answer 400; it is now 502 (`_readable`).
+  - M3: an empty `url` now answers `url is required`.
+  - M4: a playlist is known by its name. Recorded as **D52 *default*** in the pivot spec, with a test.
+  - M5: added tests for the CommentNotKept path, the wrong-kind embed, and Navidrome being untouched on 409.
+- **Next session (S3-01b):** `add_link` and `view` are what the CLI `request add` (S3-04) should call too. The fetch runs outside `_lock`; the import and add run inside it.
+- **Question for Michael (D52):** should a second, different playlist URL whose playlist has the same name join the first one (the default now), or be refused with 409?
+- **Proposed change:** step 1 says the payload is "camelCase as `/api/wanted` does", but `/api/wanted` is snake_case (`song_id`, `library_song_id`). I followed the camelCase shape the step lists; `docs/api.md` (S3-05) should say the two differ.
+
 ### 2026-10-23 verify S2
 
 All 11 S2 features hold; none set to false. Init check green (2124 tests). I also ran the union of S2 test files (605 passed) and re-ran the S2-06a beets measurement in scratch.

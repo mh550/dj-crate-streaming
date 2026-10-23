@@ -1,18 +1,134 @@
 """A Spotify URL asked for as one request (S2-02): an album or a track becomes a `requests` row in crates.db whose
 rows are external_wanted rows (request_id, track_no). A playlist is imported as before (import-playlist); its import
 then becomes a `playlist` request over the import's wanted rows (S2-07, `add_playlist`; `import-playlist --request`),
-which album_job approves in one go.
+which album_job approves in one go. A link asked for over HTTP (`POST /api/requests`, S3-01) goes through
+`parse_link`, `fetch_link` (the one Spotify fetch) and `add_link` (a playlist: the import with `--merge` semantics,
+then its request); `view` is the request as the API shows it.
 
 `rows_from_spotify` is the one place that reads the embed; this module only records what it gives. An album request
 then gets its MusicBrainz release when exactly one matches its rows one to one (S2-03): fetch verifies each row
 against its recording id."""
 from __future__ import annotations
 
+import re
+from dataclasses import dataclass
+
+from crates.reconcile import CommentNotKept
+from crates.store import public
 from . import identity
+from .import_playlist import import_playlist
 from .musicbrainz import match_release
 from .playlist_sources import lead_artist, rows_from_spotify
 from .policy import IMPORT_TIER
 from .spotify_csv import URL, fetch_entity
+
+
+KINDS = ("album", "playlist", "track")
+_OPEN = re.compile(r"^(?:https?://)?open\.spotify\.com/(?:intl-[A-Za-z-]+/)?([a-z]+)(?:/([A-Za-z0-9]+))?")
+_URI = re.compile(r"^spotify:([a-z]+):([A-Za-z0-9]+)$")
+_HOST = re.compile(r"^(?:[a-z]+://)?([^/?#\s]+)")
+
+
+class UnknownLink(ValueError):
+    """A link that is not a Spotify album, playlist or track; its text is the reason (`unknown link kind: …`)."""
+
+
+class SpotifyUnreachable(Exception):
+    """The embed could not be fetched or read (spotify_csv.fetch_entity's network and page errors)."""
+
+
+def parse_link(url: str) -> tuple[str, str]:
+    """(kind, id) of a Spotify link: `https://open.spotify.com/[intl-xx/]<kind>/<id>[?…]` or `spotify:<kind>:<id>`.
+    Anything else raises UnknownLink naming what it is: another platform's host, or Spotify's other kinds (artist,
+    show …). Other platforms are out on purpose (spec S3, Out)."""
+    url = url.strip()
+    m = _OPEN.match(url) or _URI.match(url)
+    if m is None:
+        host = _HOST.match(url)
+        raise UnknownLink(f"unknown link kind: {host.group(1) if host and '.' in host.group(1) else url}")
+    kind, sid = m.groups()
+    if kind not in KINDS:
+        raise UnknownLink(f"unknown link kind: {kind}")
+    if not sid:
+        raise UnknownLink(f"unknown link kind: {kind} without an id")
+    return kind, sid
+
+
+@dataclass
+class Link:
+    kind: str           # album | playlist | track (parse_link's)
+    url: str            # https://open.spotify.com/<kind>/<id>: what is fetched and recorded as the source
+    entity: dict        # the embed's entity
+
+
+def fetch_link(url: str, fetch=fetch_entity) -> Link:
+    """The link parsed (UnknownLink before anything is asked) and its embed fetched, once. A fetch that fails
+    (URLError, HTTPError, IncompleteRead; fetch_entity's SystemExit; a page whose JSON changed shape) or an embed
+    add_link could not read raises SpotifyUnreachable: Spotify's page is at fault, not the link."""
+    kind, sid = parse_link(url)
+    link = f"https://open.spotify.com/{kind}/{sid}"
+    try:
+        entity = fetch(link)
+    except (Exception, SystemExit) as e:        # the page is untrusted and changes: any failure is Spotify's
+        raise SpotifyUnreachable(f"cannot reach Spotify ({type(e).__name__}: {e})") from None
+    if not _readable(entity, kind):
+        raise SpotifyUnreachable(f"cannot reach Spotify (its page for {link} is no {kind} this code can read)")
+    return Link(kind, link, entity)
+
+
+def _readable(entity, kind: str) -> bool:
+    """Whether the embed has what add_link reads: its type, name and rows (an album's subtitle too); an album or a
+    track has at least one row."""
+    try:
+        rows = rows_from_spotify(entity)
+        entity["name"].strip()
+        if kind == "album":
+            entity["subtitle"].split(",\xa0")
+    except (KeyError, TypeError, AttributeError, ValueError):
+        return False
+    return isinstance(entity, dict) and entity.get("type") == kind and (kind == "playlist" or bool(rows))
+
+
+@dataclass
+class Added:
+    request: dict | None    # store.request(); None for a playlist none of whose rows is wanted
+    created: bool           # a new request (the HTTP 201); False when the link's request answers again
+    report: object = None   # a playlist's import_playlist.Report
+
+
+def add_link(store, client, link: Link, *, tier: str | None = None) -> Added:
+    """Record a fetched link as a request. An album or a track is add_spotify's request. A playlist is first
+    imported as `import-playlist --merge` does (matched songs into the playlist of that name, made or adopted; the
+    rest wanted rows) and then is add_playlist's request over those rows. `client` is Navidrome's SubsonicClient
+    (a playlist only). NameCollision (another user's playlist of that name) and CommentNotKept reach the caller;
+    for the latter the request is recorded first, as the CLI does."""
+    entity = link.entity
+    if link.kind == "playlist":
+        name = entity["name"].strip()
+        before = store.find_playlist_request(name)
+        try:
+            rep = import_playlist(name, rows_from_spotify(entity), client, store, source=link.url, merge=True,
+                                  tier=tier)
+        except CommentNotKept as e:
+            add_spotify(store, link.url, fetch=lambda _url: entity, playlist_id=e.report.playlist_id)
+            raise
+        req = add_spotify(store, link.url, fetch=lambda _url: entity, playlist_id=rep.playlist_id)
+        return Added(req, req is not None and before is None, rep)
+    before = store.find_request(link.url)
+    req = add_spotify(store, link.url, fetch=lambda _url: entity, tier=tier)
+    return Added(req, before is None and req is not None and req["source"] == link.url)
+
+
+def view(req: dict) -> dict:
+    """`{"request": …, "rows": […]}`, camelCase, through store.public (no peer name, no absolute path)."""
+    return public({
+        "request": {"id": req["id"], "kind": req["kind"], "source": req["source"], "artist": req["artist"],
+                    "album": req["album"], "year": req["year"], "mbReleaseId": req["mb_release_id"],
+                    "status": req["status"], "createdAt": req["created_at"]},
+        "rows": [{"id": r["song_id"], "trackNo": r["track_no"], "artist": r["artist"], "title": r["title"],
+                  "album": r["album"], "year": r["year"], "durationS": r["duration"], "status": r["status"],
+                  "reason": r["reason"], "librarySongId": r["library_song_id"], "mbRecordingId": r["mb_recording_id"]}
+                 for r in req["rows"]]})
 
 
 def canonical(url: str) -> str:
