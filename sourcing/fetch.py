@@ -22,6 +22,10 @@ unreachable or answering 5xx while downloading (a VPN drop), downloads the next 
 (a `retry` event); a second failure fails the row with both attempts in the reason. Our own timeout, a 4xx, a missing
 landed file and every verify finding fail as before.
 
+The library first (S1-07): before searching for an external row that is not a copy, Navidrome is asked as the import
+asks it (import_playlist.match, no stand-ins). Its same recording or same version is the row's song: `ok` with that
+`library_song_id` and a `matched` event, nothing downloaded, previews included. A doubt or a Navidrome error searches.
+
 Re-running `fetch` on a `verify` row (or on a row failed as "Navidrome never indexed <path>", see
 filed_path) skips the download and just re-checks Navidrome for the
 filed path kept in the reason, searching by the filed file's own artist/title tags (what Navidrome indexed);
@@ -77,6 +81,8 @@ from scripts.export_playlists import open_ro
 from subsonic.client import SubsonicClient, SubsonicError
 from .filer import BeetsFiler, FilingError
 from .identity import can_be_song, parse_filename, parse_title
+from .import_playlist import match as match_in_library
+from .playlist_sources import Row
 from .policy import TIERS, QualityPolicy, check_tier
 from . import replace as replacement
 from .scorer import Candidate, Wanted, explain, rank
@@ -374,6 +380,26 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
             set_status("review", f"replacement #{j['id']} {j['state']}: {detail}")
         return FetchResult("ok", f"filed; replacement #{j['id']} {what} ({detail})", best, filed, new_id, text)
 
+    def in_library() -> FetchResult | None:
+        """Ask Navidrome as the import does (import_playlist.match, the same rules, no stand-ins: D26) before searching.
+        Its same recording or same version is the row's song: linked (`ok`, placed like any filed row), nothing
+        downloaded. Every doubt (ambiguous, another version, missing) or a Navidrome error goes on to the search."""
+        asked = Row(position=row.get("position") or 0, title=row.get("asked_title") or row["title"],
+                    artist=row.get("asked_artist") or row.get("artist") or "", duration_s=row.get("duration"),
+                    album=row.get("album"), sep="; ")      # the stored artist is one lead: a comma is its own
+        try:
+            m = match_in_library(navidrome, asked)
+        except (SubsonicError, OSError, ValueError) as e:     # down, or an answer that is not JSON
+            store.log(None, wanted_id, "matched", f"library not asked: {type(e).__name__}: {e}")
+            store.commit()
+            return None
+        if m.status != "matched" or m.how not in ("same recording", "same version"):
+            return None
+        store.set_external_song(wanted_id, m.song_id, False)    # its library song, and not a play-now copy
+        store.log(None, wanted_id, "matched", f"{m.how}: {m.title}")
+        set_status("ok", f"already in the library: {m.title} ({m.song_id})")      # commits all three at once
+        return FetchResult("ok", "already in the library; nothing downloaded", new_song_id=m.song_id)
+
     status = row.get("status")
     if status == "removed":              # an upgrade row a tiered playlist's row superseded (one request per song)
         return FetchResult("removed", f"{wanted_id} is closed ({row.get('reason')}); nothing searched")
@@ -401,6 +427,11 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         return fail(f"verify row without a filed path (reason was: {row.get('reason')!r})", None, "")
     if status == "sourcing" and time.time() - (row.get("updated_at") or 0) < download_timeout_s:
         return FetchResult("sourcing", "in flight (started less than the download timeout ago)")
+
+    if external and copy_id is None:          # a new file: the library may have it already (S1-07, ext-81)
+        hit = in_library()
+        if hit is not None:
+            return hit
 
     sid = slskd.search(f"{wanted.artist} {wanted.title}".strip())
     try:

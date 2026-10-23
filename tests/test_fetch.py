@@ -7,9 +7,10 @@ from crates.store import CrateStore
 from sourcing.fake_slskd import FakeSlskdServer
 from sourcing.fetch import fetch
 from sourcing.filer import BeetsFiler
+from sourcing.import_playlist import Match
 from sourcing.slskd_client import SlskdClient
 from sourcing.verify import verify
-from subsonic.client import SubsonicClient
+from subsonic.client import SubsonicClient, SubsonicError
 from subsonic.fake_server import FakeSubsonicServer
 from tests.helpers import beets_items_db, fake_beet, load_responses, make_flac
 
@@ -30,6 +31,7 @@ def new_song(nd, size):
     nd.state.songs["s9"] = dict(nd.state.songs["s1"], id="s9", title="Good Times", artist="Chic", album="Risqué",
                                 suffix="flac", bitRate=880, samplingRate=44100, bitDepth=16, size=size,
                                 path="Chic/Risqué (1979)/03 - Good Times.flac")
+    nd.state.unscanned.add("s9")
 
 
 @pytest.fixture
@@ -54,6 +56,14 @@ def world(tmp_path):
                            tagger=lambda path, names: [])
         yield dict(nd=nd, store=store, client=client, rec=rec, music=tmp_path / "music", dl=tmp_path / "dl", filer=filer,
                    trash=tmp_path / "trash")
+
+
+@pytest.fixture
+def not_in_library(monkeypatch):
+    """For tests of the download itself: S1-07's library check finds nothing, so fetch downloads. The world's library
+    already holds Chic – Good Times (s1, and s4, the crate row's 128 kbps mp3), and some tests list the copy they file
+    before the tick; the check has its own tests below (S1-07)."""
+    monkeypatch.setattr("sourcing.fetch.match_in_library", lambda client, row, accept=frozenset(): Match(row, "missing"))
 
 
 def header_only(path, duration, tier=None, reference=None, **kw):
@@ -165,6 +175,7 @@ def test_fetch_swaps_song_in_every_crate(world, tmp_path):
         assert world["store"].track_status_map(pl_id)["s9"]["status"] == "ok"
 
 
+@pytest.mark.usefixtures("not_in_library")
 def test_external_wanted_row_files_without_playlist_swap(world, tmp_path):
     ext = world["store"].add_external_wanted("Chic", "Good Times", album="Risqué", duration_s=501, year=1979)
     flac = good_flac_bytes(tmp_path)
@@ -197,6 +208,7 @@ def al_green(world, tmp_path, title, rel, nd_title, asked=ASKED):
     nd.state.songs["s9"] = dict(nd.state.songs["s1"], id="s9", title=nd_title, artist="Al Green",
                                 album="I'm Still in Love With You", suffix="flac", bitRate=880, samplingRate=44100,
                                 bitDepth=16, size=len(flac), duration=196, path=rel)
+    nd.state.unscanned.add("s9")                               # listed once fetch's rescan has run
     return ext, resp, {name: flac}, filer
 
 
@@ -494,3 +506,118 @@ def test_a_4xx_on_the_second_peer_still_names_both_attempts(world, monkeypatch):
     assert (r.status, r.reason) == ("failed", "download ended: Completed, Errored (Chic - Good Times.flac); then "
                                               "SlskdError: slskd POST /transfers/downloads/<peer>: HTTP 400 (03 - Good Times.flac)")
     assert world["store"].track_status_map("pl-2")["s4"]["reason"] == r.reason
+
+
+# --- S1-07: ask the library before downloading (ext-81's second copy) -------------------------------------
+
+GOOD_OLD = "One of These Good Old Days"
+
+
+def good_old_days(world, tmp_path, duration=195):
+    """Navidrome already lists Al Green's `One of These Good Old Days` (as if ext-74 had filed it), and one peer offers
+    a file named for it, so a search would find and download it."""
+    nd = world["nd"]
+    nd.state.songs["s7"] = dict(nd.state.songs["s1"], id="s7", title=GOOD_OLD, artist="Al Green",
+                                album="I'm Still in Love With You", suffix="flac", duration=duration,
+                                path=f"Al Green/Singles/{GOOD_OLD}.flac")
+    flac = make_flac(tmp_path / "old-days.flac", total=44100 * 197, pad_bytes=197 * 900_000 // 8).read_bytes()
+    name = f"@@music\\Al Green\\Singles\\Al Green - {GOOD_OLD}.flac"
+    resp = [dict(RESPONSES[0], files=[dict(RESPONSES[0]["files"][0], filename=name, size=len(flac), length=197)])]
+    return resp, {name: flac}
+
+
+def counting_searches(monkeypatch) -> list[str]:
+    asked: list[str] = []
+    real = SlskdClient.search
+
+    def search(self, text, *a, **kw):
+        asked.append(text)
+        return real(self, text, *a, **kw)
+
+    monkeypatch.setattr(SlskdClient, "search", search)
+    return asked
+
+
+@pytest.mark.parametrize("approve", [True, False])
+def test_a_song_already_in_the_library_is_linked_not_downloaded(world, tmp_path, monkeypatch, approve):
+    store = world["store"]
+    ext = store.add_external_wanted("Al Green", "One Of These Good Old Days", duration_s=197, playlist_id="pl-1",
+                                    position=1)
+    store.record_import_order("pl-1", [(1, None, ext)])
+    store.commit()
+    resp, files = good_old_days(world, tmp_path)
+    searched = counting_searches(monkeypatch)
+    with FakeSlskdServer(resp, world["dl"], files=files) as srv:
+        r = run(world, srv, approve=approve, wanted_id=ext)
+    assert srv.enqueued == [] and searched == []
+    assert (r.status, r.reason, r.new_song_id, r.pick) == ("ok", "already in the library; nothing downloaded", "s7", None)
+    row = store.external(ext)
+    assert row["status"] == "ok" and row["reason"] == f"already in the library: {GOOD_OLD} (s7)"
+    assert (row["library_song_id"], row["provisional"]) == ("s7", 0)
+    assert [e["detail"] for e in events_of(world, ext, "matched")] == [f"same version: {GOOD_OLD}"]
+    assert [(p["wanted_id"], p["playlist_id"], p["song_id"]) for p in store.due_placements()] == [(ext, "pl-1", "s7")]
+    assert not (world["music"] / "Al Green").exists()            # nothing filed
+
+
+def test_a_library_hit_is_kept_after_a_restart(world, tmp_path):
+    """The row's `ok` is committed: a second CrateStore on the same file reads it (the worker's and the web's)."""
+    db = tmp_path / "crates.db"
+    store = CrateStore(db)
+    ext = store.add_external_wanted("Al Green", "One Of These Good Old Days", duration_s=197)
+    store.commit()
+    resp, files = good_old_days(world, tmp_path)
+    with FakeSlskdServer(resp, world["dl"], files=files) as srv:
+        r = fetch(ext, store=store, slskd=SlskdClient(srv.url, srv.api_key), navidrome=world["client"],
+                  reconciler=world["rec"], music_root=world["music"], downloads_root=world["dl"], approve=False)
+    assert r.status == "ok"
+    assert CrateStore(db).external(ext)["library_song_id"] == "s7"
+
+
+def test_another_song_by_the_artist_in_the_library_does_not_stop_the_download(world, tmp_path):
+    """ext-74's case: only `One of These Good Old Days` is in the library, `I'm Still In Love With You` is asked."""
+    ext, resp, files, filer = al_green(world, tmp_path, ASKED, OTHER, "One of These Good Old Days")
+    with FakeSlskdServer(resp, world["dl"], files=files) as srv:
+        run(world, srv, approve=True, wanted_id=ext, filer=filer)
+    assert len(srv.enqueued) == 1
+    assert events_of(world, ext, "matched") == []
+
+
+def test_the_same_title_at_another_length_is_searched_as_before(world, tmp_path):
+    """`import_playlist.choose` calls it ambiguous ("length differs"): a doubt is a download offer, never a link."""
+    store = world["store"]
+    ext = store.add_external_wanted("Al Green", "One Of These Good Old Days", duration_s=240)
+    resp, files = good_old_days(world, tmp_path)
+    with FakeSlskdServer(resp, world["dl"], files=files) as srv:
+        r = run(world, srv, approve=False, wanted_id=ext)
+    assert r.status == "needs_source" and r.pick is not None, r.reason
+    row = store.external(ext)
+    assert (row["status"], row["library_song_id"]) == ("needs_source", None)
+    assert events_of(world, ext, "matched") == []
+
+
+@pytest.mark.parametrize("error", [OSError("Connection refused"), SubsonicError(0, "boom"), ValueError("not JSON")])
+def test_a_navidrome_outage_during_the_check_searches_and_says_so(world, tmp_path, monkeypatch, error):
+    store = world["store"]
+    ext = store.add_external_wanted("Al Green", "One Of These Good Old Days", duration_s=197)
+    resp, files = good_old_days(world, tmp_path)
+
+    def down(self, *a, **kw):
+        raise error
+
+    monkeypatch.setattr(SubsonicClient, "search_songs", down)
+    with FakeSlskdServer(resp, world["dl"], files=files) as srv:
+        r = run(world, srv, approve=False, wanted_id=ext)
+    assert r.status == "needs_source" and r.pick is not None, r.reason
+    (ev,) = events_of(world, ext, "matched")
+    assert ev["detail"].startswith(f"library not asked: {type(error).__name__}")
+    assert store.external(ext)["status"] == "needs_source"
+
+
+def test_a_crate_row_is_not_asked_about(world, tmp_path, monkeypatch):
+    """A playlist row is a copy upgrade of its own song (copy_of): the library has it, which is why it is asked for."""
+    asked = []
+    real = SubsonicClient.search_songs
+    monkeypatch.setattr(SubsonicClient, "search_songs", lambda self, *a, **kw: asked.append(a) or real(self, *a, **kw))
+    with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
+        r = run(world, srv, approve=False)
+    assert r.status == "needs_source" and r.pick is not None and asked == []

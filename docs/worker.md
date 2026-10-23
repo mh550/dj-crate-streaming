@@ -72,6 +72,12 @@ slskd is unreachable or answers 5xx (a VPN drop), the worker downloads the next 
 peer. A `retry` event says so ("<file>: <why>; trying another peer"). A second failure fails the row with both
 attempts in the reason. Our own timeout, a 4xx and a verify failure are never retried this way.
 
+Before searching for an external row, Preview and Approve ask Navidrome as `import-playlist` does
+(`import_playlist.match`, no stand-ins). A same-recording or same-version hit makes the row `ok` ("already in the
+library: <title> (<song id>)") with that library song and a `matched` event; nothing is downloaded, and placement
+puts it in its imported playlist. A doubt (several versions, another length or label) or Navidrome being down
+searches as before; the outage is a `matched` event "library not asked: …". `wanted reopen` (S1-08, to come) will undo a wrong link.
+
 Every download carries an approval record (D23): who approved, the candidate, the tier and the time. Today the only
 `approved_by` value is `michael` (the Approve button, and `sourcing.cli fetch --approve`). Later values are
 `policy:<name>` and `agent:<id>`: new approvers, not a redesign.

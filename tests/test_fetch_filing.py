@@ -9,7 +9,7 @@ from sourcing.filer import BeetsFiler, FilingError
 from sourcing.verify import verify
 from tests.test_export_playlists import SCHEMA
 from tests.helpers import beets_items_db, fake_beet, make_flac
-from tests.test_fetch import GOOD, RESPONSES, good_flac_bytes, new_song, run, world  # noqa: F401  (world: fixture)
+from tests.test_fetch import GOOD, RESPONSES, good_flac_bytes, new_song, run, world, not_in_library  # noqa: F401  (fixtures)
 
 TARGET = "Chic/Risqué (1979)/03 - Good Times.flac"
 TWELVE = 'Good Times (12" Version)'
@@ -82,6 +82,7 @@ def test_no_peer_name_reaches_events_or_row_reasons(world, tmp_path, outcome):
     assert ("sourcing", "downloading 03 - Good Times.flac") in written
 
 
+@pytest.mark.usefixtures("not_in_library")
 def test_names_from_navidrome_go_back_onto_an_external_row(world, tmp_path):
     ext = world["store"].add_external_wanted("Chic", "Good Times", album="Risqué", duration_s=501, year=1979)
     flac = good_flac_bytes(tmp_path)
@@ -105,6 +106,7 @@ def test_same_names_log_no_rename(world, tmp_path):
     assert kinds(world, "renamed") == []
 
 
+@pytest.mark.usefixtures("not_in_library")
 def test_renamed_external_row_is_still_found_by_its_asked_names(world, tmp_path):
     store = world["store"]
     ext = store.add_external_wanted("Chic", "Good Times", album="Risqué", duration_s=501, year=1979)
@@ -239,6 +241,7 @@ def test_navidromes_musicbrainz_recording_id_reaches_verify(world, tmp_path):
     assert fetched(world, tmp_path, lookup=lambda p: [])["kw"]["recording_id"] == "rec-9"
 
 
+@pytest.mark.usefixtures("not_in_library")
 def test_external_row_has_no_reference_and_no_recording_id(world, tmp_path):
     ext = world["store"].add_external_wanted("Chic", "Good Times", album="Risqué", duration_s=501, year=1979)
     f = lambda p: []
@@ -247,6 +250,7 @@ def test_external_row_has_no_reference_and_no_recording_id(world, tmp_path):
     assert kinds(world, "reference") == []
 
 
+@pytest.mark.usefixtures("not_in_library")
 def test_a_renamed_external_row_passes_the_title_it_asked_for_not_its_current_name(world, tmp_path):
     """S1-02: verify compares AcoustID's title with what the row asked for; a rename may already have moved it."""
     st = world["store"]

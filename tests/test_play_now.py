@@ -20,7 +20,7 @@ from sourcing.worker import Worker
 from subsonic.client import SubsonicClient
 from subsonic.fake_server import FakeSubsonicServer
 from tests.helpers import beets_items_db, fake_beet, make_flac
-from tests.test_fetch import world  # noqa: F401  (fixture)
+from tests.test_fetch import world, not_in_library  # noqa: F401  (fixtures)
 from tests.test_service import get, post
 from tests.test_tiers import FAST_MP3, SLOW_FLAC
 
@@ -328,6 +328,7 @@ def test_without_play_now_the_worker_sleeps_the_whole_poll(world, tmp_path):
     assert starts == [0.0, 30.0] and max(steps) <= 1
 
 
+@pytest.mark.usefixtures("not_in_library")
 def test_play_now_scores_and_verifies_at_low_without_changing_the_row_tier(world, tmp_path):
     store, spy = world["store"], Spy()
     e = ext(world)
@@ -339,6 +340,7 @@ def test_play_now_scores_and_verifies_at_low_without_changing_the_row_tier(world
     assert store.verification(e)["tier"] == "low"
 
 
+@pytest.mark.usefixtures("not_in_library")
 def test_provisional_copy_requeues_the_row_as_an_upgrade_awaiting_approval(world, tmp_path):
     store = world["store"]
     e = ext(world)
@@ -355,6 +357,7 @@ def test_provisional_copy_requeues_the_row_as_an_upgrade_awaiting_approval(world
     assert all("fastpeer" not in (x["detail"] or "") for x in store.events(limit=1000))
 
 
+@pytest.mark.usefixtures("not_in_library")
 def test_the_provisional_copy_is_never_swapped_into_a_playlist_or_proposed(world, tmp_path):
     store = world["store"]
     e = ext(world, tier="crate")
@@ -366,6 +369,7 @@ def test_the_provisional_copy_is_never_swapped_into_a_playlist_or_proposed(world
     assert store.external(e)["status"] == "needs_source" and store.external(e)["tier"] == "crate"
 
 
+@pytest.mark.usefixtures("not_in_library")
 def test_no_candidate_at_low_leaves_the_row_queued_and_a_new_tap_allowed(world, tmp_path, app):
     store = world["store"]
     e = ext(world)
@@ -379,6 +383,7 @@ def test_no_candidate_at_low_leaves_the_row_queued_and_a_new_tap_allowed(world, 
     assert app.play_now(e)["purpose"] == "play-now"                        # tapping again is a new approval
 
 
+@pytest.mark.usefixtures("not_in_library")
 def test_play_now_rows_are_rechecked_every_tick(world, tmp_path):
     store = world["store"]
     e = ext(world)
@@ -413,6 +418,7 @@ def test_a_worker_restart_during_the_download_lets_michael_tap_again(world, tmp_
     assert app.play_now(e)["purpose"] == "play-now"
 
 
+@pytest.mark.usefixtures("not_in_library")
 def test_a_worker_restart_after_filing_still_ends_provisional(world, tmp_path):
     """Killed after beets filed the low copy, before Navidrome listed it: the re-check after the restart must not
     take the provisional copy for the row's final file."""
@@ -430,6 +436,7 @@ def test_a_worker_restart_after_filing_still_ends_provisional(world, tmp_path):
     assert "provisional low copy" in row["reason"] and len(srv.enqueued) == 1
 
 
+@pytest.mark.usefixtures("not_in_library")
 def test_a_plain_download_after_a_failed_play_now_is_not_provisional(world, tmp_path):
     store = world["store"]
     e = ext(world)
@@ -477,6 +484,7 @@ def upgrade(world, tmp_path, verifier=None, gone=True):
 
 
 @pytest.mark.parametrize("gone", [True, False], ids=["scan-done", "scan-waiting"])
+@pytest.mark.usefixtures("not_in_library")
 def test_upgrade_of_a_provisional_copy_is_a_copy_replacement(world, tmp_path, gone):
     store = world["store"]
     e = provisional(world, tmp_path)
@@ -494,6 +502,7 @@ def test_upgrade_of_a_provisional_copy_is_a_copy_replacement(world, tmp_path, go
         [("s10", "s9", "done" if gone else "scan")]
 
 
+@pytest.mark.usefixtures("not_in_library")
 def test_an_upgrade_not_proven_the_same_keeps_the_provisional_copy(world, tmp_path):
     store = world["store"]
     e = provisional(world, tmp_path)
@@ -505,6 +514,7 @@ def test_an_upgrade_not_proven_the_same_keeps_the_provisional_copy(world, tmp_pa
     assert (world["music"] / MP3_REL).exists() and not world["trash"].exists()
 
 
+@pytest.mark.usefixtures("not_in_library")
 def test_an_unproven_upgrade_accepted_in_every_slot_ends_the_row_ok(world, tmp_path):
     """Task 9 carry: once every slot holding the provisional copy took the new one, the row is done and names it;
     the provisional file stays (not proven redundant, so never trashed)."""
@@ -548,6 +558,7 @@ def test_reimport_does_not_close_an_upgrade_row():
 
 # --- one open request per song; no upgrade when the fast copy already meets the tier (controller rulings) -------
 
+@pytest.mark.usefixtures("not_in_library")
 def test_a_fast_copy_that_meets_the_row_tier_queues_no_upgrade(world, tmp_path):
     store = world["store"]
     e = ext(world, tier="medium")                                          # 64 kbps meets medium's floor
@@ -565,6 +576,7 @@ def open_requests(store, song_id) -> list[str]:
             and w["status"] in ("needs_source", "failed") and not w["filed"]]
 
 
+@pytest.mark.usefixtures("not_in_library")
 def test_a_tiered_playlist_holding_the_provisional_copy_supersedes_the_upgrade_row(world, tmp_path):
     store = world["store"]
     e = provisional(world, tmp_path)
@@ -598,6 +610,7 @@ def test_reimport_adding_the_provisional_song_to_its_tiered_playlist_leaves_one_
 
 
 @pytest.mark.parametrize("busy", ["sourcing", "verify", "approved"])
+@pytest.mark.usefixtures("not_in_library")
 def test_an_upgrade_in_flight_holds_the_playlist_row(world, tmp_path, web, app, busy):
     store, rec = world["store"], world["rec"]
     e = provisional(world, tmp_path)
@@ -626,6 +639,7 @@ def test_an_upgrade_in_flight_holds_the_playlist_row(world, tmp_path, web, app, 
     assert store.external(e)["status"] == "ok"
 
 
+@pytest.mark.usefixtures("not_in_library")
 def test_a_superseded_upgrade_row_is_never_downloaded(world, tmp_path):
     """Closed while a worker in another process had just claimed its approval: fetch refuses the closed row."""
     store = world["store"]
@@ -651,6 +665,7 @@ def flac_play_now(world, tmp_path, tier="crate") -> str:
     return e
 
 
+@pytest.mark.usefixtures("not_in_library")
 def test_a_flac_verified_only_at_low_is_still_provisional_for_a_crate_row(world, tmp_path):
     store = world["store"]
     e = flac_play_now(world, tmp_path)
@@ -660,11 +675,13 @@ def test_a_flac_verified_only_at_low_is_still_provisional_for_a_crate_row(world,
     assert events(store, "upgrade_queued") == [f"{FLAC_REL} is a provisional low copy; upgrade at crate waits for approval"]
 
 
+@pytest.mark.usefixtures("not_in_library")
 def test_a_flac_verified_at_low_meets_a_listening_tier(world, tmp_path):
     e = flac_play_now(world, tmp_path, tier="high")                     # high verifies no stricter than low
     assert (world["store"].external(e)["status"], world["store"].external(e)["provisional"]) == ("ok", 0)
 
 
+@pytest.mark.usefixtures("not_in_library")
 def test_a_crate_playlist_holding_a_provisional_flac_is_not_ok(world, tmp_path):
     store = world["store"]
     e = flac_play_now(world, tmp_path)
@@ -700,6 +717,7 @@ def test_approve_replaces_a_play_now_not_yet_taken(world, web):
                                                                        ("download", None)]
 
 
+@pytest.mark.usefixtures("not_in_library")
 def test_no_peer_name_or_absolute_path_leaves_the_server(world, tmp_path, web, app):
     from sourcing.scorer import Wanted, rank
     from sourcing.policy import TIERS
@@ -742,3 +760,24 @@ def test_no_peer_name_or_absolute_path_leaves_the_server(world, tmp_path, web, a
 def json_text(obj) -> str:
     import json
     return json.dumps(obj)
+
+
+# --- S1-07: a row already in the library is linked, by an approval or a tap ------------------------------------
+
+@pytest.mark.parametrize("purpose", ["download", "play-now"])
+def test_an_approval_of_a_row_already_in_the_library_links_it_and_downloads_nothing(world, tmp_path, purpose):
+    """The world's library holds Chic – Good Times (s1, and s4, the crate row's mp3): an approval or a play-now tap of
+    an external row for it ends `ok` naming that song, not provisional (the web's poll plays it), and the approval
+    records why nothing was downloaded."""
+    store = world["store"]
+    e = ext(world)
+    store.approve(e, "michael", None, "low" if purpose == "play-now" else "high", purpose=purpose)
+    store.commit()
+    with FakeSlskdServer(PAIR, world["dl"], files={MP3: MP3_BYTES}) as srv:
+        worker(world, srv, tmp_path).tick()
+    assert srv.enqueued == []
+    row = store.external(e)
+    assert (row["status"], row["library_song_id"], row["provisional"]) == ("ok", "s1", 0)
+    (a,) = approvals(store)
+    assert a["result"] == "ok: already in the library; nothing downloaded"
+    assert events(store, "upgrade_queued") == []
