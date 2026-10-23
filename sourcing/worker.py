@@ -20,7 +20,10 @@ Each tick:
   2. every unused approval is claimed first (a conditional UPDATE to `started`: a crash, a second worker, or
      an approval Michael superseded after this tick read its list cannot download it twice; a lost claim is
      skipped), then fetched, preferring the candidate Michael saw while that file is still offered,
-     and finally marked with the outcome;
+     and finally marked with the outcome. An album request's `album` approvals (S2-05) are claimed and run together
+     by sourcing.album_job.run: one search and plan (again when the cached one is older than ALBUM_PLAN_MAX_AGE_S,
+     3600 in the CLI), each peer's planned files in one enqueue, each row through fetch in planned mode, a folder
+     in trouble switched to another (a peer that starts nothing within ALBUM_START_TIMEOUT_S, 600 in the CLI);
   3. every copy replacement left unfinished before this tick (sourcing.replace: a playlist that could not be
      repointed yet, a crash between steps) is advanced; an error is logged and the job keeps its state;
   3b. every filed external row whose imported playlist does not hold it yet is placed at its Spotify position
@@ -59,8 +62,8 @@ from typing import Callable
 from crates import placement
 from crates.reconcile import ReconcileBusy
 from scripts.export_playlists import export, playlist_health
-from . import replace
-from .fetch import fetch
+from . import album_job, replace
+from .fetch import error_outcome, fetch
 
 
 class WorkerRunning(Exception):
@@ -122,7 +125,10 @@ class TickReport:
 class Worker:
     def __init__(self, *, store, slskd, navidrome, reconciler, fetch_kwargs: dict, fetcher=fetch, log=print,
                  recheck_s: float = 0, reconcile_s: float = 0, clock=time.monotonic, lock_path: Path | None = None,
-                 export_s: float = 0, exporter=export, heartbeat_path: Path | None = None):
+                 export_s: float = 0, exporter=export, heartbeat_path: Path | None = None,
+                 album_plan_max_age_s: float = album_job.ALBUM_PLAN_MAX_AGE_S,
+                 album_start_timeout_s: float = album_job.ALBUM_START_TIMEOUT_S):
+        self.album_plan_max_age_s, self.album_start_timeout_s = album_plan_max_age_s, album_start_timeout_s
         self.store, self.fetcher, self.log, self.recheck_s = store, fetcher, log, recheck_s
         self.reconciler, self.reconcile_s, self.clock, self._reconciled_at = reconciler, reconcile_s, clock, None
         self.export_s, self.exporter, self._exported_at = export_s, exporter, None
@@ -266,9 +272,19 @@ class Worker:
 
     def _spend(self, approvals: list[dict], results: list[str]) -> int:
         """Claim and fetch each approval; returns how many were claimed. A play-now approval (D20) is fetched at
-        `low` (score_tier: the row keeps its tier) and filed as provisional."""
+        `low` (score_tier: the row keeps its tier) and filed as provisional. The `album` approvals of one request
+        (S2-05) go to album_job.run together, where the first of them is in the list."""
         claimed = 0
+        request_of = {a["id"]: (self.store.find_wanted(a["wanted_id"]) or {}).get("request_id")
+                      for a in approvals if a.get("purpose") == "album"}
+        ran: set[int] = set()
         for a in approvals:
+            rid = request_of.get(a["id"])
+            if rid is not None:
+                if rid not in ran:
+                    ran.add(rid)
+                    claimed += self._album(rid, [b for b in approvals if request_of.get(b["id"]) == rid], results)
+                continue
             if not self.store.claim_approval(a["id"]):         # superseded or taken since this list was read
                 self.log(f"skipped {a['wanted_id']}: approval #{a['id']} already used")
                 continue
@@ -276,15 +292,24 @@ class Worker:
             extra = {"score_tier": "low", "provisional": True} if a.get("purpose") == "play-now" else {}
             try:
                 r = self.fetcher(a["wanted_id"], approve=True, prefer=a["candidate"], **extra, **self.common)
-                outcome = r.approval_result or f"{r.status}: {r.reason}"
+                outcome = r.outcome
             except Exception as e:
-                outcome = f"error: {type(e).__name__}: {e}"
+                outcome = error_outcome(e)
                 self.log(f"fetch {a['wanted_id']} failed: {outcome}")
             self.store.mark_approval_used(a["id"], outcome)
             self.store.commit()
             results.append(f"{a['wanted_id']}: {outcome}")
             self.log(f"{a['wanted_id']}: {outcome}")
         return claimed
+
+    def _album(self, request_id: int, approvals: list[dict], results: list[str]) -> int:
+        """One request's album job (sourcing.album_job.run, which marks each approval used)."""
+        out = album_job.run(request_id, approvals, fetcher=self.fetcher, plan_max_age_s=self.album_plan_max_age_s,
+                            start_timeout_s=self.album_start_timeout_s, **self.common)
+        for a, outcome in out:
+            results.append(f"{a['wanted_id']}: {outcome}")
+            self.log(f"{a['wanted_id']}: {outcome}")
+        return len(out)
 
     def tick(self) -> TickReport:
         """No `tier` is passed: the row's current tier rules, and an approval's tier only records what was approved.

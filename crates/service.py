@@ -270,6 +270,9 @@ class CrateApp:
                 raise ApiError(409, f"{wanted_id} is already in the library ({row.get('reason') or 'ok'})")
             if status in ("sourcing", "verify") or (status == "failed" and filed_path(row.get("reason"))):
                 raise ApiError(409, f"{wanted_id} is in progress ({status}): the worker finishes it")
+            if status == "review" and retryable_review(row.get("reason")):    # e.g. filed as another song (S1-03)
+                raise ApiError(409, f"{wanted_id} is waiting for you ({row.get('reason')}): approve it again, or "
+                                    "reopen it (crates.cli wanted reopen)")
             if status == "review":
                 raise ApiError(409, f"{wanted_id} needs a pick first ({row.get('reason')}): pick a version first")
             try:                                    # the INSERT itself refuses a second one (any process)
