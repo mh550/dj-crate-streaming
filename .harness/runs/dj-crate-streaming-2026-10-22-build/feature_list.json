@@ -303,7 +303,7 @@
         "S3-03",
         "S3-02"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "S3-06",

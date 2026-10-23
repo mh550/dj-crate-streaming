@@ -9,6 +9,12 @@ Michael steers from `INBOX.md` on this branch (status line `run | pause | stop`;
 session reads it at startup. Policy: **build-only** (`.harness/config.sh`) and the brief in `brief.md`: nothing live,
 no docker, no `/srv`, no network, no client UI, PRs only (open, never merge).
 
+### 2026-10-23 11:30 · S3-05 · passes
+
+- **What changed:** new `docs/api.md`: auth/exposure, row and request statuses, one section per endpoint (`POST/GET /api/requests`, `GET /api/requests/<id>`, `preview`, `approve`, `GET /api/catalog/search`) with 2xx bodies taken from the tests' assertions and every error status with its reason text, plus `## For a client` (flow, and what is missing: UI, Spotify provider, DELETE/cancel). Linked from `docs/architecture.md` §2 and `docs/worker.md` `## Where things are`. 5 new tests in `tests/test_api_doc.py` (routes, statuses 400/404/409/502/503, no unlisted status raised in the handlers, flow section and links, peer/path/tailnet statement).
+- **Verified:** `test_api_doc` + `test_requests_api`: 94 passed. Full `check.sh` green, 2279 tests (was 2274), 895 s.
+- **Next session:** timestamps and some ids in the doc's examples are illustrative where the tests assert only their type. No question for Michael.
+
 ### 2026-10-23 10:45 · S3-04 · passes
 
 - **What changed:** `python -m sourcing.cli request add <link> | list | show <id> | preview <id> | approve <id>`, each with `--json` (the API's JSON). The code is `request_cmd` in `sourcing/cli.py`, which calls the five `CrateApp` methods the HTTP routes use, so add, preview and approve have no second implementation.

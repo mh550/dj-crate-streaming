@@ -795,6 +795,7 @@ profile for `dj-crates-web` decides. It is the default only for a database that 
 - Before the first `docker compose up`, create `/srv/incoming/soulseek` and `/srv/incoming/soulseek/.incomplete`
   as uid 1000 (`mkdir -p /srv/incoming/soulseek/.incomplete`, no sudo). Otherwise compose creates the mount source as
   root, and slskd checks for the incomplete folder but does not create it: it refuses to start and restarts in a loop.
+- The request HTTP API for a client: [`docs/api.md`](api.md).
 - Soulseek peer names never appear in events, logs or the web client: file basenames only.
 - Events the worker writes (crates.db `events`, the web client's log tab): `status`, `attrs`, `reconcile`,
   `playlist_gone` (reconcile); `pick`, `tagged`, `filed`, `renamed`, `reference`, `kept_both`, `upgrade_queued`,

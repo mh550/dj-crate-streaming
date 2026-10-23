@@ -70,6 +70,7 @@ before swapping versions and adds play-now. (The pivot moved the crate flag's ow
 - `crates` and `worker` are one image (`Dockerfile`: python 3.12-slim + ffmpeg, flac, fpcalc, beets 1.6.0,
   mediafile 0.12.0). The build context is `CRATES_SRC` in `.env`, i.e. **the repo's working tree** (§10).
 - Only `127.0.0.1` ports are published; `tailscale serve` on the host puts 4533 and 4580 on the tailnet.
+- The request routes (`/api/requests`, `/api/catalog/search`) are documented for clients in [`api.md`](api.md).
 - Who may write what: Navidrome writes only its DB (never files). `crates` writes `crates.db` and Navidrome
   playlists (the comment attributes, add/create, a proposal's one-slot swap), plus the Identity view's
   `/data/identity/identity-choices.json` (R7, below); it has no library mount, so it cannot download or file
