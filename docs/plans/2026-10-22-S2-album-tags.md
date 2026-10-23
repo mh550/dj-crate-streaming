@@ -21,7 +21,7 @@ group; that is S2-07's own step, not S2-06b's.)
 | `album` | `requests.album` | never lacks it (an album request has a name) |
 | `albumartist` | `requests.artist` | never lacks it |
 | `track` | the row's `track_no` (position across all discs: the embed has no disc number, S2-02) | not written |
-| `tracktotal` | the highest `track_no` among **all** the request's rows (stable while the album is filed; a duplicate title merged into one row or a row held by another request does not lower it) | not written |
+| `tracktotal` | the album's highest listed `track_no`, stored on the request by `add_spotify` (`requests.tracktotal`, S2-06b review: a duplicate title merged into one row or a row held by another request does not lower it), else the highest among the request's rows | not written |
 | `year` | `requests.year`; `month` and `day` are cleared with it | **cleared** with `month` and `day` (D51 *default*) |
 | `mb_albumid` | `requests.mb_release_id` (S2-03) | **cleared** (`None`) |
 | `mb_albumartistid` | not written | **cleared** (`None`) together with `mb_albumid` |
@@ -83,6 +83,14 @@ happened (harmless: its reverse writes the values the file already has). `FiledI
 `store.request(row["request_id"])`. S2-06b's test: a kill (exception) raised inside the import leaves the `tagged`
 event in the store when it is reopened.
 
+**As built (S2-06b).** `sourcing/filer.py`: `AlbumIdentity`, `album_changes`, `BeetsFiler.file(…, album=, on_tagged=)`
+(`FiledItem.old`); `sourcing/fetch.py`: `album_identity(store, row)` (kind `album` only; `tracktotal` the highest
+`track_no`) and `tagged(old)`, which logs and commits; `scripts/tag_cleanup.py`: `restore_fields`;
+`deploy/beets.yaml`: the `dj_album:1:` key before `default:` and `singleton:`. From the review: `requests.tracktotal`;
+an album-artist key mediafile does not read (FLAC/ogg) or an ID3 alias that says otherwise counts as a difference;
+`album=` without `on_tagged` is refused before anything is written. The kill test checks that the event is
+committed when beets starts and survives a rollback (`tests/test_fetch_filing.py`).
+
 ## When
 
 - Only on our fresh download in `<downloads>/.staging/<id>-<ts>/`, after verify passed and the file moved there, and
@@ -112,7 +120,8 @@ event in the store when it is reopened.
 
 - **The record.** One `tagged` event per write, logged and committed before the write (`## Writer`), message exactly
   the JSON object of old values with sorted keys. Example for a fresh file with no album tags and no date:
-  `{"album": null, "albumartist": null, "mb_albumid": null, "track": null, "tracktotal": null}`; a file that said
+  `{"album": null, "albumartist": null, "track": null, "tracktotal": null}` (an absent id with no release to write
+  does not differ, so it is not recorded); a file that said
   `COMPILATION=1` adds `"comp": true`; a written or cleared `year` adds `"year"`, `"month"`, `"day"`. Today's
   `filled artist, title from the wanted row` event stays as it is (its message never starts with `{`).
 - **Which event goes with which file.** A row can be tagged more than once (planned folder, switched folder,
@@ -133,7 +142,11 @@ event in the store when it is reopened.
      tested: an absent field comes back absent, `DATE=1972-05-01` comes back as `1972-05-01`, a valued field comes
      back with its value. Measured with that order: the deletions gave back exactly the pre-write `TITLE`/`ARTIST`;
      `DATE=1972-05-01` with both MusicBrainz ids came back whole after a forward clear. Not byte-identical: a
-     restored year comes back as `DATE` and `YEAR` even if the file had only `DATE`. **Not restored:** on MP3, the
+     restored year comes back as `DATE` and `YEAR` even if the file had only `DATE`. **Not restored** (S2-06b review, measured): a value mediafile cannot read is recorded as `null` and so deleted
+     by the reverse (`TRACKNUMBER=A1`; `DATE=05/01/1972` comes back as `0005-01-1972`; a second
+     `MUSICBRAINZ_ALBUMID` value is lost); a FLAC/ogg album-artist key mediafile did not read comes back with the
+     value of the one it read; an m4a with neither track nor total keeps an empty `trkn (0, 0)` atom (reads as
+     absent). Also not restored: on MP3, the
      ID3 album-artist aliases `write_minimal` deleted (not recorded); after a D22 match, everything `beet write`
      wrote (as for any matched download today).
   2. beets' index: `beet -c <yaml> modify -W -M -y path:<abs> dj_album!` (drops the flag; `-W` no file write, `-M`

@@ -85,6 +85,7 @@ CREATE TABLE IF NOT EXISTS requests (             -- one per request (S2-01); st
   source TEXT,                                    -- the URL asked for, or 'search'
   artist TEXT, album TEXT, year INTEGER,
   mb_release_id TEXT,                             -- the MusicBrainz release matched one to one (S2-03), or NULL
+  tracktotal INTEGER,                             -- an album's highest track number as listed (S2-06), or NULL
   created_at REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS imported_entries (     -- every song import-playlist ever added to a playlist,
@@ -343,6 +344,8 @@ class CrateStore:
                          ("track_no", "INTEGER"), ("mb_recording_id", "TEXT")):
             if col not in have:
                 self.db.execute(f"ALTER TABLE external_wanted ADD COLUMN {col} {typ}")
+        if "tracktotal" not in {r[1] for r in self.db.execute("PRAGMA table_info(requests)")}:
+            self.db.execute("ALTER TABLE requests ADD COLUMN tracktotal INTEGER")
         if "purpose" not in {r[1] for r in self.db.execute("PRAGMA table_info(approvals)")}:
             self.db.execute("ALTER TABLE approvals ADD COLUMN purpose TEXT NOT NULL DEFAULT 'download'")
         if "tier" not in {r[1] for r in self.db.execute("PRAGMA table_info(crates)")}:
@@ -1130,12 +1133,13 @@ class CrateStore:
 
     # --- requests (S2-01): an album, playlist or track asked for as one; its rows are external_wanted rows
     def add_request(self, *, kind: str, source: str | None, artist: str | None, album: str | None,
-                    year: int | None) -> int:
-        """Record a request and return its id; its rows are added with add_external_wanted(request_id=…)."""
+                    year: int | None, tracktotal: int | None = None) -> int:
+        """Record a request and return its id; its rows are added with add_external_wanted(request_id=…).
+        `tracktotal`: an album's highest listed track number, which a row held by another request cannot lower."""
         if kind not in REQUEST_KINDS:
             raise ValueError(f"unknown request kind {kind!r}")
-        cur = self.db.execute("INSERT INTO requests(kind, source, artist, album, year, created_at) VALUES(?,?,?,?,?,?)",
-                              (kind, source, artist, album, year, time.time()))
+        cur = self.db.execute("INSERT INTO requests(kind, source, artist, album, year, tracktotal, created_at) "
+                              "VALUES(?,?,?,?,?,?,?)", (kind, source, artist, album, year, tracktotal, time.time()))
         self.log(None, None, "request", f"#{cur.lastrowid} {kind}: {' — '.join(x for x in (artist, album) if x)}")
         self.db.commit()
         return cur.lastrowid

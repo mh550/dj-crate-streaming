@@ -199,6 +199,27 @@ The verified download is never imported from slskd's folder. It moves to its own
   tags are untouched. `beet update -M` refreshes the index from the tags.
 - **Missing tags.** An empty artist or title tag is filled from the wanted row before import, and a `tagged` event
   says so.
+- **Album requests (S2-06, D50).** A row of an `album` request (primary folder, switched folder or per-track
+  fallback alike) carries the request's identity: `album`, `albumartist` (the request's artist), `track` (the row's
+  track number), `tracktotal` (the album's highest listed track number), `year` and `mb_albumid` (the
+  matched release). A request without a year clears the file's year, month and day (D51 *default*), and one without
+  a release clears the uploader's `mb_albumid` and `mb_albumartistid`, so every file of the album lands in one folder
+  and one Navidrome album. `comp` is set to false only where the file says true. Only the fields that differ are
+  written, with `write_minimal`, on the staged file before beets sees it (never on a library file), and the import
+  gets `--set dj_album=1`. `deploy/beets.yaml`'s `dj_album:1:` path (before `singleton:`) then files it at
+  `$albumartist/$album ($year)/$track - $title` (`Al Green/I'm Still in Love With You/01 - ….flac` without a year).
+  The flag lives in beets' `library.db`, not the file. Plain rows and `track`/`playlist` requests stay in
+  `$artist/Singles/$title`. A confirmed MusicBrainz match still runs `beet write` (D22).
+- **The album write's record and reverse.** Before the write, one `tagged` event holds the old values as a JSON
+  object with sorted keys (`{"album": null, "albumartist": null, "track": null, "tracktotal": null}` for a fresh
+  file; `null` means the tag was absent), committed before the file is touched. A file that already agrees is not
+  written and gets no event. The filed file's record is the row's last `tagged` event starting with `{` before its
+  `filed` event. The reverse, with the worker stopped, the backup and snapshot preconditions met and the live lock
+  held (`docs/plans/2026-10-22-S2-album-tags.md` → `## Reverse`):
+  `scripts.tag_cleanup.restore_fields(<path>, <old>)` (one save; a `null` field is deleted), then
+  `beet -c <yaml> modify -W -M -y path:<abs> dj_album!` and `beet -c <yaml> update -M path:<abs>`, start the worker
+  and let Navidrome scan. Moving the file back to `Singles` (`beet move path:<abs>`) is a separate pass after that
+  scan, never between the same two scans as the retag.
 - **`duplicate_action: keep`.** Copies and versions of one song coexist in this library. `skip` would silently drop
   every copy upgrade, so beets keeps both and the new file lands next to the old one.
 - **Names copied back.** Once Navidrome has indexed the new file, its artist and title go back onto the wanted row

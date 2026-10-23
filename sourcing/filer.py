@@ -23,6 +23,11 @@ fill_missing_tags imports scripts.tag_cleanup.write_minimal (the one field-by-fi
 because scripts.tag_cleanup pulls in the beets package at import time; only the worker image, which
 installs beets 1.6.0, reaches that import.
 Only a folder under `.staging` is accepted, which keeps beets away from the originals and the library.
+
+An album request's row (S2-06, docs/plans/2026-10-22-S2-album-tags.md) is filed with `album=AlbumIdentity(…)`: the
+fields that differ are written on the staged file with write_minimal (after the caller's `on_tagged(old)` has
+recorded the old values), and the import gets `--set dj_album=1`, so deploy/beets.yaml's `dj_album:1:` path files it
+at `$albumartist/$album ($year)/$track - $title` instead of `$artist/Singles/$title`.
 """
 from __future__ import annotations
 
@@ -48,6 +53,19 @@ class FiledItem:
     filled: list[str] = field(default_factory=list)   # tag fields filled from the wanted row before import
     length: float = 0.0     # beets items.length, seconds
     note: str = ""          # why a beets match was or was not confirmed ("" for an as-is import)
+    old: dict | None = None     # an album row's fields before the album tags were written ({field: old}); None: none written
+
+
+@dataclass(frozen=True)
+class AlbumIdentity:
+    """What an album request's track carries (the plan's ## Fields). None for track/tracktotal: not written; for
+    year: cleared with month and day (D51 *default*); for mb_albumid: cleared with mb_albumartistid."""
+    album: str
+    albumartist: str
+    track: int | None
+    tracktotal: int | None
+    year: int | None
+    mb_albumid: str | None
 
 
 class FilingError(Exception):
@@ -75,6 +93,51 @@ def fill_missing_tags(path: Path, names: dict[str, str]) -> list[str]:
     if changes:
         write_minimal(path, changes)
     return list(changes)
+
+
+def _stray_albumartist(current, albumartist: str) -> bool:
+    """Whether a raw album-artist key mediafile does not read says something else: on Vorbis comments (FLAC, ogg)
+    mediafile reads the first of ALBUM ARTIST/ALBUMARTIST/ALBUM_ARTIST; on ID3 a TXXX alias beside TPE2."""
+    import mutagen.id3
+    from mutagen._vorbis import VCommentDict
+    from scripts.tag_cleanup import ALIASES
+
+    tags = getattr(current.mgfile, "tags", None)
+    if isinstance(tags, mutagen.id3.ID3):
+        return any(k.casefold() in {a.casefold() for a in ALIASES["albumartist"]} for k in tags.keys())
+    if isinstance(tags, VCommentDict):
+        return any(v != albumartist for k in ("ALBUMARTIST", "ALBUM ARTIST", "ALBUM_ARTIST") for v in tags.get(k, []))
+    return False
+
+
+def album_changes(path: Path, identity: AlbumIdentity) -> tuple[dict, dict]:
+    """(changes, old) for `path` against `identity`: only the fields whose value differs, and their current values
+    (None for an absent field). A written or cleared year takes month and day with it; `comp` is in the diff only
+    when the file says True (False on a file without the tag would add COMPILATION=0, measured)."""
+    import scripts.tag_cleanup  # noqa: F401  (as fill_missing_tags: it puts Debian's beets and mediafile on sys.path)
+    from mediafile import MediaFile
+
+    current = MediaFile(str(path))
+
+    def now(k):                                          # "" and 0 are mediafile's none values: absent
+        return getattr(current, k) or None
+    want = {"album": identity.album, "albumartist": identity.albumartist}
+    for k in ("track", "tracktotal"):
+        if getattr(identity, k):
+            want[k] = getattr(identity, k)
+    if identity.mb_albumid:
+        want["mb_albumid"] = identity.mb_albumid
+    else:
+        want |= {"mb_albumid": None, "mb_albumartistid": None}
+    changes = {k: v for k, v in want.items() if now(k) != v}
+    if "albumartist" not in changes and _stray_albumartist(current, identity.albumartist):
+        changes["albumartist"] = identity.albumartist      # write_minimal writes every key and drops the ID3 aliases
+    date = {"year": identity.year or None, "month": None, "day": None}
+    if any(now(k) != v for k, v in date.items()):
+        changes |= date
+    if current.comp:
+        changes["comp"] = False
+    return changes, {k: True if k == "comp" else now(k) for k in changes}
 
 
 def _tail(text: str, n=3) -> str:
@@ -118,11 +181,17 @@ class BeetsFiler:
                            errors="replace", timeout=self.timeout_s)
 
     def file(self, folder: Path, log: Path, *, names: dict[str, str] | None = None,
-             on_imported: Callable[[FiledItem], None] | None = None) -> FiledItem | None:
+             on_imported: Callable[[FiledItem], None] | None = None, album: AlbumIdentity | None = None,
+             on_tagged: Callable[[dict], None] | None = None) -> FiledItem | None:
         """Import the download in `folder` (one file, under `.staging`); None when beets imported nothing
         (the file is still in `folder`). `log` is this call's own beets import log. `on_imported(item)` runs as
         soon as the imported item is known, before the confirmer or `beet write`, so the caller can record the
-        library path before anything slow or fallible happens."""
+        library path before anything slow or fallible happens.
+
+        `album` (an album request's row): the fields that differ from it are written on the staged file, and the
+        import gets `--set dj_album=1` (the album path). `on_tagged(old)` runs before that write and must make the
+        record durable (log and commit): an exception there stops before anything is written. Nothing differs →
+        no write, no callback, `old` None."""
         folder, log = Path(folder), Path(log)
         if folder.resolve().parent.name != ".staging":        # resolved, so ".staging/.." or a symlink out fails
             raise ValueError(f"refusing to import {folder}: not a .staging folder")
@@ -130,9 +199,21 @@ class BeetsFiler:
         if len(audio) != 1:                              # one download per folder, so one row to find afterwards
             raise FilingError(f"expected one audio file in {folder}, found {len(audio)}")
         filled = self.tagger(audio[0], names) if names else []
+        old = None
+        if album is not None and on_tagged is None:
+            raise ValueError("album tags need on_tagged: every write has a record first")
+        if album is not None:
+            changes, old = album_changes(audio[0], album)
+            if changes:
+                on_tagged(old)                           # the record first: every write has one
+                from scripts.tag_cleanup import write_minimal
+                write_minimal(audio[0], changes)
+            else:
+                old = None
         log.unlink(missing_ok=True)                      # beets appends: a stale "asis" line would hide a real match
         before = self._max_id()
-        done = self._beet("import", "-q", "-s", "-m", "-W", "-l", str(log), str(folder))
+        flag = ["--set", "dj_album=1"] if album is not None else []
+        done = self._beet("import", "-q", "-s", "-m", "-W", *flag, "-l", str(log), str(folder))
         if done.returncode:
             raise FilingError(f"beet import failed ({done.returncode}): {_tail(done.stderr)}")
         rows = self._rows("SELECT id, path, mb_trackid, artist, title, length FROM items WHERE id > ? ORDER BY id", (before,))
@@ -144,7 +225,7 @@ class BeetsFiler:
         path = Path(os.fsdecode(raw))
         lines = log.read_text(encoding="utf-8", errors="replace").splitlines() if log.exists() else None
         matched = lines is not None and not any(line.startswith("asis ") for line in lines)
-        item = FiledItem(path, artist or "", title or "", mb_trackid or "", False, filled, float(length or 0.0))
+        item = FiledItem(path, artist or "", title or "", mb_trackid or "", False, filled, float(length or 0.0), old=old)
         if on_imported is not None:
             on_imported(item)
         if not matched:

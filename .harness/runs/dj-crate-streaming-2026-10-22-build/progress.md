@@ -9,6 +9,27 @@ Michael steers from `INBOX.md` on this branch (status line `run | pause | stop`;
 session reads it at startup. Policy: **build-only** (`.harness/config.sh`) and the brief in `brief.md`: nothing live,
 no docker, no `/srv`, no network, no client UI, PRs only (open, never merge).
 
+### 2026-10-23 05:10 · S2-06b · passes
+
+- **Changed.** `sourcing/filer.py`: `AlbumIdentity`, `album_changes` (only differing fields; unknown year clears
+  year/month/day, D51; no release clears `mb_albumid`/`mb_albumartistid`; `comp` only when true; a stray album-artist
+  key or ID3 alias counts), `BeetsFiler.file(…, album=, on_tagged=)` records first, then `write_minimal`, then
+  `beet import … --set dj_album=1`; `album=` without `on_tagged` is refused. `sourcing/fetch.py`: `album_identity`
+  (kind `album` only) and a committed `tagged {json}` event. `deploy/beets.yaml`: `dj_album:1:` before `singleton:`.
+  `scripts/tag_cleanup.restore_fields` (the reverse). New `requests.tracktotal` (migrated, set by `add_spotify`).
+  `docs/worker.md` Filing, plan as-built. `fake_beet(fail_import=)`. Tests 2064 → 2093.
+- **Verified.** Tests red first. Real beet 1.6.0 (offline, tmp library): album rows land at `Al Green/I'm Still in Love
+  With You (1972)/01 - …` and `…/I'm Still in Love With You/09 - …`, plain row in `Singles`, `dj_album=1` in
+  `item_attributes`. FLAC plus mp3/m4a/ogg (ffmpeg) tag tests; kill test: event committed when beets starts and
+  survives a rollback. 10 mutations, each turns a test red. Opus review: 1 Important (tracktotal fell when the last
+  track belonged to another request → `requests.tracktotal`) + 4 Minor (2 fixed test-first, 2 in the plan's "Not
+  restored"). Subset 163 passed; full suite green, 2093 tests, 766 s.
+- **Next session must know.** The filed file's record is the row's last `tagged` event starting with `{` before
+  `filed`. Old requests have `tracktotal` NULL (falls back to the highest row track number).
+- **Proposed change (S2-06b step 2).** It said "the request's row count" for tracktotal; built as the plan says
+  (highest listed track number), since a count can fall below a track number.
+- **Question for Michael.** Still D51 (from S2-06a): clear an unknown year, or take the first filed file's year?
+
 ### 2026-10-23 03:40 · S2-06a · passes
 
 - **Changed.** New `docs/plans/2026-10-22-S2-album-tags.md` (Fields, Writer, When, Reverse, beets measurement, Out,

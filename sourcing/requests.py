@@ -43,7 +43,9 @@ def add_spotify(store, url: str, *, fetch=fetch_entity, tier: str | None = None,
         held = [(store.find_external(lead_artist(r, resolve=None), r.title) or {}).get("request_id") for r in rows]
         if all(held):
             return store.request(held[0])
-    rid = rid or store.add_request(kind=kind, source=source, artist=artist, album=album, year=year)
+    tracktotal = max((r.track_no for r in rows if r.track_no), default=None) if kind == "album" else None
+    rid = rid or store.add_request(kind=kind, source=source, artist=artist, album=album, year=year,
+                                   tracktotal=tracktotal)
     for r in rows:
         store.add_external_wanted(lead_artist(r, resolve=None), r.title, album=r.album, duration_s=r.duration_s,
                                   year=r.year, source=source, tier=tier, default_tier=default_tier,

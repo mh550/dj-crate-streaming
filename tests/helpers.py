@@ -73,13 +73,16 @@ def beets_items_db(path: Path) -> Path:
 
 
 def fake_beet(music: Path, library: Path, target_rel: str | Callable[[Path], str], *, artist="", title="", mb_trackid="",
-              matched=False, import_nothing=False, rc=0, length=501.0) -> Callable:
+              matched=False, import_nothing=False, rc=0, length=501.0, fail_import: BaseException | None = None) -> Callable:
     """A subprocess.run stand-in for `beet`. Every cmd lands in `.calls`. On `import` it moves the single
     file in cmd[-1] to music/target_rel, adds an `items` row and writes this call's -l log the way beets
     1.6.0 does (appending): `asis <src>` for an as-is import, nothing for an applied match, `duplicate-skip <src>` (and
-    no move) with `import_nothing`. `target_rel` may be a function of the imported file (several imports, one each)."""
+    no move) with `import_nothing`. `target_rel` may be a function of the imported file (several imports, one each).
+    `fail_import` is raised on `import` before anything moves (a kill while beets runs)."""
     def run(cmd, **kwargs):
         run.calls.append(list(cmd))
+        if "import" in cmd and fail_import is not None:
+            raise fail_import
         if "import" in cmd and not rc:
             src = next(p for p in Path(cmd[-1]).iterdir() if p.is_file())
             log = Path(cmd[cmd.index("-l") + 1])

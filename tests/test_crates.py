@@ -198,9 +198,23 @@ def test_store_migrates_old_db_to_requests(tmp_path):
     cols = {r[1]: r[2] for r in store.db.execute("PRAGMA table_info(external_wanted)")}
     assert (cols["request_id"], cols["track_no"], cols["mb_recording_id"]) == ("INTEGER", "INTEGER", "TEXT")
     req = {r[1] for r in store.db.execute("PRAGMA table_info(requests)")}
-    assert req == {"id", "kind", "source", "artist", "album", "year", "mb_release_id", "created_at"}
+    assert req == {"id", "kind", "source", "artist", "album", "year", "mb_release_id", "tracktotal", "created_at"}
     assert store.external("ext-1")["request_id"] is None and store.external_count() == 1
     CrateStore(db)                              # a second open adds nothing and fails nothing
+
+
+def test_store_migrates_requests_to_tracktotal(tmp_path):
+    # S2-06b: a requests table from S2-01..S2-05 gains tracktotal (NULL) and keeps its request.
+    import sqlite3
+    db = tmp_path / "old.db"
+    con = sqlite3.connect(db)
+    con.executescript("""CREATE TABLE requests (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, source TEXT, artist TEXT,
+        album TEXT, year INTEGER, mb_release_id TEXT, created_at REAL NOT NULL);
+        INSERT INTO requests(kind, source, artist, album, created_at) VALUES('album', 'search', 'Al Green', 'Call Me', 0);""")
+    con.commit(); con.close()
+    store = CrateStore(db)
+    assert store.request(1)["tracktotal"] is None and store.request(1)["album"] == "Call Me"
+    CrateStore(db)
 
 
 AL_GREEN = ("Al Green", "I'm Still in Love With You")

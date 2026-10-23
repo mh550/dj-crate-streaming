@@ -71,6 +71,7 @@ with proof it replaces the provisional file (trash), else both are kept and the 
 """
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import sqlite3
@@ -83,7 +84,7 @@ from crates.reconcile import Reconciler, judge
 from crates.store import CrateStore, filed_path, never_indexed, retryable_review
 from scripts.export_playlists import open_ro
 from subsonic.client import SubsonicClient, SubsonicError
-from .filer import BeetsFiler, FilingError
+from .filer import AlbumIdentity, BeetsFiler, FilingError
 from .identity import can_be_song, parse_filename, parse_title
 from .import_playlist import match as match_in_library
 from .playlist_sources import Row
@@ -202,6 +203,19 @@ def in_library(store: CrateStore, navidrome: SubsonicClient, wanted_id: str, row
     store.log(None, wanted_id, "matched", f"{m.how}: {m.title}")
     store.set_wanted_status(wanted_id, "ok", f"already in the library: {m.title} ({m.song_id})")   # commits all three
     return FetchResult("ok", "already in the library; nothing downloaded", new_song_id=m.song_id)
+
+
+def album_identity(store: CrateStore, row: dict) -> AlbumIdentity | None:
+    """The album identity an album request's row is filed with (S2-06, docs/plans/2026-10-22-S2-album-tags.md);
+    None for a row without a request or of a `track`/`playlist` request. `tracktotal` is the album's highest listed
+    track number (stored by add_spotify, so a row merged or held by another request does not lower it), else the
+    highest among the request's rows."""
+    req = store.request(row["request_id"]) if row.get("request_id") else None
+    if req is None or req["kind"] != "album":
+        return None
+    numbers = [r["track_no"] for r in req["rows"] if r.get("track_no")]
+    return AlbumIdentity(req["album"], req["artist"], row.get("track_no"),
+                         max([req["tracktotal"] or 0, *numbers]) or None, req["year"], req["mb_release_id"])
 
 
 def planned_candidate(prefer: dict, wanted: Wanted, policy: QualityPolicy) -> Candidate:
@@ -625,8 +639,14 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
             item = it
             set_status("verify", f"filed as {_rel(it.path)} but Navidrome has not picked it up yet")   # commits
 
+        def tagged(old: dict) -> None:
+            """Before the album tags are written: the old values, committed (a kill during the import keeps them)."""
+            store.log(None, wanted_id, "tagged", json.dumps(old, sort_keys=True))
+            store.commit()
+
         try:
-            item = filer.file(staging, log, names={"artist": wanted.artist, "title": wanted.title}, on_imported=imported)
+            item = filer.file(staging, log, names={"artist": wanted.artist, "title": wanted.title}, on_imported=imported,
+                              album=album_identity(store, row), on_tagged=tagged)
         except FilingError as e:
             item = e.item or item                                # beets filed it (a failed write), or `imported` already saw it
             raise
