@@ -9,6 +9,27 @@ Michael steers from `INBOX.md` on this branch (status line `run | pause | stop`;
 session reads it at startup. Policy: **build-only** (`.harness/config.sh`) and the brief in `brief.md`: nothing live,
 no docker, no `/srv`, no network, no client UI, PRs only (open, never merge).
 
+### 2026-10-23 00:30 · S2-04 · passes
+
+- **Changed.** New `sourcing/album.py` (pure): `plan_album(responses, rows, *, policy, listed_lengths)` → `AlbumPlan`
+  (`primary`, `secondary`, `per_track`, `alternates`, `assignments()`), `FolderPick(username, directory, rows, score)`,
+  `describe(plan, peers=False)` (`folder N`, `7 of 9`, row → basename; no peer, no directory). Folders are
+  (peer, directory); rows map via `scorer.rank` per folder, greedy by score, one file per row. New
+  `tests/test_album_plan.py` (23 tests: the 5 spec cases + review fixes). Plan: "As built (S2-04)" in the S2 plan.
+  Tests 1986 → 2009.
+- **Verified.** Tests seen red first (no module; then 5 review-fix tests red); mutation checks (no bitrate tie-break,
+  MIN_FOLDER_ROWS=1, no release rule, file reuse, rejected files used) each turn a test red. `check.sh
+  tests/test_album_plan.py tests/test_scorer.py` 56 passed; full suite green, 2009 tests, 704 s. Opus review: 0
+  critical, 1 important (the secondary ranked same release over coverage, against the spec: fixed, coverage first),
+  lows fixed: share-root files (`directory ""`), per-folder `fileCount`, peer/directory final tie-break, rows kept by
+  position (not `id()`).
+- **Next session (S2-05) must know.** Spec case 3 ("bitRate 1000 vs 900") is decided by a summed-bitrate tie-break
+  after slot and speed: the scorer gives a lossless file's bitrate no points, so the scores tie. `listed_lengths` is
+  `{track_no: seconds}`, but S2-03's `ReleaseTrack` has no length: add it (MB `track.length` ms → s) or pass None.
+  `repr`/`as_dict` carry peer names, so a cached plan goes out only through `store.public`. The secondary can be the
+  primary's own peer in another directory, so a start timeout must switch both.
+- **Questions for Michael.** None. Proposed change: none to the feature list.
+
 ### 2026-10-22 23:40 · S2-03 · passes
 
 - **Changed.** `sourcing/musicbrainz.py`: `MusicBrainz.release_search` / `release` (shared limiter + cache) and pure

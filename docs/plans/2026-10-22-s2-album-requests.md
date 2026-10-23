@@ -75,6 +75,21 @@ The spec's S2-04..S2-07, as the features build them:
   folder is not a folder source), the per-track
   rows, and the other folders ranked for a later switch. Folders are labelled `folder 1`, `folder 2`; no peer name
   reaches a reason, an event or a payload.
+- **As built (S2-04)**: `plan_album(responses, rows, *, policy, listed_lengths=None) -> AlbumPlan` (`primary`,
+  `secondary`: `FolderPick(username, directory, rows=[(row, Candidate)])` with `score` = the summed candidate scores;
+  `per_track` rows; `alternates`; `assignments()` = primary rows, then secondary rows). Rows are the caller's dicts
+  and are kept by position (`FolderPick.at`); S2-05 should tell them apart by `row["id"]`. A folder source covers at
+  least 2 rows (`MIN_FOLDER_ROWS`), so a one-row request is all per-track. Folders are (peer, directory), the
+  directory `""` for files at a share root; each folder's `fileCount` is its own file count. Ties after free slot and
+  speed: the summed bitrate (the scorer gives a lossless file's bitrate no points, so two copies of one rip differ
+  only there), then peer and directory. Secondary order: most rows the primary lacks, then no sign of another
+  release (a format family the primary lacks, or a length more than 2 s off the primary's file of a shared row or
+  `listed_lengths[track_no]`; a file without a length shows nothing), then the primary's order over those rows.
+  `listed_lengths` is `{track_no: seconds}`: S2-03's `ReleaseTrack` has no length yet, so S2-05 adds
+  `length` (MusicBrainz `track.length`, ms → s) to pass it, or passes None. `describe(plan, peers=False)` labels
+  folders `folder 1..n` in plan order and prints no directory. For S2-05: the dataclasses' `repr` and
+  `Candidate.as_dict()` carry the peer name, so a cached plan goes out only through `store.public`; the secondary
+  may be the primary's own peer (another directory), so a start timeout on that peer switches both.
 - **The plan is cached** with `CrateStore.set_preview(f"req-<id>", plan)` (the `previews` table, keyed by text, so
   it never collides with a song id or `ext-N`). S3-03's preview reads it back through `store.public`.
 - **Approvals get purpose `album`** (added to `APPROVAL_PURPOSES` by S2-05a): one approval of a request writes one
