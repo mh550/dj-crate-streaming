@@ -91,6 +91,11 @@ Every download carries an approval record (D23): who approved, the candidate, th
 `approved_by` value is `michael` (the Approve button, and `sourcing.cli fetch --approve`). Later values are
 `policy:<name>` and `agent:<id>`: new approvers, not a redesign.
 
+Each approval has a `purpose`: an ordinary download, `play-now` (see "Play-now") or `album`. Approving an album
+request (`sourcing.album_job.approve_request`) records one `album` approval per open row, with that row's planned file
+as the candidate (none for a row going per track); the worker runs them together as one album job (below), not one
+fetch each.
+
 `sourcing.cli fetch --wanted <id> --approve` only records the approval, with the same rules as the Approve button
 (the previewed pick if there is one; refused for a row that is `sourcing` or `verify`), and prints "approved; the
 worker picks it up on its next tick". Add `--wait` to wait (up to 600 s) for the worker's outcome. Run it in the
@@ -143,6 +148,39 @@ worker stopped, put the values back by hand:
 `UPDATE external_wanted SET artist=?, title=?, library_song_id=?, provisional=?, status=?, reason=? WHERE id=<n>`
 and one `INSERT INTO placements(wanted_id, playlist_id, song_id, state, attempts, detail, updated_at) VALUES('ext-<n>', …)`
 per listed placement. A preview is not restored; Preview searches again.
+
+## Album jobs
+
+An album request (a Spotify album URL, `sourcing.requests`) is sourced album-first by `sourcing/album_job.py`.
+Nothing is enqueued without Michael's approval of the request (D7): the plan only searches.
+
+- **Plan** (`plan_request`, also what a preview shows): one search for `"<artist> <album>"`, the open rows planned
+  over its folders (`sourcing.album.plan_album`: a primary folder, a same-release secondary, rows no folder covers
+  per track) and cached as the preview `req-<id>`. One `plan` event: `#<id> folder 1: 8 of 9; 1 row per track`.
+  Folders are named by label and files by basename, never by peer.
+- **One tick, for a request's `album` approvals** (the worker groups them by request): claim them all; link each row
+  the library already has (a `matched` event, `ok`, nothing downloaded); plan again if the cached plan is older than
+  `ALBUM_PLAN_MAX_AGE_S` (3600 s); enqueue each peer's planned files in one POST; then run each row through fetch in
+  planned mode (no search, no enqueue of its own: it polls the job's transfer), verify, file and finish as any
+  download. The rows no folder covers go per track: an ordinary fetch of `"<artist> <title>"` (a `pick` event
+  `per track: <basename>`).
+- **Switch triggers.** Trouble with a planned file switches the rest of that folder's unfiled rows (the failed one
+  included) to another folder: a transfer error another peer may fix (`Completed, Errored|TimedOut|Rejected|Cancelled`,
+  slskd away); a peer that has started none of its files `ALBUM_START_TIMEOUT_S` (600 s) after the enqueue; one
+  verify finding of the "not what it claims" kind (`transcode`, `fake_24bit`, `fake_hires`, `recording`: fakes come
+  as folders); or 2 failed rows in one folder. An ordinary finding (`duration`, `truncated`) alone fails only its
+  row. On a switch, the folder's queued transfers of unfiled rows are cancelled and forgotten (`?remove=true`), and
+  the moved rows are planned again over the first search plus one fresh album search, without the failed folders,
+  preferring the release already being filed. Rows already filed stay. One `switch` event per failed folder:
+  `#<id> folder 1 distrusted: transcode (<basename>); 8 rows → folder 2`.
+- **Caps.** A row gets at most its planned folder, one switched folder and one per-track fetch, which never takes a
+  file from a peer whose folder failed in this job (S1-06's second source included). Then it fails, every attempt in
+  its reason, in order: `folder 1: transcode (<basename>); folder 2: download ended: Completed, Errored; per track: no
+  acceptable candidate from another peer`. A row moved along with its folder names the folder's cause
+  (`folder 1: no transfer started within 600 s`). A row that fails an ordinary check in its switched folder ends
+  there, both folders in its reason. The approval's outcome is `failed: <that reason>`.
+- **The request's status** follows its rows: `done` when every row is `ok`, `partly` when some are, `failed` when
+  none is and none is open.
 
 ## Filing
 

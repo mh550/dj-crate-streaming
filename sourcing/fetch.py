@@ -217,7 +217,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
           navidrome_db: Path | None = None, lookup=None, prefer: dict | None = None,
           trash_root: Path | None = None, score_tier: str | None = None, provisional: bool = False,
           sleep=None, retry_pause_s: float = RETRY_PAUSE_S, planned: bool = False,
-          enqueued: set[str] | None = None) -> FetchResult:
+          enqueued: set[str] | None = None, exclude: set[str] | None = None) -> FetchResult:
     """`score_tier` ranks and verifies at that tier's policy and leaves the row's tier alone (unlike `tier`, which
     re-tiers an external row). `provisional` (play-now, D20; external rows without a library song) files the copy
     as provisional: see the module docstring. `sleep` (default time.sleep) waits each poll of the download and of
@@ -229,7 +229,12 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
     `prefer`, scored again), the library is not asked (the job did) and nothing is enqueued or forgotten first: the
     download is the record whose id is not in `enqueued` (S1-04's rule). A transfer error another peer may fix is
     not retried here: the row fails with `again` set, and the job switches the folder (S2-05b). The rest is as for
-    any approved fetch; a failed verification's result carries its problem kinds (`kinds`) in every mode."""
+    any approved fetch; a failed verification's result carries its problem kinds (`kinds`) in every mode.
+
+    `exclude` (the album job's per-track fetch, S2-05c): peers (usernames) whose files are dropped after ranking, so
+    neither the pick nor S1-06's retry is one of theirs (the job's failed peers); when that leaves no acceptable
+    candidate, and one of theirs was, the result is `needs_source` "no acceptable candidate from another peer". Its
+    pick is logged as `per track: <basename>`."""
     sleep = sleep or time.sleep
     if planned and not (approve and prefer and enqueued is not None):
         raise ValueError("planned mode needs approve=True, the planned file (prefer) and the records before (enqueued)")
@@ -461,6 +466,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         if hit is not None:
             return hit
 
+    dropped = False                           # whether `exclude` took an acceptable candidate away
     if planned:                               # the album job searched, planned and enqueued it
         cands = [planned_candidate(prefer, _owned(wanted, navidrome, copy_id), policy)]
     else:
@@ -471,14 +477,20 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
             cands = rank(responses, _owned(wanted, navidrome, copy_id), policy)
         finally:
             slskd.delete_search(sid)
+        dropped = bool(exclude) and any(not c.rejected and c.username in exclude for c in cands)
+        if exclude:
+            cands = [c for c in cands if c.username not in exclude]
     text = explain(cands, peers=False)
     best = next((c for c in cands if not c.rejected), None)
     if best is None:
-        return FetchResult("needs_source", "no acceptable candidate", None, explain=text)
+        return FetchResult("needs_source", "no acceptable candidate" + (" from another peer" if dropped else ""),
+                           None, explain=text)
     if not approve:
         return FetchResult("needs_source", "pick printed; re-run with --approve to download", best, explain=text)
     if planned:
         store.log(None, wanted_id, "pick", f"planned file: {best.basename}")
+    elif exclude is not None and not prefer:
+        store.log(None, wanted_id, "pick", f"per track: {best.basename}")
     elif prefer:     # the candidate Michael approved (D18): honoured while the peer still offers that file
         same = next((c for c in cands if not c.rejected and c.username == prefer.get("username")
                      and c.filename == prefer.get("filename")), None)

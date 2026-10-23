@@ -25,9 +25,15 @@ rows not yet filed are cancelled and forgotten (remove=true), and the moved rows
 search's responses (cached with the plan) plus one fresh album search (when slskd answers), without the failed
 folders, the release the job has been filing first (the planned files' lengths), one row being enough; rows already
 filed stay. One `switch` event per failed folder: `folder 1 distrusted: transcode (<basename>); 8 rows → folder 2`.
-A row gets one switched folder; a row with none left (or none found) goes per track, as an ordinary fetch.
 
-S2-05c (the per-row attempt cap) builds on this.
+The caps (S2-05c): a row gets its planned folder, one switched folder and one per-track fetch (an ordinary fetch,
+`exclude` = every failed folder's peer, so neither its pick nor S1-06's retry is one of theirs); a row no folder
+covers goes per track from the start, with the same exclusion. Each row's attempts are kept in order: its own
+failure in a folder (`folder 1: transcode (<basename>)` for a distrust finding, else `folder 2: <fetch's reason>`),
+or the folder's cause when it moved along (`folder 1: no transfer started within 600 s`). A row with attempts whose
+per-track fetch files nothing fails with all of them: `folder 1: transcode (<basename>); folder 2: download ended:
+Completed, Errored; per track: no acceptable candidate from another peer`, which is its approval's outcome too
+(`failed: …`). The request's status follows its rows (`failed` none ok, `partly` some, store.request_status).
 """
 from __future__ import annotations
 
@@ -234,18 +240,23 @@ def run(request_id: int, approvals: list[dict], *, fetcher=fetch, plan_max_age_s
             c = (assign.get(a["wanted_id"]) or {}).get("candidate")
             (planned.append((a, c)) if c is not None else plain.append((a, a["candidate"])))
         tried = {a["wanted_id"]: 1 for a, _ in planned}    # folders each row has been planned on
+        attempts: dict[str, list[str]] = {}                # row → its failed folders: `folder 1: <why>`, in order
         failures: dict[tuple[str, str], list[str]] = {}    # folder → the basenames of its failed rows
         bad: set[tuple[str, str]] = set()                  # failed folders: never planned again
         stalled: set[str] = set()                          # peers that started nothing: none of their folders either
         while planned:
             moved: list[tuple[dict, dict]] = []            # this round's switched rows, with their failed folder's file
             why: dict[tuple[str, str], str] = {}           # this round's failed folders → the switch event's cause
+            cause: dict[tuple[str, str], str] = {}         # → the attempt of a row moved along: `folder 1: <why>`
             by_peer: dict[str, list[tuple[dict, dict]]] = {}
             for a, c in planned:
                 row = store.find_wanted(a["wanted_id"])
                 if not _to_download(row):
                     plain.append((a, a["candidate"]))
                 elif planned_candidate(c, album.wanted(row), TIERS[row["tier"]]).rejected:
+                    if attempts.get(a["wanted_id"]):          # a switched row: its last attempt is per track
+                        plain.append((a, None))
+                        continue
                     done(a, spend(lambda: fetcher(a["wanted_id"], approve=True, planned=True, prefer=c,
                                                   enqueued=set(), **common))[1])    # scored again: never enqueued
                 else:
@@ -271,6 +282,7 @@ def run(request_id: int, approvals: list[dict], *, fetcher=fetch, plan_max_age_s
                     for key in dict.fromkeys(_key(c) for _, c in items):
                         bad.add(key)
                         why[key] = f"{labels[key]}: no transfer started within {start_timeout_s:g} s"
+                        cause[key] = why[key]
                         moved += take_held(key)
                     moved += items
                     continue
@@ -293,19 +305,25 @@ def run(request_id: int, approvals: list[dict], *, fetcher=fetch, plan_max_age_s
                     fails = failures.setdefault(key, [])
                     fails.append(split_remote(c["filename"])[1])
                     distrust = next((k for k in r.kinds if k in DISTRUST), None)
+                    own = f"{distrust} ({fails[-1]})" if distrust else r.reason
+                    attempts.setdefault(a["wanted_id"], []).append(f"{labels[key]}: {own}")
                     if not (r.again or distrust or len(fails) >= MAX_FOLDER_FAILURES):
                         held[a["id"]] = (a, c, outcome)            # an ordinary finding: this row only, for now
                         continue
                     bad.add(key)
-                    why[key] = (f"{labels[key]} distrusted: {distrust} ({fails[-1]})" if distrust else
+                    why[key] = (f"{labels[key]} distrusted: {own}" if distrust else
                                 f"{labels[key]}: {r.reason} ({fails[-1]})" if r.again else
                                 f"{labels[key]}: {len(fails)} failures ({', '.join(fails)})")
+                    cause[key] = f"{labels[key]}: {own}" if distrust else why[key]
                     moved += take_held(key) + [(a, c)]
                     _forget(slskd, peer, {c2["filename"] for a2, c2 in items                 # the folder's queued rest
                                           if _key(c2) == key and a2["wanted_id"] not in filed}, before)
             planned = []
             if not moved:
                 break
+            for a, c in moved:                     # a row moved along (not its own failure): its folder's cause
+                if len(attempts.setdefault(a["wanted_id"], [])) < tried[a["wanted_id"]]:
+                    attempts[a["wanted_id"]].append(cause[_key(c)])
             dest: dict[int, str] = {}              # approval id → the moved row's new folder label, or "per track"
             go = [(a, c) for a, c in moved if tried[a["wanted_id"]] < 2]
             for a, _ in moved:
@@ -338,15 +356,28 @@ def run(request_id: int, approvals: list[dict], *, fetcher=fetch, plan_max_age_s
                     tried[a["wanted_id"]] += 1
                     planned.append((a, c))
                     dest[a["id"]] = labels[_key(c)]
-            for key, cause in why.items():
-                store.log(None, None, "switch", f"#{request_id} {cause}; "
+            for key, event in why.items():
+                store.log(None, None, "switch", f"#{request_id} {event}; "
                           f"{_moves([dest[a['id']] for a, c in moved if _key(c) == key])}")
             store.commit()
+        def give_up(a: dict, last: list[str]) -> str:
+            """Fail the row with every attempt in its reason; the approval's outcome says the same."""
+            reason = "; ".join(attempts[a["wanted_id"]] + last)
+            store.set_wanted_status(a["wanted_id"], "failed", reason)
+            return f"failed: {reason}"
+
         for a, _, outcome in held.values():        # failed rows of folders that stayed trusted: final now
-            done(a, outcome)
+            done(a, give_up(a, []) if len(attempts[a["wanted_id"]]) > 1 else outcome)   # a switched one lists both
         held.clear()
-        for a, prefer in plain:                    # an ordinary fetch (S2-05c caps the per-track one)
-            done(a, spend(lambda: fetcher(a["wanted_id"], approve=True, prefer=prefer, **common))[1])
+        failed_peers = {peer for peer, _ in bad}   # a stalled peer's folders are among them
+        for a, prefer in plain:                    # an ordinary fetch, never from a failed peer: the last attempt
+            r, outcome = spend(lambda: fetcher(a["wanted_id"], approve=True, prefer=prefer, exclude=failed_peers,
+                                               **common))
+            row = store.find_wanted(a["wanted_id"])
+            if attempts.get(a["wanted_id"]) and row and row["status"] in ("failed", "needs_source") \
+                    and filed_path(row.get("reason")) is None:  # its folders failed, and so did this: every attempt
+                outcome = give_up(a, [f"per track: {r.reason if r is not None else outcome}"])  # or the error
+            done(a, outcome)
     except Exception as e:                         # e.g. a search: every claimed approval gets an outcome
         seen = {a["id"] for a, _ in out}
         for a in claimed:

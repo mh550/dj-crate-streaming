@@ -9,6 +9,23 @@ Michael steers from `INBOX.md` on this branch (status line `run | pause | stop`;
 session reads it at startup. Policy: **build-only** (`.harness/config.sh`) and the brief in `brief.md`: nothing live,
 no docker, no `/srv`, no network, no client UI, PRs only (open, never merge).
 
+### 2026-10-23 02:45 · S2-05c · passes
+
+- **Changed.** `sourcing/fetch.py`: `exclude=<usernames>` drops those peers' candidates right after `rank` (S1-06's
+  retry too); "no acceptable candidate from another peer" when it removed one; pick event `per track: <basename>`.
+  `sourcing/album_job.py`: attempts per row in order (own failure `folder 1: transcode (<basename>)` / `folder 2:
+  <fetch reason>`, or the folder's cause when moved along); per-track fetches pass every failed folder's peer as
+  `exclude`; a row with attempts that files nothing fails with `<attempts>; per track: <why>`, outcome `failed: …`.
+  `docs/worker.md` `## Album jobs` + `album` purpose under Approvals; plan as-built. Tests 2049 → 2061.
+- **Verified.** New tests red first (pick, then reason); 6 mutations (no exclude filter, no pick, no moved-along
+  attempt, no rewrite, job passes no exclude, rejected switched row not per track) each turn 1–4 red; one survivor
+  showed `| stalled` redundant (removed). Opus review: 2 important (a per-track fetch raising before fetch's `try`
+  kept a stale reason; a row held in its switched folder lost its first attempt) + 3 minor, all fixed test-first.
+  Full suite green, 2061, 753 s.
+- **Next session must know.** A row failing an ordinary check in its switched folder ends there (no per-track fetch),
+  both folders in its reason. Still open from S2-05b: a `_forget` that fails (slskd away) is not retried.
+- **Questions for Michael.** None. Proposed changes: none.
+
 ### 2026-10-23 01:15 · S2-05b · passes
 
 - **Changed.** `sourcing/album_job.py` `run` switches folders: triggers `FetchResult.again` (fetch no longer retries

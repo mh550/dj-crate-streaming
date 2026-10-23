@@ -154,6 +154,20 @@ The spec's S2-04..S2-07, as the features build them:
   outcome; the row's reason is the last attempt's (S2-05c lists every attempt).
 - **Per-row attempt cap**: its planned folder, one switched folder, one per-track fetch (excluding every failed peer
   and file). Then the row fails, and every attempt is in its reason.
+- **As built (S2-05c)**: `fetch(..., exclude=<usernames>)` drops those peers' candidates right after `rank` (the
+  S1-06 retry picks from what is left), answers `needs_source` "no acceptable candidate from another peer" when none
+  is left, and logs the pick as `per track: <basename>`. The job passes every failed folder's peer and every stalled
+  peer as `exclude` to each per-track fetch (rows no folder covers included). It keeps each row's attempts in order:
+  its own failure in a folder is `folder N: <kind> (<basename>)` for a distrust finding, else `folder N: <fetch's
+  reason>`; a row moved along with its folder gets the folder's cause (`folder 1: no transfer started within 600 s`,
+  `folder 1: 2 failures (…)`, `folder 1: download ended: … (<basename>)`). A row with attempts whose per-track fetch
+  ends `failed` or `needs_source` (nothing filed) is failed with `<attempts>; per track: <its reason>`, and its
+  approval's outcome is `failed: <that reason>`; a per-track fetch that raises (its search, before fetch's own
+  `try`) is `per track: error: …`. A row that failed with an ordinary finding in a folder that stayed trusted keeps
+  fetch's reason when that was its planned folder, and lists both folders when it was its switched one (no per-track
+  fetch: an ordinary finding fails its row only). A switched row whose new file its own tier now rejects goes per
+  track. "from another peer" only when `exclude` removed an acceptable candidate. Opus review: 2 important (the
+  raising per-track fetch, the held switched row) and 3 minor fixed, test-first.
 - **Filing** (S2-06): album rows go to `$albumartist/$album ($year)/$track - $title` only if S2-06a's scratch
   measurement shows beets 1.6.0 honours `--set dj_album=1` and the query-keyed path for `-s` imports; otherwise
   `Singles`, as today. Each row is filed as it lands (today's behaviour), so Navidrome may show a half album for a
