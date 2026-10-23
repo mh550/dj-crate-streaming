@@ -3,7 +3,7 @@
   "project": "dj-crate-streaming",
   "branch": "harness/dj-crate-streaming-2026-10-22-build",
   "started": "2026-10-23T01:38:02.000Z",
-  "ended_at": "2026-10-23T13:35:59.000Z",
+  "ended_at": "2026-10-23T13:36:23.000Z",
   "end_reason": "done",
   "continuations": 0,
   "features": {
@@ -40,26 +40,27 @@
     "end": 2369
   },
   "cost": {
-    "total": 100.27,
-    "per_passing_feature": 4.77,
+    "total": 100.4,
+    "per_passing_feature": 4.78,
     "by_role": {
       "init": 6.04,
       "build": 57.29,
       "plan": 4,
       "review": 24.39,
       "verify": 1.77,
-      "docs": 6.81
+      "docs": 6.81,
+      "retro": 0.13
     },
     "by_model": {
       "claude-fable-5-1": 6.04,
       "claude-opus-5-5": 92.01,
-      "claude-sonnet-5-5": 2.25
+      "claude-sonnet-5-5": 2.38
     },
     "manager": 0
   },
   "time": {
     "wall_h": 11.97,
-    "sessions_h": 11.74,
+    "sessions_h": 11.75,
     "driver_h": 0.23,
     "by_role_h": {
       "init": 0.24,
@@ -67,12 +68,13 @@
       "plan": 0.4,
       "review": 1.92,
       "verify": 0.27,
-      "docs": 0.86
+      "docs": 0.86,
+      "retro": 0.01
     }
   },
   "sessions": {
-    "total": 25,
-    "real": 25,
+    "total": 26,
+    "real": 26,
     "environmental": 0
   },
   "guards": {
