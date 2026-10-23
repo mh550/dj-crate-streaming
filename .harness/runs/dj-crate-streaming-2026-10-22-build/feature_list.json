@@ -17,7 +17,7 @@
         "The full suite is green: `.harness/check.sh` exits 0 (about 11-12 min; the test count may only grow from the previous feature's count)."
       ],
       "after": [],
-      "passes": false
+      "passes": true
     },
     {
       "id": "S2-02",

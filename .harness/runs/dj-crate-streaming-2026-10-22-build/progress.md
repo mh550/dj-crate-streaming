@@ -9,6 +9,25 @@ Michael steers from `INBOX.md` on this branch (status line `run | pause | stop`;
 session reads it at startup. Policy: **build-only** (`.harness/config.sh`) and the brief in `brief.md`: nothing live,
 no docker, no `/srv`, no network, no client UI, PRs only (open, never merge).
 
+### 2026-10-22 23:05 · S2-01 · passes
+
+- **Changed.** `crates/store.py`: `requests` table (kind CHECK album|playlist|track, no status column) and
+  `external_wanted.request_id/track_no/mb_recording_id`, additive in `SCHEMA` + `_migrate`; `add_request`,
+  `set_release_id`, `set_recording_id`, `request(id)` (rows = `wanted_row` dicts by track_no), `requests()` newest
+  first, pure `request_status(rows)` + `REQUEST_STATUSES`; `add_external_wanted(..., request_id=, track_no=)`.
+  Plan `docs/plans/2026-10-22-s2-album-requests.md` (Schema, Request status, Album job, Live steps). Tests 1906 → 1933
+  (`tests/test_crates.py` +25, new `tests/test_s2_plan_doc.py` +2). Fixed a garbled comment on `REPLACEMENT_OPEN`.
+- **Verified.** Each test seen red first; `check.sh tests/test_crates.py tests/test_s2_plan_doc.py` 65 passed; full
+  suite green, 1933 tests, 690 s. Opus review of the diff: 3 medium findings fixed test-first (a failed row approved
+  again or filed-but-unindexed counts as going → `approved`; a request never attaches a `removed` row), plan wording
+  ("prefer" the same release) and the rollback caveat added.
+- **Next sessions must know.** A row belongs to the **first** request that asks for it (`request_id` set only when
+  NULL). Known gap in the plan: an import's `_reask` can supersede a failed row another request holds; S2-07/S3-01
+  decide whether to re-link. `review` rows count as open (no status of their own). S4-01's rollback step must first
+  spend unused `album` approvals (an older worker would run them per track). Migration race on two containers
+  starting at once (existing pattern) is unchanged.
+- **Questions for Michael.** None new (status words = initializer question 2).
+
 ### 2026-10-22 22:10 · initializer
 
 **Scope.** Milestones S2 (album requests), S3 (request API) and S4 (checklist, whole-run review) of

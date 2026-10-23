@@ -184,6 +184,164 @@ def test_store_migrates_old_external_wanted_table(tmp_path):
     assert store.external("ext-1")["playlist_id"] is None and store.external_count() == 1
 
 
+def test_store_migrates_old_db_to_requests(tmp_path):
+    # S2-01: an old db (no requests table, no request columns) gains both, additively, and keeps its row.
+    import sqlite3
+    db = tmp_path / "old.db"
+    con = sqlite3.connect(db)
+    con.executescript("""CREATE TABLE external_wanted (id INTEGER PRIMARY KEY, artist TEXT NOT NULL, title TEXT NOT NULL,
+        album TEXT, year INTEGER, duration INTEGER, source TEXT, status TEXT NOT NULL DEFAULT 'needs_source', reason TEXT,
+        created_at REAL NOT NULL, updated_at REAL NOT NULL);
+        INSERT INTO external_wanted(artist,title,created_at,updated_at) VALUES('A','B',0,0);""")
+    con.commit(); con.close()
+    store = CrateStore(db)
+    cols = {r[1]: r[2] for r in store.db.execute("PRAGMA table_info(external_wanted)")}
+    assert (cols["request_id"], cols["track_no"], cols["mb_recording_id"]) == ("INTEGER", "INTEGER", "TEXT")
+    req = {r[1] for r in store.db.execute("PRAGMA table_info(requests)")}
+    assert req == {"id", "kind", "source", "artist", "album", "year", "mb_release_id", "created_at"}
+    assert store.external("ext-1")["request_id"] is None and store.external_count() == 1
+    CrateStore(db)                              # a second open adds nothing and fails nothing
+
+
+AL_GREEN = ("Al Green", "I'm Still in Love With You")
+ALBUM_URL = "https://open.spotify.com/album/1PTmGlxdkjqqh3nyRmdM8i"
+
+
+def _album(s, titles=("I'm Still in Love With You", "I'm Glad You're Mine", "Love and Happiness")):
+    rid = s.add_request(kind="album", source=ALBUM_URL, artist=AL_GREEN[0], album=AL_GREEN[1], year=None)
+    exts = [s.add_external_wanted(AL_GREEN[0], t, album=AL_GREEN[1], source=ALBUM_URL, request_id=rid, track_no=n)
+            for n, t in enumerate(titles, 1)]
+    return rid, exts
+
+
+def test_request_round_trip():
+    s = CrateStore()
+    rid, (e1, e2, e3) = _album(s, titles=("Love and Happiness", "I'm Glad You're Mine", "I'm Still in Love With You"))
+    assert isinstance(rid, int)
+    assert (s.find_wanted(e1)["request_id"], s.find_wanted(e1)["track_no"]) == (rid, 1)
+    s.set_recording_id(e1, "cdac1a50-8ba6-4edd-8137-618928580d38")
+    s.set_release_id(rid, "3c9a52ee-0000-0000-0000-000000000000")
+    assert s.find_wanted(e1)["mb_recording_id"] == "cdac1a50-8ba6-4edd-8137-618928580d38"
+    r = s.request(rid)
+    assert (r["id"], r["kind"], r["source"], r["artist"], r["album"], r["year"]) == (rid, "album", ALBUM_URL, *AL_GREEN, None)
+    assert r["mb_release_id"] == "3c9a52ee-0000-0000-0000-000000000000" and r["created_at"] > 0
+    assert [w["song_id"] for w in r["rows"]] == [e1, e2, e3] and [w["track_no"] for w in r["rows"]] == [1, 2, 3]
+    assert r["status"] == "open" and "approval" in r["rows"][0]          # rows are wanted-shaped (wanted_row)
+    assert s.request(rid + 1) is None
+
+
+def test_request_rows_ordered_by_track_no_not_insert_order():
+    s = CrateStore()
+    rid = s.add_request(kind="album", source="search", artist=AL_GREEN[0], album=AL_GREEN[1], year=1972)
+    late = s.add_external_wanted("Al Green", "Look What You Done for Me", request_id=rid, track_no=3)
+    early = s.add_external_wanted("Al Green", "Simply Beautiful", request_id=rid, track_no=1)
+    s.add_external_wanted("Chic", "Le Freak")                             # not this request's
+    assert [w["song_id"] for w in s.request(rid)["rows"]] == [early, late]
+    assert s.request(rid)["year"] == 1972
+
+
+def test_requests_newest_first_and_kind_checked():
+    s = CrateStore()
+    a = s.add_request(kind="album", source=ALBUM_URL, artist="Al Green", album="Call Me", year=1973)
+    t = s.add_request(kind="track", source="search", artist="Chic", album=None, year=None)
+    p = s.add_request(kind="playlist", source="https://open.spotify.com/playlist/x", artist=None, album=None, year=None)
+    assert [r["id"] for r in s.requests()] == [p, t, a]
+    assert all("status" in r and "rows" in r for r in s.requests())
+    with pytest.raises(ValueError):
+        s.add_request(kind="podcast", source="search", artist=None, album=None, year=None)
+
+
+def test_rerun_of_a_request_adds_no_row_and_keeps_its_request():
+    s = CrateStore()
+    rid, (e1, _, _) = _album(s)
+    other = s.add_request(kind="playlist", source="search", artist=None, album=None, year=None)
+    assert s.add_external_wanted("Al Green", "I'm Still in Love With You", request_id=rid, track_no=1) == e1
+    assert s.add_external_wanted("Al Green", "I'm Still in Love With You", request_id=other, track_no=7) == e1
+    assert (s.external(e1)["request_id"], s.external(e1)["track_no"]) == (rid, 1)    # the first request keeps it
+    assert len(s.request(rid)["rows"]) == 3 and s.request(other)["rows"] == []
+
+
+def test_an_old_row_joins_a_request_that_asks_for_it():
+    s = CrateStore()
+    old = s.add_external_wanted("Al Green", "Love and Happiness")          # seeded before requests existed
+    rid, exts = _album(s)
+    assert old in exts and s.external(old)["request_id"] == rid and s.external(old)["track_no"] == 3
+
+
+def test_request_status_is_not_stored():
+    s = CrateStore()
+    assert "status" not in {r[1] for r in s.db.execute("PRAGMA table_info(requests)")}
+
+
+def _row(status, approval=None):
+    return {"status": status, "approval": approval}
+
+
+WAITING = {"used_at": None, "result": None}
+STARTED = {"used_at": 1.0, "result": "started"}
+SPENT = {"used_at": 1.0, "result": "failed: no source"}
+
+
+@pytest.mark.parametrize("rows,want", [
+    ([_row("ok"), _row("ok")], "done"),
+    ([_row("ok"), _row("ok"), _row("removed")], "done"),                 # a superseded row is not the request's any more
+    ([_row("failed", SPENT), _row("failed", SPENT)], "failed"),
+    ([_row("failed", SPENT), _row("removed")], "failed"),
+    ([_row("ok"), _row("failed", SPENT)], "partly"),
+    ([_row("ok"), _row("needs_source")], "partly"),
+    ([_row("ok"), _row("sourcing", STARTED)], "partly"),
+    ([_row("needs_source", WAITING), _row("needs_source")], "approved"),
+    ([_row("sourcing", STARTED), _row("failed", SPENT)], "approved"),
+    ([_row("verify", SPENT), _row("needs_source")], "approved"),          # filed, waiting for Navidrome
+    ([_row("needs_source"), _row("failed", SPENT)], "open"),
+    ([_row("needs_source", SPENT), _row("review")], "open"),              # a spent approval approves nothing now
+    ([_row("failed", WAITING), _row("failed", SPENT)], "approved"),       # approved again after failing (review)
+    ([{"status": "failed", "approval": SPENT,                            # filed, never indexed: in the library
+       "reason": "Navidrome never indexed Al Green/Singles/x.flac; file is in the library"}], "approved"),
+    ([], "open"),
+])
+def test_request_status_first_rule_that_applies(rows, want):
+    from crates.store import REQUEST_STATUSES, request_status
+    assert request_status(rows) == want and want in REQUEST_STATUSES
+
+
+def test_request_status_follows_its_rows():
+    s = CrateStore()
+    rid, (e1, e2, e3) = _album(s)
+    assert s.request(rid)["status"] == "open"
+    s.approve(e1, "michael", None, "crate")
+    assert s.request(rid)["status"] == "approved"
+    s.set_external_status(e1, "ok", None)
+    assert s.request(rid)["status"] == "partly"
+    s.set_external_status(e2, "ok", None); s.set_external_status(e3, "ok", None)
+    assert s.request(rid)["status"] == "done"
+
+
+def test_request_never_takes_a_removed_row():
+    # S2-01 review: find_external answers a `removed` row (superseded) to a plain seed; a request asking the same
+    # song gets a fresh row instead, or the track would drop out of the request unseen.
+    s = CrateStore()
+    gone = s.add_external_wanted("Al Green", "Love and Happiness")
+    s.set_external_status(gone, "removed", "superseded by ext-9")
+    rid, exts = _album(s)
+    assert gone not in exts and s.external(exts[2])["status"] == "needs_source"
+    assert s.external(gone)["request_id"] is None and len(s.request(rid)["rows"]) == 3
+
+
+def test_public_request_names_no_peer_and_no_absolute_path():
+    from crates.store import public
+    s = CrateStore()
+    rid, (e1, e2, _) = _album(s)
+    s.set_preview(e1, {"pick": {"username": "peer-x", "filename": "@@abc\\Al Green\\01.flac", "basename": "01.flac"}})
+    s.set_external_status(e2, "verify", "filed as Al Green/Singles/x.flac but Navidrome has not picked it up yet "
+                                        "(/srv/music/Al Green/Singles/x.flac)")
+    out = public(s.request(rid))
+    text = repr(out)
+    assert "peer-x" not in text and "username" not in text and "/srv/music" not in text
+    assert out["source"] == ALBUM_URL                                       # a URL is not a path
+    assert out["rows"][0]["preview"]["pick"]["basename"] == "01.flac"
+
+
 def test_publish_makes_playlists_public(env, monkeypatch, tmp_path, capsys):
     srv, _, _, _ = env
     monkeypatch.setenv("SUBSONIC_URL", srv.url); monkeypatch.setenv("SUBSONIC_USER", "demo"); monkeypatch.setenv("SUBSONIC_PASS", "demo")

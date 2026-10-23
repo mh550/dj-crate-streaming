@@ -1,0 +1,94 @@
+# S2 plan: album requests, sourced album-first
+
+Milestone S2 of `docs/specs/2026-10-22-downloads-and-requests.md` (run `dj-crate-streaming-2026-10-22-build`).
+Written by S2-01, which builds the schema below; the album-job design is fixed here so S2-02..S2-07 build on one
+shape. The spec and the pivot spec win on conflict; D7 (no transfer without Michael's approval) and D26 (source the
+exact track) bind every step. Nothing here trashes a file; tags are S2-06a's own reviewed plan
+(`docs/plans/2026-10-22-S2-album-tags.md`).
+
+## Schema
+
+In `crates/store.py`, additive (the `SCHEMA` string for a new db, `_migrate` for an old one; tested in
+`tests/test_crates.py::test_store_migrates_old_db_to_requests`).
+
+- `requests`: `id INTEGER PRIMARY KEY`, `kind TEXT` (`album | playlist | track`, a CHECK), `source TEXT` (the URL
+  asked for, or `search`), `artist`, `album`, `year INTEGER` (None until known: Spotify's album embed has
+  `releaseDate: null`, MusicBrainz gives it), `mb_release_id TEXT` (S2-03), `created_at REAL`. No `status` column.
+- `external_wanted` gains `request_id INTEGER`, `track_no INTEGER`, `mb_recording_id TEXT`.
+- A request's rows are the `external_wanted` rows naming it. **A row belongs to the first request that asked for
+  it**: `add_external_wanted(..., request_id=, track_no=)` returns the existing row for the same artist/title (so a
+  re-run adds nothing) and records the request only on a row that has none. A later request asking the same song
+  does not take the row out of an album job under way; S3-01 shows such a song as already asked (or in the library,
+  S1-07) rather than as one of its rows. A `removed` (superseded) row is never attached: the request gets a fresh
+  row. Known gap: an import's `_reask` may supersede a failed row another request holds, and that request then
+  loses the row (it counts for nothing); S2-07/S3-01 decide whether a request re-links it.
+- API (`CrateStore`): `add_request(kind=, source=, artist=, album=, year=) -> int`, `set_release_id(request_id,
+  mbid)`, `set_recording_id(ext_id, mbid)`, `request(id) -> dict | None` (the row's columns, `rows` = `wanted_row`
+  dicts ordered by `track_no`, then playlist `position`, rows without a track number last, and `status`), `requests()` newest first. Every payload
+  that leaves the server goes through `store.public` (no peer name, no absolute path; tested).
+
+## Request status
+
+Derived on read by `crates.store.request_status(rows)`, a pure function; nothing is stored twice. The rows are
+`wanted_row` dicts (`status`, `reason`, `approval`). A `removed` row (superseded) counts for nothing. A row is
+*going* when it is `sourcing` or `verify`, is `failed` with its file in the library (`filed_path`: Navidrome never
+indexed it), or has an approval waiting or being fetched (unused, or `started`). A row is *ok* when its status is
+`ok`, *open* when it is not ok and not a `failed` row that isn't going (so a failed row approved again is open).
+The first rule that applies:
+
+1. `done`: every row ok.
+2. `failed`: no row ok and none open (every row failed).
+3. `partly`: some row ok (the rest failed or still open).
+4. `approved`: some row is going.
+5. `open`: anything else, including a request with no rows yet. A `review` row (a question for Michael) is open:
+   no status of its own; the row's own status and reason say what is asked.
+
+## Album job
+
+The spec's S2-04..S2-07, as the features build them:
+
+- **`sourcing/album.py`** (S2-04): the planner, pure, no I/O. Input: one slskd search response list for
+  `"<artist> <album>"` and the request's rows. Groups files by (peer, directory) and maps rows to files with the
+  scorer's per-file rules (`sourcing.scorer`, S1-01, D24). Output: the primary folder (most rows covered, then summed
+  score, then free slot and speed), at most one secondary for what the primary lacks (preferring the same release:
+  lengths within 2 s of the primary's, or the S2-03 MusicBrainz release, and the same format family; a one-row
+  folder is not a folder source), the per-track
+  rows, and the other folders ranked for a later switch. Folders are labelled `folder 1`, `folder 2`; no peer name
+  reaches a reason, an event or a payload.
+- **The plan is cached** with `CrateStore.set_preview(f"req-<id>", plan)` (the `previews` table, keyed by text, so
+  it never collides with a song id or `ext-N`). S3-03's preview reads it back through `store.public`.
+- **Approvals get purpose `album`** (added to `APPROVAL_PURPOSES` by S2-05a): one approval of a request writes one
+  `approvals` row per open row, purpose `album`, the planned file as the candidate. Michael's click (HTTP or CLI) is
+  the only trigger (D7); a preview may search slskd but never POSTs a transfer.
+- **`sourcing/album_job.py`** (S2-05a..c): the worker side. `Worker._spend` groups `album` approvals by their rows'
+  `request_id` and hands each group to `album_job.run`: claim them together, run one search, plan, enqueue all
+  planned files of a folder to its peer in one `POST /transfers/downloads/{peer}`, then run each row through
+  `sourcing.fetch.fetch` in planned mode.
+- **fetch's planned mode**: `planned=True` + `prefer=<planned candidate>` means no search and no enqueue of its own;
+  fetch polls for the transfer the job enqueued (S1-04's record poll, given the ids that existed before the job's
+  enqueue), then verifies with the row's `mb_recording_id` as the recording id (S2-03), files, finishes and places
+  as today. A row already in the library (S1-07) is linked, not downloaded.
+- **Switch triggers** (the rest of that folder's rows switch, not only the failed one): a transfer error or timeout
+  (S1-04/S1-06); a peer that has started no file `ALBUM_START_TIMEOUT_S` (default 600 s) after the enqueue; a verify
+  finding. One finding of the "not what it claims" kind (`transcode`, `fake_24bit`, `fake_hires`, `recording`)
+  distrusts the whole folder at once; any 2 failures in one folder do the same; an ordinary finding (`duration`,
+  `truncated`) fails that row only. On a switch: cancel and forget (`?remove=true`) the folder's queued transfers for
+  rows not yet filed, re-plan the remaining rows over the first search's folders plus one fresh album search without
+  the failed folder (S2-04's same-release rule); rows already verified or filed stay.
+- **Per-row attempt cap**: its planned folder, one switched folder, one per-track fetch (excluding every failed peer
+  and file). Then the row fails, and every attempt is in its reason.
+- **Filing** (S2-06): album rows go to `$albumartist/$album ($year)/$track - $title` only if S2-06a's scratch
+  measurement shows beets 1.6.0 honours `--set dj_album=1` and the query-keyed path for `-s` imports; otherwise
+  `Singles`, as today. Each row is filed as it lands (today's behaviour), so Navidrome may show a half album for a
+  while.
+- **Playlists** (S2-07): the import as today plus one approval for its open rows; rows sharing artist and album
+  (3 or more) go as an album job, the rest per track.
+
+## Live steps
+
+None in this run (build-only). Every live step of S2 (the migration on the live crates.db at the first deploy, the
+first album request, the beets path) goes into `docs/plans/2026-10-22-downloads-checklist.md` with S4-01, with its
+snapshot, stages and undo. The migration is additive: an older image ignores the new table and columns, so rolling
+back the image is the undo for S2-01. From S2-05a on it is not the whole undo: an older worker would spend unused
+`album` approvals as plain per-track downloads (still Michael's approvals, so D7 holds, but outside the album job).
+S4-01's rollback step must first mark unused `album` approvals used (or roll back only while none is waiting).
