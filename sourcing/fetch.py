@@ -236,27 +236,44 @@ def _library_file(navidrome_db: Path | None, song_id: str, music_root: Path) -> 
     return ref, ""
 
 
-def in_library(store: CrateStore, navidrome: SubsonicClient, wanted_id: str, row: dict) -> FetchResult | None:
-    """Ask Navidrome as the import does (import_playlist.match, the same rules, no stand-ins: D26) before searching.
-    Its same recording or same version is the row's song: linked (`ok`, placed like any filed row), nothing
-    downloaded. Every doubt (ambiguous, another version, missing) or a Navidrome error goes on to the search. The
-    album job (sourcing.album_job) asks it per row before its enqueue."""
+def library_match(navidrome: SubsonicClient, row: dict):
+    """import_playlist.match for a stored row (its asked names first), or None when the library has no same
+    recording or same version of it (ambiguous, another version, missing: D26, no stand-ins). Navidrome's errors
+    (SubsonicError, OSError, ValueError) reach the caller; library_error names them."""
     asked = Row(position=row.get("position") or 0, title=row.get("asked_title") or row["title"],
                 artist=row.get("asked_artist") or row.get("artist") or "", duration_s=row.get("duration"),
                 album=row.get("album"), sep="; ")      # the stored artist is one lead: a comma is its own
-    try:
-        m = match_in_library(navidrome, asked)
-    except (SubsonicError, OSError, ValueError) as e:     # down, or an answer that is not JSON
-        # SubsonicError's text is Navidrome's answer; urllib's may be the URL, with the token and salt in it
-        why = f"{type(e).__name__}: {e}" if isinstance(e, SubsonicError) else type(e).__name__
-        store.log(None, wanted_id, "matched", f"library not asked: {why}")
-        store.commit()
-        return None
-    if m.status != "matched" or m.how not in ("same recording", "same version"):
-        return None
-    store.set_external_song(wanted_id, m.song_id, False)    # its library song, and not a play-now copy
+    m = match_in_library(navidrome, asked)
+    return m if m.status == "matched" and m.how in ("same recording", "same version") else None
+
+
+def library_error(e: Exception) -> str:
+    """A Navidrome error for an event: SubsonicError's text is Navidrome's answer; urllib's may be the URL, with
+    the token and salt in it, so only its type is named."""
+    return f"{type(e).__name__}: {e}" if isinstance(e, SubsonicError) else type(e).__name__
+
+
+def link_library_song(store: CrateStore, wanted_id: str, m) -> None:
+    """The row is library_match's song: `ok`, linked (not a play-now copy), a `matched` event; commits."""
+    store.set_external_song(wanted_id, m.song_id, False)
     store.log(None, wanted_id, "matched", f"{m.how}: {m.title}")
     store.set_wanted_status(wanted_id, "ok", f"already in the library: {m.title} ({m.song_id})")   # commits all three
+
+
+def in_library(store: CrateStore, navidrome: SubsonicClient, wanted_id: str, row: dict) -> FetchResult | None:
+    """Ask Navidrome as the import does (library_match: import_playlist.match, the same rules) before searching.
+    Its same recording or same version is the row's song: linked (`ok`, placed like any filed row), nothing
+    downloaded. Every doubt or a Navidrome error goes on to the search. The album job (sourcing.album_job) asks it
+    per row before its enqueue; a new request asks it for all its rows (requests.mark_in_library)."""
+    try:
+        m = library_match(navidrome, row)
+    except (SubsonicError, OSError, ValueError) as e:     # down, or an answer that is not JSON
+        store.log(None, wanted_id, "matched", f"library not asked: {library_error(e)}")
+        store.commit()
+        return None
+    if m is None:
+        return None
+    link_library_song(store, wanted_id, m)
     return FetchResult("ok", "already in the library; nothing downloaded", new_song_id=m.song_id)
 
 

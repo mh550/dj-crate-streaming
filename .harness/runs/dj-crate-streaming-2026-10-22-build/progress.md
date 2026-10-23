@@ -9,6 +9,23 @@ Michael steers from `INBOX.md` on this branch (status line `run | pause | stop`;
 session reads it at startup. Policy: **build-only** (`.harness/config.sh`) and the brief in `brief.md`: nothing live,
 no docker, no `/srv`, no network, no client UI, PRs only (open, never merge).
 
+### 2026-10-23 06:10 · S3-01b · passes
+
+- **What changed:** `POST /api/requests` also takes `{"mbReleaseId"}` (an album request: the release's tracks across all media, recording ids, lead credit, year from `date[:4]`, lengths; source `https://musicbrainz.org/release/<id>`) or `{"mbRecordingId"}` (a track request). Code: `sourcing/requests.py` (`add_release`, `add_recording`, `mark_in_library`, shared `_record`), `sourcing/fetch.py` (`in_library` split into `library_match` / `library_error` / `link_library_song`, behaviour unchanged), `crates/service.py` (`CrateApp(musicbrainz=…)`, built from `MUSICBRAINZ_CACHE` by default; `_add_pick`). Tests: 22 new in `tests/test_requests_api.py`. The suite went from 2163 to **2185**, green in 834 s.
+- **Library marking:** every new album or track request (Spotify or MusicBrainz) has rows the library already has set to `ok`, with `librarySongId` and a `matched` event (S1-07's rules). If Navidrome is down or answers oddly, the rows stay `needs_source`, one event `#<id> library not asked: <type>` is logged, and the request is still 201. Playlists are not re-marked, because their import has just matched them.
+- **Errors:** 404 `MusicBrainz has no release|recording <id>` and `… lists no tracks`; 400 `one of url, mbReleaseId, mbRecordingId` and `<key> is not a MusicBrainz id`; 502 `cannot reach MusicBrainz (…)`.
+- **Verified:** step-5 subset 130 passed. Full `check.sh` green, 2185 tests.
+- **Opus review (0 Critical, 3 Important, 7 Minor), fixed test-first:**
+  - I1: Navidrome is now asked outside the app lock (`mark_in_library(lock=)`); a hit is linked under the lock only if its row is still open.
+  - I2: any error during the library check is an event, never a 4xx/5xx or a dropped connection.
+  - I3: a release with no tracks is a 404, not an empty request.
+  - Added tests for the skips, a pick whose rows another request holds, a repeat recording pick, and a mid-way Navidrome failure.
+- **Not done (Minor), for S3-R1:**
+  - The service's in-memory MusicBrainz cache keeps 404s until a restart.
+  - A repeated POST while Navidrome is down logs another event.
+  - `seed-spotify` still marks nothing; fetch asks the library before it downloads anyway.
+- **Next session:** S3-04's `request add` should call `add_link`, `add_release` / `add_recording` and then `mark_in_library`, as `CrateApp._marked` does. No question for Michael.
+
 ### 2026-10-23 05:10 · S3-01 · passes
 
 - **What changed:** `POST /api/requests {"url"}`. Code in `sourcing/requests.py` (`parse_link`, `fetch_link`, `add_link`, `view`, `UnknownLink`, `SpotifyUnreachable`) and `crates/service.py` (`CrateApp(fetch_entity=…)`, `add_request`, the route). New `tests/test_requests_api.py` (39 tests). Suite went from 2124 to **2163** tests, green in 816 s.

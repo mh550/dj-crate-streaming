@@ -29,6 +29,7 @@ from urllib.parse import parse_qs, urlparse
 from sourcing import requests as requests_
 from sourcing.fetch import fetch
 from sourcing.import_playlist import NameCollision
+from sourcing.musicbrainz import MusicBrainz, MusicBrainzError
 from sourcing.policy import DEFAULT_POLICY, STREAM, QualityPolicy, check_stream
 from sourcing.slskd_client import SlskdClient
 from sourcing.spotify_csv import fetch_entity as spotify_fetch_entity
@@ -93,9 +94,14 @@ class CrateApp:
     """Everything the HTTP layer needs, so it can also be driven directly from tests/CLI."""
 
     def __init__(self, cfg: Config, policy: QualityPolicy = DEFAULT_POLICY, store: CrateStore | None = None,
-                 slskd: SlskdClient | None = None, fetch_entity=spotify_fetch_entity):
+                 slskd: SlskdClient | None = None, fetch_entity=spotify_fetch_entity,
+                 musicbrainz: MusicBrainz | None = None):
         self.cfg = cfg
         self.fetch_entity = fetch_entity      # a Spotify link's embed (sourcing.spotify_csv; tests inject a stub)
+        if musicbrainz is None:               # a catalog pick's release or recording (S3-01b), cached as the CLI's
+            cache = os.environ.get("MUSICBRAINZ_CACHE")
+            musicbrainz = MusicBrainz(cache=Path(cache) if cache else None)
+        self.musicbrainz = musicbrainz
         self.api = SubsonicClient(cfg.subsonic_url, cfg.username, cfg.password)
         self.media = SubsonicClient(cfg.public_url or cfg.subsonic_url, cfg.username, cfg.password, client_name=STREAM_CLIENT_NAME)
         if store is None:
@@ -192,8 +198,16 @@ class CrateApp:
 
     # --- requests (S3): an album, track or playlist asked for as one; downloads nothing (approve does, D7)
     def add_request(self, body) -> tuple[dict, bool]:
-        """`{"url": <Spotify link>}` → (the request view, created). Bad body or link → 400; Spotify unreachable → 502;
-        another user's playlist of that name → 409. The fetch runs outside the lock (it may retry for seconds)."""
+        """`{"url": <Spotify link>}`, `{"mbReleaseId": …}` or `{"mbRecordingId": …}` (a catalog pick, S3-01b) →
+        (the request view, created); its rows the library has are `ok` already (requests.mark_in_library). Bad
+        body or link → 400; an id MusicBrainz does not know → 404; Spotify or MusicBrainz unreachable → 502;
+        another user's playlist of that name → 409. The fetches (Spotify, MusicBrainz, the library check) run outside
+        the lock: each may take seconds."""
+        keys = [k for k in ("url", "mbReleaseId", "mbRecordingId") if k in body] if isinstance(body, dict) else []
+        if len(keys) > 1:
+            raise ApiError(400, "one of url, mbReleaseId, mbRecordingId")
+        if keys and keys[0] != "url":
+            return self._add_pick(keys[0], body[keys[0]])
         url = body.get("url") if isinstance(body, dict) else None
         if not isinstance(url, str) or not url.strip():
             raise ApiError(400, "url is required")
@@ -208,12 +222,43 @@ class CrateApp:
                 added = requests_.add_link(self.store, self.api, link)
             except NameCollision as e:
                 raise ApiError(409, str(e)) from None
-        out = requests_.view(added.request) if added.request else {"request": None, "rows": []}
+        req = added.request
+        if req is not None and link.kind != "playlist":         # a playlist's import has just matched its rows
+            req = self._marked(req["id"])
+        out = requests_.view(req) if req else {"request": None, "rows": []}
         if added.report is not None:
             r = added.report
             out["playlist"] = {"id": r.playlist_id, "name": r.name, "matched": r.matched, "wanted": r.wanted,
                                "ambiguous": r.ambiguous}
         return out, added.created
+
+    def _add_pick(self, key: str, mbid) -> tuple[dict, bool]:
+        """A MusicBrainz release (`mbReleaseId`, an album request) or recording (`mbRecordingId`, a track request).
+        It is asked outside the lock; add_release/add_recording ask it again inside, which the client's cache
+        answers."""
+        mbid = mbid.strip().lower() if isinstance(mbid, str) else ""
+        if not requests_.MB_ID.match(mbid):
+            raise ApiError(400, f"{key} is not a MusicBrainz id")
+        kind = "release" if key == "mbReleaseId" else "recording"
+        source = requests_.MB_SOURCE.format(kind=kind, mbid=mbid)
+        try:
+            if getattr(self.musicbrainz, kind)(mbid) is None:
+                raise ApiError(404, f"MusicBrainz has no {kind} {mbid}")
+            with self._lock:
+                before = self.store.find_request(source)
+                add = requests_.add_release if kind == "release" else requests_.add_recording
+                req = add(self.store, self.musicbrainz, mbid)
+        except requests_.UnknownId as e:
+            raise ApiError(404, str(e)) from None
+        except (MusicBrainzError, OSError) as e:          # MusicBrainz down or busy, or an unusable cache file
+            raise ApiError(502, public(f"cannot reach MusicBrainz ({type(e).__name__}: {e})")) from None
+        return requests_.view(self._marked(req["id"])), before is None and req["source"] == source
+
+    def _marked(self, request_id: int) -> dict:
+        """The request after mark_in_library: Navidrome is asked outside the lock (a long album, a slow scan)."""
+        requests_.mark_in_library(self.store, self.api, request_id, lock=self._lock)
+        with self._lock:
+            return self.store.request(request_id)
 
     # --- approvals (D23): a preview searches and ranks but never downloads; an approval is what lets the worker
     def _not_in_progress(self, wanted_id: str) -> dict:
