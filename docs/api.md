@@ -10,10 +10,12 @@ There is no client for it yet.
 The same as every other `/api/*` route of the crates app (`docs/architecture.md` §2, §8): no auth. The app listens on
 `127.0.0.1:4580` and `tailscale serve` puts it on the tailnet, so anyone on the tailnet can call it, **including
 approve**. The API never proxies audio. Bodies are JSON in and out; an error is `{"error": "<reason>"}` with the
-status below. Camel-case keys.
+status below. Camel-case keys. A body that is not a JSON object (a list, a string, a number, `null`) is 400
+`body must be a JSON object` on every POST; one that is not JSON is 400 `bad request: …`.
 
-Peer names (Soulseek users) and library paths never appear in any payload: a planned file is a basename, the
-candidate's `username`, folder and path stay server side (`store.public` strips them).
+Peer names (Soulseek users) and absolute paths never appear in any payload: a planned file is a basename, the
+candidate's `username`, folder and path stay server side (`store.public` strips them). A row's `reason` may name a
+file by its path inside the library (`Al Green/Singles/…flac`), as the web client's wanted list does.
 
 ## Statuses
 
@@ -53,7 +55,7 @@ back `ok` with `librarySongId`.
 | 400 | `url is required`; `one of url, mbReleaseId, mbRecordingId`; `mbReleaseId is not a MusicBrainz id` (same for `mbRecordingId`); `unknown link kind: music.apple.com` / `unknown link kind: artist` |
 | 404 | `MusicBrainz has no release <id>` / `MusicBrainz has no recording <id>`; `MusicBrainz release <id> lists no tracks` |
 | 409 | a playlist of that name belongs to another user (the text names both) |
-| 502 | `cannot reach Spotify (…)`, `cannot reach MusicBrainz (…)`, or `could not write comment…` (the request is recorded all the same) |
+| 502 | `cannot reach Spotify (…)`, `cannot reach MusicBrainz (…)`, `MusicBrainz sent a reply this code cannot read (…)`, `could not write comment…` (the request is recorded all the same), or `cannot reach Navidrome: …` (a playlist's import; a Subsonic error code is 400 with its `code`) |
 
 ## `GET /api/requests`
 
@@ -78,7 +80,8 @@ The `POST` shape plus `preview` (the cached plan from the last preview, or `null
                         "result": "ok: in library (al01)"}}]}
 ```
 
-`usedAt` and `result` are `null` until the worker has finished the approval.
+`usedAt` and `result` are `null` until the worker claims the approval; then `usedAt` is the claim's time and
+`result` is `started`, and the worker's outcome (`ok: …`, `failed: …`) replaces it when the row has ended.
 
 | Status | Reason text |
 |---|---|
@@ -102,7 +105,7 @@ album group answers `{"plan": {"albums": [], "perTrack": ["ext-1", "ext-2", "ext
 | Status | Reason text |
 |---|---|
 | 400 / 404 | as for `GET /api/requests/<id>` |
-| 409 | `ext-3 is sourcing (in progress): the worker finishes it` (also `verify`); `ext-1: a download is in progress (approval #N); the worker finishes it`; `nothing to plan` (done request) |
+| 409 | `ext-3 is sourcing (in progress): the worker finishes it` (also `verify`); `ext-1: a download is in progress (approval #N); the worker finishes it`; `nothing to plan` (done request); `request #N: ext-1 in flight; approve it again once that has ended` (approved and claimed while the search ran: that album's plan is not cached) |
 | 502 | `cannot reach slskd (slskd POST /searches: connection refused)` (nothing cached) |
 | 503 | `slskd is not configured` |
 
@@ -118,7 +121,9 @@ downloads, verifies and files them. Approving without a preview is fine: the job
               {"wantedId": "ext-9", "approvalId": 9, "candidate": null}]}
 ```
 
-`candidate: null` means the job plans that row (or goes per track). A playlist request's approvals are per track.
+`candidate: null` means the job plans that row (or goes per track). A playlist request's album groups (3 or more
+open rows of one artist and album) get `album` approvals with their planned files, as an album request does; its
+other rows get per-track approvals (`candidate: null`).
 Afterwards `request.status` is `approved`. A row waiting for a version pick is not approved with its album.
 
 | Status | Reason text |
@@ -130,8 +135,8 @@ Afterwards `request.status` is `approved`. A row waiting for a version pick is n
 
 Query: `?q=<text>&kind=album|track`.
 
-What a client searches before it asks for a request. Every registered provider is asked (MusicBrainz now; Spotify
-is named in the registry but not built). `inLibrary` is `true`/`false` from Navidrome, `null` when Navidrome could
+What a client searches before it asks for a request. Every registered provider is asked (MusicBrainz, the only one
+in this build; Spotify is the next, after `scripts/capture_spotify.py`'s capture). `inLibrary` is `true`/`false` from Navidrome, `null` when Navidrome could
 not be asked (still 200). **200**:
 
 ```json

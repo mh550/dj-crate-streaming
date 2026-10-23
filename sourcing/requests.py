@@ -102,27 +102,32 @@ class Added:
     report: object = None   # a playlist's import_playlist.Report
 
 
-def add_link(store, client, link: Link, *, tier: str | None = None) -> Added:
+def add_link(store, client, link: Link, *, tier: str | None = None, lock=contextlib.nullcontext()) -> Added:
     """Record a fetched link as a request. An album or a track is add_spotify's request. A playlist is first
     imported as `import-playlist --merge` does (matched songs into the playlist of that name, made or adopted; the
     rest wanted rows) and then is add_playlist's request over those rows. `client` is Navidrome's SubsonicClient
     (a playlist only). An album's or track's rows are not marked here: the caller runs mark_in_library outside
     its lock (the service). NameCollision (another user's playlist of that name) and CommentNotKept reach the caller;
-    for the latter the request is recorded first, as the CLI does."""
+    for the latter the request is recorded first, as the CLI does. `lock` (the service's) is held for the store,
+    never while a playlist's tracks are matched against the library (import_playlist's `lock`)."""
     entity = link.entity
     if link.kind == "playlist":
         name = entity["name"].strip()
-        before = store.find_playlist_request(name)
+        with lock:
+            before = store.find_playlist_request(name)
         try:
             rep = import_playlist(name, rows_from_spotify(entity), client, store, source=link.url, merge=True,
-                                  tier=tier)
+                                  tier=tier, lock=lock)
         except CommentNotKept as e:
-            add_spotify(store, link.url, fetch=lambda _url: entity, playlist_id=e.report.playlist_id)
+            with lock:
+                add_spotify(store, link.url, fetch=lambda _url: entity, playlist_id=e.report.playlist_id)
             raise
-        req = add_spotify(store, link.url, fetch=lambda _url: entity, playlist_id=rep.playlist_id)
+        with lock:
+            req = add_spotify(store, link.url, fetch=lambda _url: entity, playlist_id=rep.playlist_id)
         return Added(req, req is not None and before is None, rep)
-    before = store.find_request(link.url)
-    req = add_spotify(store, link.url, fetch=lambda _url: entity, tier=tier)
+    with lock:
+        before = store.find_request(link.url)
+        req = add_spotify(store, link.url, fetch=lambda _url: entity, tier=tier)
     return Added(req, before is None and req is not None and req["source"] == link.url)
 
 

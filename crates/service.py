@@ -233,11 +233,10 @@ class CrateApp:
             raise ApiError(400, str(e)) from None
         except requests_.SpotifyUnreachable as e:
             raise ApiError(502, public(str(e))) from None
-        with self._lock:
-            try:
-                added = requests_.add_link(self.store, self.api, link)
-            except NameCollision as e:
-                raise ApiError(409, str(e)) from None
+        try:
+            added = requests_.add_link(self.store, self.api, link, lock=self._lock)   # matches outside the lock
+        except NameCollision as e:
+            raise ApiError(409, str(e)) from None
         req = added.request
         if req is not None and link.kind != "playlist":         # a playlist's import has just matched its rows
             req = self._marked(req["id"])
@@ -268,6 +267,8 @@ class CrateApp:
             raise ApiError(404, str(e)) from None
         except (MusicBrainzError, OSError) as e:          # MusicBrainz down or busy, or an unusable cache file
             raise ApiError(502, public(f"cannot reach MusicBrainz ({type(e).__name__}: {e})")) from None
+        except (KeyError, TypeError) as e:                # a reply of another shape: not the client's 400
+            raise ApiError(502, f"MusicBrainz sent a reply this code cannot read ({type(e).__name__}: {e})") from None
         return requests_.view(self._marked(req["id"])), before is None and req["source"] == source
 
     def _marked(self, request_id: int) -> dict:
@@ -313,9 +314,11 @@ class CrateApp:
         with self._lock:
             rid = self._actionable(request_id, "nothing to plan")["id"]
         try:
-            album_job.plan_request(self.store, self.slskd, rid, lock=self._lock)
+            album_job.plan_request(self.store, self.slskd, rid, lock=self._lock, idle=True)
         except SlskdError as e:
             raise ApiError(502, public(f"cannot reach slskd ({e})")) from None
+        except album_job.InFlight as e:             # approved and claimed during the search (another process)
+            raise ApiError(409, str(e)) from None
         with self._lock:
             return {"plan": album_job.shown(self.store, self.store.request(rid))}
 
@@ -548,7 +551,10 @@ def make_handler(app: CrateApp):
 
         def _body(self) -> dict:
             n = int(self.headers.get("Content-Length") or 0)
-            return json.loads(self.rfile.read(n) or b"{}") if n else {}
+            body = json.loads(self.rfile.read(n) or b"{}") if n else {}
+            if not isinstance(body, dict):          # a list, string, number or null: every route reads fields
+                raise ApiError(400, "body must be a JSON object")
+            return body
 
         def _route(self, method: str):
             u = urlparse(self.path)

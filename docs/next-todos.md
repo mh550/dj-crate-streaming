@@ -53,8 +53,17 @@ Anything that trashes files or writes tags needs a reviewed plan file and a reve
   `sourcing/album.py` (one folder, a same-release second, per track last, S2-04); the album job `sourcing/album_job.py`
   (one `album` approval per row, one enqueue per peer, folder switches, per-row attempt caps, S2-05); album rows filed
   with the request's tags at `Artist/Album (Year)/NN - Title` via `dj_album=1` (S2-06, D50, D51 *default*); a playlist
-  import as one request whose album groups go as album jobs (S2-07). Closing review S2-R1. No CLI or API approves a
-  request yet (S3). Architecture §4 (e).
+  import as one request whose album groups go as album jobs (S2-07). Closing review S2-R1. Architecture §4 (e).
+- **2026-10-23, same run, milestone S3 (request API, client-agnostic):** built and tested against the fakes, **not
+  deployed, no client UI** (question B open). `POST /api/requests` takes a Spotify album, track or playlist link
+  (S3-01, D52 *default*) or a catalog pick's `mbReleaseId`/`mbRecordingId` (S3-01b), rows already in the library
+  marked; `GET /api/catalog/search?q=&kind=album|track` over MusicBrainz through `sourcing/catalog.py`'s one-provider
+  interface (S3-02); `GET /api/requests`, `GET /api/requests/<id>`, `POST …/preview` (the album plan, no peer) and
+  `POST …/approve` (S2-05's approvals; the worker downloads) (S3-03); `python -m sourcing.cli request add | list |
+  show | preview | approve` through the same methods (S3-04); [`api.md`](api.md) for a client (S3-05);
+  `scripts/capture_spotify.py`, never run (S3-06). Closing review S3-R1. Architecture §4 (e).
+  - **Spotify provider: after S3-06's capture.** Michael runs `scripts/capture_spotify.py` with his own app's
+    credentials (usage in its docstring); the next run builds a `SpotifyCatalog` against the two captured fixtures.
 
 ## In order
 

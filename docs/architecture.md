@@ -280,8 +280,18 @@ Runs in the worker (`scripts/identity_backfill.py`), because it has `/srv/music`
 
 ### (e) Album request → plan → approve → album job
 
-Built in S2 against the fakes, not deployed; no CLI or API approves a request yet (S3). Spec S2, plan
-`plans/2026-10-22-s2-album-requests.md`.
+Built in S2 and S3 against the fakes, not deployed. Spec S2/S3, plan `plans/2026-10-22-s2-album-requests.md`.
+Entry points (S3), the HTTP routes and the CLI calling the same `CrateApp` methods, so add, preview and approve have
+one implementation each:
+- HTTP (`crates/service.py`, documented for clients in [`api.md`](api.md)): `POST /api/requests` (`{url}` →
+  `requests.add_link`, `{mbReleaseId}` → `add_release`, `{mbRecordingId}` → `add_recording`; then
+  `mark_in_library`), `GET /api/requests` (`requests.listed`), `GET /api/requests/<id>` (`requests.detail`),
+  `POST /api/requests/<id>/preview` (`album_job.plan_request`, slskd searched outside the app lock, `album_job.shown`)
+  and `/approve` (`album_job.approve_request`), `GET /api/catalog/search?q=&kind=album|track` (`sourcing/catalog.py`:
+  one `MusicBrainzCatalog` in `PROVIDERS`; Spotify is the next provider, after `scripts/capture_spotify.py`'s capture).
+  Every body goes through `store.public`: no peer, no path. Nothing on the HTTP thread enqueues on slskd.
+- CLI (`sourcing/cli.py` `request_cmd`): `python -m sourcing.cli request add <link> | list | show <id> | preview <id> |
+  approve <id> [--json]`, the morning path in `worker.md`.
 1. **Request.** `seed-spotify <album or track URL> [--musicbrainz]` → `requests.add_spotify`: one `requests` row, one
    `external_wanted` row per track (`request_id`, `track_no`, `year`). A row belongs to the first request that asked
    for it. The embed has no year for an album; `match_request_release` takes the MusicBrainz release that matches the

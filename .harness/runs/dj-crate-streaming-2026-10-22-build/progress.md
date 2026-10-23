@@ -9,6 +9,32 @@ Michael steers from `INBOX.md` on this branch (status line `run | pause | stop`;
 session reads it at startup. Policy: **build-only** (`.harness/config.sh`) and the brief in `brief.md`: nothing live,
 no docker, no `/srv`, no network, no client UI, PRs only (open, never merge).
 
+### 2026-10-23 14:40 · S3-R1 · passes
+
+- **Review:** an Opus review of `git diff a399566..HEAD -- crates sourcing scripts tests docs` (3499 lines, `$HARNESS_SCRATCH/s3.diff`) found 0 Critical, 2 Important and 9 Minor. A second Opus review of the fixes found 0 Critical, 0 Important and 6 Minor.
+- **Fixed, each with a failing test first:**
+  - **I1:** a playlist link's `POST /api/requests` searched Navidrome once per row while holding the app's `_lock`. Now `requests.add_link(lock=)` and `import_playlist(lock=)` take the lock only for crates.db and the playlist edit. The playlist is looked up again under the lock, so two imports of one name still make one playlist.
+  - **I2:** a preview whose search ran while Michael approved and the worker claimed a row could replace the job's cache. Now `plan_request(idle=True)` re-checks after the search and answers 409 `album_job.InFlight`, caching nothing. The check is shared with `approve_request` as `_not_in_flight`.
+  - **Minor:** every POST with a body that is not a JSON object (a list, string, number or `null`) now answers 400 `body must be a JSON object`. Before, the older routes dropped the connection.
+  - **Minor:** `capture_spotify.write_both` no longer deletes an earlier capture when a later write fails.
+  - **Minor:** a MusicBrainz reply of another shape is now 502, not 400.
+  - **Minor:** the `_playlist_open` alias is removed.
+  - **Minor:** `docs/api.md` is corrected: `usedAt` and `result` are set when the worker claims, a playlist's album groups get album approvals, there is no Spotify entry in the registry, and the relative paths that can appear in a `reason` are described.
+- **Checked and holding:** every request and catalog body passes `store.public`. POST never reaches slskd; only approve records approvals. Preview searches outside the lock on purpose (S3-03), and its store reads and writes are under it. Every malformed body is 400. `capture_spotify` leaks nothing on any failure path. The CLI and HTTP call the same `CrateApp` methods. The catalog is one class plus the `PROVIDERS` dict.
+- **Docs:** architecture §4 (e) lists the API and CLI entry points, next-todos State has the S3 paragraph and the "Spotify provider: after S3-06's capture" line, and the spec's S3 header has its **Built** line.
+- **Tests:** 33 new, 2319 → 2352. Full `check.sh` green (2352 tests, 923 s). Each new test was confirmed to fail without its fix (mutants, and the second review).
+- **Not fixed (Minor; for S4-02 if it wants them):**
+  - The tier `at` is computed from the first playlist lookup.
+  - Two identical playlist POSTs at once can both answer 201.
+  - NameCollision now comes after lead-artist resolution, which only costs time.
+  - An approval made but not yet claimed doesn't stop a preview from replacing the plan. This was already the case before S3-R1.
+  - The MusicBrainz search cache is never refreshed in the crates process.
+  - `approve_request` commits row by row.
+  - The CLI doesn't map KeyError/ValueError.
+  - Small duplicates: `_format`, `_credit` and `_year`.
+  - CLI `list` re-reads the store; S3-04 kept that on purpose (M5).
+- No question for Michael.
+
 ### 2026-10-23 12:50 · S3-06 · passes
 
 - **What changed:** new `scripts/capture_spotify.py`, stdlib only, **never run in this run**. It makes 3 requests: a Client Credentials token, one `GET /v1/search?type=album,track&limit=10&q=…`, and one `GET /v1/albums/<first album id>`. It writes `fixtures/spotify_search.captured.json` and `fixtures/spotify_album.captured.json`, pretty-printed, both or neither (through `.tmp` + rename).

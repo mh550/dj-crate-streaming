@@ -348,7 +348,7 @@
         "S3-05",
         "S3-06"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "S4-01",

@@ -235,6 +235,22 @@ def test_second_write_failing_leaves_neither_file(tmp_path, capsys, monkeypatch)
     assert [p.name for p in (tmp_path / "fixtures").iterdir()] == []
 
 
+def test_a_failed_capture_keeps_an_older_capture(tmp_path, capsys, monkeypatch):
+    """S3-R1: the album's .tmp failing to write leaves the search file of an earlier capture as it was."""
+    old = tmp_path / "fixtures" / "spotify_search.captured.json"
+    old.parent.mkdir()
+    old.write_text("earlier\n")
+    real = cs.Path.write_text
+    def fail_album(self, *a, **kw):
+        if "album" in self.name:
+            raise OSError("disk full")
+        return real(self, *a, **kw)
+    monkeypatch.setattr(cs.Path, "write_text", fail_album)
+    assert run(ok_stub(), tmp_path) == 1
+    assert old.read_text() == "earlier\n"
+    assert sorted(p.name for p in old.parent.iterdir()) == ["spotify_search.captured.json"]
+
+
 def test_default_out_dir_is_the_checkout(tmp_path, monkeypatch):
     monkeypatch.setattr(cs, "REPO", tmp_path)
     assert cs.main([QUERY], opener=ok_stub(), env=ENV) == 0

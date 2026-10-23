@@ -193,6 +193,10 @@ releases, as the 10-21 Al Green album did (5 peers, 4 releases, a 393 s best-of 
    - Tests: a mixed playlist.
 
 ## S3: request API, client-agnostic (after: [S2-01])
+**Built 2026-10-23** (run `dj-crate-streaming-2026-10-22-build`, commits `ea4823a`…S3-R1 on branch
+`harness/dj-crate-streaming-2026-10-22-build`): against the fakes only, not deployed, no client UI. The endpoints are
+in `docs/api.md`, the CLI in `docs/worker.md` ("The morning path, without a client"), both in `docs/architecture.md`
+§4 (e); decision D52 (*default*) in the pivot spec. `scripts/capture_spotify.py` is written and never run.
 Server side only. Any client (the current web client, Amperfy's successor, a phone shortcut) can drive it. **No UI in
 this run** (concern B is open).
 1. **S3-01 `POST /api/requests`** `{"url": …}`:

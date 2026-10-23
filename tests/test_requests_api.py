@@ -124,6 +124,17 @@ def test_a_playlist_url_is_the_merge_import_plus_a_playlist_request(api):
     assert s == 200 and again["request"] == req and app.store.external_count() == 3
 
 
+def test_a_playlist_url_matches_its_tracks_without_holding_the_apps_lock(api, monkeypatch):
+    """S3-R1 I1: an import searches Navidrome per track (hundreds for a long playlist); the app's other routes must
+    not wait for it. The store's reads and writes still happen under the lock."""
+    fake, app, srv, spotify = api(playlist())
+    held = []
+    search = app.api.search_songs
+    monkeypatch.setattr(app.api, "search_songs", lambda *a, **kw: held.append(app._lock.locked()) or search(*a, **kw))
+    assert post(srv.url + "/api/requests", {"url": PLAYLIST_URL})[0] == 201
+    assert held and not any(held)
+
+
 def test_a_playlist_url_adopts_a_same_named_playlist_as_merge_does(api):
     fake, app, srv, spotify = api(playlist())
     existing = app.api.create_playlist("Tea tent", [])            # made by hand: not import-playlist's
@@ -193,7 +204,7 @@ def test_a_bad_or_unknown_link_is_400_with_its_reason_and_asks_nothing(api, body
 def test_a_list_body_is_400(api):
     fake, app, srv, spotify = api(album())
     s, out = post(srv.url + "/api/requests", [ALBUM_URL])
-    assert (s, out) == (400, {"error": "url is required"})
+    assert (s, out) == (400, {"error": "body must be a JSON object"})
 
 
 @pytest.mark.parametrize("error", [
@@ -383,6 +394,17 @@ def test_musicbrainz_unreachable_is_502_and_records_nothing(mb_api):
     fake, app, srv, stub = mb_api(error=urllib.error.URLError("no route to host"))
     s, out = post(srv.url + "/api/requests", {"mbReleaseId": RELEASE_ID})
     assert s == 502 and out["error"].startswith("cannot reach MusicBrainz"), out
+    assert app.store.requests() == []
+
+
+def test_a_musicbrainz_reply_of_another_shape_is_502_not_400(mb_api, monkeypatch):
+    """S3-R1: a reply without a field the parser reads (KeyError) was `400 bad request: 'id'`; the client asked well."""
+    fake, app, srv, stub = mb_api()
+    def odd(mbid):
+        raise KeyError("id")
+    monkeypatch.setattr(app.musicbrainz, "release", odd)
+    s, out = post(srv.url + "/api/requests", {"mbReleaseId": RELEASE_ID})
+    assert (s, out) == (502, {"error": "MusicBrainz sent a reply this code cannot read (KeyError: 'id')"})
     assert app.store.requests() == []
 
 
@@ -747,6 +769,23 @@ def test_preview_searches_without_holding_the_apps_lock(rq, tmp_path, monkeypatc
     monkeypatch.setattr(app.slskd, "search", lambda q: held.append(app._lock.locked()) or search(q))
     assert post(srv.url + f"/api/requests/{rid}/preview", {})[0] == 200
     assert held == [False]
+
+
+def test_preview_plans_nothing_when_the_job_claimed_a_row_during_its_search(rq, tmp_path, monkeypatch):
+    """S3-R1 I2: approve and the worker's claim may come while the search runs outside the lock; the plan then
+    must not replace the cache the running job reads (409, as before the search)."""
+    app, srv, sk, _ = rq()
+    rid, _ = album_request(app, srv, sk, tmp_path)
+    search = app.slskd.search
+
+    def approved_meanwhile(q):
+        app.approve_request(str(rid))
+        app.store.claim_approval(app.store.pending_approvals()[0]["id"])
+        return search(q)
+    monkeypatch.setattr(app.slskd, "search", approved_meanwhile)
+    s, body = post(srv.url + f"/api/requests/{rid}/preview", {})
+    assert s == 409 and "in flight" in body["error"]
+    assert app.store.preview(f"req-{rid}") is None
 
 
 def test_preview_is_409_while_the_job_has_claimed_a_row(rq, tmp_path):

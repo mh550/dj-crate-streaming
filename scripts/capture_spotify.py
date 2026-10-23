@@ -138,19 +138,18 @@ def capture(query: str, client_id: str, secret: str, opener, verbose: bool) -> t
 
 def write_both(out: Path, texts: list[tuple[str, str]]) -> list[Path]:
     """Each file to `<name>.tmp` first, renamed only when both are written: both files or neither."""
-    tmps = []
+    tmps, done = [], []
     try:
         for rel, text in texts:
             tmp = out / (rel + ".tmp")
             tmp.parent.mkdir(parents=True, exist_ok=True)
-            tmp.write_text(text, encoding="utf-8")
             tmps.append(tmp)
-        done = []
+            tmp.write_text(text, encoding="utf-8")
         for tmp in tmps:
             done.append(tmp.replace(tmp.with_suffix("")))
         return done
     except OSError:
-        for p in tmps + [t.with_suffix("") for t in tmps]:
+        for p in tmps + done:           # only what this run wrote: an earlier capture not yet replaced stays
             p.unlink(missing_ok=True)
         raise
 
