@@ -9,6 +9,81 @@ Michael steers from `INBOX.md` on this branch (status line `run | pause | stop`;
 session reads it at startup. Policy: **build-only** (`.harness/config.sh`) and the brief in `brief.md`: nothing live,
 no docker, no `/srv`, no network, no client UI, PRs only (open, never merge).
 
+### 2026-10-23 verify S2
+
+All 11 S2 features hold; none set to false. Init check green (2124 tests). I also ran the union of S2 test files (605 passed) and re-ran the S2-06a beets measurement in scratch.
+
+| Feature | Step | What you ran or read | What you saw | Holds |
+|---|---|---|---|---|
+| S2-01 | 1 | read `tests/test_s2_plan_doc.py`; grep `^## ` of the plan | test asserts the 4 headings (+ status words equal `REQUEST_STATUSES`); plan has Schema, Request status, Album job, Live steps (+ Closing review) | yes |
+| S2-01 | 2 | read `test_store_migrates_old_db_to_requests`, ran the file | old db gains `requests` and `request_id INTEGER`,`track_no INTEGER`,`mb_recording_id TEXT`; requests columns asserted; second open is a no-op | yes |
+| S2-01 | 3 | ran a script on in-memory `CrateStore()`: add_request, add_external_wanted(request_id,track_no), set_recording_id, set_release_id, request(), requests() | ids/track_no visible in find_wanted; rows ordered by track_no; status 'open'; `test_request_status_is_not_stored` asserts no status column; parametrized `request_status` test covers each outcome | yes |
+| S2-01 | 4 | ran `store.public(request)`; read `test_public_request_names_no_peer_and_no_absolute_path` | no peer/absolute path asserted; 13 new tests in test_crates.py (>=6) | yes |
+| S2-01 | 5 | `.harness/check.sh` on the union of every S2 test file (19 files) | 605 passed, 0 failed (4m54s) | yes |
+| S2-01 | 6 | `/home/mh550/projects/agent-harness/lib/check.sh` | green, 2124 tests (cached for this tree); per-feature counts not re-derivable, the S2 diff only adds tests | yes |
+| S2-02 | 1 | ran `rows_from_spotify` on the album fixture | 9 rows, album set, track_no 1..9, row 6 `Oh ,Pretty Woman`, year None for all | yes |
+| S2-02 | 2 | copy with releaseDate 1972-10-23; playlist fixture tea-tent-1 | year 1972 on all rows; 99 playlist rows have album/track_no/year None; tests `test_spotify_album_rows_carry_...`, `..._playlist_rows_have_no_...` | yes |
+| S2-02 | 3 | read `add_spotify` in sourcing/requests.py | album/track become requests, artist from subtitle, rows carry request_id/track_no/source; playlist -> None unless imported (S2-07 extends) | yes |
+| S2-02 | 4 | read `test_seed_spotify_album_records_one_request` | prints `request <id>: Al Green – I'm Still in Love With You (9 rows)`; 9 rows with request_id, track_no 1..9; `test_seed_spotify_adds_external_rows` unchanged and green | yes |
+| S2-02 | 5 | same test, URL run twice | still 1 request, 9 rows; find_request(source) first | yes |
+| S2-02 | 6 | `.harness/check.sh` on the union of every S2 test file (19 files) | 605 passed, 0 failed (4m54s) | yes |
+| S2-03 | 1 | read `test_release_search_*`, `test_release_*` in test_musicbrainz_client.py | query artist/release phrase, one request, 10 releases; `release/<id>?inc=recordings`, 9 tracks, rec ids; 404 None; 503 backoff; cached | yes |
+| S2-03 | 2 | read tests in test_musicbrainz.py (match_release) | (a) 3c9a52ee matched with rec ids and positions == track_no; (b) digital wins; (c) 8 rows None; (d) `Love and Hate` None; tie order asserted | yes |
+| S2-03 | 3 | read `match_request_release` + test_requests.py / test_sourcing_cli.py musicbrainz tests | stores mb_release_id and recording ids, one `release` event (id, format, date; no peer); no match -> False, nothing stored; CLI uses MUSICBRAINZ_CACHE/--musicbrainz else skips | yes |
+| S2-03 | 4 | read `test_a_request_rows_musicbrainz_recording_reaches_verify` and neighbours | row id passed as recording_id; copy upgrade keeps old copy's id; row without id passes None + asked_title | yes |
+| S2-03 | 5 | `.harness/check.sh` on the union of every S2 test file (19 files) | 605 passed, 0 failed (4m54s) | yes |
+| S2-03 | 6 | `/home/mh550/projects/agent-harness/lib/check.sh` | green, 2124 tests (cached for this tree); per-feature counts not re-derivable, the S2 diff only adds tests | yes |
+| S2-04 | 1 | read helper `folder()` in tests/test_album_plan.py | built from a search_responses.sample.json copy, ext-74 filename shape, no new keys | yes |
+| S2-04 | 2 | read `plan_album`/`FolderPick`/`AlbumPlan` in sourcing/album.py | signature, primary/secondary/per_track/alternates, assignments(), FolderPick fields as specified | yes |
+| S2-04 | 3 | read the five case tests (one folder; 7+2; two peers 1000 vs 900; parametrized shared-track/listed-lengths; nine peers) | all assert the stated primary/secondary/alternates/per_track | yes |
+| S2-04 | 4 | read `test_describe_names_folders_by_number_never_by_peer` | folder 1/2/3, `7 of 10`, basenames, peer names absent unless peers=True | yes |
+| S2-04 | 5 | `.harness/check.sh` on the union of every S2 test file (19 files) | 605 passed, 0 failed (4m54s) | yes |
+| S2-04 | 6 | `/home/mh550/projects/agent-harness/lib/check.sh` | green, 2124 tests (cached for this tree); per-feature counts not re-derivable, the S2 diff only adds tests | yes |
+| S2-05a | 1 | read tests/test_album_job.py helpers (world, header_only, album_folder, FakeSlskdServer) | 9-file folder, FLAC bodies, request from add_spotify, not_in_library | yes |
+| S2-05a | 2 | read `test_plan_request_*`, `test_approve_request_*` | one search, cached `req-<id>` plan, public shape; approvals purpose `album`; ValueError while sourcing/verify; `album` in APPROVAL_PURPOSES (store.py:146) | yes |
+| S2-05a | 3 | read `test_worker_runs_the_whole_album_from_one_enqueue`, `test_a_stale_plan_is_made_again...`, `test_a_row_already_in_the_library_is_linked...` | one POST (PEER,9); stale plan replanned; library hit -> ok, `ok: in library (s7)`, matched event; ALBUM_PLAN_MAX_AGE_S (album_job.py:62, CLI env) | yes |
+| S2-05a | 4 | read `test_planned_fetch_polls_the_jobs_transfer_without_searching_or_enqueueing` | no search/enqueue in planned mode; fetch/worker tests green in the subset | yes |
+| S2-05a | 5 | happy-path test + `test_after_a_restart_the_request_reads_its_rows` | 9 rows ok, request done, one `plan` event `folder 1: 9 of 9`, no peer in events; restart: rows failed `interrupted: worker restarted`, request open/failed/partly as rows change | yes |
+| S2-05a | 6 | `.harness/check.sh` on the union of every S2 test file (19 files) | 605 passed, 0 failed (4m54s) | yes |
+| S2-05a | 7 | `/home/mh550/projects/agent-harness/lib/check.sh` | green, 2124 tests (cached for this tree); per-feature counts not re-derivable, the S2 diff only adds tests | yes |
+| S2-05b | 1 | read tests: ordinary finding, transcode switch, never-starts (0.2 s), transfer error | (1) no switch, no DELETE of others (2) 8 rows -> B, remove=true, switch event as spec (3) start timeout (4) Completed, Errored switches rest | yes |
+| S2-05b | 2 | read DISTRUST (album_job.py:64), run() trigger code, `test_two_failures_in_one_folder_switch_it` | triggers: again, timeout, DISTRUST kinds, 2 failures; remove=true; excluded folder never re-planned | yes |
+| S2-05b | 3 | transcode test asserts | first row keeps status ok and library_song_id al01 after the switch | yes |
+| S2-05b | 4 | `no_peer_anywhere` in the switch tests | events/results/reasons free of both peer names; switch text uses folder labels and basenames | yes |
+| S2-05b | 5 | `.harness/check.sh` on the union of every S2 test file (19 files) | 605 passed, 0 failed (4m54s) | yes |
+| S2-05b | 6 | `/home/mh550/projects/agent-harness/lib/check.sh` | green, 2124 tests (cached for this tree); per-feature counts not re-derivable, the S2 diff only adds tests | yes |
+| S2-05c | 1 | read `test_a_row_no_folder_covers_goes_per_track_from_the_start`, `test_a_row_gets_its_folder_one_switch_and_one_per_track_fetch` | (1) 8 from folder + 9th per-track fetch (prefer None), plan event `8 of 9; 1 row per track`, pick event (2) failed with the 3-attempt reason exactly as spec; posts only (A,9),(B,1) | yes |
+| S2-05c | 2 | same tests + `test_fetch_exclude_drops_those_peers...` | fetch(exclude={peers}) applied after rank and in the retry; reason format asserted as string | yes |
+| S2-05c | 3 | `test_rows_moved_with_their_folder_name_its_cause`, attempt tests | all failed -> request failed; some ok + failed -> partly | yes |
+| S2-05c | 4 | grep docs/worker.md | `## Album jobs` (plan/switch/matched events, triggers, caps, D7) and `## Approvals` mentions `album` | yes |
+| S2-05c | 5 | `.harness/check.sh` on the union of every S2 test file (19 files) | 605 passed, 0 failed (4m54s) | yes |
+| S2-05c | 6 | `/home/mh550/projects/agent-harness/lib/check.sh` | green, 2124 tests (cached for this tree); per-feature counts not re-derivable, the S2 diff only adds tests | yes |
+| S2-06a | 1 | read tests/test_album_tags_plan_doc.py; grep plan headings | 6 headings present; Writer names write_minimal, When names .staging | yes |
+| S2-06a | 2 | read plan Fields/Writer/When/Reverse | fields incl. comp=False, write_minimal only, staging only, one `tagged` event with old values, reverse via write_minimal, plain rows keep fill_missing_tags, SoulSync delta under ## Out | yes |
+| S2-06a | 3 | re-ran the measurement myself in scratch (BEETSDIR, scratch yaml with deploy/beets.yaml import block, make_flac+write_minimal, `beet import -q -s -m -W --set dj_album=1`) | rc 0; `Al Green/Alb (1972)/01 - One.flac`; `beet ls -f '$path $dj_album' dj_album:1` lists it with 1; plain file went to `X/Singles/`; matches the plan's result | yes |
+| S2-06a | 4 | grep pivot spec D50/D51 | D50 present, not marked *default* (Michael's answer + measurement); D51 *default* separate | yes |
+| S2-06a | 5 | read `## Review` | Opus review recorded: 1 Critical, 4 Important, 8 Minor, all addressed in plan text; no code besides the measurement | yes |
+| S2-06a | 6 | `.harness/check.sh` on the union of every S2 test file (19 files) | 605 passed, 0 failed (4m54s) | yes |
+| S2-06a | 7 | `/home/mh550/projects/agent-harness/lib/check.sh` | green, 2124 tests (cached for this tree); per-feature counts not re-derivable, the S2 diff only adds tests | yes |
+| S2-06b | 1 | read test_filer.py album tests (428-683) | write_minimal fields read back, `--set dj_album=1` in argv via fake_beet, old values returned; no album= -> no write, no --set | yes |
+| S2-06b | 2 | read test_fetch_filing.py album tests (519-640) | identity built from the request (album kind only), `tagged` event with old values committed before beets, playlist request row gets no album tags, plain row unchanged | yes |
+| S2-06b | 3 | read deploy/beets.yaml paths + order test test_filer.py:678 | dj_album:1 before singleton, exact form; measured key takes so no Singles fallback | yes |
+| S2-06b | 4 | grep docs/worker.md ## Filing | album path and `tagged` reverse described | yes |
+| S2-06b | 5 | `.harness/check.sh` on the union of every S2 test file (19 files) | 605 passed, 0 failed (4m54s) | yes |
+| S2-06b | 6 | `/home/mh550/projects/agent-harness/lib/check.sh` | green, 2124 tests (cached for this tree); per-feature counts not re-derivable, the S2 diff only adds tests | yes |
+| S2-07 | 1 | read `test_a_spotify_playlist_import_records_one_playlist_request_over_its_wanted_rows` | playlist request, 6 rows with request_id, playlist_id, track_no None, 4 rows with the album | yes |
+| S2-07 | 2 | read `test_approve_request_groups_three_or_more_rows_of_one_album`, `test_two_rows_..._per_track` | album approvals for 3+ rows, download for the rest; search `Al Green <album>` | yes |
+| S2-07 | 3 | read `test_a_mixed_playlist_runs_as_one_album_job_and_two_singles` | posts (PEER,4),(SINGLES,1)x2; 6 ok, request done; playlist songs == ids in position; test_placement green | yes |
+| S2-07 | 4 | read `test_cli_import_playlist_request_...` and `..._without_request_records_none` | prints `request <id>: Tea tent (6 open rows; approve with sourcing.cli request approve <id>)`; without flag nothing; import tests green | yes |
+| S2-07 | 5 | `.harness/check.sh` on the union of every S2 test file (19 files) | 605 passed, 0 failed (4m54s) | yes |
+| S2-07 | 6 | `/home/mh550/projects/agent-harness/lib/check.sh` | green, 2124 tests (cached for this tree); per-feature counts not re-derivable, the S2 diff only adds tests | yes |
+| S2-R1 | 1 | progress.md S2-R1 entry + plan `## Closing review` | Opus review recorded: 0 Critical, 2 Important, 10 Minor; plan lists fixes and not-done reasons | yes |
+| S2-R1 | 2 | read 'S2-R1 review fixes' tests in test_album_job.py; grep fail_enqueue | Important fixes have tests; fail_enqueue test; remove=true on every switch asserted; no peer/path (no_peer_anywhere, public test); D7 checked in plan | yes |
+| S2-R1 | 3 | read `test_album_module_is_pure`; fetch.py shared helpers | fresh-interpreter import check (no slskd_client/crates.store/sqlite3...); FetchResult.outcome, error_outcome, search, forget_* shared | yes |
+| S2-R1 | 4 | grep architecture.md, hard-won-facts, next-todos, spec | architecture §2/§3/§4(e); hard-won releaseDate null + multi-file enqueue; next-todos S2 paragraph; spec `**Built 2026-10-23**` | yes |
+| S2-R1 | 5 | `git show --stat a399566` (feature commit; HEAD is harness bookkeeping) | only crates/store.py, sourcing, docs, tests, harness run files; no scratch file | yes |
+| S2-R1 | 6 | `/home/mh550/projects/agent-harness/lib/check.sh` | green, 2124 tests (cached for this tree); per-feature counts not re-derivable, the S2 diff only adds tests | yes |
+
 ### 2026-10-23 03:59 · S2-R1 · passes
 
 - **Changed.** Opus review of `git diff 1eb4259..HEAD` (`$HARNESS_SCRATCH/s2.diff`, 5817 lines) against both S2 plans:
