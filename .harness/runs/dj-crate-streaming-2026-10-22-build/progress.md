@@ -9,6 +9,26 @@ Michael steers from `INBOX.md` on this branch (status line `run | pause | stop`;
 session reads it at startup. Policy: **build-only** (`.harness/config.sh`) and the brief in `brief.md`: nothing live,
 no docker, no `/srv`, no network, no client UI, PRs only (open, never merge).
 
+### 2026-10-23 10:45 · S3-04 · passes
+
+- **What changed:** `python -m sourcing.cli request add <link> | list | show <id> | preview <id> | approve <id>`, each with `--json` (the API's JSON). The code is `request_cmd` in `sourcing/cli.py`, which calls the five `CrateApp` methods the HTTP routes use, so add, preview and approve have no second implementation.
+  - `add` takes a Spotify link, and also a `musicbrainz.org/release|recording/<id>` link, the same as POSTing `mbReleaseId`/`mbRecordingId`.
+  - The `CRATES_DB` guard is now `_crates_db`, shared with `fetch --approve`.
+  - The module docstring lists the new commands. `docs/worker.md` `## Album jobs` gains "The morning path, without a client".
+  - Tests: 19 new in `tests/test_sourcing_cli.py`. The suite went from 2255 to **2274**.
+- **Verified:** `test_sourcing_cli` + `test_album_job`: 86 passed. Full `check.sh` green, 2274 tests in 906 s. In the tests, approve leaves the fake slskd's `enqueued` empty, and the preview output has no peer and no `@@` directory.
+- **Opus review (0 Critical, 2 Important, 6 Minor):** these were fixed test-first.
+  - I1: Navidrome down (a `URLError`), `CommentNotKept` or `sqlite3.Error` gave a traceback. Each now prints one line and exits 1, as the HTTP handler maps them.
+  - I2: a playlist request's headline printed `None – <name>`.
+  - M3: a playlist plan that went stale now says it is stale.
+  - M4: the wording when nothing new is requested.
+  - Added tests: slskd away, a missing API key, a stale plan, a playlist's per-track preview.
+- **Not fixed (for S3-R1):**
+  - M5: `list` builds its text from `requests.view` and not from `app.requests()`, because `listed` has no rows and a track request has no album to name it by.
+  - M6: `add --json` cannot tell new from existing (the API's 201/200). Text mode says `; already requested`.
+  - M8: `show` prints the plan text as cached, so rows that are done since then still appear in it, the same as the API's `folders`.
+- **Next session:** S3-05's `docs/api.md` can point to the CLI as the shell equivalent. No question for Michael.
+
 ### 2026-10-23 09:20 · S3-03 · passes
 
 - **What changed:** four new routes in `crates/service.py`, with the same handler and error mapping as the other routes.

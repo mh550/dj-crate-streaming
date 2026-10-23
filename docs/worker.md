@@ -154,6 +154,23 @@ per listed placement. A preview is not restored; Preview searches again.
 An album request (a Spotify album URL, `sourcing.requests`) is sourced album-first by `sourcing/album_job.py`.
 Nothing is enqueued without Michael's approval of the request (D7): the plan only searches.
 
+**The morning path, without a client** (S3-04): `python -m sourcing.cli request …`, run in the worker container
+(`cd /srv/docker && docker compose exec -T worker python -m sourcing.cli request <command>`; it refuses without
+`CRATES_DB`). Each command is what `/api/requests` does, through the same `CrateApp` methods and rules.
+1. `request add <link>`: a Spotify album, track or playlist link, or `https://musicbrainz.org/release/<id>` /
+   `…/recording/<id>`. Prints `request 1: Al Green – I'm Still in Love With You (album, 9 rows, 0 in library)` and
+   one line per row (`  01 ext-1  I'm Still In Love With You  needs_source`); the same link again prints the same
+   request, `; already requested`.
+2. `request list`, `request show <id>`: status, each row's status and reason, MusicBrainz ids, approvals and the
+   cached plan. No peer name and no absolute path, as in the API.
+3. `request preview <id>` (needs `--slskd`/`$SLSKD_URL` and the API key, else exit 2): the plan below, printed by
+   folder label, coverage and row → file. Nothing is enqueued.
+4. `request approve <id>`: Michael's click (D7). It records the approvals and prints
+   `approved 9 rows of request 1; the worker downloads them on its next tick`. A row in progress is refused with the
+   API's 409 text, exit 1. The command never downloads.
+
+`--json` on each prints the API's JSON.
+
 - **Plan** (`plan_request`, also what a preview shows): one search for `"<artist> <album>"`, the open rows planned
   over its folders (`sourcing.album.plan_album`: a primary folder, a same-release secondary, rows no folder covers
   per track) and cached as the preview `req-<id>`. One `plan` event: `#<id> folder 1: 8 of 9; 1 row per track`.
@@ -186,7 +203,7 @@ Nothing is enqueued without Michael's approval of the request (D7): the plan onl
 - **A playlist in one go** (S2-07). `python -m sourcing.cli import-playlist --request <source>` imports as before, then
   records the import's wanted rows (its last `import_order`) as one `playlist` request, found again by the
   playlist's name, and prints `request <id>: <name> (<n> open rows; approve with sourcing.cli request approve <id>)`
-  (that command is S3-04's; until then `album_job.approve_request`). A re-import's new rows join; rows it no longer
+  (the morning path above). A re-import's new rows join; rows it no longer
   lists leave unless going. A row another request holds stays with it; the playlist holds its rows loosely: an
   album or track request asked for later takes those with nothing going yet (an `request` event `#3 → #4`), so
   an album files as one. Approving gives each album with 3 or more open rows (same artist and album,
