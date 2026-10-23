@@ -4,6 +4,7 @@ import pytest
 
 from crates.store import CrateStore
 from sourcing import cli
+from sourcing.policy import IMPORT_TIER
 from sourcing.fake_slskd import FakeSlskdServer
 from subsonic.fake_server import FakeSubsonicServer
 from tests.helpers import load_responses
@@ -36,6 +37,44 @@ def test_seed_spotify_adds_external_rows(tmp_path, monkeypatch, capsys):
     assert "1 added" in capsys.readouterr().out
     assert cli.main(["seed-spotify", "https://open.spotify.com/playlist/abc"]) == 0      # idempotent
     assert len(CrateStore(db).wanted()) == 1 and "0 added, 1 already queued" in capsys.readouterr().out
+
+
+def test_seed_spotify_album_records_one_request(tmp_path, monkeypatch, capsys):
+    import json
+    from tests.helpers import FIXTURES
+    db = tmp_path / "crates.db"; monkeypatch.setenv("CRATES_DB", str(db))
+    entity = json.loads((FIXTURES / "spotify_embed_album_al-green-still-in-love.json").read_text())
+    monkeypatch.setattr(cli, "fetch_entity", lambda url: entity)
+    url = "https://open.spotify.com/album/2nTlIPIQ7fHOnNN7BRch0Z"
+    assert cli.main(["seed-spotify", url]) == 0
+    store = CrateStore(db)
+    [req] = store.requests()
+    assert f"request {req['id']}: Al Green \u2013 I'm Still in Love With You (9 rows)" in capsys.readouterr().out
+    w = store.wanted()
+    assert len(w) == 9 and {r["request_id"] for r in w} == {req["id"]}
+    assert sorted(r["track_no"] for r in w) == list(range(1, 10))
+    assert {r["tier"] for r in w} == {IMPORT_TIER}
+    assert cli.main(["seed-spotify", url]) == 0                     # again: no second request, no second row
+    store = CrateStore(db)
+    assert len(store.requests()) == 1 and len(store.wanted()) == 9
+
+
+def test_seed_spotify_track_records_one_track_request(tmp_path, monkeypatch, capsys):
+    db = tmp_path / "crates.db"; monkeypatch.setenv("CRATES_DB", str(db))
+    entity = {"type": "track", "name": "Love And Happiness", "uri": "spotify:track:6NW0y8AxOfqqC7FxRjWTGF",
+              "artists": [{"name": "Al Green"}], "duration": 303306}
+    monkeypatch.setattr(cli, "fetch_entity", lambda url: entity)
+    assert cli.main(["seed-spotify", "https://open.spotify.com/track/6NW0y8AxOfqqC7FxRjWTGF", "--tier", "crate"]) == 0
+    [req] = CrateStore(db).requests()
+    assert f"request {req['id']}: Al Green \u2013 Love And Happiness (1 row)" in capsys.readouterr().out
+    assert req["kind"] == "track" and [r["tier"] for r in req["rows"]] == ["crate"]
+
+
+def test_spotify_csv_refuses_a_track_url(monkeypatch, tmp_path):
+    from sourcing import spotify_csv
+    monkeypatch.setattr(spotify_csv, "fetch_entity", lambda url: {"type": "track", "name": "x"})
+    with pytest.raises(SystemExit, match="seed-spotify"):
+        spotify_csv.main(["https://open.spotify.com/track/abc", "-d", str(tmp_path)])
 
 
 def _env(monkeypatch, nd, db):

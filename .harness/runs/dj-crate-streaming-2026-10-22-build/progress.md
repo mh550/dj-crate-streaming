@@ -9,6 +9,25 @@ Michael steers from `INBOX.md` on this branch (status line `run | pause | stop`;
 session reads it at startup. Policy: **build-only** (`.harness/config.sh`) and the brief in `brief.md`: nothing live,
 no docker, no `/srv`, no network, no client UI, PRs only (open, never merge).
 
+### 2026-10-22 23:50 · S2-02 · passes
+
+- **Changed.** `sourcing/playlist_sources.py`: `Row.track_no`/`Row.year`; `rows_from_spotify` fills album, track_no,
+  year (`releaseDate[:4]`, null → None) for an album entity, reads a track entity as one row; `load` refuses a track
+  URL. New `sourcing/requests.py` `add_spotify(store, url, *, fetch, tier, default_tier)` + `canonical(url)` (no
+  `?si=`, no `/intl-xx/`). `crates/store.py` `find_request(source)`; a queued row joining a request also gets album/year
+  (COALESCE). `spotify_csv.URL` matches `track` too. `seed-spotify` prints `request <id>: Al Green – I'm Still in Love
+  With You (9 rows)` for an album or track; playlists unchanged. Plan: S2-02 notes under `## Schema`. Tests 1933 → 1954.
+- **Verified.** New tests seen red first (the review-fix batch: check.sh stops at the first failure, so one of those
+  was seen red); subset of the 4 touched test files 108 passed; full suite green, 1954 tests, 693 s. Opus review: 2
+  important (track URL made a 1-track playlist via import-playlist; a track already in another request made an empty
+  request that stays `open`) + 5 minor, fixed test-first; kept the `sourcing/requests.py` name (the spec's).
+- **Next sessions must know.** `track_no` is embed order across discs (no disc number): S2-03 must compare against
+  MusicBrainz tracks in order across all media, not `position` within one medium. A request whose rows all belong to
+  another request is not made; that request is returned. The **track embed shape is not captured**: code assumes
+  `name`, `artists[{name}]`, `duration`, `uri` (as `track_lead` reads); `releaseDate` as a string or `{isoString}`.
+  S4-01 should add "capture one track embed to `fixtures/`" to the checklist.
+- **Questions for Michael.** None.
+
 ### 2026-10-22 23:05 · S2-01 · passes
 
 - **Changed.** `crates/store.py`: `requests` table (kind CHECK album|playlist|track, no status column) and

@@ -735,8 +735,9 @@ class CrateStore:
             if tier is not None:
                 self.set_external_tier(existing["song_id"], tier)
             if request_id is not None and existing["request_id"] is None:
-                self.db.execute("UPDATE external_wanted SET request_id=?, track_no=?, updated_at=? WHERE id=?",
-                                (request_id, track_no, time.time(), _ext_pk(existing["song_id"])))
+                self.db.execute("UPDATE external_wanted SET request_id=?, track_no=?, album=COALESCE(album, ?), "
+                                "year=COALESCE(year, ?), updated_at=? WHERE id=?",
+                                (request_id, track_no, album, year, time.time(), _ext_pk(existing["song_id"])))
             return existing["song_id"]
         return self._insert_external(artist, title, album, duration_s, year, source, playlist_id, position,
                                      tier or default_tier, request_id, track_no)
@@ -1136,6 +1137,11 @@ class CrateStore:
         self.log(None, None, "request", f"#{cur.lastrowid} {kind}: {' — '.join(x for x in (artist, album) if x)}")
         self.db.commit()
         return cur.lastrowid
+
+    def find_request(self, source: str) -> int | None:
+        """The first request made from this source (a re-run of the same URL finds it), or None."""
+        r = self.db.execute("SELECT id FROM requests WHERE source=? ORDER BY id LIMIT 1", (source,)).fetchone()
+        return r[0] if r else None
 
     def set_release_id(self, request_id: int, mb_release_id: str | None) -> None:
         """The MusicBrainz release an album request matched one to one (S2-03)."""

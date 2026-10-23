@@ -251,6 +251,14 @@ def test_requests_newest_first_and_kind_checked():
         s.add_request(kind="podcast", source="search", artist=None, album=None, year=None)
 
 
+def test_find_request_by_source():
+    s = CrateStore()
+    assert s.find_request(ALBUM_URL) is None
+    a = s.add_request(kind="album", source=ALBUM_URL, artist="Al Green", album="Call Me", year=1973)
+    s.add_request(kind="track", source="search", artist="Chic", album=None, year=None)
+    assert s.find_request(ALBUM_URL) == a and s.find_request(ALBUM_URL + "x") is None
+
+
 def test_rerun_of_a_request_adds_no_row_and_keeps_its_request():
     s = CrateStore()
     rid, (e1, _, _) = _album(s)

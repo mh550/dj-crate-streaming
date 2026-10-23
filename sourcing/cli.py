@@ -5,7 +5,7 @@ r"""CLI: rank candidates for a wanted track, from a fixture file or a live slskd
   python -m sourcing.cli verify /srv/incoming/03\ -\ Good\ Times.flac --duration 501 [--tier crate] [--reference old.flac] [--json]
   python -m sourcing.cli fetch --wanted s4 [--approve [--wait]] [--tier T]   # search+score; --approve only records an approval for the worker; tier: the row's
   python -m sourcing.cli worker [--once] [--no-reconcile]   # D18: spend approvals (download, verify, file with beets), re-check `verify` rows, reconcile; WORKER_POLL_S (30), WORKER_RECHECK_S (300), WORKER_RECONCILE_S (600), WORKER_EXPORT_S (300)
-  python -m sourcing.cli seed-spotify https://open.spotify.com/playlist/...   # queue tracks not in Navidrome
+  python -m sourcing.cli seed-spotify https://open.spotify.com/playlist/...   # queue tracks not in Navidrome; an album or track URL is one request (S2-02)
   python -m sourcing.cli import-playlist <spotify-url|report.txt|exportify.csv>... [--name N] [--dry-run]   # D11: Spotify playlists → public Navidrome playlist + wanted rows
   python -m sourcing.cli retier --from crate --to medium [--dry-run]   # move external wanted rows between tiers (D15 backfill; rows of a tiered playlist follow its comment)
 """
@@ -148,7 +148,7 @@ def main(argv: list[str] | None = None) -> int:
                    help="skip the periodic reconcile (a live smoke check that must not write the crates.db cache)")
     add_slskd_args(w)
 
-    s = sub.add_parser("seed-spotify", help="add every track of a public Spotify playlist/album to the wanted queue")
+    s = sub.add_parser("seed-spotify", help="add every track of a public Spotify playlist/album/track to the wanted queue; an album or a track is one request")
     s.add_argument("url")
     add_tier_arg(s, None, f"tier for new queued rows (default {IMPORT_TIER}, D15); given on a re-seed, it changes existing rows too")
 
@@ -226,12 +226,20 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "seed-spotify":
         from crates.service import Config
         from crates.store import CrateStore
+        from .requests import add_spotify
         from .spotify_csv import rows
         db = Config.from_env().db_path
         Path(db).parent.mkdir(parents=True, exist_ok=True)
         store = CrateStore(db)
+        entity = fetch_entity(a.url)
+        req = add_spotify(store, a.url, fetch=lambda _url: entity, tier=a.tier)    # an album or a track (S2-02)
+        if req is not None:
+            n = len(req["rows"])
+            what = req["album"] or (req["rows"][0]["title"] if n else "")
+            print(f"request {req['id']}: {req['artist']} – {what} ({n} row{'s' * (n != 1)})")
+            return 0
         before, total = store.external_count(), 0
-        for r in rows(fetch_entity(a.url)):          # dicts: {"Artist", "Title", "Length"} (seconds)
+        for r in rows(entity):          # dicts: {"Artist", "Title", "Length"} (seconds)
             store.add_external_wanted(r["Artist"], r["Title"], duration_s=r["Length"], source=a.url, tier=a.tier,   # idempotent
                                        default_tier=IMPORT_TIER)
             total += 1

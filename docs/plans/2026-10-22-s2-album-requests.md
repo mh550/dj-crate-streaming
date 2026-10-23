@@ -26,6 +26,12 @@ In `crates/store.py`, additive (the `SCHEMA` string for a new db, `_migrate` for
   mbid)`, `set_recording_id(ext_id, mbid)`, `request(id) -> dict | None` (the row's columns, `rows` = `wanted_row`
   dicts ordered by `track_no`, then playlist `position`, rows without a track number last, and `status`), `requests()` newest first. Every payload
   that leaves the server goes through `store.public` (no peer name, no absolute path; tested).
+- From a Spotify URL (S2-02, `sourcing/requests.py` `add_spotify`): `source` is the canonical URL (no `?si=`, no
+  `/intl-xx/`), so a share link finds its request again (`CrateStore.find_request(source)`). `track_no` is the
+  position in the album embed's list: the embed has no disc number, so a second disc runs on (disc 2 track 1 of a
+  12-track first disc is 13). S2-03 matches MusicBrainz tracks by their order across all media, not by
+  `position` within one medium. A request whose every row already belongs to another request is not made: that
+  request answers (a track already in an album request gives the album request).
 
 ## Request status
 
