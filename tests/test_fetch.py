@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 
 import pytest
@@ -89,7 +90,7 @@ def run(world, srv, approve, wanted_id="s4", **kw):
     return fetch(wanted_id, store=world["store"], slskd=SlskdClient(srv.url, srv.api_key), navidrome=world["client"],
                  reconciler=world["rec"], music_root=world["music"], downloads_root=world["dl"],
                  approve=approve, poll_s=0.01, download_timeout_s=kw.pop("download_timeout_s", 1),
-                 scan_timeout_s=1, **kw)
+                 scan_timeout_s=1, retry_pause_s=kw.pop("retry_pause_s", 0), **kw)
 
 
 def test_without_approve_only_scores_and_prints_pick(world, tmp_path):
@@ -413,6 +414,32 @@ def test_a_transfer_error_tries_the_next_peer_once(world, tmp_path, state):
     _no_peer_names(world, "p-vpn", "p-ok")
 
 
+def test_the_second_source_waits_out_a_vpn_drop_through_the_given_sleep(world, tmp_path):
+    """slskd is logged out of Soulseek for about 10 s after a gluetun drop: switching at once would meet the same drop
+    (S1-R1 review I-2). The pause goes through `sleep`, so the worker's heartbeat keeps beating."""
+    flac = good_flac_bytes(tmp_path)
+    calls = []
+    def sleep(s):
+        calls.append((s, len(srv.enqueued)))
+        time.sleep(min(s, 0.01))
+    with FakeSlskdServer(two_peers(), world["dl"], files={GOOD: flac}, errored_peers={"p-vpn"}) as srv:
+        new_song(world["nd"], len(flac))
+        r = run(world, srv, approve=True, sleep=sleep, retry_pause_s=7)
+    assert r.status == "ok", r.reason
+    assert (7, 1) in calls and srv.enqueued == [("p-vpn", VPN), ("p-ok", GOOD)]
+
+
+def test_our_own_timeout_cancels_and_forgets_our_transfer(world):
+    """A transfer still running when we give up must not land later, unfiled, nor be invisible to the next approval
+    of the same file (S1-04 follows only new ids): it is cancelled and forgotten (S1-R1 review I-3). A record from
+    before our enqueue is not ours and stays."""
+    with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: b"x"}, complete=False) as srv:
+        srv.seed_transfer("vinylhead77", GOOD, "InProgress", transfer_id="earlier")
+        r = run(world, srv, approve=True, download_timeout_s=0.05)
+    assert (r.status, r.reason) == ("failed", "download timed out")
+    assert len(srv.enqueued) == 1 and [t["id"] for t in srv.transfers] == ["earlier"]
+
+
 def test_a_second_transfer_error_fails_with_both_attempts_and_tries_no_third(world, tmp_path):
     with FakeSlskdServer(two_peers("p-3"), world["dl"], files={GOOD: b"x"}, errored_peers={"p-vpn", "p-ok", "p-3"}) as srv:
         r = run(world, srv, approve=True)
@@ -613,6 +640,23 @@ def test_a_navidrome_outage_during_the_check_searches_and_says_so(world, tmp_pat
     assert store.external(ext)["status"] == "needs_source"
 
 
+def test_a_bad_navidrome_url_does_not_put_its_token_into_the_event(world, tmp_path, monkeypatch):
+    """urllib's text for a URL without a scheme is the whole URL, Subsonic's salted token and salt included (S1-R1
+    review M-1): an OSError or ValueError is named by its type only."""
+    store = world["store"]
+    ext = store.add_external_wanted("Al Green", "One Of These Good Old Days", duration_s=197)
+    resp, files = good_old_days(world, tmp_path)
+
+    def bad(self, *a, **kw):
+        raise ValueError("unknown url type: 'navidrome:4533/rest/search3?u=michael&t=5f4dcc3b&s=a1b2c3'")
+
+    monkeypatch.setattr(SubsonicClient, "search_songs", bad)
+    with FakeSlskdServer(resp, world["dl"], files=files) as srv:
+        run(world, srv, approve=False, wanted_id=ext)
+    (ev,) = events_of(world, ext, "matched")
+    assert ev["detail"] == "library not asked: ValueError"
+
+
 def test_a_crate_row_is_not_asked_about(world, tmp_path, monkeypatch):
     """A playlist row is a copy upgrade of its own song (copy_of): the library has it, which is why it is asked for."""
     asked = []
@@ -621,3 +665,22 @@ def test_a_crate_row_is_not_asked_about(world, tmp_path, monkeypatch):
     with FakeSlskdServer(RESPONSES, world["dl"], files={}) as srv:
         r = run(world, srv, approve=False)
     assert r.status == "needs_source" and r.pick is not None and asked == []
+
+
+def test_a_provisional_copy_is_upgraded_not_linked_to_itself(world, tmp_path, monkeypatch):
+    """A play-now row with its provisional low copy (s7) filed is a copy upgrade (copy_of is s7): the library check
+    would find that very copy as the same version and end the upgrade, so it is never asked (S1-R1 review M-5)."""
+    store = world["store"]
+    ext = store.add_external_wanted("Al Green", GOOD_OLD, duration_s=195)
+    resp, files = good_old_days(world, tmp_path)
+    store.set_external_song(ext, "s7", True)
+    store.set_external_status(ext, "needs_source", "provisional low copy filed; upgrade at medium")
+    store.commit()
+    asked = []
+    real = SubsonicClient.search_songs
+    monkeypatch.setattr(SubsonicClient, "search_songs", lambda self, *a, **kw: asked.append(a) or real(self, *a, **kw))
+    with FakeSlskdServer(resp, world["dl"], files=files) as srv:
+        r = run(world, srv, approve=False, wanted_id=ext)
+    assert r.status == "needs_source" and r.pick is not None and asked == [], r.reason
+    assert events_of(world, ext, "matched") == []
+    assert (store.external(ext)["library_song_id"], store.external(ext)["provisional"]) == ("s7", 1)

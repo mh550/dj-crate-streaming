@@ -170,7 +170,7 @@
         "S1-07",
         "S1-08"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "S1-09",

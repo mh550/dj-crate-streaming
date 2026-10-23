@@ -224,7 +224,9 @@ def test_play_now_is_refused_for_owned_in_progress_and_review_rows(world, web):
     for status, reason, why in (("sourcing", "downloading x.mp3", "in progress"),
                                 ("verify", "filed as x.mp3 but Navidrome has not picked it up yet", "in progress"),
                                 ("failed", "Navidrome never indexed x.mp3; file is in the library", "in progress"),
-                                ("review", "ambiguous (length differs): t1, t2", "pick a version first")):
+                                ("review", "ambiguous (length differs): t1, t2", "pick a version first"),
+                                ("review", "filed One of These Good Old Days as Al Green/Singles/x.flac, asked for "
+                                           "I'm Still In Love With You", "approve it again, or reopen it")):
         i = store.add_external_wanted("D", f"Row {status}", tier="medium")
         store.set_external_status(i, status, reason)
         cases[i] = why

@@ -109,6 +109,9 @@ def main(argv: list[str] | None = None) -> int:
 
     cfg = Config.from_env(subsonic_url=a.url, username=a.user, password=a.password, db_path=a.db)
     if a.cmd == "wanted" and a.wanted_cmd == "reopen":   # crates.db only: no Navidrome, no file, no playlist
+        if not Path(cfg.db_path).is_file():           # CrateStore would create an empty one
+            print(f"wanted reopen: no crates.db at {cfg.db_path}", file=sys.stderr)
+            return 1
         return reopen(CrateStore(cfg.db_path), a.id, a.apply)
     if not cfg.username:
         print("set SUBSONIC_USER / SUBSONIC_PASS (and SUBSONIC_URL)", file=sys.stderr)

@@ -29,7 +29,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from sourcing.identity import lead_artist, loose
+from sourcing.identity import can_be_song, lead_artist, loose
 from sourcing.policy import DEFAULT_TIER, STREAM_DEFAULT, check_stream, check_tier, max_tier
 
 SCHEMA = """
@@ -1042,6 +1042,10 @@ class CrateStore:
             raise ValueError(f"{ext_id}: its placement into {', '.join(writing)} is writing; try after the worker's next tick")
         artist = row["asked_artist"] if row["asked_artist"] is not None else row["artist"]
         title = row["asked_title"] if row["asked_title"] is not None else row["title"]
+        if row["provisional"] and row["library_song_id"] and can_be_song(row["title"], title):
+            # play-now's low copy of the asked song: reopened, the library check (S1-07) would take it as the row's
+            raise ValueError(f"{ext_id}: its provisional copy {row['library_song_id']} is the asked song; "
+                             "it waits for its upgrade, nothing to reopen")
         filed = row["library_song_id"] is not None or (artist, title) != (row["artist"], row["title"])
         if status == "needs_source" and not filed and not places:
             raise ValueError(f"{ext_id} is already needs_source with its asked names; nothing to reopen")

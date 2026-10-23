@@ -59,6 +59,9 @@ response shape: use `fixtures/search_responses.sample.json`, `fixtures/spotify_e
 (the enqueue response, `/users/*`), don't depend on it. A shape you'd need goes into the checklist as a capture step.
 
 ## S1: download fixes from the Al Green attempts (after: [])
+**Built 2026-10-22** (run `dj-crate-streaming-2026-10-22-fixes`, commits `0493bc2`…S1-R1 on branch
+`harness/dj-crate-streaming-2026-10-22-fixes`, base `307d62b`): against the fakes only, not deployed, PR open. Decisions
+D48 and D49 (*default*) in the pivot spec.
 1. **S1-01 Reject a file whose title slot names another song** (`sourcing/scorer.py`). After the hotfix's title-slot
    rule, a candidate whose title slot parses (`identity.parse_filename`) to a different song key than the wanted title
    (`parse_title(...).key`, labels and case ignored; D26 versions stay as they are) is `rejected` ("title slot is <X>"),

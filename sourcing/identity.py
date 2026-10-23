@@ -326,14 +326,35 @@ def song_key(artist: str | None, title: str | None) -> str:
     return f"{loose(lead_artist(artist))}|{loose(parse_title(title, artist).base)}"
 
 
+# Where a title's extra words may stand: ` - ` (artist in front, `- From "Movie"` behind), a dash, a bracket, `,`
+# (", Pt. 1"), `:` ("Intro: Song"), `/` (a medley), a credit.
+_SEGMENT_SPLIT = re.compile(r"\s+-\s+|[\u2013\u2014()\[\]{},:/]|\b(?:feat|ft|featuring)\b\.?", re.I)
+
+
+def _segments(title: str) -> list[str]:
+    """The `loose` keys of `title`'s parts between the splits above, in order, each without a leading track number
+    ("02 ", "1-01 ", "A1. ", "01_")."""
+    keys = []
+    for part in _SEGMENT_SPLIT.split(title):
+        for _ in range(2):                                  # "1-01 Song": disc, then track
+            part = _TRACKNO.sub("", part, count=1)
+        if loose(part):
+            keys.append(loose(part))
+    return keys
+
+
 def can_be_song(title: str | None, asked: str | None) -> bool:
-    """Whether `title` can name the song `asked` names: one `loose` base title holds the other, so spelling, labels
-    parse_title doesn't know ("(Acoustic)", `- From "Movie"`), unbracketed credits ("ft. X") and a title with the
-    artist or a track number in front ("02 Song") still match; an empty side always does. Lenient on purpose: the
-    callers turn a miss into a hard verdict (verify's `recording`, fetch's wrong-song review, S1-02/S1-03), so a
-    false miss throws a good download away. D26 judges versions elsewhere."""
-    a, b = loose(parse_title(title).base), loose(parse_title(asked).base)
-    return a in b or b in a
+    """Whether `title` can name the song `asked` names: the same `loose` base, or one side's first part (split as
+    _segments does) is a whole part of the other. So spelling, labels parse_title doesn't know ("(Acoustic)",
+    `- From "Movie"`), credits ("ft. X"), ", Pt. 1", and a title with the artist or a track number in front ("02
+    Song") still match, but "Take Me Home" is not "Home" (S1-R1 review). An empty side always matches. Lenient on
+    purpose: the callers turn a miss into a hard verdict (verify's `recording`, fetch's wrong-song review,
+    S1-02/S1-03), so a false miss throws a good download away. D26 judges versions elsewhere."""
+    a, b = parse_title(title).base, parse_title(asked).base
+    if not loose(a) or not loose(b) or loose(a) == loose(b):
+        return True
+    sa, sb = _segments(a), _segments(b)
+    return not sa or not sb or sa[0] in sb or sb[0] in sa
 
 
 # What taggers and Navidrome put in an empty field (scripts.tag_rules.blank uses this set too).

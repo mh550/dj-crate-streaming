@@ -7,10 +7,11 @@ Searches always complete immediately with `responses` (slskd response shape, see
 fixtures/search_responses.sample.json). Enqueueing a file "downloads" it the way slskd does:
 the bytes land at downloads_dir/<remote parent folder>/<basename>, and transfers are reported
 per user as {username, directories:[{directory, files:[{id, filename, state, size}]}]}.
-complete=False keeps transfers InProgress forever (timeout tests); fail_enqueue=True makes
-POST /transfers/downloads answer 500 (peer gone), and a set of peers makes it do so for those peers only; an
-enqueue to one of `errored_peers` records a transfer that ends `Completed, Errored` with no file (a VPN drop). DELETE of a transfer acts as slskd 0.26.1 does: without
-?remove=true it only cancels (the record stays), with it the record goes; an unknown id is 404.
+complete=False keeps transfers InProgress forever (timeout tests). fail_enqueue=True makes
+POST /transfers/downloads answer 500 (peer gone); a set of peers makes it do so for those peers only. An enqueue
+to one of `errored_peers` records a transfer in `error_state` (default `Completed, Errored`) with no file (a VPN
+drop). DELETE of a transfer acts as slskd 0.26.1 does: without ?remove=true it only cancels (the record stays),
+with it the record goes; an unknown id is 404.
 """
 from __future__ import annotations
 
@@ -116,7 +117,7 @@ class FakeSlskdServer:
                     self._send({"id": body["id"], "state": "Completed, Succeeded"})
                 elif path.startswith("/api/v0/transfers/downloads/"):
                     user = path.rsplit("/", 1)[1]
-                    if fake.fail_enqueue is True or (fake.fail_enqueue and user in fake.fail_enqueue):
+                    if fake.fail_enqueue is True or user in (fake.fail_enqueue or ()):
                         return self._send({"error": "peer unreachable"}, 500)
                     self._send([fake._download(user, f["filename"], f.get("size", 0)) for f in body])
                 else:

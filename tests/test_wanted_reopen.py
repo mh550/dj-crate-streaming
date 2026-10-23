@@ -237,6 +237,29 @@ def test_refuses_a_row_already_open_and_a_second_reopen(st):
     assert kinds(st).count("reopened") == 1
 
 
+def test_refuses_a_provisional_copy_of_the_asked_song(st):
+    """A play-now row whose provisional low copy is the asked song waits for its upgrade: reopened, the library check
+    (S1-07) would link that very copy as the same version and end the upgrade (S1-R1 review M-6)."""
+    ext = st.add_external_wanted("Al Green", ASKED, duration_s=196)
+    st.set_external_song(ext, "s3", True)
+    st.set_external_status(ext, "needs_source", "provisional low copy filed as x.mp3; upgrade at medium")
+    st.commit()
+    with pytest.raises(ValueError, match="provisional copy s3 is the asked song"):
+        st.reopen_external(ext, apply=True)
+    assert (st.external(ext)["library_song_id"], st.external(ext)["provisional"]) == ("s3", 1)
+
+
+def test_a_provisional_copy_of_another_song_reopens(st):
+    """Filed before S1-03 as another song by play-now: that copy is not the row's, so reopen takes it off."""
+    ext = st.add_external_wanted("Al Green", ASKED, duration_s=196)
+    st.set_wanted_names(ext, "Al Green", WRONG)
+    st.set_external_song(ext, "s9", True)
+    st.set_external_status(ext, "ok", f"provisional low copy filed as Al Green/Singles/{WRONG}.mp3")
+    st.commit()
+    st.reopen_external(ext, apply=True)
+    assert (st.external(ext)["library_song_id"], st.external(ext)["title"]) == (None, ASKED)
+
+
 @pytest.mark.parametrize("bad", ["s1", "ext-", "ext-x", "ext-999", ""])
 def test_refuses_a_bad_or_missing_id(st, bad):
     seed_ext74(st)
@@ -295,6 +318,15 @@ def test_cli_refusal_exits_1(cli, capsys, tmp_path):
     assert "sourcing" in capsys.readouterr().err
     assert main(["wanted", "reopen", "ext-999"]) == 1
     assert "ext-999" in capsys.readouterr().err
+
+
+def test_cli_a_missing_database_is_refused_not_created(cli, capsys, tmp_path, monkeypatch):
+    """A mistyped CRATES_DB or --db must not leave a fresh empty crates.db behind (S1-R1 review M-7)."""
+    _, main = cli
+    monkeypatch.setenv("CRATES_DB", str(tmp_path / "typo" / "crates.db"))
+    assert main(["wanted", "reopen", "ext-74"]) == 1
+    assert "no crates.db at" in capsys.readouterr().err
+    assert not (tmp_path / "typo").exists()
 
 
 def test_cli_a_locked_database_exits_1(cli, capsys, tmp_path, monkeypatch):

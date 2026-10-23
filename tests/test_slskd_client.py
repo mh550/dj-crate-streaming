@@ -97,3 +97,21 @@ def test_a_dropped_connection_is_a_slskd_error(monkeypatch, raised, why):
     with pytest.raises(SlskdError) as e:
         SlskdClient("http://127.0.0.1:5030", "k").search_state("sid-1")
     assert str(e.value) == f"slskd GET /searches/<id>: {why}" and e.value.status is None
+
+
+def test_a_garbled_answer_is_a_slskd_error(monkeypatch):
+    """A 200 whose body isn't JSON (a connection cut mid-body behind a proxy) is a failed call like any other, so
+    fetch can try another peer (S1-R1 review M-3)."""
+    import io
+    import urllib.request
+
+    class Answer(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            self.close()
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **kw: Answer(b'{"id": "sid-1", "sta'))
+    with pytest.raises(SlskdError) as e:
+        SlskdClient("http://127.0.0.1:5030", "k").search_state("sid-1")
+    assert str(e.value) == "slskd GET /searches/<id>: invalid JSON" and e.value.status is None

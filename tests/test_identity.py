@@ -539,7 +539,17 @@ def test_strip_trackno_keeps_a_number_only_when_the_wanted_words_follow_it(name,
     ("Love and Happiness", "Love And Happiness"), ("Love and Happiness (Live)", "Love And Happiness"),
     ("Love And Happiness feat. Bob", "Love and Happiness"), ('Love and Happiness - From "Movie"', "Love and Happiness"),
     ("02 Can You Feel It", "Can You Feel It"), ("Al Green - Love and Happiness", "Love and Happiness"),
-    ("", "Love and Happiness"), ("Love and Happiness", None)])
+    ("", "Love and Happiness"), ("Love and Happiness", None),
+    ("Love and Happiness (Acoustic)", "Love and Happiness"), ("Love and Happiness", "Love and Happiness (Acoustic)"),
+    ("Good Times - Chic & Nile Rodgers", "Good Times"), ("Chic - Good Times", "Good Times"),
+    ("Love and Happiness ft. Bob", "Love and Happiness"), ("01 - Love and Happiness", "Love and Happiness"),
+    # extra words on both sides, other track number forms, `,` `:` `/` and unspaced dashes (S1-R1 re-review)
+    ('Song (From "Movie")', 'Song - From "Movie" Soundtrack'), ("Al Green - Song", "Song (Acoustic)"),
+    ("02 Song", "Song (Acoustic)"), ("1-01 Song", "Song"), ("A1 Song", "Song"), ("A1. Song", "Song"),
+    ("01_Song", "Song"), ("01.Song", "Song"),
+    ("Can't Get Enough of Your Love, Babe", "Can't Get Enough of Your Love"),
+    ("Get Up (I Feel Like Being A) Sex Machine, Pts. 1 & 2", "Sex Machine"), ("Song, Pt. 1", "Song"),
+    ("Medley: Song / Other", "Song"), ("Intro: Song", "Song"), ("Song: Reprise", "Song"), ("Song—Remastered", "Song")])
 def test_can_be_song_is_lenient_about_spelling_labels_credits_and_prefixes(title, asked):
     assert can_be_song(title, asked)
 
@@ -548,3 +558,12 @@ def test_can_be_song_tells_another_song_apart():
     """ext-74: the same-named album's track 9 is not the title track (S1-02, S1-03)."""
     assert not can_be_song("One of These Good Old Days", "I'm Still In Love With You")
     assert not can_be_song("Le Freak", "Good Times")
+
+
+@pytest.mark.parametrize("title, asked", [
+    ("Take Me Home", "Home"), ("Home", "Take Me Home"), ("Lovely Day", "Love"), ("Love Me Do", "Love"),
+    ("Love and Happiness", "Happiness"), ("Happiness Is a Warm Gun", "Happiness")])
+def test_can_be_song_does_not_take_a_song_whose_title_holds_the_asked_words(title, asked):
+    """Containment is not enough (S1-R1 review I-1): the extra words must stand apart, after ` - `, a bracket or a
+    credit, or be a track number in front."""
+    assert not can_be_song(title, asked)
