@@ -98,7 +98,7 @@
         "Run `.harness/check.sh tests/test_album_job.py tests/test_fake_slskd.py tests/test_fetch.py` green.",
         "The full suite is green: `.harness/check.sh` exits 0 (about 11-12 min; the test count may only grow from the previous feature's count)."
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "S2-05c",

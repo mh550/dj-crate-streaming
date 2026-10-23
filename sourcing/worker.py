@@ -22,7 +22,8 @@ Each tick:
      skipped), then fetched, preferring the candidate Michael saw while that file is still offered,
      and finally marked with the outcome. An album request's `album` approvals (S2-05) are claimed and run together
      by sourcing.album_job.run: one search and plan (again when the cached one is older than ALBUM_PLAN_MAX_AGE_S,
-     3600 in the CLI), each peer's planned files in one enqueue, each row through fetch in planned mode;
+     3600 in the CLI), each peer's planned files in one enqueue, each row through fetch in planned mode, a folder
+     in trouble switched to another (a peer that starts nothing within ALBUM_START_TIMEOUT_S, 600 in the CLI);
   3. every copy replacement left unfinished before this tick (sourcing.replace: a playlist that could not be
      repointed yet, a crash between steps) is advanced; an error is logged and the job keeps its state;
   3b. every filed external row whose imported playlist does not hold it yet is placed at its Spotify position
@@ -125,8 +126,9 @@ class Worker:
     def __init__(self, *, store, slskd, navidrome, reconciler, fetch_kwargs: dict, fetcher=fetch, log=print,
                  recheck_s: float = 0, reconcile_s: float = 0, clock=time.monotonic, lock_path: Path | None = None,
                  export_s: float = 0, exporter=export, heartbeat_path: Path | None = None,
-                 album_plan_max_age_s: float = album_job.ALBUM_PLAN_MAX_AGE_S):
-        self.album_plan_max_age_s = album_plan_max_age_s
+                 album_plan_max_age_s: float = album_job.ALBUM_PLAN_MAX_AGE_S,
+                 album_start_timeout_s: float = album_job.ALBUM_START_TIMEOUT_S):
+        self.album_plan_max_age_s, self.album_start_timeout_s = album_plan_max_age_s, album_start_timeout_s
         self.store, self.fetcher, self.log, self.recheck_s = store, fetcher, log, recheck_s
         self.reconciler, self.reconcile_s, self.clock, self._reconciled_at = reconciler, reconcile_s, clock, None
         self.export_s, self.exporter, self._exported_at = export_s, exporter, None
@@ -303,7 +305,7 @@ class Worker:
     def _album(self, request_id: int, approvals: list[dict], results: list[str]) -> int:
         """One request's album job (sourcing.album_job.run, which marks each approval used)."""
         out = album_job.run(request_id, approvals, fetcher=self.fetcher, plan_max_age_s=self.album_plan_max_age_s,
-                            **self.common)
+                            start_timeout_s=self.album_start_timeout_s, **self.common)
         for a, outcome in out:
             results.append(f"{a['wanted_id']}: {outcome}")
             self.log(f"{a['wanted_id']}: {outcome}")

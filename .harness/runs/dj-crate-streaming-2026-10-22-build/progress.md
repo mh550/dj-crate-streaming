@@ -9,6 +9,28 @@ Michael steers from `INBOX.md` on this branch (status line `run | pause | stop`;
 session reads it at startup. Policy: **build-only** (`.harness/config.sh`) and the brief in `brief.md`: nothing live,
 no docker, no `/srv`, no network, no client UI, PRs only (open, never merge).
 
+### 2026-10-23 01:15 · S2-05b · passes
+
+- **Changed.** `sourcing/album_job.py` `run` switches folders: triggers `FetchResult.again` (fetch no longer retries
+  in planned mode), `start_timeout_s` (`ALBUM_START_TIMEOUT_S`=600; worker `album_start_timeout_s`, CLI env), a
+  `DISTRUST` kind, or 2 failed rows per folder; the folder's unfiled records forgotten (remove=true), moved rows
+  re-planned over the cached first search (`responses` now in the `req-<id>` cache, server side) + one fresh search
+  with `plan_album(exclude=, like=, min_rows=1)`; one `switch` event per failed folder. `Verdict.kinds` →
+  `FetchResult.kinds`; `album.folder_of`; fake slskd `stalled_peers`, `deleted`. Tests 2032 → 2049.
+- **Verified.** New tests red first; 8 mutations (no distrust, failures 99, no start check, no forget, no exclude,
+  held not moved, no planned `again`, no kinds) each turn 1–5 red. Opus review: 3 important fixed test-first (switch
+  ignored same release → `like`; one row could never switch → `min_rows=1`, weak "never the failed folder" test
+  rewritten; a refused fresh search aborted every row → falls back to the cached responses), 1 minor fixed (a held
+  row now moves on a stall too). Full suite green, 2049, 759 s.
+- **Next session (S2-05c) must know.** A row switches once; then (or with no folder found) it goes per track as an
+  ordinary fetch with `prefer=None` and **no exclude yet**, so it may pick the distrusted peer again: 05c adds
+  `exclude` and the attempt list in the reason (today the reason is the last attempt's). Known gap: a `_forget` that
+  fails (slskd away) is not retried. The switch event is `#<id> folder 1 distrusted: transcode (<basename>); 8 rows →
+  folder 2` (with `#<id>`, as `plan` has).
+- **Proposed changes.** S2-05b step 1 case 2 says "A's first file" and "8 rows": the failed row switches too (the spec
+  and S2-05c's cap test need that), so with the first file it is 9 rows; the test puts the transcode on A's second
+  file (track 1 filed, untouched: 8 rows), which also gives step 3 a filed row to check. Questions: none.
+
 ### 2026-10-23 01:20 · S2-05a · passes
 
 - **Changed.** New `sourcing/album_job.py`: `plan_request` (one `"<artist> <album>"` search, plan cached as preview

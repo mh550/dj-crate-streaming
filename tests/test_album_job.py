@@ -1,6 +1,8 @@
 """S2-05a: an album request approved as one, run by the worker from its primary folder in one enqueue
 (sourcing/album_job.py; fetch's planned mode). The request comes from the Spotify album fixture through
-sourcing.requests.add_spotify; slskd is the fake, its one response a 9-track folder (the ext-74 shape)."""
+sourcing.requests.add_spotify; slskd is the fake, its one response a 9-track folder (the ext-74 shape).
+S2-05b: trouble with a planned file switches the rest of that folder's unfiled rows to another folder (a second
+peer's copy of the album, `album_folder(..., peer=PEER_B, directory=DIR_B)`)."""
 import json
 import re
 import time
@@ -25,6 +27,8 @@ SAMPLE = load_responses()
 ALBUM = "I'm Still in Love With You"
 DIR = "@@music\\Al Green\\I'm Still in Love With You (1972)"
 PEER = "soulfolder"                        # the folder's peer: no event, reason or payload may name it
+DIR_B = "@@flac\\Al Green\\Al Green - I'm Still in Love With You"      # another peer's rip: no year, so folder 2
+PEER_B = "otherpeer"
 URL = "https://open.spotify.com/album/2nTlIPIQ7fHOnNN7BRch0Z"
 
 
@@ -37,20 +41,21 @@ def flac_bytes(tmp_path, seconds: int) -> bytes:
     return make_flac(tmp_path / f"src-{seconds}.flac", total=44100 * seconds, pad_bytes=seconds * 900_000 // 8).read_bytes()
 
 
-def album_folder(tmp_path, rows, peer=PEER, skip=()):
-    """One response from `peer`: the request's tracks as `<DIR>\\Al Green - <album> - NN - <title>.flac`, each file's
-    bytes a FLAC of the row's length; `skip` leaves those track numbers out. Returns (response, {filename: bytes})."""
+def album_folder(tmp_path, rows, peer=PEER, skip=(), directory=DIR, speed=3_500_000, offset=0):
+    """One response from `peer`: the request's tracks as `<directory>\\Al Green - <album> - NN - <title>.flac`, each
+    file's bytes a FLAC of the row's length (listed `offset` s longer); `skip` leaves those track numbers out.
+    Returns (response, {filename: bytes})."""
     r = json.loads(json.dumps(SAMPLE[0]))
-    r.update(username=peer, hasFreeUploadSlot=True, uploadSpeed=3_500_000)
+    r.update(username=peer, hasFreeUploadSlot=True, uploadSpeed=speed)
     files, data = [], {}
     for row in rows:
         if row["track_no"] in skip:
             continue
         title = row["title"].replace(" ,", ", ")               # Spotify's "Oh ,Pretty Woman"; a rip spells it right
-        name = f"{DIR}\\Al Green - {ALBUM} - {row['track_no']:02d} - {title}.flac"
+        name = f"{directory}\\Al Green - {ALBUM} - {row['track_no']:02d} - {title}.flac"
         data[name] = flac_bytes(tmp_path, int(row["duration"]))
         files.append(dict(SAMPLE[0]["files"][0], filename=name, extension="flac", bitRate=900,
-                          length=int(row["duration"]), size=len(data[name])))
+                          length=int(row["duration"]) + offset, size=len(data[name])))
     r["files"] = files
     return r, data
 
@@ -95,12 +100,13 @@ def request(world):
 
 
 def no_peer_anywhere(store, *texts):
-    for e in store.events(limit=1000):
-        assert PEER not in (e["detail"] or ""), e
-    for (result,) in store.db.execute("SELECT result FROM approvals"):
-        assert PEER not in (result or ""), result
-    for t in texts:
-        assert PEER not in json.dumps(t), t
+    for peer in (PEER, PEER_B):
+        for e in store.events(limit=1000):
+            assert peer not in (e["detail"] or ""), e
+        for (result,) in store.db.execute("SELECT result FROM approvals"):
+            assert peer not in (result or ""), result
+        for t in texts:
+            assert peer not in json.dumps(t), t
 
 
 # --- plan_request / approve_request
@@ -395,6 +401,277 @@ def test_spend_runs_each_request_once_and_other_approvals_as_before(world, tmp_p
     assert report.approvals == 11 and srv.posts == [(PEER, 9)]
     assert calls[0] == ("s4", False) and calls[-1] == (plain, False)
     assert [c for c in calls[1:-1]] == [(r["song_id"], True) for r in req["rows"]]
+
+
+# --- switching (S2-05b)
+
+def two_folders(tmp_path, rows):
+    """A (PEER, DIR: the primary, its folder name has the year) and B (PEER_B, DIR_B, slower: folder 2), 9 files each
+    of the same lengths. Returns ([responses], {filename: bytes})."""
+    a, a_data = album_folder(tmp_path, rows)
+    b, b_data = album_folder(tmp_path, rows, peer=PEER_B, directory=DIR_B, speed=1_000_000)
+    return [a, b], a_data | b_data
+
+
+def a_file(rows, n):
+    return f"{DIR}\\Al Green - {ALBUM} - {n:02d} - {rows[n - 1]['title'].replace(' ,', ', ')}.flac"
+
+
+def basename(filename):
+    return filename.rsplit("\\", 1)[1]
+
+
+def verifier_failing(kind, *tracks, where=DIR):
+    """header_only, except that the files of `tracks` from folder `where` (A's by default: they land under its
+    folder name) have one `kind` problem."""
+    from sourcing.verify import Verdict
+    a_folder = where.rsplit("\\", 1)[1]
+
+    def check(path, duration, **kw):
+        n = int(re.search(r" - (\d\d) - ", path.name).group(1))
+        if path.parent.name == a_folder and n in tracks:
+            return Verdict(False, [f"{kind} problem in {path.name}"], None, kinds=[kind])
+        return header_only(path, duration, **kw)
+    return check
+
+
+def switches(store):
+    """The `switch` events, oldest first."""
+    return [e["detail"] for e in store.events(limit=1000) if e["kind"] == "switch"][::-1]
+
+
+def run_album(world, srv, tmp_path, store, req, **kw):
+    album_job.plan_request(store, SlskdClient(srv.url, srv.api_key), req["id"], poll_s=0.01)
+    album_job.approve_request(store, req["id"])
+    return album_job.run(req["id"], store.pending_approvals(), **common(world, srv, tmp_path, **kw))
+
+
+def test_an_ordinary_finding_fails_that_row_only(world, tmp_path, not_in_library):
+    store, req = world["store"], request(world)
+    rows = req["rows"]
+    responses, data = two_folders(tmp_path, rows)
+    with FakeSlskdServer(responses, world["dl"], files=data) as srv:
+        out = run_album(world, srv, tmp_path, store, req, verifier=verifier_failing("duration", 3))
+    assert srv.posts == [(PEER, 9)] and len(srv.searched) == 1               # no switch: no fresh search, no POST
+    assert switches(store) == []
+    assert [d for d in srv.deleted if d[1] != a_file(rows, 3)] == []         # the other 8 keep their A records
+    done = store.request(req["id"])
+    assert [r["status"] for r in done["rows"]] == ["ok", "ok", "failed"] + ["ok"] * 6
+    assert done["rows"][2]["reason"] == f"duration problem in {basename(a_file(rows, 3))}"
+    assert dict((a["wanted_id"], o) for a, o in out)[rows[2]["song_id"]].startswith("failed: duration problem")
+    assert done["status"] == "partly"
+
+
+def test_a_transcode_finding_switches_the_folder_s_unfiled_rows(world, tmp_path, not_in_library):
+    store, req = world["store"], request(world)
+    rows = req["rows"]
+    responses, data = two_folders(tmp_path, rows)
+    with FakeSlskdServer(responses, world["dl"], files=data) as srv:
+        out = run_album(world, srv, tmp_path, store, req, verifier=verifier_failing("transcode", 2))
+        left = [(t["username"], t["filename"]) for t in srv.transfers]
+    assert srv.posts == [(PEER, 9), (PEER_B, 8)] and len(srv.searched) == 2   # the plan's search, one fresh one
+    assert [f for p, f in left if p == PEER] == [a_file(rows, 1)]            # every unfiled A record forgotten
+    assert sorted(f for p, f, remove in srv.deleted if p == PEER and remove) == [a_file(rows, n) for n in range(2, 10)]
+    assert not any(" - 01 - " in f for p, f in srv.enqueued if p == PEER_B)
+    assert switches(store) == [f"#{req['id']} folder 1 distrusted: transcode ({basename(a_file(rows, 2))}); 8 rows → folder 2"]
+    done = store.request(req["id"])
+    assert [r["status"] for r in done["rows"]] == ["ok"] * 9, [(r["status"], r["reason"]) for r in done["rows"]]
+    assert done["status"] == "done"
+    first = done["rows"][0]                                                  # filed from A before the switch: stays
+    assert (first["status"], first["library_song_id"]) == ("ok", "al01")
+    assert store.approval(first["song_id"])["result"] == dict((a["wanted_id"], o) for a, o in out)[first["song_id"]]
+    assert all(o.startswith("ok: ") for _, o in out) and len(out) == 9
+    assert [e["detail"] for e in store.events(limit=1000) if e["kind"] == "pick" and e["song_id"] == rows[1]["song_id"]] \
+        == [f"planned file: {basename(a_file(rows, 2))}"] * 2                 # A's file, then B's (same basename)
+    no_peer_anywhere(store, [o for _, o in out], *(r["reason"] for r in done["rows"]))
+
+
+def test_a_peer_that_never_starts_switches_all_its_rows(world, tmp_path, not_in_library):
+    store, req = world["store"], request(world)
+    rows = req["rows"]
+    responses, data = two_folders(tmp_path, rows)
+    with FakeSlskdServer(responses, world["dl"], files=data, stalled_peers={PEER}) as srv:
+        t0 = time.time()
+        out = run_album(world, srv, tmp_path, store, req, start_timeout_s=0.2)
+        left = [t for t in srv.transfers if t["username"] == PEER]
+    assert time.time() - t0 < 10
+    assert srv.posts == [(PEER, 9), (PEER_B, 9)] and left == []
+    assert switches(store) == [f"#{req['id']} folder 1: no transfer started within 0.2 s; 9 rows → folder 2"]
+    done = store.request(req["id"])
+    assert [r["status"] for r in done["rows"]] == ["ok"] * 9 and done["status"] == "done"
+    no_peer_anywhere(store, [o for _, o in out])
+
+
+def test_a_transfer_error_switches_that_row_and_the_rest_of_the_folder(world, tmp_path, not_in_library):
+    """S1-06's `again`: A's first transfer ends `Completed, Errored` (seeded on the fake once the job enqueued)."""
+    store, req = world["store"], request(world)
+    rows = req["rows"]
+    responses, data = two_folders(tmp_path, rows)
+    with FakeSlskdServer(responses, world["dl"], files=data) as srv:
+        def fetcher(wanted_id, **kw):
+            for t in srv.transfers:
+                if (t["username"], t["filename"]) == (PEER, a_file(rows, 1)):
+                    t["state"] = "Completed, Errored"
+            return fetch(wanted_id, **kw)
+
+        out = run_album(world, srv, tmp_path, store, req, fetcher=fetcher)
+        left = [t for t in srv.transfers if t["username"] == PEER]
+    assert srv.posts == [(PEER, 9), (PEER_B, 9)] and left == []
+    assert switches(store) == [f"#{req['id']} folder 1: download ended: Completed, Errored ({basename(a_file(rows, 1))}); "
+                               "9 rows → folder 2"]
+    assert [e for e in store.events(limit=1000) if e["kind"] == "retry"] == []    # the job switches, not fetch
+    done = store.request(req["id"])
+    assert [r["status"] for r in done["rows"]] == ["ok"] * 9 and done["status"] == "done"
+    assert all(o.startswith("ok: ") for _, o in out)
+    no_peer_anywhere(store, [o for _, o in out])
+
+
+def test_two_failures_in_one_folder_switch_it(world, tmp_path, not_in_library):
+    """Two ordinary findings in A: the first failed row and every unfiled row after the second switch to B."""
+    store, req = world["store"], request(world)
+    rows = req["rows"]
+    responses, data = two_folders(tmp_path, rows)
+    with FakeSlskdServer(responses, world["dl"], files=data) as srv:
+        out = run_album(world, srv, tmp_path, store, req, verifier=verifier_failing("duration", 3, 5))
+    assert srv.posts == [(PEER, 9), (PEER_B, 6)]
+    assert switches(store) == [f"#{req['id']} folder 1: 2 failures ({basename(a_file(rows, 3))}, {basename(a_file(rows, 5))}); "
+                               "6 rows → folder 2"]
+    done = store.request(req["id"])
+    assert [r["status"] for r in done["rows"]] == ["ok"] * 9 and done["status"] == "done"
+    assert [r["library_song_id"] for r in done["rows"]] == [f"al{n:02d}" for n in range(1, 10)]
+    assert len(out) == 9 and all(o.startswith("ok: ") for _, o in out)
+
+
+def test_a_switched_folder_is_never_the_one_that_failed(world, tmp_path, not_in_library):
+    """The re-plan runs over the first search's folders plus a fresh search, without the failed folder: with only A
+    there is nowhere to switch, and the rows go per track (S2-05c caps them)."""
+    store, req = world["store"], request(world)
+    rows = req["rows"]
+    resp, data = album_folder(tmp_path, rows)
+    with FakeSlskdServer([resp], world["dl"], files=data) as srv:
+        calls = []
+
+        def fetcher(wanted_id, **kw):
+            calls.append((wanted_id, kw.get("planned", False), kw.get("prefer")))
+            return fetch(wanted_id, **kw)
+
+        run_album(world, srv, tmp_path, store, req, verifier=verifier_failing("recording", 8), fetcher=fetcher)
+    assert switches(store) == [f"#{req['id']} folder 1 distrusted: recording ({basename(a_file(rows, 8))}); "
+                               "2 rows per track"]
+    assert calls[-2:] == [(rows[7]["song_id"], False, None), (rows[8]["song_id"], False, None)]
+    assert srv.posts[0] == (PEER, 9)
+
+
+def test_one_row_switches_on_its_own(world, tmp_path, not_in_library):
+    store, req = world["store"], request(world)
+    rows = req["rows"]
+    responses, data = two_folders(tmp_path, rows)
+    with FakeSlskdServer(responses, world["dl"], files=data) as srv:
+        run_album(world, srv, tmp_path, store, req, verifier=verifier_failing("transcode", 9))
+    assert srv.posts == [(PEER, 9), (PEER_B, 1)]
+    assert switches(store) == [f"#{req['id']} folder 1 distrusted: transcode ({basename(a_file(rows, 9))}); "
+                               "1 row → folder 2"]
+    assert store.request(req["id"])["status"] == "done"
+
+
+def test_a_switch_prefers_the_release_already_filed(world, tmp_path, not_in_library):
+    """B (faster, but every length 5 s off: another release) would rank first; C has A's lengths and gets the rows."""
+    store, req = world["store"], request(world)
+    rows = req["rows"]
+    a, a_data = album_folder(tmp_path, rows)
+    b, b_data = album_folder(tmp_path, rows, peer=PEER_B, directory=DIR_B, speed=2_000_000, offset=5)
+    c, c_data = album_folder(tmp_path, rows, peer="thirdpeer", directory="@@x\\Al Green - Still in Love", speed=10)
+    with FakeSlskdServer([a, b, c], world["dl"], files=a_data | b_data | c_data) as srv:
+        run_album(world, srv, tmp_path, store, req, verifier=verifier_failing("transcode", 2))
+    assert srv.posts == [(PEER, 9), ("thirdpeer", 8)]
+    assert switches(store) == [f"#{req['id']} folder 1 distrusted: transcode ({basename(a_file(rows, 2))}); "
+                               "8 rows → folder 2"]
+
+
+def test_a_fresh_search_that_fails_plans_over_the_first_one(world, tmp_path, not_in_library, monkeypatch):
+    from sourcing.slskd_client import SlskdError
+    store, req = world["store"], request(world)
+    rows = req["rows"]
+    responses, data = two_folders(tmp_path, rows)
+    searches = []
+    real = album_job._search
+
+    def search(slskd, r, poll_s):
+        searches.append(r["id"])
+        if len(searches) > 1:
+            raise SlskdError("POST", "/searches", 503, "busy")
+        return real(slskd, r, poll_s)
+
+    monkeypatch.setattr(album_job, "_search", search)
+    with FakeSlskdServer(responses, world["dl"], files=data) as srv:
+        run_album(world, srv, tmp_path, store, req, verifier=verifier_failing("transcode", 2))
+    assert len(searches) == 2 and srv.posts == [(PEER, 9), (PEER_B, 8)]
+    assert store.request(req["id"])["status"] == "done"
+
+
+def test_a_row_switches_once_then_goes_per_track(world, tmp_path, not_in_library):
+    """B fails too: its unfiled rows have had their one switched folder, so they go per track; no third POST of a
+    folder."""
+    store, req = world["store"], request(world)
+    rows = req["rows"]
+    responses, data = two_folders(tmp_path, rows)
+    a_check, b_check = verifier_failing("transcode", 2), verifier_failing("transcode", 3, where=DIR_B)
+    with FakeSlskdServer(responses, world["dl"], files=data) as srv:
+        calls = []
+
+        def fetcher(wanted_id, **kw):
+            calls.append((wanted_id, kw.get("planned", False)))
+            return fetch(wanted_id, **kw)
+
+        def verifier(path, duration, **kw):
+            v = a_check(path, duration, **kw)
+            return b_check(path, duration, **kw) if v.ok else v
+
+        out = run_album(world, srv, tmp_path, store, req, verifier=verifier, fetcher=fetcher)
+    assert switches(store) == [
+        f"#{req['id']} folder 1 distrusted: transcode ({basename(a_file(rows, 2))}); 8 rows → folder 2",
+        f"#{req['id']} folder 2 distrusted: transcode ({basename(a_file(rows, 3))}); 7 rows per track"]
+    assert srv.posts[:2] == [(PEER, 9), (PEER_B, 8)]
+    assert [c[0] for c in calls if c[1]] == [rows[0]["song_id"], rows[1]["song_id"],      # A: 1 filed, 2 distrusts
+                                             rows[1]["song_id"], rows[2]["song_id"]]      # B: 2 filed, 3 distrusts
+    assert [c[0] for c in calls if not c[1]] == [r["song_id"] for r in rows[2:]]          # per track: 3..9
+    assert len(out) == 9 and len(set(a["id"] for a, _ in out)) == 9
+
+
+def test_cli_worker_reads_the_start_timeout_from_the_environment(tmp_path, monkeypatch):
+    import shutil
+    import sourcing.worker
+    from sourcing import cli
+    from subsonic.fake_server import FakeSubsonicServer
+    from tests.test_tier_rows import _cli_env
+    seen = []
+
+    class Spy(Worker):
+        def __init__(self, **kw):
+            seen.append(kw.get("album_start_timeout_s"))
+            super().__init__(**kw)
+
+    monkeypatch.setattr(sourcing.worker, "Worker", Spy)
+    shutil.copy(cli.DEFAULT_BEETS_CONFIG, tmp_path / "beets.yaml")
+    with FakeSubsonicServer() as nd, FakeSlskdServer(SAMPLE, tmp_path / "dl", files={}) as sl:
+        _cli_env(monkeypatch, tmp_path, nd, sl)
+        monkeypatch.setenv("DJ_WORKER", "1")
+        monkeypatch.delenv("ALBUM_START_TIMEOUT_S", raising=False)
+        assert cli.main(["worker", "--once"]) == 0
+        monkeypatch.setenv("ALBUM_START_TIMEOUT_S", "30")
+        assert cli.main(["worker", "--once"]) == 0
+    assert seen == [album_job.ALBUM_START_TIMEOUT_S, 30.0] and album_job.ALBUM_START_TIMEOUT_S == 600
+
+
+def test_the_worker_passes_its_start_timeout_to_the_job(world, tmp_path, not_in_library):
+    store, req = world["store"], request(world)
+    responses, data = two_folders(tmp_path, req["rows"])
+    with FakeSlskdServer(responses, world["dl"], files=data, stalled_peers={PEER}) as srv:
+        album_job.plan_request(store, SlskdClient(srv.url, srv.api_key), req["id"], poll_s=0.01)
+        album_job.approve_request(store, req["id"])
+        worker(world, srv, tmp_path, album_start_timeout_s=0.1).tick()
+    assert switches(store) == [f"#{req['id']} folder 1: no transfer started within 0.1 s; 9 rows → folder 2"]
+    assert store.request(req["id"])["status"] == "done"
 
 
 # --- restart

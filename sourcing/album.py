@@ -72,15 +72,18 @@ def wanted(row: dict) -> Wanted:
     return Wanted(row.get("artist") or "", row["title"], row.get("album"), row.get("duration"), row.get("year"))
 
 
+def folder_of(filename: str) -> str:
+    """A remote file's directory, as folders are grouped: everything before the last separator ("" at a share root)."""
+    return re.split(r"[\\/](?=[^\\/]*$)", filename)[0] if re.search(r"[\\/]", filename) else ""
+
+
 def _folders(responses: list[dict]) -> dict[tuple[str, str], dict]:
     """(peer, directory) → one response holding only that directory's files, its fileCount theirs (the scorer's
     "album?" bonus); the peer's slot and speed from its first response."""
     out: dict[tuple[str, str], dict] = {}
     for r in responses:
         for f in r.get("files", []):
-            name = f.get("filename", "")
-            directory = re.split(r"[\\/](?=[^\\/]*$)", name)[0] if re.search(r"[\\/]", name) else ""
-            key = (r.get("username", "?"), directory)
+            key = (r.get("username", "?"), folder_of(f.get("filename", "")))
             out.setdefault(key, dict(r, files=[]))["files"].append(f)
     for r in out.values():
         r["fileCount"] = len(r["files"])
@@ -121,14 +124,27 @@ def _other_release(f: FolderPick, primary: FolderPick, listed_lengths: dict[int,
     return False
 
 
+def _unlike(f: FolderPick, like: dict[int, float]) -> bool:
+    """A length of `f`'s more than LENGTH_TOLERANCE_S off `like`'s for that track number (a file without one shows
+    nothing)."""
+    return any(c.length_s is not None and like.get(row.get("track_no")) is not None
+               and abs(c.length_s - like[row["track_no"]]) > LENGTH_TOLERANCE_S for row, c in f.rows)
+
+
 def plan_album(responses: list[dict], rows: list[dict], *, policy: QualityPolicy = DEFAULT_POLICY,
-               listed_lengths: dict[int, float] | None = None) -> AlbumPlan:
+               listed_lengths: dict[int, float] | None = None,
+               exclude: set[tuple[str, str]] = frozenset(), like: dict[int, float] | None = None,
+               min_rows: int = MIN_FOLDER_ROWS) -> AlbumPlan:
     """The album-first plan for `rows` (the request's live rows) over one album search's `responses`.
-    `listed_lengths`: track number → seconds of the matched MusicBrainz release, when known."""
+    `listed_lengths`: track number → seconds of the matched MusicBrainz release, when known. A switch (S2-05b)
+    passes `exclude`, (peer, directory) folders never planned (the failed ones), `like`, track number → seconds of
+    the release the job has been filing (a folder matching it ranks first after coverage), and `min_rows=1` (one
+    row may switch to a folder)."""
     folders = [_map(peer, directory, response, rows, policy)
-               for (peer, directory), response in _folders(responses).items()]
-    folders = [f for f in folders if len(f.rows) >= MIN_FOLDER_ROWS]
-    folders.sort(key=FolderPick.rank_key)
+               for (peer, directory), response in _folders(responses).items() if (peer, directory) not in exclude]
+    folders = [f for f in folders if len(f.rows) >= min_rows]
+    folders.sort(key=(lambda f: f.rank_key()[:1] + (_unlike(f, like),) + f.rank_key()[1:]) if like
+                 else FolderPick.rank_key)
     primary = folders[0] if folders else None
     rest = folders[1:]
     secondary = None
@@ -136,7 +152,7 @@ def plan_album(responses: list[dict], rows: list[dict], *, policy: QualityPolicy
         lacks = set(range(len(rows))) - set(primary.at)
         options = [(f, f.only(lacks)) for f in rest]
         options = [(m.rank_key()[:1] + (_other_release(f, primary, listed_lengths, policy),) + m.rank_key()[1:], f, m)
-                   for f, m in options if len(m.rows) >= MIN_FOLDER_ROWS]
+                   for f, m in options if len(m.rows) >= min_rows]
         if options:
             _, chosen, secondary = min(options, key=lambda o: o[0])
             rest = [f for f in rest if f is not chosen]

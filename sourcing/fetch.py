@@ -121,6 +121,8 @@ class FetchResult:
     new_song_id: str | None = None
     explain: str = ""
     approval_result: str = ""      # set when an approval must record something other than "<status>: <reason>"
+    again: bool = False            # planned mode: the transfer failed as another peer may fix (S1-06); the job switches
+    kinds: tuple[str, ...] = ()    # a failed verification's problem kinds (verify's checks), for the album job
 
 
 def _find_landed(downloads_root: Path, best: Candidate) -> Path | None:
@@ -225,7 +227,9 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
     Planned mode (the album job, S2-05): `planned=True` with `prefer`, the planned file, and `enqueued`, the ids of
     that peer's transfer records before the job enqueued the album. Nothing is searched (the one candidate is
     `prefer`, scored again), the library is not asked (the job did) and nothing is enqueued or forgotten first: the
-    download is the record whose id is not in `enqueued` (S1-04's rule). The rest is as for any approved fetch."""
+    download is the record whose id is not in `enqueued` (S1-04's rule). A transfer error another peer may fix is
+    not retried here: the row fails with `again` set, and the job switches the folder (S2-05b). The rest is as for
+    any approved fetch; a failed verification's result carries its problem kinds (`kinds`) in every mode."""
     sleep = sleep or time.sleep
     if planned and not (approve and prefer and enqueued is not None):
         raise ValueError("planned mode needs approve=True, the planned file (prefer) and the records before (enqueued)")
@@ -557,6 +561,8 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
     try:
         intent, expected = intent_for(best)
         landed, why, again = attempt(best)
+        if landed is None and again and planned:     # the album job switches the folder, not fetch (S2-05b)
+            return replace(fail(why, best, text), again=True)
         if landed is None and again:          # one more source, another peer's, once per approval (S1-06)
             first, why1 = best, why
             best = next((c for c in cands if not c.rejected and c.username != first.username), None)
@@ -593,7 +599,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
                                "reference": _rel(ref).as_posix() if ref is not None else None})
         if not vd.ok:
             landed.unlink(missing_ok=True)                      # our own download, not library material
-            return fail("; ".join(vd.problems), best, text)
+            return replace(fail("; ".join(vd.problems), best, text), kinds=tuple(getattr(vd, "kinds", ()) or ()))
 
         staging = downloads_root / ".staging" / f"{wanted_id}-{int(time.time())}"   # beets only ever sees this
         staging.mkdir(parents=True, exist_ok=True)

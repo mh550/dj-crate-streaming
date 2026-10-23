@@ -284,6 +284,7 @@ def main(argv: list[str] | None = None) -> int:
                     reconcile_s=0 if a.no_reconcile else float(os.environ.get("WORKER_RECONCILE_S", "600")),
                     export_s=float(os.environ.get("WORKER_EXPORT_S", "300")),
                     album_plan_max_age_s=float(os.environ.get("ALBUM_PLAN_MAX_AGE_S", "3600")),
+                    album_start_timeout_s=float(os.environ.get("ALBUM_START_TIMEOUT_S", "600")),
                     lock_path=Path(cfg.db_path).parent / "worker.lock",
                     heartbeat_path=Path(cfg.db_path).parent / "worker.heartbeat")    # scripts/healthcheck.py worker
         try:

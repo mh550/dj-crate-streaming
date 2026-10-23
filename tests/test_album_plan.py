@@ -238,3 +238,33 @@ def test_plan_album_does_not_change_its_inputs():
     before = json.dumps([responses, rs])
     plan_album(responses, rs)
     assert json.dumps([responses, rs]) == before
+
+
+def test_excluded_folders_are_not_planned():
+    """A switch (S2-05b) re-plans without the failed folder: `exclude` holds (peer, directory) pairs."""
+    responses = [folder("alpha", DIR, TITLES, LENGTHS), folder("bravo", DIR, TITLES, LENGTHS, speed=1_000_000),
+                 folder("bravo", "@@flac\\Al Green", TITLES, LENGTHS, speed=1_000_000)]
+    assert plan_album(responses, rows()).primary.username == "alpha"
+    plan = plan_album(responses, rows(), exclude={("alpha", DIR), ("bravo", DIR)})
+    assert (plan.primary.username, plan.primary.directory) == ("bravo", "@@flac\\Al Green")
+    assert plan.alternates == [] and plan.secondary is None
+    assert plan_album(responses, rows(), exclude={("alpha", DIR), ("bravo", DIR), ("bravo", "@@flac\\Al Green")}) \
+        .per_track == rows()
+
+
+def test_folder_of_is_the_directory_the_planner_groups_by():
+    assert album.folder_of(f"{DIR}\\x.flac") == DIR
+    assert album.folder_of("a/b/x.flac") == "a/b" and album.folder_of("x.flac") == ""
+
+
+def test_like_ranks_folders_of_the_release_being_filed_first():
+    """A switch (S2-05b) asks for the release the job has been filing: `like` is its track lengths, and a folder
+    whose lengths are off loses to one that matches, however it scores; `min_rows=1` lets one row switch."""
+    off = [n + 5 for n in LENGTHS]
+    responses = [folder("bravo", DIR, TITLES, off), folder("charlie", "@@b\\Al Green", TITLES, LENGTHS, speed=100)]
+    assert plan_album(responses, rows()).primary.username == "bravo"
+    like = {i + 1: n for i, n in enumerate(LENGTHS)}
+    assert plan_album(responses, rows(), like=like).primary.username == "charlie"
+    one = rows()[8:]
+    assert plan_album(responses, one).per_track == one
+    assert plan_album(responses, one, like=like, min_rows=1).primary.username == "charlie"

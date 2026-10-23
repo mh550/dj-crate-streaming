@@ -97,11 +97,12 @@ class Verdict:
     info: AudioInfo | None
     warnings: list[str] = field(default_factory=list)
     measurements: dict = field(default_factory=dict)
+    kinds: list[str] = field(default_factory=list)      # each problem's check (`duration`, `transcode`, ...), in order
 
     def as_dict(self, tier: str | None) -> dict:
         """The record `fetch` keeps per wanted row and `cli verify --json` prints (JSON-safe)."""
         return {"ok": self.ok, "tier": tier, "problems": self.problems, "warnings": self.warnings,
-                "measurements": self.measurements}
+                "measurements": self.measurements, "kinds": self.kinds}
 
 
 # ---- decoded analysis ----
@@ -257,11 +258,13 @@ def verify(path: Path, expected_duration_s: float | None = None, tier: str | Non
     m: dict = {}
 
     def verdict(info: AudioInfo | None) -> Verdict:
-        problems, warnings = [], []
+        problems, warnings, kinds = [], [], []
         for check, msg in findings:
             if check == "implied_kbps" and full_band(m):     # the measured spectrum outranks the size guess
                 check, msg = "low_kbps", f"{msg}, but the full spectrum is there: quiet or simple material"
             (problems if check in hard else warnings).append(msg)
+            if check in hard:
+                kinds.append(check)
         if intent == "copy":
             # M8 deletes the old copy when this is True, so it implies ok: the fingerprint matched over the overlap
             # (a truncated prefix matches perfectly, hence the length test against the reference), the reference is
@@ -276,7 +279,7 @@ def verify(path: Path, expected_duration_s: float | None = None, tier: str | Non
             if not problems and m.get("reference_compared") and not decoded_s:
                 warnings.append("not replaceable: the decoded length was not measured (decoded checks skipped), "
                                 "so the download may be a truncated prefix of the reference")
-        return Verdict(not problems, problems, info, warnings, finite(m))
+        return Verdict(not problems, problems, info, warnings, finite(m), kinds)
 
     if not path.exists():
         findings.append(("missing", "file missing"))

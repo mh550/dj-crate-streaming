@@ -10,7 +10,9 @@ per user as {username, directories:[{directory, files:[{id, filename, state, siz
 complete=False keeps transfers InProgress forever (timeout tests). fail_enqueue=True makes
 POST /transfers/downloads answer 500 (peer gone); a set of peers makes it do so for those peers only. An enqueue
 to one of `errored_peers` records a transfer in `error_state` (default `Completed, Errored`) with no file (a VPN
-drop). `posts` lists every enqueue POST as (peer, file count), a refused one included. DELETE of a transfer acts as slskd 0.26.1 does: without ?remove=true it only cancels (the record stays),
+drop). An enqueue to one of `stalled_peers` stays `Queued, Remotely` forever (a peer that never starts, S2-05b).
+`posts` lists every enqueue POST as (peer, file count), a refused one included; `deleted` every DELETE of a known
+transfer as (peer, filename, remove). DELETE of a transfer acts as slskd 0.26.1 does: without ?remove=true it only cancels (the record stays),
 with it the record goes; an unknown id is 404.
 """
 from __future__ import annotations
@@ -29,15 +31,17 @@ from .scorer import split_remote
 class FakeSlskdServer:
     def __init__(self, responses: list[dict], downloads_dir: Path, files: dict[str, bytes],
                  api_key: str = "k", complete: bool = True, fail_enqueue: bool | set[str] = False, port: int = 0,
-                 errored_peers: set[str] = frozenset()):
+                 errored_peers: set[str] = frozenset(), stalled_peers: set[str] = frozenset()):
         self.responses, self.downloads_dir, self.files = responses, Path(downloads_dir), files
         self.api_key, self.complete, self.fail_enqueue = api_key, complete, fail_enqueue
         self.errored_peers, self.error_state = set(errored_peers), "Completed, Errored"
+        self.stalled_peers = set(stalled_peers)
         self.searches: dict[str, str] = {}            # id → searchText, until the search is deleted
         self.searched: list[str] = []                 # every searchText, in order
         self.enqueued: list[tuple[str, str]] = []     # (username, filename)
         self.posts: list[tuple[str, int]] = []        # (username, file count): one per POST /transfers/downloads/<peer>
         self.transfers: list[dict] = []
+        self.deleted: list[tuple[str, str, bool]] = []  # (username, filename, remove): every DELETE of a transfer
         self.empty_reads = 0                          # this many responses reads answer [] (live slskd, 2026-10-21)
         self.httpd = ThreadingHTTPServer(("127.0.0.1", port), self._handler())
         self.httpd.daemon_threads = True
@@ -67,6 +71,8 @@ class FakeSlskdServer:
         t = {"id": str(uuid.uuid4()), "username": username, "filename": filename, "size": size, "state": "InProgress"}
         if username in self.errored_peers:
             t["state"] = self.error_state
+        elif username in self.stalled_peers:
+            t["state"] = "Queued, Remotely"
         elif self.complete:
             folder, base = split_remote(filename)
             dest = self.downloads_dir / folder / base
@@ -164,7 +170,9 @@ class FakeSlskdServer:
                 t = next((t for t in fake.transfers if t["username"] == m.group(1) and t["id"] == m.group(2)), None)
                 if t is None:
                     return self._send({"error": "not found"}, 404)
-                if "true" in urllib.parse.parse_qs(parts.query).get("remove", []):
+                remove = "true" in urllib.parse.parse_qs(parts.query).get("remove", [])
+                fake.deleted.append((t["username"], t["filename"], remove))
+                if remove:
                     fake.transfers.remove(t)
                 elif not t["state"].startswith("Completed"):      # a plain DELETE cancels; the record stays
                     t["state"] = "Completed, Cancelled"

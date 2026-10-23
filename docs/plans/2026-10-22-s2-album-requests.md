@@ -131,6 +131,27 @@ The spec's S2-04..S2-07, as the features build them:
   `truncated`) fails that row only. On a switch: cancel and forget (`?remove=true`) the folder's queued transfers for
   rows not yet filed, re-plan the remaining rows over the first search's folders plus one fresh album search without
   the failed folder (S2-04's same-release rule); rows already verified or filed stay.
+- **As built (S2-05b)**: `album_job.run(..., start_timeout_s=ALBUM_START_TIMEOUT_S)` (600; the worker's
+  `album_start_timeout_s`, the CLI's `$ALBUM_START_TIMEOUT_S`). After each peer's POST the job waits until one of its
+  records is past `Requested`/`Queued`/`Initializing`; none by the timeout → every folder of that peer in the POST
+  fails (its records forgotten, the peer's other folders left out of the re-plan). In planned mode fetch does not
+  retry another peer: a transfer error S1-06 would retry returns `FetchResult.again`, and the job switches. A failed
+  verification's `FetchResult.kinds` are verify's check names (`Verdict.kinds`, also in the stored verification);
+  `DISTRUST = {transcode, fake_24bit, fake_hires, recording}` switches at once (`implied_kbps`, the size guess, is
+  an ordinary finding), any `MAX_FOLDER_FAILURES` = 2 failed rows do too; an exception (Navidrome down) is no
+  folder's failure. A row failed by an ordinary finding keeps its approval open until the job ends, so a later
+  switch of its folder takes it along. On a switch: the folder's records of unfiled rows go (remove=true), the
+  moved rows (the failed one included) are planned again by `plan_album(..., exclude=failed folders, like=the
+  planned files' lengths by track number, min_rows=1)` over the cached first search's `responses` (the cache keeps
+  them server side, beside `assign`) merged with one fresh album search (a peer's fresh response replaces its old
+  one; a refused search plans over the cached ones alone), and run in the next round (one POST per peer again).
+  `like` ranks a folder of the release being filed first after coverage (a switch never trades it for a better
+  scored remaster); `min_rows=1` lets a single row switch to a folder. A folder new to the job gets the next label. One `switch` event per failed folder: `#<id> folder 1
+  distrusted: transcode (<basename>); 8 rows → folder 2` (or `folder 1: download ended: Completed, Errored (…)`,
+  `folder 1: 2 failures (…, …)`, `folder 1: no transfer started within 600 s`; destinations `7 rows → folder 2,
+  1 row → folder 3; 1 row per track`). A row switches once; one with no folder left goes per track as an ordinary
+  fetch with no preferred file (S2-05c adds `exclude` and the cap's reason). Its approval gets its last fetch's
+  outcome; the row's reason is the last attempt's (S2-05c lists every attempt).
 - **Per-row attempt cap**: its planned folder, one switched folder, one per-track fetch (excluding every failed peer
   and file). Then the row fails, and every attempt is in its reason.
 - **Filing** (S2-06): album rows go to `$albumartist/$album ($year)/$track - $title` only if S2-06a's scratch
