@@ -1,6 +1,7 @@
 """A Spotify URL asked for as one request (S2-02): an album or a track becomes a `requests` row in crates.db whose
-rows are external_wanted rows (request_id, track_no). A playlist URL is not a request yet (S2-07); seed-spotify and
-import-playlist handle it as before.
+rows are external_wanted rows (request_id, track_no). A playlist is imported as before (import-playlist); its import
+then becomes a `playlist` request over the import's wanted rows (S2-07, `add_playlist`; `import-playlist --request`),
+which album_job approves in one go.
 
 `rows_from_spotify` is the one place that reads the embed; this module only records what it gives. An album request
 then gets its MusicBrainz release when exactly one matches its rows one to one (S2-03): fetch verifies each row
@@ -20,15 +21,38 @@ def canonical(url: str) -> str:
     return f"https://open.spotify.com/{m.group(1)}/{m.group(2)}" if m else url
 
 
+def add_playlist(store, playlist_id: str | None, *, source: str, name: str) -> dict | None:
+    """Record the import of playlist `playlist_id` as one `playlist` request (S2-07) and return it: its rows are the
+    wanted rows of the playlist's last import (`import_order`), `track_no` None, `album` the playlist's name, which
+    is the request's identity (the import finds its playlist by name; a file source is none). A row another request
+    holds stays with it; this one holds its rows loosely (an album or track request asked for later takes those not
+    going yet, CrateStore.takeable). Idempotent: the same name finds its request; a re-import's new rows join it and
+    rows it no longer lists leave, unless they are going. None when no row would join a new request."""
+    wanted = [o["wanted_id"] for o in store.import_order(playlist_id) if o["wanted_id"]] if playlist_id else []
+    rid = store.find_playlist_request(name)
+    if rid is None:
+        if not any((store.external(w) or {}).get("request_id") is None for w in wanted):
+            return None
+        rid = store.add_request(kind="playlist", source=source, artist=None, album=name, year=None)
+    store.attach_request(rid, wanted)
+    store.detach_request(rid, keep=wanted)
+    store.commit()
+    return store.request(rid)
+
+
 def add_spotify(store, url: str, *, fetch=fetch_entity, tier: str | None = None,
-                default_tier: str = IMPORT_TIER) -> dict | None:
-    """Record the album or track at `url` as one request and return it (`store.request(id)`); None for a playlist.
+                default_tier: str = IMPORT_TIER, playlist_id: str | None = None) -> dict | None:
+    """Record the album or track at `url` as one request and return it (`store.request(id)`). A playlist is a
+    request only once imported: with `playlist_id` (the Navidrome playlist its import made) add_playlist records
+    it; without, None.
     Idempotent: the same URL again finds its request by source, and add_external_wanted returns the rows already
     queued (a row queued earlier joins the request when it belongs to none). When every row already belongs to a
     request, that request answers (the first row's) and no empty one is made. An album listing the same artist and
     title twice gets one row for both (add_external_wanted's same-row rule)."""
     entity = fetch(url)
     kind = entity.get("type")
+    if kind == "playlist" and playlist_id is not None:
+        return add_playlist(store, playlist_id, source=canonical(url), name=entity["name"].strip())
     if kind not in ("album", "track"):
         return None
     rows = rows_from_spotify(entity)
@@ -40,9 +64,9 @@ def add_spotify(store, url: str, *, fetch=fetch_entity, tier: str | None = None,
         artist, album, year = lead_artist(rows[0], resolve=None), None, None
     rid = store.find_request(source)
     if rid is None and rows:
-        held = [(store.find_external(lead_artist(r, resolve=None), r.title) or {}).get("request_id") for r in rows]
-        if all(held):
-            return store.request(held[0])
+        found = [store.find_external(lead_artist(r, resolve=None), r.title) for r in rows]
+        if all(f and not store.takeable(f) for f in found):        # a playlist's loose hold is no hold (S2-07)
+            return store.request(found[0]["request_id"])
     tracktotal = max((r.track_no for r in rows if r.track_no), default=None) if kind == "album" else None
     rid = rid or store.add_request(kind=kind, source=source, artist=artist, album=album, year=year,
                                    tracktotal=tracktotal)

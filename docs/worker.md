@@ -181,6 +181,19 @@ Nothing is enqueued without Michael's approval of the request (D7): the plan onl
   there, both folders in its reason. The approval's outcome is `failed: <that reason>`.
 - **The request's status** follows its rows: `done` when every row is `ok`, `partly` when some are, `failed` when
   none is and none is open.
+- **A playlist in one go** (S2-07). `python -m sourcing.cli import-playlist --request <source>` imports as before, then
+  records the import's wanted rows (its last `import_order`) as one `playlist` request, found again by the
+  playlist's name, and prints `request <id>: <name> (<n> open rows; approve with sourcing.cli request approve <id>)`
+  (that command is S3-04's; until then `album_job.approve_request`). A re-import's new rows join; rows it no longer
+  lists leave unless going. A row another request holds stays with it; the playlist holds its rows loosely: an
+  album or track request asked for later takes those with nothing going yet (an `request` event `#3 → #4`), so
+  an album files as one. Approving gives each album with 3 or more open rows (same artist and album,
+  `identity.loose`) `album` approvals, run as one album job as above (its own search `"<artist> <album>"`, plan
+  cached as `req-<id>:<loose artist>/<loose album>`, e.g. `req-7:algreen/imstillinlovewithyou`, events
+  `#<id> <artist> — <album>: folder 1: 4 of 4`); the other rows get ordinary `download` approvals, fetched per
+  track. An ambiguous import row (`review`) is neither. Only an Exportify CSV or a SpotiFLAC report carries
+  albums: a Spotify playlist URL's embed has none, so all its rows go per track. Rows file as singles
+  (`$artist/Singles`, no album tags: those are an album request's); Placement puts them at their positions.
 
 ## Filing
 

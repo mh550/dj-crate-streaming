@@ -34,6 +34,13 @@ or the folder's cause when it moved along (`folder 1: no transfer started within
 per-track fetch files nothing fails with all of them: `folder 1: transcode (<basename>); folder 2: download ended:
 Completed, Errored; per track: no acceptable candidate from another peer`, which is its approval's outcome too
 (`failed: …`). The request's status follows its rows (`failed` none ok, `partly` some, store.request_status).
+
+Playlists (S2-07): a `playlist` request (sourcing.requests.add_playlist) is approved in one go too. Its open rows
+sharing `identity.loose` artist and album, MIN_GROUP_ROWS or more, are each one album job as above (`groups`): its own
+search `"<artist> <album>"`, plan cached as `req-<id>:<group_key>` (`req-7:algreen/imstillinlovewithyou`) and events
+`#<id> <artist> — <album>: …`;
+lengths come from the rows' `duration` (a playlist has no release). Its other rows get ordinary `download` approvals
+(per track, the worker's usual fetch).
 """
 from __future__ import annotations
 
@@ -41,6 +48,7 @@ import time
 
 from crates.store import filed_path, public, retryable_review
 from . import album
+from .identity import loose
 from .fetch import FetchResult, copy_of, fetch, in_library, planned_candidate
 from .policy import DEFAULT_POLICY, TIERS
 from .scorer import split_remote
@@ -50,16 +58,71 @@ ALBUM_PLAN_MAX_AGE_S = 3600          # an older cached plan is made again before
 ALBUM_START_TIMEOUT_S = 600          # a peer that has started none of the job's files by then: its folders switch
 DISTRUST = {"transcode", "fake_24bit", "fake_hires", "recording"}    # one such finding distrusts the whole folder
 MAX_FOLDER_FAILURES = 2              # this many failed rows in one folder distrust it too
+MIN_GROUP_ROWS = 3                   # a playlist's rows of one album go as an album job from this many (S2-07)
 NOT_STARTED = ("Requested", "Queued", "Initializing")              # slskd states before a transfer starts
 
 
-def preview_key(request_id: int) -> str:
-    return f"req-{request_id}"
+def preview_key(request_id: int, key: str | None = None) -> str:
+    """The cached plan of the request (an album) or of one of its album groups (a playlist, `key`)."""
+    return f"req-{request_id}" + (f":{key}" if key is not None else "")
+
+
+def group_key(row: dict) -> str | None:
+    """A playlist row's album group: `<loose artist>/<loose album>`; None without an album."""
+    return f"{loose(row.get('artist'))}/{loose(row['album'])}" if loose(row.get("album")) else None
 
 
 def open_rows(req: dict) -> list[dict]:
     """The rows an approval of the request covers: not `ok`, not `removed`, no file of theirs filed already."""
     return [r for r in req["rows"] if r["status"] not in ("ok", "removed") and filed_path(r.get("reason")) is None]
+
+
+def groups(req: dict) -> list[dict]:
+    """The request's album jobs, each {"key", "artist", "album", "rows"} (open rows). An album or track request is one,
+    key None. A playlist request has one per album with MIN_GROUP_ROWS or more open rows (S2-07), in playlist order;
+    its other open rows go per track (`per_track`)."""
+    if req["kind"] != "playlist":
+        return [{"key": None, "artist": req["artist"], "album": req["album"], "rows": open_rows(req)}]
+    rows = _playlist_open(req)
+    by: dict[str, list[dict]] = {}
+    for r in rows:
+        if group_key(r) is not None:
+            by.setdefault(group_key(r), []).append(r)
+    return [{"key": k, "artist": g[0]["artist"], "album": g[0]["album"], "rows": g}
+            for k, g in by.items() if len(g) >= MIN_GROUP_ROWS]
+
+
+def _playlist_open(req: dict) -> list[dict]:
+    """A playlist request's open rows, without the import's questions (an ambiguous `review` row: the library may
+    have it, and no download answers that)."""
+    return [r for r in open_rows(req) if r["status"] != "review" or retryable_review(r.get("reason"))]
+
+
+def per_track(req: dict) -> list[dict]:
+    """A playlist request's open rows in no album group: approved as ordinary downloads."""
+    grouped = {r["song_id"] for g in groups(req) for r in g["rows"]}
+    return [r for r in _playlist_open(req) if r["song_id"] not in grouped]
+
+
+def approvable(req: dict) -> list[dict]:
+    """The rows approve_request approves: its album groups' rows, then (a playlist) the per-track ones."""
+    return [r for g in groups(req) for r in g["rows"]] + (per_track(req) if req["kind"] == "playlist" else [])
+
+
+def _scope(store, request_id: int, key: str | None) -> dict:
+    """The request as one album job sees it: itself (key None), or a playlist's album group `key` (every row of that
+    album, the first one's artist and album spelling)."""
+    req = _request(store, request_id)
+    if key is None:
+        return req
+    rows = [r for r in req["rows"] if group_key(r) == key]
+    return {**req, "artist": rows[0]["artist"] if rows else None, "album": rows[0]["album"] if rows else None,
+            "rows": rows, "group": key}
+
+
+def _tag(scope: dict) -> str:
+    """How events name the job: `#12`, or `#12 Al Green — I'm Still in Love With You:` for a playlist's group."""
+    return f"#{scope['id']}" + (f" {scope['artist']} — {scope['album']}:" if scope.get("group") else "")
 
 
 def summary(plan: album.AlbumPlan) -> str:
@@ -89,11 +152,19 @@ def _search(slskd, req: dict, poll_s: float) -> list[dict]:
         slskd.delete_search(sid)
 
 
-def plan_request(store, slskd, request_id: int, policy=None, *, poll_s: float = 1.0) -> dict:
+def plan_request(store, slskd, request_id: int, policy=None, *, poll_s: float = 1.0, group: str | None = None) -> dict:
     """Search the album once, plan its open rows, cache the plan (`req-<id>`) and return what a client may see:
     folder labels, coverage, row → basename, the per-track rows. One `plan` event. Nothing is enqueued. The cache
-    also keeps, server side only, `at`, `assign` and the search's `responses` (a switch plans over them again)."""
+    also keeps, server side only, `at`, `assign` and the search's `responses` (a switch plans over them again).
+    A playlist request plans each album group so (`group`: that one only) and returns {"request_id", "albums": [each
+    group's plan, with its artist and album], "per_track": [its rows in no group]}."""
     req = _request(store, request_id)
+    if req["kind"] == "playlist" and group is None:
+        return public({"request_id": request_id,
+                       "albums": [plan_request(store, slskd, request_id, policy, poll_s=poll_s, group=g["key"])
+                                  for g in groups(req)],
+                       "per_track": [{"id": r["song_id"], "title": r["title"]} for r in per_track(req)]})
+    req = _scope(store, request_id, group)
     rows = open_rows(req)
     policy = policy or (TIERS[rows[0]["tier"]] if rows else DEFAULT_POLICY)
     responses = _search(slskd, req, poll_s)
@@ -108,24 +179,30 @@ def plan_request(store, slskd, request_id: int, policy=None, *, poll_s: float = 
     shown = {"request_id": request_id, "folders": folders,
              "per_track": [{"id": r["song_id"], "track_no": r.get("track_no"), "title": r["title"]}
                            for r in plan.per_track],
-             "text": album.describe(plan)}
-    store.log(None, None, "plan", f"#{request_id} {summary(plan) or 'nothing to plan'}")
-    store.set_preview(preview_key(request_id),            # commits the event; `at`, `assign`, `responses`: server side
+             "text": album.describe(plan)} | ({"artist": req["artist"], "album": req["album"]} if group else {})
+    store.log(None, None, "plan", f"{_tag(req)} {summary(plan) or 'nothing to plan'}")
+    store.set_preview(preview_key(request_id, group),     # commits the event; `at`, `assign`, `responses`: server side
                       shown | {"at": time.time(), "assign": assign, "responses": responses})
     return public(shown)
 
 
 def approve_request(store, request_id: int, approved_by: str = "michael") -> list[int]:
     """Michael's approval of the whole request (D7): one `album` approval per open row with its planned file (from
-    the cached plan; None without one: the job plans first, or the row goes per track). Returns the approval ids."""
+    the cached plan; None without one: the job plans first, or the row goes per track). Returns the approval ids.
+    A playlist request: `album` approvals for its album groups' rows, `download` approvals for the rest (S2-07)."""
     req = _request(store, request_id)
     busy = [r["song_id"] for r in req["rows"]          # a row the running job has not reached yet is `needs_source`
             if r["status"] in ("sourcing", "verify") or (r.get("approval") or {}).get("result") == "started"]
     if busy:
         raise ValueError(f"request #{request_id}: {', '.join(busy)} in flight; approve it again once that has ended")
-    assign = (store.preview(preview_key(request_id)) or {}).get("assign") or {}
-    return [store.approve(r["song_id"], approved_by, (assign.get(r["song_id"]) or {}).get("candidate"), r["tier"],
-                          purpose="album") for r in open_rows(req)]
+    ids = []
+    for g in groups(req):
+        assign = (store.preview(preview_key(request_id, g["key"])) or {}).get("assign") or {}
+        ids += [store.approve(r["song_id"], approved_by, (assign.get(r["song_id"]) or {}).get("candidate"), r["tier"],
+                              purpose="album") for r in g["rows"]]
+    if req["kind"] == "playlist":
+        ids += [store.approve(r["song_id"], approved_by, None, r["tier"]) for r in per_track(req)]
+    return ids
 
 
 def _to_download(row: dict | None) -> bool:
@@ -191,11 +268,42 @@ def _moves(dest: list[str]) -> str:
     return "; ".join(x for x in (folders, per and f"{n_rows(per)} per track") if x)
 
 
-def run(request_id: int, approvals: list[dict], *, fetcher=fetch, plan_max_age_s: float = ALBUM_PLAN_MAX_AGE_S,
-        start_timeout_s: float = ALBUM_START_TIMEOUT_S, **common) -> list[tuple[dict, str]]:
-    """Run one request's `album` approvals (see the module docstring). `common` is fetch's keyword arguments (store,
-    slskd, navidrome, ...). Returns (approval, outcome) for each approval claimed here; a lost claim (superseded,
+def run(request_id: int, approvals: list[dict], **kw) -> list[tuple[dict, str]]:
+    """Run one request's `album` approvals (see the module docstring); a playlist request's per album group, each as
+    its own job. `kw` is _run's. Returns (approval, outcome) for each approval claimed here; a lost claim (superseded,
     or taken since the list was read) is skipped. Never raises once an approval is claimed: an error is its outcome."""
+    store = kw["store"]
+    if (store.request(request_id) or {}).get("kind") != "playlist":
+        return _run(request_id, None, approvals, **kw)
+    by: dict[str | None, list[dict]] = {}
+    for a in approvals:
+        by.setdefault(group_key(store.find_wanted(a["wanted_id"]) or {"album": None}), []).append(a)
+    return [x for key, group in by.items()          # a row that left its album since (no album): per track
+            for x in (_run(request_id, key, group, **kw) if key is not None else _plain(group, **kw))]
+
+
+def _plain(approvals: list[dict], *, fetcher=fetch, plan_max_age_s=None, start_timeout_s=None,
+           **common) -> list[tuple[dict, str]]:
+    """Each approval claimed and fetched as an ordinary download (the worker's own way), no plan."""
+    store, out = common["store"], []
+    for a in approvals:
+        if not store.claim_approval(a["id"]):
+            continue
+        try:
+            r = fetcher(a["wanted_id"], approve=True, prefer=a["candidate"], **common)
+            outcome = r.approval_result or f"{r.status}: {r.reason}"
+        except Exception as e:
+            outcome = f"error: {type(e).__name__}: {e}"
+        store.mark_approval_used(a["id"], outcome)
+        out.append((a, outcome))
+    return out
+
+
+def _run(request_id: int, group: str | None, approvals: list[dict], *, fetcher=fetch,
+         plan_max_age_s: float = ALBUM_PLAN_MAX_AGE_S, start_timeout_s: float = ALBUM_START_TIMEOUT_S,
+         **common) -> list[tuple[dict, str]]:
+    """One album job: the request's (group None) or a playlist's album group `group` (a group_key). `common` is fetch's keyword
+    arguments (store, slskd, navidrome, ...)."""
     store, slskd = common["store"], common["slskd"]
     poll_s, sleep = common.get("poll_s", 1.0), common.get("sleep") or time.sleep
     claimed: list[dict] = []
@@ -227,10 +335,10 @@ def run(request_id: int, approvals: list[dict], *, fetcher=fetch, plan_max_age_s
                 done(a, f"ok: in library ({hit.new_song_id})")
             else:
                 todo.append(a)
-        cache = store.preview(preview_key(request_id))
+        cache = store.preview(preview_key(request_id, group))
         if todo and (cache is None or time.time() - (cache.get("at") or 0) > plan_max_age_s):
-            plan_request(store, slskd, request_id, poll_s=poll_s)
-            cache = store.preview(preview_key(request_id))
+            plan_request(store, slskd, request_id, poll_s=poll_s, group=group)
+            cache = store.preview(preview_key(request_id, group))
         assign = (cache or {}).get("assign") or {}
         responses = (cache or {}).get("responses") or []
         labels = {_key(x["candidate"]): x["folder"] for x in assign.values()}
@@ -331,7 +439,7 @@ def run(request_id: int, approvals: list[dict], *, fetcher=fetch, plan_max_age_s
                     plain.append((a, None))
                     dest[a["id"]] = "per track"
             if go:                                 # re-plan over the first search plus a fresh one, failed folders out
-                req = _request(store, request_id)
+                req = _scope(store, request_id, group)
                 try:
                     responses = _merge(responses, _search(slskd, req, poll_s))
                 except SlskdError:                 # slskd busy or away: the first search's folders still serve
@@ -357,7 +465,7 @@ def run(request_id: int, approvals: list[dict], *, fetcher=fetch, plan_max_age_s
                     planned.append((a, c))
                     dest[a["id"]] = labels[_key(c)]
             for key, event in why.items():
-                store.log(None, None, "switch", f"#{request_id} {event}; "
+                store.log(None, None, "switch", f"{_tag(_scope(store, request_id, group))} {event}; "
                           f"{_moves([dest[a['id']] for a, c in moved if _key(c) == key])}")
             store.commit()
         def give_up(a: dict, last: list[str]) -> str:

@@ -173,7 +173,20 @@ The spec's S2-04..S2-07, as the features build them:
   `Singles`, as today. Each row is filed as it lands (today's behaviour), so Navidrome may show a half album for a
   while.
 - **Playlists** (S2-07): the import as today plus one approval for its open rows; rows sharing artist and album
-  (3 or more) go as an album job, the rest per track.
+  (3 or more) go as an album job, the rest per track. As built: `sourcing.requests.add_playlist(store, playlist_id, source=, name=)` (and
+  `add_spotify(..., playlist_id=)` for a Spotify playlist URL; `import-playlist --request`) records a `playlist`
+  request whose `album` is the playlist's name and whose rows are the wanted rows of its last `import_order` that no
+  other request holds (`CrateStore.attach_request`; `track_no` stays None). `album_job.groups` splits its open rows
+  by `identity.loose` artist and album (MIN_GROUP_ROWS = 3); each group is its own job inside `album_job.run`
+  (`_run(request_id, group, …)`; cache `req-<id>:<group>`), searching `"<artist> <album>"` with the rows' own
+  lengths (no release, so no listed lengths); `per_track` rows get `download` approvals. `plan_request` on a
+  playlist returns `{"albums": [...], "per_track": [...]}`. Tests: `tests/test_playlist_request.py`.
+  After the Opus review: the playlist's name is the request's identity (`find_playlist_request`; a file path is
+  none); `detach_request` releases rows the last import no longer lists (unless going); a playlist holds its rows
+  loosely (`CrateStore.takeable`: an album or track request asked for later takes rows with nothing going, so the
+  album files as one); ambiguous `review` rows are neither grouped nor approved; an `album` approval whose row lost
+  its album is fetched per track without a plan; no empty request. Known limit: a Spotify playlist URL's embed has
+  no album, so its rows all go per track (album groups need an Exportify CSV or a SpotiFLAC report).
 
 ## Live steps
 

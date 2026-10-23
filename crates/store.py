@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS requests (             -- one per request (S2-01); st
   id INTEGER PRIMARY KEY,
   kind TEXT NOT NULL CHECK (kind IN ('album','playlist','track')),
   source TEXT,                                    -- the URL asked for, or 'search'
-  artist TEXT, album TEXT, year INTEGER,
+  artist TEXT, album TEXT, year INTEGER,          -- a playlist request: album is the playlist's name (S2-07)
   mb_release_id TEXT,                             -- the MusicBrainz release matched one to one (S2-03), or NULL
   tracktotal INTEGER,                             -- an album's highest track number as listed (S2-06), or NULL
   created_at REAL NOT NULL
@@ -726,7 +726,8 @@ class CrateStore:
         default_tier (crate; imports pass medium, D15). Without `reask` a failed row is re-queued as a new row, as
         seed-spotify always did; with it (import-playlist passes the playlist's name), see _reask (M9 §8h).
         A `request_id` (with its `track_no`) is recorded on a row that has none: a row belongs to the first request
-        that asked for it, so a later request never takes a row out of an album job under way."""
+        that asked for it, so a later request never takes a row out of an album job under way; only a playlist's
+        request holds it loosely (takeable, S2-07)."""
         check_tier(tier or check_tier(default_tier))
         existing = self.find_external(artist, title, include_failed=reask is not None)
         if existing and request_id is not None and existing["status"] == "removed":
@@ -739,7 +740,9 @@ class CrateStore:
                                 (playlist_id, position, time.time(), _ext_pk(existing["song_id"])))
             if tier is not None:
                 self.set_external_tier(existing["song_id"], tier)
-            if request_id is not None and existing["request_id"] is None:
+            if request_id is not None and existing["request_id"] != request_id and self.takeable(existing):
+                if existing["request_id"] is not None:
+                    self.log(None, existing["song_id"], "request", f"#{existing['request_id']} → #{request_id}")
                 self.db.execute("UPDATE external_wanted SET request_id=?, track_no=?, album=COALESCE(album, ?), "
                                 "year=COALESCE(year, ?), updated_at=? WHERE id=?",
                                 (request_id, track_no, album, year, time.time(), _ext_pk(existing["song_id"])))
@@ -1143,6 +1146,36 @@ class CrateStore:
         self.log(None, None, "request", f"#{cur.lastrowid} {kind}: {' — '.join(x for x in (artist, album) if x)}")
         self.db.commit()
         return cur.lastrowid
+
+    def attach_request(self, request_id: int, ext_ids: list[str]) -> None:
+        """Make these external rows the request's (S2-07): only a row of no request, never a `removed` one. The
+        caller commits."""
+        self.db.executemany("UPDATE external_wanted SET request_id=?, updated_at=? WHERE id=? AND request_id IS NULL "
+                            "AND status!='removed'", [(request_id, time.time(), _ext_pk(e)) for e in ext_ids])
+
+    def detach_request(self, request_id: int, keep: list[str]) -> None:
+        """Release the request's rows not in `keep` that nothing is doing yet (a track its playlist no longer lists,
+        S2-07); a row being fetched or filed stays. The caller commits."""
+        for r in (self.request(request_id) or {"rows": []})["rows"]:
+            if r["song_id"] not in keep and r["status"] not in ("ok", "removed") and not _going(r):
+                self.db.execute("UPDATE external_wanted SET request_id=NULL, updated_at=? WHERE id=?",
+                                (time.time(), _ext_pk(r["song_id"])))
+
+    def takeable(self, row: dict) -> bool:
+        """Whether an album or track request may make this external row its own: a row of no request, or one a
+        playlist request holds (S2-07: so an album asked for later files as one) that nothing is doing yet (not ok,
+        not going: no approval waiting or being fetched, not being fetched or filed)."""
+        if row.get("request_id") is None:
+            return True
+        kind = self.db.execute("SELECT kind FROM requests WHERE id=?", (row["request_id"],)).fetchone()
+        r = self.wanted_row(row["song_id"])
+        return kind is not None and kind[0] == "playlist" and r is not None and r["status"] != "ok" and not _going(r)
+
+    def find_playlist_request(self, name: str) -> int | None:
+        """The playlist request of the playlist named `name` (the import's target), or None."""
+        r = self.db.execute("SELECT id FROM requests WHERE kind='playlist' AND album=? ORDER BY id LIMIT 1",
+                            (name,)).fetchone()
+        return r[0] if r else None
 
     def find_request(self, source: str) -> int | None:
         """The first request made from this source (a re-run of the same URL finds it), or None."""

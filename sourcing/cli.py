@@ -6,7 +6,7 @@ r"""CLI: rank candidates for a wanted track, from a fixture file or a live slskd
   python -m sourcing.cli fetch --wanted s4 [--approve [--wait]] [--tier T]   # search+score; --approve only records an approval for the worker; tier: the row's
   python -m sourcing.cli worker [--once] [--no-reconcile]   # D18: spend approvals (download, verify, file with beets), re-check `verify` rows, reconcile; WORKER_POLL_S (30), WORKER_RECHECK_S (300), WORKER_RECONCILE_S (600), WORKER_EXPORT_S (300), ALBUM_PLAN_MAX_AGE_S (3600)
   python -m sourcing.cli seed-spotify https://open.spotify.com/playlist/... [--musicbrainz]   # queue tracks not in Navidrome; an album or track URL is one request (S2-02); --musicbrainz or $MUSICBRAINZ_CACHE: an album's release and recording ids (S2-03)
-  python -m sourcing.cli import-playlist <spotify-url|report.txt|exportify.csv>... [--name N] [--dry-run]   # D11: Spotify playlists → public Navidrome playlist + wanted rows
+  python -m sourcing.cli import-playlist <spotify-url|report.txt|exportify.csv>... [--name N] [--dry-run] [--request]   # D11: Spotify playlists → public Navidrome playlist + wanted rows; --request: one playlist request (S2-07)
   python -m sourcing.cli retier --from crate --to medium [--dry-run]   # move external wanted rows between tiers (D15 backfill; rows of a tiered playlist follow its comment)
 """
 from __future__ import annotations
@@ -159,6 +159,8 @@ def main(argv: list[str] | None = None) -> int:
     ip.add_argument("--name", help="playlist name (default: the source's own name; required with several sources)")
     ip.add_argument("--dry-run", action="store_true", help="match and report, write nothing")
     ip.add_argument("--merge", action="store_true", help="add to a same-named playlist this tool did not create (adopts it)")
+    ip.add_argument("--request", action="store_true",
+                    help="record the import as one playlist request, approved in one go (S2-07)")
     add_tier_arg(ip, None, f"tier for new wanted rows (default {IMPORT_TIER}, D15); given on a re-run, it changes existing rows too")
 
     rt = sub.add_parser("retier", help="move every external wanted row at one tier to another (e.g. the D15 backfill)")
@@ -212,6 +214,17 @@ def main(argv: list[str] | None = None) -> int:
         rows = concat(groups)
         Path(cfg.db_path).parent.mkdir(parents=True, exist_ok=True)
         store = CrateStore(cfg.db_path)                 # opened only after every source loaded
+
+        def record_request(rep) -> None:                # --request (S2-07): the import as one playlist request
+            from .album_job import approvable
+            from .requests import add_playlist, canonical
+            source = canonical(a.sources[0]) if len(a.sources) == 1 else " ".join(a.sources)
+            req = add_playlist(store, rep.playlist_id, source=source, name=name)
+            if req is None:
+                print("no request recorded: no wanted row"); return
+            n = len(approvable(req))
+            print(f"request {req['id']}: {name} ({n} open row{'s' * (n != 1)}; approve with sourcing.cli request "
+                  f"approve {req['id']})")
         try:
             rep = import_playlist(name, rows, SubsonicClient(cfg.subsonic_url, cfg.username, cfg.password), store,
                                   source=" ".join(a.sources), dry_run=a.dry_run, merge=a.merge, tier=a.tier)
@@ -219,10 +232,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{e}, or pick another --name", file=sys.stderr); return 1
         except CommentNotKept as e:                     # the songs and wanted rows were recorded; the comment was not
             print(e.report.table())
+            if a.request:                               # the rows are recorded: so is their request
+                record_request(e.report)
             print(f"{e}; the tier is not cached: fix the comment in Navidrome, or re-run", file=sys.stderr); return 1
         print(rep.table())
         if a.dry_run:
-            print("(dry run: nothing written)")
+            print("(dry run: nothing written" + ("; no request recorded)" if a.request else ")"))
+        elif a.request:
+            record_request(rep)
         return 0
 
     if a.cmd == "seed-spotify":

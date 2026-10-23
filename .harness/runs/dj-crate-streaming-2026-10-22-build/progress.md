@@ -9,6 +9,29 @@ Michael steers from `INBOX.md` on this branch (status line `run | pause | stop`;
 session reads it at startup. Policy: **build-only** (`.harness/config.sh`) and the brief in `brief.md`: nothing live,
 no docker, no `/srv`, no network, no client UI, PRs only (open, never merge).
 
+### 2026-10-23 07:20 · S2-07 · passes
+
+- **Changed.** `sourcing/requests.py` `add_playlist` (+ `add_spotify(…, playlist_id=)`): the import's last
+  `import_order` wanted rows become one `playlist` request, found again by the playlist's name (`album` column);
+  re-import rows join, dropped rows leave unless going; no empty request. `crates/store.py`: `attach_request`,
+  `detach_request`, `find_playlist_request`, `takeable` (a playlist holds rows loosely: an album/track request
+  asked later takes rows with nothing going, so the album files as one). `sourcing/album_job.py`: `groups` (3+
+  open rows, `identity.loose` artist+album), `per_track`, `approvable`; `run` → one `_run` per group (cache
+  `req-<id>:<group_key>`, events `#<id> <artist> — <album>: …`), `_plain` for a row that lost its album; ambiguous
+  `review` rows neither grouped nor approved. CLI `import-playlist --request`. Docs: worker.md, S2 plan. Tests 2093 → 2118.
+- **Verified.** New `tests/test_playlist_request.py` red first. The mixed-playlist test: posts `(soulfolder, 4)` +
+  2× `(singlespeer, 1)`, 6 rows `ok`, request `done`, and Placement puts the playlist in Spotify order. 12
+  mutations, each turns a test red (one survivor led to the two-album test). Opus review: 5 Important + 6 Minor;
+  fixed test-first: #2 rows held from a later album, #3 dropped rows, #4 file path as key, #6–#11. Subset (step 5
+  + worker/crates/fetch) 369 passed; full suite green, 2118 tests, 786 s.
+- **Next session must know.** `request approve <id>` named in the CLI line is S3-04's to build. A Spotify playlist
+  URL's embed has no album, so its rows all go per track; album groups need an Exportify CSV / SpotiFLAC report.
+  `tests/test_fetch_filing.py` helper reads a playlist's cache by group key now.
+- **Proposed change (S3-01/S3-04).** Look each playlist track's album up (track embed or MusicBrainz) so a pasted
+  playlist URL forms album jobs. `plan_request` still passes no `listed_lengths` for album requests with a release
+  (S2-07 step 2 implied it did).
+- **Question for Michael.** Still D51 (from S2-06a). None new.
+
 ### 2026-10-23 05:10 · S2-06b · passes
 
 - **Changed.** `sourcing/filer.py`: `AlbumIdentity`, `album_changes` (only differing fields; unknown year clears

@@ -508,7 +508,9 @@ def fetch_planned_row(world, tmp_path, req, n=1, wrap=None):
         if wrap is not None:
             c["filer"].runner = wrap(c["filer"].runner)
         aj.album_job.plan_request(world["store"], c["slskd"], req["id"], poll_s=0.01)
-        cand = world["store"].preview(f"req-{req['id']}")["assign"][row["song_id"]]["candidate"]
+        job = aj.album_job
+        key = job.group_key(row) if world["store"].request(req["id"])["kind"] == "playlist" else None   # S2-07
+        cand = world["store"].preview(job.preview_key(req["id"], key))["assign"][row["song_id"]]["candidate"]
         before = {t["id"] for t in transfer_files(c["slskd"].downloads(aj.PEER))}
         c["slskd"].enqueue(aj.PEER, [{"filename": cand["filename"], "size": cand["size"]}])
         return row, fetch(row["song_id"], approve=True, planned=True, prefer=cand, enqueued=before, **c), c["filer"]
