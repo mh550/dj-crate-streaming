@@ -9,6 +9,23 @@ Michael steers from `INBOX.md` on this branch (status line `run | pause | stop`;
 session reads it at startup. Policy: **build-only** (`.harness/config.sh`) and the brief in `brief.md`: nothing live,
 no docker, no `/srv`, no network, no client UI, PRs only (open, never merge).
 
+### 2026-10-23 verify S4
+
+| Feature | Step | What you ran or read | What you saw | Holds |
+|---|---|---|---|---|
+| S4-01 | 1 | `pytest tests/test_downloads_checklist_doc.py`; read `test_sections_4_and_6_each_have_a_check_and_an_undo`, `test_every_live_run_command_is_a_python_module_and_every_write_holds_the_lock` | 9 tests in file pass; they assert sections 4/6/Captures, Check/Undo, `scripts/live-run.sh python3 -m` prefix, flock on writes; grep of the doc agrees | yes |
+| S4-01 | 2 | Read checklist §4 (lines 103-222) | add/preview/approve with Check lines (9 rows, ≥8 of 9, no peer name, events plan/pick/filed/ok, ≤1 switch), path with year only if MB matched (D53), Undo `wanted reopen`, rollback `<the sha step 2 deployed>` | yes |
+| S4-01 | 3 | Read checklist §6 | Spotify app, capture command, Check greps (secret via pipe, access_token, tok_ = 0), git add of the two fixtures, Undo with rotate, secret location left as a question | yes |
+| S4-01 | 4 | Read `## Captures for the fixtures` | enqueue, transfer states, `?remove=true` captures, each with fixture file and reading test; peer-name scrub rule | yes |
+| S4-01 | 5 | grep morning checklist, architecture, next-todos | morning line 103 `PR #16 must be on main first` once; link to checklist §4/§6 at line 302 (§9 starts 238); architecture §4(e) and next-todos State say not deployed, PRs open; items 11, 12 present | yes |
+| S4-01 | 6 | `python3 -m sourcing.cli request --help`; `python3 -m scripts.capture_spotify --help` | both exit 0; checklist commands only `--help`-verified, no docker/live | yes |
+| S4-01 | 7 | harness `check.sh` | "green (cached, 2369 tests)", up from 2361 | yes |
+| S4-02 | 1 | Read progress entry S4-02 | review of `1eb4259..HEAD`: 0 Critical, 9 Important (8 fixed, A4 kept per spec), 23 Minor, each with what it became | yes |
+| S4-02 | 2 | `git diff 1eb4259..HEAD` on trash/playlist_edit/placement; grep D-numbers; spec Built lines | no diff in those files; D48-D53 each present (origin/main tops at D47, no gap); Built lines at spec lines 62, 101, 196, 235; docs say not deployed; approve tests in `tests/test_approvals.py`, `test_album_job.py` | yes |
+| S4-02 | 3 | `pytest tests/test_python310_syntax.py`; `grep -rn "/srv/" sourcing/album*.py sourcing/requests.py sourcing/catalog.py scripts/capture_spotify.py` | passes; grep printed nothing | yes |
+| S4-02 | 4 | Read progress S4-02 entry | tests 2361 → 2369, run 1906 → 2369; PRs #27-29 open, draft PR command given; questions collected | yes |
+| S4-02 | 5 | harness `check.sh` | green, 2369 tests | yes |
+
 ### 2026-10-23 09:34 · S4-02 · passes
 
 - **Changed.** Whole-run Opus review of `git diff 1eb4259..HEAD` (`run.diff`, 11,315 lines, split in two for two reviewers), then an Opus review of the fixes. Results: **0 Critical, 9 Important (8 fixed), 23 Minor**. Fixes are in `crates/service.py`, `crates/store.py`, `sourcing/requests.py`, `sourcing/musicbrainz.py`, `sourcing/catalog.py`, `sourcing/fetch.py`, docs (`api.md`, `architecture.md` §4(e), `next-todos.md` State, downloads checklist §4, spec S4 `**Built**` line) and **D53 *default*** in the pivot spec. Tests 2361 → 2369; **the run: 1906 → 2369**.
