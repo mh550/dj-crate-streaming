@@ -10,7 +10,7 @@ per user as {username, directories:[{directory, files:[{id, filename, state, siz
 complete=False keeps transfers InProgress forever (timeout tests). fail_enqueue=True makes
 POST /transfers/downloads answer 500 (peer gone); a set of peers makes it do so for those peers only. An enqueue
 to one of `errored_peers` records a transfer in `error_state` (default `Completed, Errored`) with no file (a VPN
-drop). DELETE of a transfer acts as slskd 0.26.1 does: without ?remove=true it only cancels (the record stays),
+drop). `posts` lists every enqueue POST as (peer, file count), a refused one included. DELETE of a transfer acts as slskd 0.26.1 does: without ?remove=true it only cancels (the record stays),
 with it the record goes; an unknown id is 404.
 """
 from __future__ import annotations
@@ -33,8 +33,10 @@ class FakeSlskdServer:
         self.responses, self.downloads_dir, self.files = responses, Path(downloads_dir), files
         self.api_key, self.complete, self.fail_enqueue = api_key, complete, fail_enqueue
         self.errored_peers, self.error_state = set(errored_peers), "Completed, Errored"
-        self.searches: dict[str, str] = {}            # id → searchText
+        self.searches: dict[str, str] = {}            # id → searchText, until the search is deleted
+        self.searched: list[str] = []                 # every searchText, in order
         self.enqueued: list[tuple[str, str]] = []     # (username, filename)
+        self.posts: list[tuple[str, int]] = []        # (username, file count): one per POST /transfers/downloads/<peer>
         self.transfers: list[dict] = []
         self.empty_reads = 0                          # this many responses reads answer [] (live slskd, 2026-10-21)
         self.httpd = ThreadingHTTPServer(("127.0.0.1", port), self._handler())
@@ -114,9 +116,11 @@ class FakeSlskdServer:
                 body = self._body()
                 if path == "/api/v0/searches":
                     fake.searches[body["id"]] = body["searchText"]
+                    fake.searched.append(body["searchText"])
                     self._send({"id": body["id"], "state": "Completed, Succeeded"})
                 elif path.startswith("/api/v0/transfers/downloads/"):
                     user = path.rsplit("/", 1)[1]
+                    fake.posts.append((user, len(body)))
                     if fake.fail_enqueue is True or user in (fake.fail_enqueue or ()):
                         return self._send({"error": "peer unreachable"}, 500)
                     self._send([fake._download(user, f["filename"], f.get("size", 0)) for f in body])

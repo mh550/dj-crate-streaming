@@ -23,6 +23,9 @@ after `retry_pause_s` (a `retry` event); a second failure fails the row with bot
 timeout, a 4xx, a missing landed file and every verify finding fail as before. A failed attempt cancels and forgets
 (remove=true) its own transfer, so a late file can't land unfiled.
 
+An album request's rows come through the album job (sourcing.album_job, S2-05) in planned mode: no search, no
+enqueue of its own, the job's transfer polled (see fetch's docstring).
+
 The library first (S1-07): before searching for an external row that is not a copy, Navidrome is asked as the import
 asks it (import_playlist.match, no stand-ins). Its same recording or same version is the row's song: `ok` with that
 `library_song_id` and a `matched` event, nothing downloaded, previews included. A doubt or a Navidrome error searches.
@@ -72,7 +75,7 @@ import re
 import shutil
 import sqlite3
 import time
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
 from pathlib import Path
 
 from crates import proposals
@@ -86,7 +89,7 @@ from .import_playlist import match as match_in_library
 from .playlist_sources import Row
 from .policy import TIERS, QualityPolicy, check_tier
 from . import replace as replacement
-from .scorer import Candidate, Wanted, explain, rank
+from .scorer import Candidate, Wanted, explain, rank, score_candidate
 from .slskd_client import SlskdClient, SlskdError, transfer_files
 from .verify import verify
 
@@ -175,19 +178,57 @@ def _library_file(navidrome_db: Path | None, song_id: str, music_root: Path) -> 
     return ref, ""
 
 
+def in_library(store: CrateStore, navidrome: SubsonicClient, wanted_id: str, row: dict) -> FetchResult | None:
+    """Ask Navidrome as the import does (import_playlist.match, the same rules, no stand-ins: D26) before searching.
+    Its same recording or same version is the row's song: linked (`ok`, placed like any filed row), nothing
+    downloaded. Every doubt (ambiguous, another version, missing) or a Navidrome error goes on to the search. The
+    album job (sourcing.album_job) asks it per row before its enqueue."""
+    asked = Row(position=row.get("position") or 0, title=row.get("asked_title") or row["title"],
+                artist=row.get("asked_artist") or row.get("artist") or "", duration_s=row.get("duration"),
+                album=row.get("album"), sep="; ")      # the stored artist is one lead: a comma is its own
+    try:
+        m = match_in_library(navidrome, asked)
+    except (SubsonicError, OSError, ValueError) as e:     # down, or an answer that is not JSON
+        # SubsonicError's text is Navidrome's answer; urllib's may be the URL, with the token and salt in it
+        why = f"{type(e).__name__}: {e}" if isinstance(e, SubsonicError) else type(e).__name__
+        store.log(None, wanted_id, "matched", f"library not asked: {why}")
+        store.commit()
+        return None
+    if m.status != "matched" or m.how not in ("same recording", "same version"):
+        return None
+    store.set_external_song(wanted_id, m.song_id, False)    # its library song, and not a play-now copy
+    store.log(None, wanted_id, "matched", f"{m.how}: {m.title}")
+    store.set_wanted_status(wanted_id, "ok", f"already in the library: {m.title} ({m.song_id})")   # commits all three
+    return FetchResult("ok", "already in the library; nothing downloaded", new_song_id=m.song_id)
+
+
+def planned_candidate(prefer: dict, wanted: Wanted, policy: QualityPolicy) -> Candidate:
+    """The album job's planned file (a Candidate.as_dict()), scored again for this row at this policy."""
+    c = Candidate(**{f.name: prefer[f.name] for f in fields(Candidate) if f.name in prefer and f.name != "reasons"})
+    return score_candidate(c, wanted, policy)
+
+
 def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: SubsonicClient,
           reconciler: Reconciler, music_root: Path, downloads_root: Path, approve: bool,
           tier: str | None = None, policy: QualityPolicy | None = None, download_timeout_s: float = 600, poll_s: float = 1.0,
           scan_timeout_s: float = 120, verifier=verify, filer: BeetsFiler | None = None,
           navidrome_db: Path | None = None, lookup=None, prefer: dict | None = None,
           trash_root: Path | None = None, score_tier: str | None = None, provisional: bool = False,
-          sleep=None, retry_pause_s: float = RETRY_PAUSE_S) -> FetchResult:
+          sleep=None, retry_pause_s: float = RETRY_PAUSE_S, planned: bool = False,
+          enqueued: set[str] | None = None) -> FetchResult:
     """`score_tier` ranks and verifies at that tier's policy and leaves the row's tier alone (unlike `tier`, which
     re-tiers an external row). `provisional` (play-now, D20; external rows without a library song) files the copy
     as provisional: see the module docstring. `sleep` (default time.sleep) waits each poll of the download and of
     the scan; the worker passes one that also beats its heartbeat, so a long download doesn't look like a dead worker.
-    `retry_pause_s` is the wait before the second source (S1-06), through `sleep` too."""
+    `retry_pause_s` is the wait before the second source (S1-06), through `sleep` too.
+
+    Planned mode (the album job, S2-05): `planned=True` with `prefer`, the planned file, and `enqueued`, the ids of
+    that peer's transfer records before the job enqueued the album. Nothing is searched (the one candidate is
+    `prefer`, scored again), the library is not asked (the job did) and nothing is enqueued or forgotten first: the
+    download is the record whose id is not in `enqueued` (S1-04's rule). The rest is as for any approved fetch."""
     sleep = sleep or time.sleep
+    if planned and not (approve and prefer and enqueued is not None):
+        raise ValueError("planned mode needs approve=True, the planned file (prefer) and the records before (enqueued)")
     music_root, downloads_root = Path(music_root), Path(downloads_root)
     row = store.find_wanted(wanted_id)
     if row is None:
@@ -383,28 +424,6 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
             set_status("review", f"replacement #{j['id']} {j['state']}: {detail}")
         return FetchResult("ok", f"filed; replacement #{j['id']} {what} ({detail})", best, filed, new_id, text)
 
-    def in_library() -> FetchResult | None:
-        """Ask Navidrome as the import does (import_playlist.match, the same rules, no stand-ins: D26) before searching.
-        Its same recording or same version is the row's song: linked (`ok`, placed like any filed row), nothing
-        downloaded. Every doubt (ambiguous, another version, missing) or a Navidrome error goes on to the search."""
-        asked = Row(position=row.get("position") or 0, title=row.get("asked_title") or row["title"],
-                    artist=row.get("asked_artist") or row.get("artist") or "", duration_s=row.get("duration"),
-                    album=row.get("album"), sep="; ")      # the stored artist is one lead: a comma is its own
-        try:
-            m = match_in_library(navidrome, asked)
-        except (SubsonicError, OSError, ValueError) as e:     # down, or an answer that is not JSON
-            # SubsonicError's text is Navidrome's answer; urllib's may be the URL, with the token and salt in it
-            why = f"{type(e).__name__}: {e}" if isinstance(e, SubsonicError) else type(e).__name__
-            store.log(None, wanted_id, "matched", f"library not asked: {why}")
-            store.commit()
-            return None
-        if m.status != "matched" or m.how not in ("same recording", "same version"):
-            return None
-        store.set_external_song(wanted_id, m.song_id, False)    # its library song, and not a play-now copy
-        store.log(None, wanted_id, "matched", f"{m.how}: {m.title}")
-        set_status("ok", f"already in the library: {m.title} ({m.song_id})")      # commits all three at once
-        return FetchResult("ok", "already in the library; nothing downloaded", new_song_id=m.song_id)
-
     status = row.get("status")
     if status == "removed":              # an upgrade row a tiered playlist's row superseded (one request per song)
         return FetchResult("removed", f"{wanted_id} is closed ({row.get('reason')}); nothing searched")
@@ -433,25 +452,30 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
     if status == "sourcing" and time.time() - (row.get("updated_at") or 0) < download_timeout_s:
         return FetchResult("sourcing", "in flight (started less than the download timeout ago)")
 
-    if external and copy_id is None:          # a new file: the library may have it already (S1-07, ext-81)
-        hit = in_library()
+    if external and copy_id is None and not planned:   # a new file: the library may have it (S1-07); a job asked
+        hit = in_library(store, navidrome, wanted_id, row)
         if hit is not None:
             return hit
 
-    sid = slskd.search(f"{wanted.artist} {wanted.title}".strip())
-    try:
-        st = slskd.wait_search(sid, poll_s=poll_s, max_s=30)
-        responses = slskd.search_responses(sid, expect=st.get("responseCount") or 0, poll_s=poll_s)
-        cands = rank(responses, _owned(wanted, navidrome, copy_id), policy)
-    finally:
-        slskd.delete_search(sid)
+    if planned:                               # the album job searched, planned and enqueued it
+        cands = [planned_candidate(prefer, _owned(wanted, navidrome, copy_id), policy)]
+    else:
+        sid = slskd.search(f"{wanted.artist} {wanted.title}".strip())
+        try:
+            st = slskd.wait_search(sid, poll_s=poll_s, max_s=30)
+            responses = slskd.search_responses(sid, expect=st.get("responseCount") or 0, poll_s=poll_s)
+            cands = rank(responses, _owned(wanted, navidrome, copy_id), policy)
+        finally:
+            slskd.delete_search(sid)
     text = explain(cands, peers=False)
     best = next((c for c in cands if not c.rejected), None)
     if best is None:
         return FetchResult("needs_source", "no acceptable candidate", None, explain=text)
     if not approve:
         return FetchResult("needs_source", "pick printed; re-run with --approve to download", best, explain=text)
-    if prefer:       # the candidate Michael approved (D18): honoured while the peer still offers that file
+    if planned:
+        store.log(None, wanted_id, "pick", f"planned file: {best.basename}")
+    elif prefer:     # the candidate Michael approved (D18): honoured while the peer still offers that file
         same = next((c for c in cands if not c.rejected and c.username == prefer.get("username")
                      and c.filename == prefer.get("filename")), None)
         if same is not None:
@@ -487,12 +511,15 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
             # forget earlier attempts at the same file so their final state can't be mistaken for this one; ours is
             # then the record whose id wasn't there before the enqueue: slskd's listing order and the enqueue
             # response are not relied on (S1-04)
-            listed = records()
-            for t in listed:
-                if str(t.get("state", "")).startswith("Completed"):
-                    slskd.remove_download(cand.username, t["id"])
-            before = {t["id"] for t in listed}
-            slskd.enqueue(cand.username, [{"filename": cand.filename, "size": cand.size}])
+            if planned:                       # the album job enqueued it
+                before = set(enqueued or ())
+            else:
+                listed = records()
+                for t in listed:
+                    if str(t.get("state", "")).startswith("Completed"):
+                        slskd.remove_download(cand.username, t["id"])
+                before = {t["id"] for t in listed}
+                slskd.enqueue(cand.username, [{"filename": cand.filename, "size": cand.size}])
             t0 = time.time()
             while True:
                 mine = [t for t in records() if t["id"] not in before]

@@ -103,6 +103,27 @@ The spec's S2-04..S2-07, as the features build them:
   fetch polls for the transfer the job enqueued (S1-04's record poll, given the ids that existed before the job's
   enqueue), then verifies with the row's `mb_recording_id` as the recording id (S2-03), files, finishes and places
   as today. A row already in the library (S1-07) is linked, not downloaded.
+- **As built (S2-05a)**: `sourcing/album_job.py`. `plan_request(store, slskd, id, policy=None, *, poll_s)` plans
+  the request's open rows (not `ok`/`removed`, nothing filed) and caches `{folders, per_track, text, at, assign}`
+  under `req-<id>`, `assign` = ext id → `{folder: "folder N", candidate: Candidate.as_dict()}` (server side, so it
+  holds the peer); it returns the cache without `at`/`assign`, through `public`; one `plan` event
+  `#<id> folder 1: 8 of 9; 1 row per track`. `approve_request(store, id, approved_by)` → approval ids (a candidate
+  from `assign`, None without a cached plan: the job plans first). `run(id, approvals, *, fetcher, plan_max_age_s,
+  **fetch kwargs)` → `[(approval, outcome)]`: claims, `fetch.in_library` per row (outcome `ok: in library (<song>)`),
+  re-plan when the cache is missing or older than `ALBUM_PLAN_MAX_AGE_S` (3600; the CLI's worker reads the env),
+  one `enqueue` per peer (its earlier `Completed` records of those files forgotten first, as fetch does), each
+  planned row `fetch(..., planned=True, prefer=<candidate>, enqueued=<the peer's record ids before>)`, then the rows
+  without a planned file as an ordinary fetch. An error after the claim is the outcome of every approval not yet
+  marked. In planned mode fetch neither asks the library nor searches (the one candidate is `prefer` scored again:
+  `fetch.planned_candidate`; rejected → `needs_source`, nothing downloaded) and logs `pick` `planned file: <basename>`.
+  The secondary's files go in the same POST when it is the primary's peer. `listed_lengths` is still None (S2-03's
+  tracks have no length). Review fixes: only a row fetch would download (needs_source, failed, a retryable review;
+  nothing filed) whose planned file passes at its own tier is enqueued; a planned file not filed afterwards (fetch
+  raised or failed) and a refused POST's records are forgotten (remove=true); `approve_request` also refuses while an
+  approval of the request is `started` (the job has not reached that row yet). Known gap for S2-05b/c: a worker
+  restart mid-album leaves the transfers of rows the job had not reached in slskd (`recover_interrupted` fails no
+  `needs_source` row and forgets no transfer); a later approval's planned fetch takes only a record newer than its
+  own enqueue, so it cannot mistake one, but the file may land unfiled in downloads.
 - **Switch triggers** (the rest of that folder's rows switch, not only the failed one): a transfer error or timeout
   (S1-04/S1-06); a peer that has started no file `ALBUM_START_TIMEOUT_S` (default 600 s) after the enqueue; a verify
   finding. One finding of the "not what it claims" kind (`transcode`, `fake_24bit`, `fake_hires`, `recording`)

@@ -119,6 +119,7 @@ CREATE TABLE IF NOT EXISTS approvals (            -- one row per "yes, download 
   id INTEGER PRIMARY KEY, wanted_id TEXT NOT NULL, approved_by TEXT NOT NULL,  -- michael | policy:<name> | agent:<id>
   candidate TEXT, tier TEXT NOT NULL, ts REAL NOT NULL, used_at REAL, result TEXT,
   purpose TEXT NOT NULL DEFAULT 'download');      -- download | play-now (D20: one fast provisional copy at `tier`)
+                                                  -- | album (S2-05: one row of a request, sourcing.album_job)
 CREATE TABLE IF NOT EXISTS previews (song_id TEXT PRIMARY KEY, result TEXT NOT NULL, ts REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS replacements (         -- one per copy replacement (sourcing.replace)
   id INTEGER PRIMARY KEY, wanted_id TEXT NOT NULL,
@@ -141,7 +142,8 @@ CREATE TABLE IF NOT EXISTS proposals (            -- one question per playlist s
 """
 
 REPLACEMENT_OPEN = ("repoint", "trash", "scan")   # the worker advances these; done and blocked are final
-APPROVAL_PURPOSES = ("download", "play-now")       # play-now (D20): one fast provisional copy, scored at its tier
+APPROVAL_PURPOSES = ("download", "play-now", "album")   # play-now (D20): one fast provisional copy, scored at its
+                                                        # tier; album (S2-05): a request's row, run by the album job
 REQUEST_KINDS = ("album", "playlist", "track")
 REQUEST_STATUSES = ("done", "failed", "partly", "approved", "open")    # request_status's rules, in order
 

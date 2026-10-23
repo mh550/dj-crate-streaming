@@ -72,12 +72,12 @@ def beets_items_db(path: Path) -> Path:
     return path
 
 
-def fake_beet(music: Path, library: Path, target_rel: str, *, artist="", title="", mb_trackid="",
+def fake_beet(music: Path, library: Path, target_rel: str | Callable[[Path], str], *, artist="", title="", mb_trackid="",
               matched=False, import_nothing=False, rc=0, length=501.0) -> Callable:
     """A subprocess.run stand-in for `beet`. Every cmd lands in `.calls`. On `import` it moves the single
     file in cmd[-1] to music/target_rel, adds an `items` row and writes this call's -l log the way beets
     1.6.0 does (appending): `asis <src>` for an as-is import, nothing for an applied match, `duplicate-skip <src>` (and
-    no move) with `import_nothing`."""
+    no move) with `import_nothing`. `target_rel` may be a function of the imported file (several imports, one each)."""
     def run(cmd, **kwargs):
         run.calls.append(list(cmd))
         if "import" in cmd and not rc:
@@ -87,7 +87,7 @@ def fake_beet(music: Path, library: Path, target_rel: str, *, artist="", title="
                 with log.open("a") as fh:              # beets' FileHandler appends
                     fh.write(f"duplicate-skip {src}\n")
             else:
-                dst = music / target_rel
+                dst = music / (target_rel(src) if callable(target_rel) else target_rel)
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(src, dst)
                 with closing(sqlite3.connect(library)) as db, db:

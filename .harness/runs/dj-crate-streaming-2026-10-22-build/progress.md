@@ -9,6 +9,27 @@ Michael steers from `INBOX.md` on this branch (status line `run | pause | stop`;
 session reads it at startup. Policy: **build-only** (`.harness/config.sh`) and the brief in `brief.md`: nothing live,
 no docker, no `/srv`, no network, no client UI, PRs only (open, never merge).
 
+### 2026-10-23 01:20 · S2-05a · passes
+
+- **Changed.** New `sourcing/album_job.py`: `plan_request` (one `"<artist> <album>"` search, plan cached as preview
+  `req-<id>` with `at` + `assign`, returns a `public` view, one `plan` event `#<id> folder 1: 9 of 9`),
+  `approve_request` (one `album` approval per open row, planned file or None; ValueError while a row is
+  sourcing/verify or an approval is `started`), `run` (claim, `fetch.in_library` per row, re-plan past
+  `ALBUM_PLAN_MAX_AGE_S`=3600 (CLI env), one enqueue per peer, each row `fetch(planned=True, prefer=, enqueued=)`).
+  `fetch.py`: planned mode (no search, no library ask, no enqueue), `in_library` lifted to module level.
+  `Worker._spend` groups `album` approvals by `request_id`. Fake slskd gains `posts`/`searched`; `fake_beet`
+  takes a per-file target. New `tests/test_album_job.py` (23). Tests 2009 → 2032.
+- **Verified.** First red at import, then mutation checks (no grouping, planned search, planned enqueue, no
+  library first, no re-plan, approve every row, no busy refusal): each turns 1–7 tests red. Opus review: 3
+  important fixed test-first (5 tests seen red): don't enqueue rows that are ok, in flight or rejected at their own
+  tier; forget a planned file its fetch didn't file and a refused POST's records; refuse re-approval while claimed.
+  Subset (album_job, worker, fetch, approvals, fake_slskd, fetch_filing) 189 passed; full suite green, 2032, 716 s.
+- **Next sessions must know.** The happy-path FLACs are per-length (`flac_bytes`, not `good_flac_bytes`: header_only
+  checks each row's own duration). The restart case leaves rows the job hadn't reached `needs_source` (request
+  `open`), as `recover_interrupted` does for one row; their queued transfers stay in slskd (gap noted in the plan,
+  for S2-05b/c). Per-track rows already go through an ordinary fetch; S2-05c adds the caps and `exclude`.
+- **Questions for Michael.** None. Proposed change: none.
+
 ### 2026-10-23 00:30 · S2-04 · passes
 
 - **Changed.** New `sourcing/album.py` (pure): `plan_album(responses, rows, *, policy, listed_lengths)` → `AlbumPlan`
