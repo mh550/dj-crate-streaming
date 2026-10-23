@@ -9,6 +9,7 @@
   python -m crates.cli imported list             # playlists import-playlist made or adopted (crates.db)
   python -m crates.cli reconcile                 # sync crate state from Navidrome, re-judge every track
   python -m crates.cli wanted                    # the sourcing queue (feeds `sourcing.cli rank`)
+  python -m crates.cli wanted reopen <ext-id> [--apply]   # a row filed as the wrong song back to needs_source (dry run by default)
   python -m crates.cli proposals [--all]         # open questions about one playlist slot (D23); --all: answered too
   python -m crates.cli proposals accept|decline <id>   # accept edits that one slot (needs NAVIDROME_DB); never trashes
   python -m crates.cli rename <playlist-id> <new-name>
@@ -24,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
 import sys
 import threading
 from pathlib import Path
@@ -31,10 +33,31 @@ from pathlib import Path
 from sourcing.policy import TIERS
 from .reconcile import CommentNotKept, NameMarked, ReconcileBusy
 from .service import ApiError, Config, CrateApp, CrateServer
+from .store import CrateStore
 
 
 def fmt_dur(s: int | None) -> str:
     return f"{(s or 0) // 60}:{(s or 0) % 60:02d}"
+
+
+def reopen(store: CrateStore, ext_id: str, apply: bool) -> int:
+    """`wanted reopen`: print the plan (store.reopen_external), then write it with --apply; a refusal exits 1."""
+    try:
+        plan = store.reopen_external(ext_id, apply)
+    except (ValueError, sqlite3.OperationalError) as e:     # a refusal, or the worker holding crates.db too long
+        print(f"wanted reopen: {e}", file=sys.stderr)
+        return 1
+    old, new = plan["old"], plan["new"]
+    print(f"{ext_id}: {old['artist']} – {old['title']} → {new['artist']} – {new['title']}")
+    print(f"  library song: {old['library_song_id'] or 'none'} → none" + ("  (was provisional)" if old["provisional"] else ""))
+    print(f"  status: {old['status']} ({old['reason'] or ''}) → needs_source ({new['reason']})")
+    for p in old["placements"]:
+        print(f"  placement deleted: {p['playlist_id']} ({p['state']}, song {p['song_id'] or 'none'})")
+    if plan["playlists"]:
+        print("  placed when the right file arrives: " + ", ".join(f"{pid} (#{pos})" for pid, pos in plan["playlists"]))
+    print("  no file and no playlist is touched; the wrong song's playlist entries stay")
+    print(f"reopened {ext_id}; the `reopened` event holds the old values" if apply else "dry run: add --apply to write this")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -53,6 +76,9 @@ def main(argv: list[str] | None = None) -> int:
     im.add_parser("migrate", help="record #imported playlists in crates.db and strip the token (dry run unless --apply)").add_argument("--apply", action="store_true")
     im.add_parser("list")
     w = sub.add_parser("wanted"); w.add_argument("--json", action="store_true")
+    wr = w.add_subparsers(dest="wanted_cmd").add_parser(
+        "reopen", help="put an external row filed as the wrong song back to needs_source (dry run unless --apply)")
+    wr.add_argument("id"); wr.add_argument("--apply", action="store_true")
     pr = sub.add_parser("proposals", help="questions about one playlist slot (version swaps, unproven copies)")
     pr.add_argument("--all", action="store_true", help="answered ones too")
     pa = pr.add_subparsers(dest="answer")
@@ -82,6 +108,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     cfg = Config.from_env(subsonic_url=a.url, username=a.user, password=a.password, db_path=a.db)
+    if a.cmd == "wanted" and a.wanted_cmd == "reopen":   # crates.db only: no Navidrome, no file, no playlist
+        return reopen(CrateStore(cfg.db_path), a.id, a.apply)
     if not cfg.username:
         print("set SUBSONIC_USER / SUBSONIC_PASS (and SUBSONIC_URL)", file=sys.stderr)
         return 1
