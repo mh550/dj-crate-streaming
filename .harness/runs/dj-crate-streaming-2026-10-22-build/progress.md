@@ -9,6 +9,28 @@ Michael steers from `INBOX.md` on this branch (status line `run | pause | stop`;
 session reads it at startup. Policy: **build-only** (`.harness/config.sh`) and the brief in `brief.md`: nothing live,
 no docker, no `/srv`, no network, no client UI, PRs only (open, never merge).
 
+### 2026-10-23 03:40 · S2-06a · passes
+
+- **Changed.** New `docs/plans/2026-10-22-S2-album-tags.md` (Fields, Writer, When, Reverse, beets measurement, Out,
+  Live steps, Review) and `tests/test_album_tags_plan_doc.py` (3 tests); pivot spec gains **D50** (the album path,
+  your answer, not default) and **D51 *default*** (an album request without a year clears year/month/day on its
+  files so they share one folder). No code. Tests 2061 → 2064.
+- **Verified.** Doc test red first. Measured in scratch (no /srv; MusicBrainz pointed at a closed local port, so
+  offline) on /usr/bin/beet 1.6.0: `import -q -s -m -W --set dj_album=1` with `dj_album:1:` before `singleton:` files
+  at `Al Green/I'm Still in Love With You (1972)/01 - …`; `beet ls dj_album:1` lists exactly the flagged files; the
+  import leaves them byte-identical; a plain import still goes to `Singles`. Also measured: the reverse (delattr,
+  `modify -W -M … dj_album!`, `move -p` → Singles). Opus review: 1 Critical (event not committed before the write), 4
+  Important, 8 Minor, all fixed in the plan text (`## Review`). Subset (plan doc + tag_cleanup) 26 passed; full suite
+  green, 2064 tests, 761 s.
+- **Next session (S2-06b) must know.** Follow the plan's `## Writer` order: compute old → log **and commit** the
+  `tagged` event → `write_minimal` → `beet import --set dj_album=1`. The reverse needs a new
+  `scripts.tag_cleanup.restore_fields` (one save, year before month/day, `null` → delattr).
+- **Proposed changes (S2-06b steps).** `tracktotal` = highest `track_no` of all the request's rows, not the row count;
+  a missing `mb_release_id` also clears `mb_albumid` and `mb_albumartistid`; `restore_fields` is the reverse, not
+  `write_minimal(path, old)` (that leaves `ALBUM=`, `TRACKNUMBER=0`); m4a/ogg tag tests.
+- **Question for Michael.** D51: OK to clear an unknown year (one folder), or should the first filed file's year
+  become the request's year?
+
 ### 2026-10-23 02:45 · S2-05c · passes
 
 - **Changed.** `sourcing/fetch.py`: `exclude=<usernames>` drops those peers' candidates right after `rank` (S1-06's
