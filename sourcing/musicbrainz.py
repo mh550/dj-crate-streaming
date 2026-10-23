@@ -26,7 +26,9 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Sequence
+
+from . import identity
 
 URL = "https://musicbrainz.org/ws/2/recording/{id}?fmt=json"
 USER_AGENT = "dj-crate-streaming/0.1 (https://github.com/mh550/dj-crate-streaming)"
@@ -158,6 +160,11 @@ def _escape(s: str) -> str:
     return s.replace("\\", "\\\\").replace('"', '\\"')
 
 
+def phrase_query(**fields: str) -> str:
+    """`artist:"…" AND release:"…"`, each value a Lucene phrase; a blank field is left out (it would match nothing)."""
+    return " AND ".join(f'{k}:"{_escape(v.strip())}"' for k, v in fields.items() if v and v.strip())
+
+
 class MusicBrainz:
     """Spacing is process-wide (`_SHARED`), not per instance; use one cache file per run.
 
@@ -229,5 +236,79 @@ class MusicBrainz:
         return [] if d is None else [parse_recording(r) for r in d.get("recordings") or []]
 
     def search(self, artist: str, title: str, limit: int = 100) -> list[Recording]:
-        d = self.get("recording", query=f'artist:"{_escape(artist)}" AND recording:"{_escape(title)}"', limit=limit)
+        d = self.get("recording", query=phrase_query(artist=artist, recording=title), limit=limit)
         return [] if d is None else [parse_recording(r) for r in d.get("recordings") or []]
+
+    def release_search(self, artist: str, album: str, limit: int = 25) -> list[dict]:
+        """The releases MusicBrainz finds for artist + album (search JSON: id, title, track-count, date, media)."""
+        d = self.get("release", query=phrase_query(artist=artist, release=album), limit=limit)
+        return [] if d is None else list(d.get("releases") or [])
+
+    def release(self, mbid: str) -> dict | None:
+        """The release with its media, tracks and their recordings; None when MusicBrainz has no such release."""
+        return self.get(f"release/{mbid}", inc="recordings")
+
+
+# ---- the release an album request is (S2-03) --------------------------------------------------------------------
+
+_FORMAT_RANK = {"Digital Media": 0, "CD": 1}                 # ties: digital, then CD, then anything else
+
+
+@dataclass(frozen=True)
+class ReleaseTrack:
+    position: int                                            # 1-based across all media, like a request row's track_no
+    title: str
+    recording_id: str
+
+
+@dataclass(frozen=True)
+class ReleaseMatch:
+    id: str
+    format: str
+    date: str
+    tracks: tuple[ReleaseTrack, ...]                         # tracks[i] is the row with track_no i + 1
+
+
+def _format(release: dict) -> str:
+    return ((release.get("media") or [{}])[0] or {}).get("format") or ""
+
+
+def _tie_order(release: dict) -> tuple:
+    date = release.get("date") or ""
+    return _FORMAT_RANK.get(_format(release), len(_FORMAT_RANK)), not date, date
+
+
+def _title_key(title: str | None, artist: str | None) -> tuple:
+    """`Oh ,Pretty Woman` (Spotify) and `Oh, Pretty Woman` (MusicBrainz) are one key; so are ' and ’. The version
+    counts too: a live or remixed track of the same name is another recording."""
+    t = identity.parse_title(title, artist)
+    return identity.loose(t.base), t.key
+
+
+def match_release(rows: Sequence[dict], releases: Sequence[dict],
+                  fetch_release: Callable[[str], dict | None]) -> ReleaseMatch | None:
+    """The release whose tracks are the request's rows one to one, in track order across all media, or None.
+
+    `rows` are a request's rows (dicts with `track_no`, `artist`, `title` or `asked_title`), numbered 1..n (the
+    caller drops removed and superseded rows); `releases` are search
+    results. Only releases listing n tracks are fetched, in tie order (digital, CD, then the earliest date; no
+    date last), and the first whose every track title has its row's key wins. Order matters, not only the set:
+    a file AcoustID'd as track 9 must not pass as track 1 (ext-74)."""
+    by_no = {r.get("track_no"): r for r in rows}
+    n = len(rows)
+    if n == 0 or set(by_no) != set(range(1, n + 1)):
+        return None
+    for rel in sorted((r for r in releases if r.get("track-count") == n and r.get("id")), key=_tie_order):
+        body = fetch_release(rel["id"])
+        if not body:
+            continue
+        listed = [t for m in body.get("media") or [] for t in m.get("tracks") or []]
+        if len(listed) != n:
+            continue
+        tracks = tuple(ReleaseTrack(i, t.get("title") or "", (t.get("recording") or {}).get("id") or "")
+                       for i, t in enumerate(listed, 1))
+        if all(t.recording_id and _title_key(t.title, row.get("artist"))
+               == _title_key(row.get("asked_title") or row.get("title"), row.get("artist"))
+               for t, row in ((t, by_no[t.position]) for t in tracks)):
+            return ReleaseMatch(rel["id"], _format(rel), rel.get("date") or "", tracks)
+    return None

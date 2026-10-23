@@ -70,6 +70,7 @@ before swapping versions and adds play-now. (The pivot moved the crate flag's ow
 - `crates` and `worker` are one image (`Dockerfile`: python 3.12-slim + ffmpeg, flac, fpcalc, beets 1.6.0,
   mediafile 0.12.0). The build context is `CRATES_SRC` in `.env`, i.e. **the repo's working tree** (§10).
 - Only `127.0.0.1` ports are published; `tailscale serve` on the host puts 4533 and 4580 on the tailnet.
+- The request routes (`/api/requests`, `/api/catalog/search`) are documented for clients in [`api.md`](api.md).
 - Who may write what: Navidrome writes only its DB (never files). `crates` writes `crates.db` and Navidrome
   playlists (the comment attributes, add/create, a proposal's one-slot swap), plus the Identity view's
   `/data/identity/identity-choices.json` (R7, below); it has no library mount, so it cannot download or file
@@ -80,6 +81,14 @@ before swapping versions and adds play-now. (The pivot moved the crate flag's ow
 Code map: `subsonic/` Navidrome client + fake; `crates/` store, attrs, reconcile, playlist_edit, trash, proposals, HTTP service, CLI; `sourcing/` scorer,
 verify, fetch, replace, filer, worker, identity, policy, import, MusicBrainz/AcoustID/Spotify/slskd clients;
 `scripts/` one-off and backfill tools (tag cleanup, dedupe, export playlists, identity backfill); `web/` vanilla JS.
+
+Album requests (S2, run `dj-crate-streaming-2026-10-22-build`, not deployed): `sourcing/requests.py` records a Spotify
+album or track URL as one request (`add_spotify`, its MusicBrainz release by `match_request_release`) and a playlist
+import as one `playlist` request (`add_playlist`); `sourcing/album.py` is the album-first planner, pure (no I/O:
+search responses in, `AlbumPlan` out: one primary folder, a same-release secondary, per-track rows); `sourcing/album_job.py`
+searches, plans, takes the request's approval (`album` purpose, D7) and runs the job in the worker: one enqueue per
+peer, fetch in planned mode per row, a folder switch on trouble, each row capped at its planned folder, one other
+folder and one per-track fetch. (e) below; plans `plans/2026-10-22-s2-album-requests.md`, `plans/2026-10-22-S2-album-tags.md`.
 
 ## 3. Data stores and who owns each fact
 
@@ -112,12 +121,13 @@ song id for a crate row, or `ext-N` for an external row.
 | `replacements` | one copy replacement: old/new song and path, `state` (`repoint`/`trash`/`scan`/`done`/`blocked`), `trash_path` | fetch, worker |
 | `proposals` | one question per playlist slot (`version_swap`/`unproven_copy`), decision, who decided | fetch, Wanted tab / CLI |
 | `crate_tracks` | per crate × song: facts, `status`, `reason` | reconcile, fetch |
-| `external_wanted` | tracks not in the library: names, length, tier, playlist + position, `asked_*` | import, seed, fetch |
+| `external_wanted` | tracks not in the library: names, length, tier, playlist + position, `asked_*`; S2: `request_id` (the first request that asked for it; a playlist request holds it loosely, `takeable`), `track_no`, `mb_recording_id` (verify's recording id, S2-03) | import, seed, fetch |
 | `imported_entries` | every song import-playlist added or the worker placed (D13: removed stays removed) | import, placement |
 | `imported_playlists` | playlists import-playlist made or adopted (D33; was the `#imported` comment) | import, `imported migrate` |
 | `import_order` | every row of a playlist's last real import in Spotify order: position, matched song or queued `ext-N` (N4) | import (replaced per run), `forget_playlist` |
 | `placements` | one per (wanted row, playlist): `open`/`writing`/`done`/`given_up`, `attempts`, `detail` (N4) | worker (`crates/placement.py`), `forget_playlist` |
-| `approvals` | `approved_by`, candidate JSON, tier, `used_at`, `result` | Approve, worker |
+| `requests` | one album, playlist or track request (S2-01): `kind`, `source` URL, `artist`, `album` (a playlist's name), `year`, `mb_release_id`, `tracktotal`; **no status column**: `request_status` derives it from its rows (`done`/`failed`/`partly`/`approved`/`open`) | `sourcing/requests.py` (seed-spotify, `import-playlist --request`) |
+| `approvals` | `approved_by`, candidate JSON, tier, `used_at`, `result`; `purpose` `download`, `play-now` (D20) or `album` (one row of a request's album job, S2-05) | Approve, worker |
 | `previews` | last search-and-rank per wanted id | Preview |
 | `verifications` | last `verify` result per wanted id | worker |
 | `events` | append-only log (`approved`, `pick`, `filed`, `renamed`, `reference`, `playlist_health`…) | everything |
@@ -190,10 +200,17 @@ Other stores:
 3. **Worker tick** every 30 s (`worker.py`): play-now approvals first, then the reconcile (every 600 s), the
    `verify` re-checks (below), then for each pending approval `claim_approval` (atomic conditional UPDATE, `store.py:324`) and `fetch(approve=True, prefer=candidate)`.
    The outcome is written to `approvals.result`.
-4. **fetch** (`sourcing/fetch.py:127`): search + rank again; take the approved file if still offered, else the
-   top one (`pick` event). Intent (`fetch.py:252-259`): crate row = **copy** upgrade; external row whose file
-   name parses to another version = **version**; else plain. Row → `sourcing`; slskd enqueue; poll until
-   `Completed` (timeout 600 s); find the file under the downloads folder.
+4. **fetch** (`sourcing/fetch.py` `fetch`): **library first** (S1-07): an external row that is not a copy upgrade
+   is matched against Navidrome as the import does (`import_playlist.match`); its same recording or same version
+   makes the row `ok` with that `library_song_id` (`matched` event) and nothing is downloaded. Else search + rank
+   again (a candidate whose title slot names another song is rejected, S1-01); take the approved file if still
+   offered, else the top one (`pick` event). Intent (`intent_for`): crate row = **copy** upgrade; external row whose
+   file name parses to another version = **version**; else plain. Row → `sourcing`; forget the file's completed
+   records (`?remove=true`), enqueue, poll the record whose id wasn't there before the enqueue (S1-04) until
+   `Completed` (timeout 600 s); find the file under the downloads folder. **Retry once** (S1-06): `Completed,
+   Errored|TimedOut|Rejected|Cancelled`, or slskd unreachable or 5xx, cancels and forgets that attempt, waits 20 s
+   and downloads the next acceptable candidate from another peer (`retry` event); a second failure fails the row with
+   both reasons. Every failed attempt, our own timeout included, cancels and forgets its own transfer.
 5. **verify** (`sourcing/verify.py:232`) at the row's tier. For a copy upgrade the reference is the old file, read
    from `navidrome.db` (`_library_file`); with `ACOUSTID_KEY` an AcoustID lookup also runs. Result →
    `verifications`. A failed file is deleted (it is our download, not library material) and the row `failed`.
@@ -205,7 +222,9 @@ Other stores:
    `beets matched: …` or `beets as-is: … (why)`.
 7. **finish** (`fetch.py:176`): `start_scan`, wait ≤120 s, `search3` by the filed file's artist + title, pick the
    hit with the same suffix and byte size. Found: `set_wanted_names` copies Navidrome's names onto the row
-   (`renamed` event; the Spotify names stay in `asked_*`). External row → `ok`. A copy upgrade of a
+   (`renamed` event; the Spotify names stay in `asked_*`). External row → `ok`. A title that can't be the asked
+   song (`identity.can_be_song`, S1-03) is not copied: the row is `review` "filed <X> as <rel>, asked for <Y>"
+   (`wrong_song` event), not placed; `crates.cli wanted reopen` puts it back to `needs_source` (S1-08). A copy upgrade of a
    playlist row → a **copy replacement** (§9): proof, then repoint every playlist through `playlist_edit`, then the old
    file to the trash. No proof → both files stay and the row is `review`.
    **Placement** (N4, D44, `crates/placement.py`): no call from here. Each tick the worker asks
@@ -258,6 +277,48 @@ Runs in the worker (`scripts/identity_backfill.py`), because it has `/srv/music`
    exports still match (`export_playlists.check`).
 4. **revert** (`:958`): newest first, remove a field only where the file still holds exactly the logged value
    (`tag_cleanup.remove_ids`). Re-applying after a revert needs a fresh propose (mtime changed).
+
+### (e) Album request → plan → approve → album job
+
+Built in S2 and S3 against the fakes, not deployed. Spec S2/S3, plan `plans/2026-10-22-s2-album-requests.md`.
+Entry points (S3), the HTTP routes and the CLI calling the same `CrateApp` methods, so add, preview and approve have
+one implementation each:
+- HTTP (`crates/service.py`, documented for clients in [`api.md`](api.md)): `POST /api/requests` (`{url}` →
+  `requests.add_link`, `{mbReleaseId}` → `add_release`, `{mbRecordingId}` → `add_recording`; then
+  `mark_in_library`), `GET /api/requests` (`requests.listed`), `GET /api/requests/<id>` (`requests.detail`),
+  `POST /api/requests/<id>/preview` (`album_job.plan_request`, slskd searched outside the app lock, `album_job.shown`)
+  and `/approve` (`album_job.approve_request`), `GET /api/catalog/search?q=&kind=album|track` (`sourcing/catalog.py`:
+  one `MusicBrainzCatalog` in `PROVIDERS`; Spotify is the next provider, after `scripts/capture_spotify.py`'s capture).
+  Every body goes through `store.public`: no peer, no path. Nothing on the HTTP thread enqueues on slskd.
+- CLI (`sourcing/cli.py` `request_cmd`): `python -m sourcing.cli request add <link> | list | show <id> | preview <id> |
+  approve <id> [--json]`, the morning path in `worker.md`.
+1. **Request.** `seed-spotify <album or track URL> [--musicbrainz]` → `requests.add_spotify`: one `requests` row, one
+   `external_wanted` row per track (`request_id`, `track_no`, `year`). A row belongs to the first request that asked
+   for it. The embed has no year for an album; `match_request_release` takes the MusicBrainz release that matches the
+   rows one to one (`mb_release_id`, `year`, each row's `mb_recording_id`), else the request goes on without ids.
+   `import-playlist --request` records the import as one `playlist` request (`add_playlist`, keyed by the playlist's
+   name); a later album request takes its rows that nothing is doing yet.
+2. **Plan.** `album_job.plan_request`: one slskd search `"<artist> <album>"`, `album.plan_album` over the responses
+   (a primary folder, a same-release secondary, per-track rows; failed peers and folders excluded), cached in `previews`
+   as `req-<id>` (a playlist's album group: `req-<id>:<loose artist>/<loose album>`, 3+ rows). What it returns and its
+   `plan` event name folders `folder 1`, `folder 2` and files by basename: never a peer (`store.public`).
+3. **Approve** (D7). `album_job.approve_request`: one `album` approval per open row, with its planned file; a playlist's
+   rows outside an album group get ordinary `download` approvals. Refused while a row is in flight.
+4. **Run.** `Worker._spend` hands a request's `album` approvals to `album_job.run`: claim them; the library first
+   (S1-07); plan again if the cached plan is older than `ALBUM_PLAN_MAX_AGE_S` (3600 s); one enqueue per peer (its
+   earlier `Completed` records of those files forgotten first); then each row through `fetch(planned=True)` (no
+   search, no enqueue: it follows the job's transfer, verifies with the row's recording id, files, finishes, places).
+5. **Switch** (S2-05b). A transfer error or timeout, no transfer started within `ALBUM_START_TIMEOUT_S` (600 s),
+   one "not what it claims" verify finding (`transcode`, `fake_24bit`, `fake_hires`, `recording`) or 2 failed rows
+   distrust the folder: its unfiled records are cancelled and forgotten (`remove=true`), and its rows are planned again over the
+   cached and a fresh search without the failed folders (`switch` event). Caps (S2-05c): a row gets its planned folder,
+   one other folder, then one per-track fetch excluding every failed peer; a row that fails all of them is `failed`
+   with every attempt in its reason. The cached plan keeps the failed folders: an approval again plans without them.
+6. **Filing** (S2-06). An album row is filed with the request's identity (`AlbumIdentity`: album, album artist, track
+   number/total, year, release ids). The `tagged {json}` event (the old values) is committed before
+   `write_minimal`, then `beet import … --set dj_album=1`, and `deploy/beets.yaml` files `dj_album:1` items at
+   `$albumartist/$album ($year)/$track - $title` (D50). Reverse: `scripts.tag_cleanup.restore_fields`.
+7. **Status.** A request's status is never stored: `store.request_status` over its rows.
 
 ## 5. Identity model: song, version, copy (`sourcing/identity.py`, `docs/identity.md`)
 
@@ -337,7 +398,11 @@ the test fixture `tests/fixtures/policy-legacy.toml` holds.
 | One reconcile at a time | flock on `/data/reconcile.lock`, 60 s, then 503 / skip (`reconcile.py`) |
 | Never overwrite an id | `apply` writes only empty fields, file unchanged since propose (`identity_backfill.py:732`) |
 | Other tags untouched | `write_minimal` sets only named fields; `apply` re-reads all others |
-| Peer names never in UI/logs/events | `explain(peers=False)`, basenames only in events and worker stdout |
+| Peer names never in UI/logs/events | `explain(peers=False)`, basenames only in events and worker stdout; a slskd error is `SlskdError` "slskd <method> <endpoint template>: HTTP <code>" (S1-05), never the peer, URL or key |
+| A file is never filed as another song (S1, built, not deployed) | scorer rejects a title slot naming another song (S1-01); with no recording id, a confident AcoustID title that can't be the asked one is a hard `recording` finding (S1-02, `verify._acoustid_check`); `finish` never renames a row onto another song's title, the row goes to `review` (S1-03) |
+| fetch follows only its own transfer (S1) | forgets with `?remove=true`; follows the record whose id wasn't there before its enqueue, never the last one (S1-04); one switch to another peer per fetch call, the first attempt cancelled and forgotten first (S1-06) |
+| No download of a song the library has (S1-07) | an external non-copy row is matched against Navidrome before any search; a hit is `ok` with that song |
+| `wanted reopen` writes only crates.db (S1-08) | `store.reopen_external`: one write lock, dry run by default, refuses in-flight and question rows, the `reopened` event holds the reverse |
 | Duplicate cleanup never trashes a file a playlist holds (built N1, not run live) | `scripts/duplicate_cleanup.py`: groups recomputed from navidrome.db right before each repoint and move; `repoint` only via `playlist_edit.repoint_everywhere`, reverse line before each write, then a waited scan; `trash` under `worker.lock`, no scan running, `references()` empty (hidden rows, other owners) before and after each move and after the closing scan (else put back), `CrateStore.song_in_use` empty, `MOVES.txt` before each move; every repoint and move a `cleanup` event |
 | Placement only inserts, only in our imported playlists, once per track (built N4, not deployed) | `crates/placement.py`: the playlist needs an `imported_playlists` row (D37); a track already in `imported_entries` is never due, so a removed one stays removed; every edit is one `playlist_edit.rewrite` (refuses on hidden missing rows, another owner, a smart playlist or a concurrent edit); an unconfirmed edit is looked at, never resent; `given_up` after 12 refusals, with a `not_placed` event |
 | Navidrome DB read-only | `open_ro` (`mode=ro`) and a `:ro` mount |

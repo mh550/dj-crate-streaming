@@ -8,7 +8,7 @@ from sourcing import cli
 from sourcing.fake_slskd import FakeSlskdServer
 from sourcing.verify import Verdict
 from tests.helpers import make_audio
-from tests.test_fetch import GOOD, RESPONSES, good_flac_bytes, new_song, run, world  # noqa: F401  (fixture)
+from tests.test_fetch import GOOD, RESPONSES, good_flac_bytes, new_song, run, world, not_in_library  # noqa: F401  (fixtures)
 from tests.test_service import get, svc  # noqa: F401  (fixture)
 
 BAD = Verdict(False, ["cutoff ≈16 kHz …"], None, ["4.0s of silence at the start"], {"cutoff_khz": 16, "bits_used": 16})
@@ -36,6 +36,7 @@ def test_fetch_verifies_at_the_rows_tier_and_keeps_the_result(world, tmp_path):
     assert row["verify"]["measurements"]["cutoff_khz"] == 16
 
 
+@pytest.mark.usefixtures("not_in_library")
 def test_fetch_keeps_a_passing_result_too_and_uses_an_external_rows_tier(world, tmp_path):
     ext = world["store"].add_external_wanted("Chic", "Good Times", duration_s=501, tier="high")
     spy = Spy(Verdict(True, [], None, [], {"cutoff_khz": 20}))

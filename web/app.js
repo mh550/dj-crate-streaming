@@ -122,7 +122,7 @@ $("#detail-crate").onchange = async e => {
 // A `review` row is a question. These reasons are the ones copy replacement leaves (crates.store.RETRYABLE_REVIEW,
 // which this must match: tests/test_web_m8.py compares them): approving such a row downloads again, so they
 // offer Preview/Approve like a needs_source row. Any other review reason (import's "ambiguous …") offers nothing.
-const RETRYABLE_REVIEW = /^(?:kept beside |declined replacement #\d+|replacement #\d+ not made:|filed beside )/;
+const RETRYABLE_REVIEW = /^(?:kept beside |declined replacement #\d+|replacement #\d+ not made:|filed beside |filed .+ as .+, asked for )/;
 // the last download check (spec §3a): verdict, then what was measured, then why
 function verifyLine(v) {
   const m = v.measurements || {}, bits = [];
