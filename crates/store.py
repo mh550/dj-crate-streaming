@@ -1154,6 +1154,16 @@ class CrateStore:
                         (mb_recording_id, time.time(), _ext_pk(ext_id)))
         self.db.commit()
 
+    def set_request_release(self, request_id: int, mb_release_id: str, recordings: dict[int, str]) -> None:
+        """S2-03 in one transaction: every row of the request that is not `removed` gets the recording of its track
+        number (a re-seeded row and the failed one it replaced alike), then the request its release. `updated_at`
+        stays: it times stale-row recovery and re-checks, and this is no change of state."""
+        for track_no, rec in recordings.items():
+            self.db.execute("UPDATE external_wanted SET mb_recording_id=? WHERE request_id=? AND track_no=? "
+                            "AND status!='removed'", (rec, request_id, track_no))
+        self.db.execute("UPDATE requests SET mb_release_id=? WHERE id=?", (mb_release_id, request_id))
+        self.db.commit()
+
     def request(self, request_id: int) -> dict | None:
         """The request, its rows (wanted_row dicts, by track number, then playlist position) and its derived
         status; None when unknown."""

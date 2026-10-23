@@ -5,7 +5,7 @@ r"""CLI: rank candidates for a wanted track, from a fixture file or a live slskd
   python -m sourcing.cli verify /srv/incoming/03\ -\ Good\ Times.flac --duration 501 [--tier crate] [--reference old.flac] [--json]
   python -m sourcing.cli fetch --wanted s4 [--approve [--wait]] [--tier T]   # search+score; --approve only records an approval for the worker; tier: the row's
   python -m sourcing.cli worker [--once] [--no-reconcile]   # D18: spend approvals (download, verify, file with beets), re-check `verify` rows, reconcile; WORKER_POLL_S (30), WORKER_RECHECK_S (300), WORKER_RECONCILE_S (600), WORKER_EXPORT_S (300)
-  python -m sourcing.cli seed-spotify https://open.spotify.com/playlist/...   # queue tracks not in Navidrome; an album or track URL is one request (S2-02)
+  python -m sourcing.cli seed-spotify https://open.spotify.com/playlist/... [--musicbrainz]   # queue tracks not in Navidrome; an album or track URL is one request (S2-02); --musicbrainz or $MUSICBRAINZ_CACHE: an album's release and recording ids (S2-03)
   python -m sourcing.cli import-playlist <spotify-url|report.txt|exportify.csv>... [--name N] [--dry-run]   # D11: Spotify playlists → public Navidrome playlist + wanted rows
   python -m sourcing.cli retier --from crate --to medium [--dry-run]   # move external wanted rows between tiers (D15 backfill; rows of a tiered playlist follow its comment)
 """
@@ -19,7 +19,7 @@ from pathlib import Path
 
 from .acoustid import make_lookup
 from .filer import BeetsFiler
-from .musicbrainz import confirm_recording_length
+from .musicbrainz import MusicBrainz, MusicBrainzError, confirm_recording_length
 from .scorer import Wanted, rank, explain
 from .policy import DEFAULT_TIER, IMPORT_TIER, TIERS
 from .spotify_csv import fetch_entity
@@ -150,6 +150,8 @@ def main(argv: list[str] | None = None) -> int:
 
     s = sub.add_parser("seed-spotify", help="add every track of a public Spotify playlist/album/track to the wanted queue; an album or a track is one request")
     s.add_argument("url")
+    s.add_argument("--musicbrainz", action="store_true",
+                   help="match an album to its MusicBrainz release (on too when $MUSICBRAINZ_CACHE names a cache)")
     add_tier_arg(s, None, f"tier for new queued rows (default {IMPORT_TIER}, D15); given on a re-seed, it changes existing rows too")
 
     ip = sub.add_parser("import-playlist", help="Spotify URL / Exportify CSV / SpotiFLAC report → public Navidrome playlist; the rest become wanted rows")
@@ -226,7 +228,7 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "seed-spotify":
         from crates.service import Config
         from crates.store import CrateStore
-        from .requests import add_spotify
+        from .requests import add_spotify, match_request_release
         from .spotify_csv import rows
         db = Config.from_env().db_path
         Path(db).parent.mkdir(parents=True, exist_ok=True)
@@ -237,6 +239,16 @@ def main(argv: list[str] | None = None) -> int:
             n = len(req["rows"])
             what = req["album"] or (req["rows"][0]["title"] if n else "")
             print(f"request {req['id']}: {req['artist']} – {what} ({n} row{'s' * (n != 1)})")
+            cache = os.environ.get("MUSICBRAINZ_CACHE")
+            if req["kind"] == "album" and (a.musicbrainz or cache):      # S2-03: the recordings fetch verifies against
+                try:
+                    if match_request_release(store, req["id"], MusicBrainz(cache=Path(cache) if cache else None)):
+                        print(f"musicbrainz release {store.request(req['id'])['mb_release_id']}")
+                    else:
+                        print(f"no MusicBrainz release matches its {n} rows one to one; "
+                              "the request goes on without ids")
+                except (MusicBrainzError, OSError) as e:          # MusicBrainz down, or an unusable cache file
+                    print(f"{e}; the request goes on without MusicBrainz ids", file=sys.stderr)
             return 0
         before, total = store.external_count(), 0
         for r in rows(entity):          # dicts: {"Artist", "Title", "Length"} (seconds)

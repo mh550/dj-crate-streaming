@@ -9,6 +9,29 @@ Michael steers from `INBOX.md` on this branch (status line `run | pause | stop`;
 session reads it at startup. Policy: **build-only** (`.harness/config.sh`) and the brief in `brief.md`: nothing live,
 no docker, no `/srv`, no network, no client UI, PRs only (open, never merge).
 
+### 2026-10-22 23:40 · S2-03 · passes
+
+- **Changed.** `sourcing/musicbrainz.py`: `MusicBrainz.release_search` / `release` (shared limiter + cache) and pure
+  `match_release` → `ReleaseMatch(id, format, date, tracks)` (track count, then titles in order across media by
+  `loose(base)` + version key, `asked_title` first; tie order Digital Media, CD, earliest date, no date last).
+  `sourcing/requests.py` `match_request_release` (live rows only: not removed, newest per track_no; a matched
+  request refills a re-seeded row from its stored release); `CrateStore.set_request_release` writes rows + release in
+  one commit, `updated_at` untouched. `fetch.py`: verify gets the row's `mb_recording_id` (a copy upgrade: Navidrome's
+  id first). `seed-spotify --musicbrainz` / `$MUSICBRAINZ_CACHE`. Plan notes under `## Schema`. Tests 1954 → 1986.
+- **Verified.** Each new test seen red first; the step's subset (client, musicbrainz, fetch_filing, fetch, requests,
+  sourcing_cli) 155 passed before the review fixes; full suite green, 1986 tests, 698 s. Opus review: 2 medium
+  (a re-seeded row got no recording id / blocked any later match; the hard check vs digital-only recordings, see
+  below) and 6 low; fixed test-first: live rows, one transaction, version key, OSError from the cache, asked_title,
+  the copy-upgrade fallback test.
+- **Next sessions must know.** An album track already owned by another request leaves a gap in track numbers, so
+  that album gets no ids (soft check, documented in the plan). The rate limit is per process (worker + seed-spotify
+  at once are not spaced against each other). S4-01's checklist: first live `seed-spotify <album> --musicbrainz`
+  with `MUSICBRAINZ_CACHE` set, and check the `release` event.
+- **Questions for Michael.** None blocking. Proposed change: the spec's tie order picks Digital Media first; if a
+  digital release has recordings of its own with few AcoustID submissions, a correct CD rip would fail verify's hard
+  check. MusicBrainz usually shares recordings across remasters, so I kept the spec; S2-05 could accept the recording
+  of any release that matched one to one (or treat a mismatch with the same title key as a warning).
+
 ### 2026-10-22 23:50 · S2-02 · passes
 
 - **Changed.** `sourcing/playlist_sources.py`: `Row.track_no`/`Row.year`; `rows_from_spotify` fills album, track_no,

@@ -70,6 +70,95 @@ def test_seed_spotify_track_records_one_track_request(tmp_path, monkeypatch, cap
     assert req["kind"] == "track" and [r["tier"] for r in req["rows"]] == ["crate"]
 
 
+ALBUM_URL = "https://open.spotify.com/album/2nTlIPIQ7fHOnNN7BRch0Z"
+
+
+def _seed_album(tmp_path, monkeypatch):
+    import json
+    from tests.helpers import FIXTURES
+    db = tmp_path / "crates.db"; monkeypatch.setenv("CRATES_DB", str(db))
+    monkeypatch.delenv("MUSICBRAINZ_CACHE", raising=False)
+    entity = json.loads((FIXTURES / "spotify_embed_album_al-green-still-in-love.json").read_text())
+    monkeypatch.setattr(cli, "fetch_entity", lambda url: entity)
+    made = []
+
+    def client(**kw):                                   # cli.MusicBrainz, offline: the captured search and release
+        from tests.test_requests import MusicBrainzStub, stub_mb
+        made.append(kw)
+        return stub_mb(MusicBrainzStub())
+    monkeypatch.setattr(cli, "MusicBrainz", client)
+    return db, made
+
+
+def test_seed_spotify_album_with_musicbrainz_stores_the_release(tmp_path, monkeypatch, capsys):
+    db, made = _seed_album(tmp_path, monkeypatch)
+    assert cli.main(["seed-spotify", ALBUM_URL, "--musicbrainz"]) == 0
+    [req] = CrateStore(db).requests()
+    assert req["mb_release_id"] == "3c9a52ee-ee0a-3362-a563-d9d28b02a53e"
+    assert all(r["mb_recording_id"] for r in req["rows"])
+    out = capsys.readouterr().out
+    assert "(9 rows)" in out and "musicbrainz release 3c9a52ee-ee0a-3362-a563-d9d28b02a53e" in out
+    assert made == [{"cache": None}]
+
+
+def test_seed_spotify_album_uses_the_musicbrainz_cache_from_the_environment(tmp_path, monkeypatch, capsys):
+    db, made = _seed_album(tmp_path, monkeypatch)
+    monkeypatch.setenv("MUSICBRAINZ_CACHE", str(tmp_path / "mb.jsonl"))
+    assert cli.main(["seed-spotify", ALBUM_URL]) == 0
+    assert made == [{"cache": tmp_path / "mb.jsonl"}] and CrateStore(db).requests()[0]["mb_release_id"]
+
+
+def test_seed_spotify_album_without_musicbrainz_asks_nothing(tmp_path, monkeypatch, capsys):
+    db, made = _seed_album(tmp_path, monkeypatch)
+    assert cli.main(["seed-spotify", ALBUM_URL]) == 0
+    assert made == [] and CrateStore(db).requests()[0]["mb_release_id"] is None
+    assert "musicbrainz" not in capsys.readouterr().out
+
+
+def test_seed_spotify_album_without_a_match_or_with_musicbrainz_down_keeps_the_request(tmp_path, monkeypatch, capsys):
+    from sourcing.musicbrainz import MusicBrainzError
+    db, made = _seed_album(tmp_path, monkeypatch)
+
+    class Down:
+        def release_search(self, artist, album, limit=25):
+            raise MusicBrainzError("MusicBrainz request failed (URLError): release")
+    monkeypatch.setattr(cli, "MusicBrainz", lambda **kw: Down())
+    assert cli.main(["seed-spotify", ALBUM_URL, "--musicbrainz"]) == 0
+    captured = capsys.readouterr()
+    assert "(9 rows)" in captured.out and "MusicBrainz request failed" in captured.err
+    [req] = CrateStore(db).requests()
+    assert req["mb_release_id"] is None and len(req["rows"]) == 9
+
+    class Nothing:
+        def release_search(self, artist, album, limit=25):
+            return []
+
+        def release(self, mbid):
+            return None
+    monkeypatch.setattr(cli, "MusicBrainz", lambda **kw: Nothing())
+    assert cli.main(["seed-spotify", ALBUM_URL, "--musicbrainz"]) == 0
+    assert "no MusicBrainz release matches its 9 rows one to one" in capsys.readouterr().out
+
+
+def test_seed_spotify_album_with_an_unusable_musicbrainz_cache_keeps_the_request(tmp_path, monkeypatch, capsys):
+    db, _ = _seed_album(tmp_path, monkeypatch)
+    from sourcing.musicbrainz import MusicBrainz
+    monkeypatch.setattr(cli, "MusicBrainz", MusicBrainz)
+    (tmp_path / "cache-dir").mkdir()
+    monkeypatch.setenv("MUSICBRAINZ_CACHE", str(tmp_path / "cache-dir"))           # a directory: reading it fails
+    assert cli.main(["seed-spotify", ALBUM_URL]) == 0
+    assert "goes on without MusicBrainz ids" in capsys.readouterr().err
+    assert len(CrateStore(db).requests()[0]["rows"]) == 9
+
+
+def test_seed_spotify_playlist_with_musicbrainz_asks_nothing(tmp_path, monkeypatch, capsys):
+    db = tmp_path / "crates.db"; monkeypatch.setenv("CRATES_DB", str(db))
+    entity = {"name": "Test", "trackList": [{"title": "Good Times", "subtitle": "Chic", "duration": 501_000}]}
+    monkeypatch.setattr(cli, "fetch_entity", lambda url: entity)
+    monkeypatch.setattr(cli, "MusicBrainz", lambda **kw: pytest.fail("MusicBrainz asked for a playlist"))
+    assert cli.main(["seed-spotify", "https://open.spotify.com/playlist/abc", "--musicbrainz"]) == 0
+
+
 def test_spotify_csv_refuses_a_track_url(monkeypatch, tmp_path):
     from sourcing import spotify_csv
     monkeypatch.setattr(spotify_csv, "fetch_entity", lambda url: {"type": "track", "name": "x"})

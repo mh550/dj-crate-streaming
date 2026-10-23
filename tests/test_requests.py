@@ -98,3 +98,135 @@ def test_a_queued_row_joining_an_album_gets_its_album_and_year():
 
 def test_canonical_drops_share_parameters_and_locale():
     assert rq.canonical("https://open.spotify.com/intl-de/album/2nTlIPIQ7fHOnNN7BRch0Z?si=x") == ALBUM_URL
+
+
+# ---- the MusicBrainz release match (S2-03) ------------------------------------------------------------------------
+
+import io  # noqa: E402
+import urllib.error  # noqa: E402
+import urllib.parse  # noqa: E402
+
+from sourcing.musicbrainz import MusicBrainz  # noqa: E402
+
+CD = "3c9a52ee-ee0a-3362-a563-d9d28b02a53e"
+
+
+class MusicBrainzStub:
+    """An opener for `MusicBrainz(opener=…)`: the captured search for any release search, the captured release for
+    the ids in `releases`, 404 for everything else. Records the paths asked."""
+    def __init__(self, releases=(CD,), search="musicbrainz_release_search_al-green.json"):
+        self.releases, self.search, self.paths = set(releases), search, []
+
+    def __call__(self, req, timeout=None):
+        path = urllib.parse.urlparse(req.full_url).path.removeprefix("/ws/2/")
+        self.paths.append(path)
+        if path == "release" and self.search:
+            body = (FIXTURES / self.search).read_text()
+        elif path.removeprefix("release/") in self.releases:
+            body = (FIXTURES / "musicbrainz_release_al-green-still-in-love.json").read_text()
+        else:
+            raise urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, io.BytesIO(b"{}"))
+        return io.BytesIO(body.encode())
+
+
+def stub_mb(opener):
+    return MusicBrainz(opener=opener, sleep=lambda s: None, min_interval_s=0)
+
+
+def test_album_request_gets_its_release_and_every_row_its_recording():
+    store = CrateStore()
+    req = rq.add_spotify(store, ALBUM_URL, fetch=lambda url: _album())
+    opener = MusicBrainzStub()
+    assert rq.match_request_release(store, req["id"], stub_mb(opener)) is True
+    req = store.request(req["id"])
+    assert req["mb_release_id"] == CD
+    rows = req["rows"]
+    assert rows[0]["mb_recording_id"] == "cdac1a50-8ba6-4edd-8137-618928580d38"
+    assert rows[8]["mb_recording_id"].startswith("83f06455") and all(r["mb_recording_id"] for r in rows)
+    [ev] = [e for e in store.events(limit=100) if e["kind"] == "release"]
+    assert f"musicbrainz release {CD} (CD 1993)" in ev["detail"] and ev["detail"].startswith(f"#{req['id']} ")
+    assert opener.paths[0] == "release" and opener.paths[-1] == f"release/{CD}"
+
+
+def test_no_one_to_one_release_stores_nothing_and_the_request_goes_on():
+    store = CrateStore()
+    req = rq.add_spotify(store, ALBUM_URL, fetch=lambda url: _album())
+    assert rq.match_request_release(store, req["id"], stub_mb(MusicBrainzStub(releases=()))) is False
+    req = store.request(req["id"])
+    assert req["mb_release_id"] is None and not any(r["mb_recording_id"] for r in req["rows"])
+    assert [e for e in store.events(limit=100) if e["kind"] == "release"] == [] and req["status"] == "open"
+
+
+def test_a_track_request_is_not_matched_to_a_release():
+    store = CrateStore()
+    entity = {"type": "track", "name": "Love And Happiness", "uri": "spotify:track:6NW0y8AxOfqqC7FxRjWTGF",
+              "artists": [{"name": "Al Green"}], "duration": 303306}
+    req = rq.add_spotify(store, "https://open.spotify.com/track/6NW0y8AxOfqqC7FxRjWTGF", fetch=lambda url: entity)
+    opener = MusicBrainzStub()
+    assert rq.match_request_release(store, req["id"], stub_mb(opener)) is False and opener.paths == []
+
+
+def test_a_matched_request_is_not_asked_again():
+    store = CrateStore()
+    req = rq.add_spotify(store, ALBUM_URL, fetch=lambda url: _album())
+    assert rq.match_request_release(store, req["id"], stub_mb(MusicBrainzStub()))
+    opener = MusicBrainzStub()
+    assert rq.match_request_release(store, req["id"], stub_mb(opener)) is True and opener.paths == []
+    assert len([e for e in store.events(limit=100) if e["kind"] == "release"]) == 1
+
+
+def _fail(store, ext):
+    store.db.execute("UPDATE external_wanted SET status='failed', reason='no source' WHERE id=?", (int(ext[4:]),))
+    store.commit()
+
+
+def test_a_re_seeded_row_gets_the_matched_recording_too():
+    store = CrateStore()
+    req = rq.add_spotify(store, ALBUM_URL, fetch=lambda url: _album())
+    assert rq.match_request_release(store, req["id"], stub_mb(MusicBrainzStub()))
+    _fail(store, req["rows"][2]["song_id"])
+    req = rq.add_spotify(store, ALBUM_URL, fetch=lambda url: _album())          # seed-spotify again: a new track-3 row
+    assert len(req["rows"]) == 10
+    assert rq.match_request_release(store, req["id"], stub_mb(MusicBrainzStub())) is True
+    rows = store.request(req["id"])["rows"]
+    assert {r["mb_recording_id"] for r in rows if r["track_no"] == 3} == {"eed211fe-122d-4c48-ace0-f85aab5d5ade"}
+    assert len([e for e in store.events(limit=100) if e["kind"] == "release"]) == 1
+
+
+def test_a_re_seeded_row_before_any_match_still_matches():
+    store = CrateStore()
+    req = rq.add_spotify(store, ALBUM_URL, fetch=lambda url: _album())
+    _fail(store, req["rows"][2]["song_id"])
+    req = rq.add_spotify(store, ALBUM_URL, fetch=lambda url: _album())
+    assert rq.match_request_release(store, req["id"], stub_mb(MusicBrainzStub())) is True
+    assert all(r["mb_recording_id"] for r in store.request(req["id"])["rows"])
+
+
+def test_a_matched_request_is_written_in_one_transaction_and_leaves_updated_at():
+    store = CrateStore()
+    req = rq.add_spotify(store, ALBUM_URL, fetch=lambda url: _album())
+    before = {r["song_id"]: r["updated_at"] for r in req["rows"]}
+    commits = []
+    real = store.db
+
+    class Spy:
+        def __getattr__(self, name):
+            return getattr(real, name)
+
+        def commit(self):
+            commits.append(1)
+            real.commit()
+    store.db = Spy()
+    try:
+        assert rq.match_request_release(store, req["id"], stub_mb(MusicBrainzStub()))
+    finally:
+        store.db = real
+    assert len(commits) == 1
+    assert {r["song_id"]: r["updated_at"] for r in store.request(req["id"])["rows"]} == before
+
+
+def test_the_match_uses_the_title_the_row_asked_for():
+    store = CrateStore()
+    req = rq.add_spotify(store, ALBUM_URL, fetch=lambda url: _album())
+    assert store.set_wanted_names(req["rows"][2]["song_id"], "Al Green", "Love & Happiness (Live)")
+    assert rq.match_request_release(store, req["id"], stub_mb(MusicBrainzStub())) is True

@@ -548,13 +548,13 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         if landed is None:
             return fail(why, best, text)
 
-        ref, rid = None, None
+        ref, rid = None, row.get("mb_recording_id") or None    # an album request's release match (S2-03)
         if copy_id is not None:               # a copy upgrade: the old copy is the recording we must match
             ref, reason = _library_file(navidrome_db, copy_id, music_root)
             if ref is None:
                 store.log(None, wanted_id, "reference", reason)
                 store.commit()                # the verifier decodes for minutes: hold no write transaction meanwhile
-            rid = navidrome.song(copy_id).music_brainz_id or None
+            rid = navidrome.song(copy_id).music_brainz_id or rid
         extra = {"recording_id": rid, "lookup": lookup} if lookup is not None else {}    # see header_only in tests
         if lookup is not None:          # with no recording id, AcoustID's title is checked against the asked one (S1-02)
             extra["asked_title"] = row.get("asked_title") or row["title"]

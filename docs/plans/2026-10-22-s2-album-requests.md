@@ -32,6 +32,20 @@ In `crates/store.py`, additive (the `SCHEMA` string for a new db, `_migrate` for
   12-track first disc is 13). S2-03 matches MusicBrainz tracks by their order across all media, not by
   `position` within one medium. A request whose every row already belongs to another request is not made: that
   request answers (a track already in an album request gives the album request).
+- MusicBrainz release (S2-03, `sourcing/musicbrainz.py` `match_release`, `sourcing/requests.py`
+  `match_request_release`): one release search (`artist:"…" AND release:"…"`, limit 25), then `release/<id>?inc=recordings`
+  for each release listing exactly as many tracks as the request has live rows, in tie order (Digital Media, CD,
+  other; then the earliest date, no date last), stopping at the first whose tracks, in order across all media, have
+  their rows' title keys (`identity.loose(parse_title(title, artist).base)` plus the version key, so a live or
+  remixed track is no match; the row's `asked_title`). Live rows: not `removed`, per track number the newest (a
+  re-seed queues a new row beside a failed one); they must be numbered 1..n. Recordings (to every non-removed row of
+  that track number, `updated_at` untouched) and `mb_release_id` are one transaction, with a `release` event
+  `#<request> musicbrainz release <id> (<format> <date>)`. A matched request is not searched again; a row added
+  since gets its recording from the stored release. No match, a MusicBrainz error or an unusable cache → no ids,
+  the request goes on. `seed-spotify` asks only with `--musicbrainz` or `$MUSICBRAINZ_CACHE` (the client's
+  resumable cache file). fetch verifies with the row's `mb_recording_id`; a copy upgrade uses the old copy's
+  recording id from Navidrome first. Known gap: an album track that already belongs to another request is not this
+  request's row, so the album has a missing track number and gets no ids (soft title check, as before S2-03).
 
 ## Request status
 

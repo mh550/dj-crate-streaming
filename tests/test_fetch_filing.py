@@ -251,6 +251,37 @@ def test_external_row_has_no_reference_and_no_recording_id(world, tmp_path):
 
 
 @pytest.mark.usefixtures("not_in_library")
+def test_a_request_rows_musicbrainz_recording_reaches_verify(world, tmp_path):
+    """S2-03: the release match's recording id makes verify's AcoustID check hard (it would have caught ext-74)."""
+    st = world["store"]
+    ext = st.add_external_wanted("Chic", "Good Times", album="Risqué", duration_s=501, year=1979)
+    st.set_recording_id(ext, "cdac1a50-8ba6-4edd-8137-618928580d38")
+    f = lambda p: []
+    kw = fetched(world, tmp_path, wanted_id=ext, lookup=f, navidrome_db=tmp_path / "nope.db")["kw"]
+    assert kw == {"recording_id": "cdac1a50-8ba6-4edd-8137-618928580d38", "lookup": f, "asked_title": "Good Times"}
+
+
+def test_a_copy_upgrade_keeps_the_old_copys_recording_over_the_rows(world, tmp_path):
+    st = world["store"]
+    world["nd"].state.songs["s4"]["musicBrainzId"] = "rec-9"
+    ext = st.add_external_wanted("Chic", "Good Times", album="Risqué", duration_s=501, year=1979)
+    st.set_library_song(ext, "s4")
+    st.set_recording_id(ext, "rec-row")
+    assert st.find_wanted(ext)["library_song_id"] == "s4"
+    kw = fetched(world, tmp_path, wanted_id=ext, lookup=lambda p: [], navidrome_db=tmp_path / "nope.db")["kw"]
+    assert kw["recording_id"] == "rec-9"
+
+
+def test_a_copy_upgrade_of_a_copy_without_a_recording_id_uses_the_rows(world, tmp_path):
+    st = world["store"]
+    ext = st.add_external_wanted("Chic", "Good Times", album="Risqué", duration_s=501, year=1979)
+    st.set_library_song(ext, "s4")                      # Navidrome's s4 has no musicBrainzId
+    st.set_recording_id(ext, "rec-row")
+    kw = fetched(world, tmp_path, wanted_id=ext, lookup=lambda p: [], navidrome_db=tmp_path / "nope.db")["kw"]
+    assert kw["recording_id"] == "rec-row"
+
+
+@pytest.mark.usefixtures("not_in_library")
 def test_a_renamed_external_row_passes_the_title_it_asked_for_not_its_current_name(world, tmp_path):
     """S1-02: verify compares AcoustID's title with what the row asked for; a rename may already have moved it."""
     st = world["store"]
