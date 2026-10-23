@@ -69,6 +69,18 @@ def _split(q: str) -> tuple[str, str]:
     return (parts[0], parts[1]) if len(parts) == 2 and parts[0] and parts[1] else ("", q.strip())
 
 
+_LUCENE = re.compile(r'([+\-&|!(){}\[\]^"~*?:\\/])')
+_OPERATOR = re.compile(r"\b(AND|OR|NOT)\b")
+
+
+def _words(field: str, other: str, q: str) -> str:
+    """A query without a dash: its words, unquoted, on the title and on the artist (`release:(…) OR artist:(…)`), so
+    "Al Green I'm Still in Love" ranks that album first. One phrase on the title would need the artist's words in
+    the title and find nothing."""
+    w = _OPERATOR.sub(lambda m: m.group(0).lower(), _LUCENE.sub(r"\\\1", q.strip()))   # NOT, AND, OR: words
+    return f"{field}:({w}) OR {other}:({w})"
+
+
 class MusicBrainzCatalog:
     """Releases (kind album) and recordings (kind track) from MusicBrainz search."""
 
@@ -85,12 +97,14 @@ class MusicBrainzCatalog:
         if kind not in KINDS:
             raise ValueError(f"kind must be album or track, not {kind!r}")
         artist, title = _split(q)
+        entity = "release" if kind == "album" else "recording"
+        query = phrase_query(artist=artist, **{entity: title}) if artist else _words(entity, "artist", title)
         try:
-            if kind == "album":
-                return [self._release(r) for r in self.mb.release_search(artist, title, limit=self.limit)]
-            d = self.mb.get("recording", query=phrase_query(artist=artist, recording=title), limit=self.limit)
+            d = self.mb.get(entity, query=query, limit=self.limit)
         except (MusicBrainzError, OSError) as e:      # retries spent, no network, or an unusable cache file
             raise CatalogBusy("MusicBrainz is busy, try again") from e
+        if kind == "album":
+            return [self._release(r) for r in (d or {}).get("releases") or []]
         return [self._recording(r) for r in (d or {}).get("recordings") or []]
 
     def _release(self, r: dict) -> Hit:

@@ -297,9 +297,10 @@ one implementation each:
 1. **Request.** `seed-spotify <album or track URL> [--musicbrainz]` → `requests.add_spotify`: one `requests` row, one
    `external_wanted` row per track (`request_id`, `track_no`, `year`). A row belongs to the first request that asked
    for it. The embed has no year for an album; `match_request_release` takes the MusicBrainz release that matches the
-   rows one to one (`mb_release_id` and each row's `mb_recording_id`; not its year), else the request goes on without
-   ids. Only `seed-spotify` with `--musicbrainz` or `$MUSICBRAINZ_CACHE` calls it: `POST /api/requests` and `request add` with a Spotify album link
-   make the request without asking MusicBrainz.
+   rows one to one (`mb_release_id`, each row's `mb_recording_id`, and its release group's first-release year when the
+   request has none, D53 *default*), else the request goes on without ids. `seed-spotify --musicbrainz` calls it, and
+   so do `POST /api/requests` and `request add` for a Spotify album link (outside the app lock, best effort: MusicBrainz
+   down leaves one `release` event, `#<id> musicbrainz not asked: …`).
    `import-playlist --request` records the import as one `playlist` request (`add_playlist`, keyed by the playlist's
    name); a later album request takes its rows that nothing is doing yet.
 2. **Plan.** `album_job.plan_request`: one slskd search `"<artist> <album>"`, `album.plan_album` over the responses

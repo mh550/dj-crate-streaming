@@ -353,15 +353,17 @@ def _open_row(store, row: dict | None) -> bool:
             and new_file(row) and store.approval_in_progress(row["song_id"]) is None)
 
 
-def match_request_release(store, request_id: int, mb) -> bool:
+def match_request_release(store, request_id: int, mb, *, lock=contextlib.nullcontext()) -> bool:
     """Store the album request's MusicBrainz release and each row's recording (S2-03); True when it has them.
 
     No one-to-one release → nothing stored, False: the request goes on without ids. The match is over the request's
     live rows: not `removed`, and per track number the newest (a re-seed queues a new row beside the failed one).
     A matched request is not searched again; a row added since (a re-seed) gets its recording from the stored
     release, fetched again (the cache answers it). Rows and release are written in one transaction.
-    `mb` is a `MusicBrainz` client; its errors (MusicBrainzError, OSError from its cache) reach the caller."""
-    req = store.request(request_id)
+    `mb` is a `MusicBrainz` client; its errors (MusicBrainzError, OSError from its cache) reach the caller.
+    `lock` (the service's) is held for the store only, never while MusicBrainz is asked."""
+    with lock:
+        req = store.request(request_id)
     if req is None or req["kind"] != "album" or not req["album"]:
         return False
     live = {r["track_no"]: r for r in sorted((r for r in req["rows"] if r["status"] != "removed"),
@@ -378,8 +380,13 @@ def match_request_release(store, request_id: int, mb) -> bool:
     m = match_release(rows, releases, mb.release)
     if m is None:
         return False
-    if not req["mb_release_id"]:
-        said = " ".join(x for x in (m.format, m.date) if x)
-        store.log(None, None, "release", f"#{request_id} musicbrainz release {m.id} ({said})")
-    store.set_request_release(request_id, m.id, {t.position: t.recording_id for t in m.tracks})   # commits the event
+    with lock:
+        first = not req["mb_release_id"]
+        if first:
+            said = " ".join(x for x in (m.format, m.date) if x)
+            store.log(None, None, "release", f"#{request_id} musicbrainz release {m.id} ({said})")
+        # the year only before any row was approved: a row filed at `$album/` (D51) keeps its album whole (D53)
+        year = m.first_year if first and not store.any_approval([r["song_id"] for r in req["rows"]]) else None
+        store.set_request_release(request_id, m.id, {t.position: t.recording_id for t in m.tracks},  # commits
+                                  year=year)
     return True

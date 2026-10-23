@@ -57,7 +57,9 @@ def mb(opener):
 def test_an_album_search_is_one_release_search_and_its_ten_releases_are_hits():
     opener = Opener()
     hits = MusicBrainzCatalog(mb(opener)).search("Al Green I'm Still in Love", "album")
-    assert opener.asked == [("release", 'release:"Al Green I\'m Still in Love"')]
+    # no dash: the words on the title and the artist, unquoted (a phrase on the title alone finds nothing on
+    # MusicBrainz when the artist's words are in it)
+    assert opener.asked == [("release", "release:(Al Green I'm Still in Love) OR artist:(Al Green I'm Still in Love)")]
     assert len(hits) == 10 and all(isinstance(h, Hit) for h in hits)
     first = hits[0]
     assert first == Hit(provider="musicbrainz", kind="album", title="I’m Still in Love With You", artist="Al Green",
@@ -86,10 +88,25 @@ def test_a_track_search_asks_recordings_and_parses_them():
     assert no_date.year is None and no_date.length_s == 582.8
 
 
-def test_a_plain_track_query_is_a_recording_phrase():
+def test_a_plain_track_query_is_its_words_on_the_title_and_the_artist():
     opener = Opener()
-    MusicBrainzCatalog(mb(opener)).search("  My Love Is Free ", "track")
-    assert opener.asked == [("recording", 'recording:"My Love Is Free"')]
+    MusicBrainzCatalog(mb(opener)).search("  Double Exposure My Love Is Free ", "track")
+    assert opener.asked == [("recording", "recording:(Double Exposure My Love Is Free) OR "
+                                          "artist:(Double Exposure My Love Is Free)")]
+
+
+def test_a_plain_querys_upper_case_operators_are_words():
+    opener = Opener()
+    MusicBrainzCatalog(mb(opener)).search("10cc I'M NOT IN LOVE AND OR", "album")
+    words = "10cc I'M not IN LOVE and or"
+    assert opener.asked == [("release", f"release:({words}) OR artist:({words})")]
+
+
+def test_a_plain_querys_lucene_characters_are_escaped():
+    opener = Opener()
+    MusicBrainzCatalog(mb(opener)).search('AC/DC (live) "Back" in: Black!', "album")
+    words = 'AC\\/DC \\(live\\) \\"Back\\" in\\: Black\\!'
+    assert opener.asked == [("release", f"release:({words}) OR artist:({words})")]
 
 
 def test_another_kind_is_refused_before_musicbrainz_is_asked():
@@ -286,7 +303,7 @@ def test_an_album_search_answers_200_with_camel_case_hits(api):
     assert body["hits"][0] == {"provider": "musicbrainz", "kind": "album", "title": "I’m Still in Love With You",
                                "artist": "Al Green", "year": 1993, "trackCount": 9, "lengthS": None, "format": "CD",
                                "ids": {"mbReleaseId": AL_GREEN_CD}, "inLibrary": True}
-    assert opener.asked == [("release", 'release:"Al Green I\'m Still in Love"')]
+    assert opener.asked == [("release", "release:(Al Green I'm Still in Love) OR artist:(Al Green I'm Still in Love)")]
 
 
 def test_a_track_search_answers_200_with_recordings(api):

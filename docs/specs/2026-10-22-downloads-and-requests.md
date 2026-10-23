@@ -232,6 +232,9 @@ this run** (concern B is open).
    - Usage in its docstring.
 
 ## S4: checklist and whole-run review (after: [S1-01, S1-02, S1-03, S1-04, S1-05, S1-06, S1-07, S1-08, S2-01, S2-02, S2-03, S2-04, S2-05, S2-06, S2-07, S3-01, S3-02, S3-03, S3-04, S3-05, S3-06])
+**Built 2026-10-23** (run `dj-crate-streaming-2026-10-22-build`, S4-01 `b3658c9` and S4-02 on branch
+`harness/dj-crate-streaming-2026-10-22-build`): the checklist (§4, §6, Captures) and the whole-run review, its
+Important findings fixed test-first; not deployed, PRs open. Decision D53 (*default*) in the pivot spec.
 1. **S4-01** `docs/plans/2026-10-22-downloads-checklist.md`, each step with its check and undo, from "Morning checklist
    addition" below. Link it from `docs/plans/2026-10-22-morning-checklist.md` (the 10-21 run's R8) when that file is on
    main. Add a line before that checklist's deploy step: "PR #16 must be on main first". Update `docs/architecture.md`

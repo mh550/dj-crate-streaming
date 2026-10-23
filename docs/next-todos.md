@@ -71,6 +71,10 @@ Anything that trashes files or writes tags needs a reviewed plan file and a reve
   request add | list | show | preview | approve`. The live steps, each with its check and undo:
   [`plans/2026-10-22-downloads-checklist.md`](plans/2026-10-22-downloads-checklist.md) sections 4 (the Al Green
   album as a request) and 6 (the Spotify capture), then "Captures for the fixtures" (three slskd shapes).
+  The whole-run review (S4-02) fixed 6 of its 7 Important findings, not deployed either: an album link is matched to its
+  MusicBrainz release at `request add` too, and a match fills an unknown year from the release group (D53 *default*);
+  release lookups ask `artist-credits`; a catalog query without " - " matches words, not one title phrase; a slskd
+  drop while a planned file downloads is waited out once; a refused cancel no longer stops a switch's other cancels.
 
 ## In order
 

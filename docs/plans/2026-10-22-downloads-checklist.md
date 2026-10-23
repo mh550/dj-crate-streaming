@@ -121,9 +121,9 @@ The worker stays up: it downloads what you approve.
    `git -C <the deploy worktree> grep -n 'dj_album:1:' deploy/beets.yaml`.
    Check: one line, `dj_album:1: $albumartist/%if{$year,$album ($year),$album}/$track - $title`. Undo: none needed.
 2. **Make the request.** First the MusicBrainz release, so the album's rows carry their recording ids and verify
-   checks each file against its own track (the check that would have caught ext-74). `request add` does not ask
-   MusicBrainz yet (only `seed-spotify` with `--musicbrainz` or `$MUSICBRAINZ_CACHE` does; noted for the run's review).
-   Then `request add` finds the same request and asks the library:
+   checks each file against its own track (the check that would have caught ext-74). `request add` asks MusicBrainz
+   too (S4-02), but silently and best effort; the seed prints what it found. Then `request add` finds the same request
+   and asks the library:
 
    ```
    flock -n /srv/docker/crates/live.lock scripts/live-run.sh python3 -m sourcing.cli seed-spotify https://open.spotify.com/album/2nTlIPIQ7fHOnNN7BRch0Z --musicbrainz
@@ -164,8 +164,9 @@ The worker stays up: it downloads what you approve.
    - `/api/events` shows, for that row, `pick`, a `tagged` event `{…}` (the old tag values), then
      `filed beets …: Al Green/I'm Still in Love With You/<nn> - <title>.<ext>`. `<title>` is the file's title tag,
      or MusicBrainz's if beets matched (`beets matched:`).
-   - The folder has no ` (1972)`. S2-06b's album path holds (measured on beets 1.6.0), but the Spotify embed has no
-     year and the release match stores none, so D51 clears the year.
+   - The folder is `… (<year>)` with the release group's first-release year when step 2 printed `musicbrainz release
+     <mbid>` (D53 *default*; `request show <id>` names the release), else it has no year: the Spotify embed has none
+     and D51 clears it. S2-06b's album path holds (measured on beets 1.6.0).
    - Navidrome shows the album "I'm Still in Love With You" by Al Green with that track. **check** green.
 
    Undo: `docs/plans/2026-10-22-S2-album-tags.md` → "Reverse" for that file (the `tagged` event's values; worker
@@ -204,8 +205,8 @@ The worker stays up: it downloads what you approve.
 6. **Another album** (when Al Green had nothing left to plan): the same four commands of 2, 3 and 5 with its Spotify
    album link and its new `<id>`, and one row first as in 4.
    Check: the seed and the add print its artist, title and track count; preview covers all but at most one open row
-   in `folder 1` or it says why. The files land under `<album artist>/<album>/`: no year from a Spotify link. A
-   MusicBrainz release link (`request add https://musicbrainz.org/release/<id>`) carries the release's year
+   in `folder 1` or it says why. The files land under `<album artist>/<album> (<year>)/` when MusicBrainz matched the
+   release (D53 *default*), else `<album artist>/<album>/`. A MusicBrainz release link (`request add https://musicbrainz.org/release/<id>`) carries the release's year
    (`<album> (<year>)/`), but only for an album not requested yet: for one requested before, the add answers with
    that request.
 

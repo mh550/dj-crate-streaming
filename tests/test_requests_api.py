@@ -51,11 +51,15 @@ class Spotify:
 
 @pytest.fixture
 def api():
-    def make(entity):
+    """(fake Navidrome, app, server, Spotify stub); MusicBrainz answers offline: the captured Al Green search and CD
+    release (tests/test_requests.py's stub), or `mb` (an opener) when given."""
+    from tests.test_requests import MusicBrainzStub as Captured, stub_mb
+
+    def make(entity, mb=None):
         spotify = Spotify(entity)
         fake = FakeSubsonicServer().__enter__()
         cfg = Config(subsonic_url=fake.url, username="demo", password="demo", db_path=":memory:", port=0)
-        app = CrateApp(cfg, store=CrateStore(), fetch_entity=spotify)
+        app = CrateApp(cfg, store=CrateStore(), fetch_entity=spotify, musicbrainz=stub_mb(mb or Captured()))
         srv = CrateServer(app).__enter__()
         made.append((fake, srv))
         return fake, app, srv, spotify
@@ -73,14 +77,15 @@ def test_an_album_url_answers_201_with_the_request_and_its_nine_rows(api):
     req = body["request"]
     assert {k: req[k] for k in ("kind", "artist", "album", "year", "mbReleaseId", "status")} == {
         "kind": "album", "artist": "Al Green", "album": "I'm Still in Love With You", "year": None,
-        "mbReleaseId": None, "status": "open"}
+        "mbReleaseId": RELEASE_ID, "status": "open"}                    # S2-03's match, as seed-spotify makes it
     assert isinstance(req["id"], int) and isinstance(req["createdAt"], float)
     rows = body["rows"]
     assert [r["trackNo"] for r in rows] == list(range(1, 10))
     assert [r["id"] for r in rows] == [f"ext-{i}" for i in range(1, 10)]
     assert rows[0] == {"id": "ext-1", "trackNo": 1, "artist": "Al Green", "title": "I'm Still In Love With You",
                        "album": "I'm Still in Love With You", "year": None, "durationS": 196, "status": "needs_source",
-                       "reason": None, "librarySongId": None, "mbRecordingId": None}
+                       "reason": None, "librarySongId": None, "mbRecordingId": RECORDING_ID}
+    assert all(r["mbRecordingId"] for r in rows) and rows[8]["mbRecordingId"].startswith("83f06455")
     assert rows[5]["title"] == "Oh ,Pretty Woman"
     assert spotify.calls == [ALBUM_URL]                       # one Spotify fetch per call
     assert app.store.request(req["id"])["source"] == ALBUM_URL
@@ -95,6 +100,32 @@ def test_the_same_album_again_answers_200_with_the_existing_request_and_no_new_r
     assert again == first == uri
     assert len(app.store.requests()) == 1 and app.store.external_count() == 9
     assert spotify.calls == [ALBUM_URL] * 3                   # every form asks the same embed
+
+
+def test_an_album_url_with_musicbrainz_down_is_201_without_ids_and_one_event(api):
+    class Down:
+        paths = []
+
+        def __call__(self, req, timeout=None):
+            self.paths.append(req.full_url)
+            raise urllib.error.URLError("no route")
+    down = Down()
+    fake, app, srv, spotify = api(album(), mb=down)
+    s, body = post(srv.url + "/api/requests", {"url": ALBUM_URL})
+    assert s == 201 and body["request"]["mbReleaseId"] is None and len(body["rows"]) == 9
+    assert all(r["mbRecordingId"] is None for r in body["rows"]) and len(down.paths) == 1
+    [ev] = [e for e in app.store.events(limit=50) if e["kind"] == "release"]
+    assert ev["detail"].startswith("#1 musicbrainz not asked: ") and "URLError" in ev["detail"]
+
+
+def test_a_track_or_a_playlist_link_asks_musicbrainz_nothing(api):
+    class Never:
+        def __call__(self, req, timeout=None):
+            pytest.fail(f"MusicBrainz asked: {req.full_url}")
+    for entity, url in ((track(), "https://open.spotify.com/track/3cyGx6m1IIFxRnxEOGaAb2"),
+                        (playlist(), PLAYLIST_URL)):
+        fake, app, srv, spotify = api(entity, mb=Never())
+        assert post(srv.url + "/api/requests", {"url": url})[0] == 201
 
 
 @pytest.mark.parametrize("url", ["https://open.spotify.com/track/" + "3cyGx6m1IIFxRnxEOGaAb2",
@@ -558,7 +589,8 @@ def rq(tmp_path):
             made.append(sk)
         cfg = Config(subsonic_url=fake.url, username="demo", password="demo", db_path=":memory:", port=0)
         spotify = Spotify(album())
-        app = CrateApp(cfg, store=CrateStore(), fetch_entity=spotify,
+        from tests.test_requests import MusicBrainzStub as Captured, stub_mb
+        app = CrateApp(cfg, store=CrateStore(), fetch_entity=spotify, musicbrainz=stub_mb(Captured()),   # offline
                        slskd=SlskdClient(sk.url, sk.api_key) if sk else None)
         srv = CrateServer(app).__enter__()
         made.append(srv)
@@ -632,6 +664,8 @@ def test_an_unknown_request_is_404_and_a_word_is_400(rq, method, path):
     call = (lambda url: get(url)[::2]) if method == "GET" else (lambda url: post(url, {}))
     assert call(srv.url + f"/api/requests/99{path}") == (404, {"error": "no request #99"})
     assert call(srv.url + f"/api/requests/abc{path}") == (400, {"error": "request id must be a number, not 'abc'"})
+    for big in ("9" * 20, "9" * 5000):                       # past sqlite's integer, past int()'s digit limit
+        assert call(srv.url + f"/api/requests/{big}{path}") == (404, {"error": f"no request #{big}"})
 
 
 def test_preview_plans_the_album_caches_it_and_names_no_peer(rq, tmp_path):
