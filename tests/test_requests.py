@@ -166,6 +166,16 @@ def test_a_track_request_is_not_matched_to_a_release():
     assert rq.match_request_release(store, req["id"], stub_mb(opener)) is False and opener.paths == []
 
 
+def test_an_album_request_with_no_artist_is_not_searched_by_title_alone():
+    """MusicBrainz.release_search leaves a blank artist out of the query (S3-02); an artist-less request must not
+    become a search for that title by anyone (a tribute album with the same track list)."""
+    store = CrateStore()
+    req = rq.add_spotify(store, ALBUM_URL, fetch=lambda url: _album())
+    store.db.execute("UPDATE requests SET artist = '' WHERE id = ?", (req["id"],))
+    opener = MusicBrainzStub()
+    assert rq.match_request_release(store, req["id"], stub_mb(opener)) is False and opener.paths == []
+
+
 def test_a_matched_request_is_not_asked_again():
     store = CrateStore()
     req = rq.add_spotify(store, ALBUM_URL, fetch=lambda url: _album())

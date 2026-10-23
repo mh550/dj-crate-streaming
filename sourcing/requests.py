@@ -345,8 +345,10 @@ def match_request_release(store, request_id: int, mb) -> bool:
         if all(r["mb_recording_id"] for r in rows):
             return True
         releases = [{"id": req["mb_release_id"], "track-count": len(rows)}]
+    elif not (req["artist"] or "").strip():                 # by title alone it would be anyone's album of that name
+        return False
     else:
-        releases = mb.release_search(req["artist"] or "", req["album"])
+        releases = mb.release_search(req["artist"], req["album"])
     m = match_release(rows, releases, mb.release)
     if m is None:
         return False

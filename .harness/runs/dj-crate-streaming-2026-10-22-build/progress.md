@@ -9,6 +9,27 @@ Michael steers from `INBOX.md` on this branch (status line `run | pause | stop`;
 session reads it at startup. Policy: **build-only** (`.harness/config.sh`) and the brief in `brief.md`: nothing live,
 no docker, no `/srv`, no network, no client UI, PRs only (open, never merge).
 
+### 2026-10-23 07:40 · S3-02 · passes
+
+- **What changed:** `GET /api/catalog/search?q=&kind=album|track` answers 200 with `{hits: [...]}`. Each hit has `provider, kind, title, artist, year, trackCount, lengthS, format, ids, inLibrary`.
+  - Code: new `sourcing/catalog.py` (`Hit`, `MusicBrainzCatalog`, `PROVIDERS`, `search`, `CatalogBusy`) and `CrateApp.catalog_search` in `crates/service.py`.
+  - `MusicBrainz.phrase_query` leaves a blank field out of the query, so `release_search("", album)` is `release:"…"`.
+  - `requests.match_request_release` no longer searches an album request that has no artist (it would match anyone's album of that name).
+  - Tests: new `tests/test_catalog.py` (36), plus 1 in `test_musicbrainz_client.py` and 1 in `test_requests.py`. The suite went from 2185 to **2223**, green in 844 s.
+- **Errors:** 400 `kind must be album or track`; 400 `q is required`; 503 `MusicBrainz is busy, try again` (after the client's 4 tries, or no network). Navidrome down or answering oddly gives 200 with `inLibrary: null` on every hit, asked only once.
+- **inLibrary:**
+  - Tracks use `fetch.library_match` (same recording or same version).
+  - Albums use search3 *song* results with `identity.loose` equality on `album` and on the artist, `displayAlbumArtist` or `albumArtists[].name` (the captured 0.64 shape), retrying with the title's words alone. Album search3 results are not captured, so no `search_albums` was invented.
+  - Each search page is asked once per call (`_Library` memoises `search_songs`). A hit with no artist, or a name that folds to nothing ("÷", "!!!"), is `null`, not `false`.
+- **Verified:** step-5 subset plus neighbours (catalog, requests_api, musicbrainz_client, requests, service, musicbrainz, sourcing_cli, import_playlist, fetch): 279 passed. Full `check.sh` green, 2223 tests.
+- **Opus review (0 Critical, 3 Important, 8 Minor):**
+  - Fixed, test-first: I1 (album artist read from a key Navidrome never sends), I2 (18 Navidrome calls for 10 track hits, now 2), M1 to M5, and the en dash in M6.
+- **Proposed changes / questions for Michael:**
+  - (I3) Step 1 prescribes `release:"<q>"` for a query without " - ". On real MusicBrainz, "Al Green I'm Still in Love" as one title phrase finds nothing; only `Artist - Title` works. Should a plain query be sent as unfielded words? `docs/api.md` (S3-05) should state the " - " rule either way.
+  - (M7) Every distinct search stays in the MusicBrainz client's cache: in memory until a restart, and in `MUSICBRAINZ_CACHE` forever if that is set. Should searches skip the cache (keeping the limiter and backoff)?
+  - (Step 2) It says "search3 album results"; this uses search3's song results instead (reason above). Capturing a real `search3` with `albumCount>0` would allow a `search_albums`.
+- **Next session:** S3-05's `docs/api.md` should document the hit shape and that a pick posts `ids` to `POST /api/requests`.
+
 ### 2026-10-23 06:10 · S3-01b · passes
 
 - **What changed:** `POST /api/requests` also takes `{"mbReleaseId"}` (an album request: the release's tracks across all media, recording ids, lead credit, year from `date[:4]`, lengths; source `https://musicbrainz.org/release/<id>`) or `{"mbRecordingId"}` (a track request). Code: `sourcing/requests.py` (`add_release`, `add_recording`, `mark_in_library`, shared `_record`), `sourcing/fetch.py` (`in_library` split into `library_match` / `library_error` / `link_library_song`, behaviour unchanged), `crates/service.py` (`CrateApp(musicbrainz=…)`, built from `MUSICBRAINZ_CACHE` by default; `_add_pick`). Tests: 22 new in `tests/test_requests_api.py`. The suite went from 2163 to **2185**, green in 834 s.

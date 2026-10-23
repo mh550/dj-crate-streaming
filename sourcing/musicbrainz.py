@@ -160,6 +160,11 @@ def _escape(s: str) -> str:
     return s.replace("\\", "\\\\").replace('"', '\\"')
 
 
+def phrase_query(**fields: str) -> str:
+    """`artist:"…" AND release:"…"`, each value a Lucene phrase; a blank field is left out (it would match nothing)."""
+    return " AND ".join(f'{k}:"{_escape(v.strip())}"' for k, v in fields.items() if v and v.strip())
+
+
 class MusicBrainz:
     """Spacing is process-wide (`_SHARED`), not per instance; use one cache file per run.
 
@@ -231,12 +236,12 @@ class MusicBrainz:
         return [] if d is None else [parse_recording(r) for r in d.get("recordings") or []]
 
     def search(self, artist: str, title: str, limit: int = 100) -> list[Recording]:
-        d = self.get("recording", query=f'artist:"{_escape(artist)}" AND recording:"{_escape(title)}"', limit=limit)
+        d = self.get("recording", query=phrase_query(artist=artist, recording=title), limit=limit)
         return [] if d is None else [parse_recording(r) for r in d.get("recordings") or []]
 
     def release_search(self, artist: str, album: str, limit: int = 25) -> list[dict]:
         """The releases MusicBrainz finds for artist + album (search JSON: id, title, track-count, date, media)."""
-        d = self.get("release", query=f'artist:"{_escape(artist)}" AND release:"{_escape(album)}"', limit=limit)
+        d = self.get("release", query=phrase_query(artist=artist, release=album), limit=limit)
         return [] if d is None else list(d.get("releases") or [])
 
     def release(self, mbid: str) -> dict | None:

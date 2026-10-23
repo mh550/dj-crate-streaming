@@ -26,7 +26,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from sourcing import requests as requests_
+from sourcing import catalog, requests as requests_
 from sourcing.fetch import fetch
 from sourcing.import_playlist import NameCollision
 from sourcing.musicbrainz import MusicBrainz, MusicBrainzError
@@ -195,6 +195,21 @@ class CrateApp:
         if crate:
             return self.set_crate(pl.id, True)
         return self.reconciler.crate_view(pl)
+
+    # --- catalog (S3-02): what a client searches before it asks for a request
+    def catalog_search(self, q: str | None, kind: str | None) -> dict:
+        """Every registered provider's hits for `q` (sourcing.catalog), each with `inLibrary`. No lock: nothing is
+        written. A provider that cannot answer → 503; Navidrome down → 200 with `inLibrary: null`."""
+        if kind not in catalog.KINDS:
+            raise ApiError(400, "kind must be album or track")
+        if not (q or "").strip():
+            raise ApiError(400, "q is required")
+        providers = [cls.from_app(self) for cls in catalog.PROVIDERS.values()]
+        try:
+            hits = catalog.search(providers, q.strip(), kind, self.api)
+        except catalog.CatalogBusy as e:
+            raise ApiError(503, str(e)) from None
+        return {"hits": [h.as_json() for h in hits]}
 
     # --- requests (S3): an album, track or playlist asked for as one; downloads nothing (approve does, D7)
     def add_request(self, body) -> tuple[dict, bool]:
@@ -525,6 +540,8 @@ def make_handler(app: CrateApp):
                     return self._json(public(app.store.events(int(q.get("limit", 50)))))
                 if head == "search":
                     return self._json(app.search(q.get("q", ""), int(q.get("count", 25))))
+                if head == "catalog" and p[1:] == ["search"]:
+                    return self._json(app.catalog_search(q.get("q"), q.get("kind")))
                 if head == "stream-tier":
                     return self._json({"tier": app.store.stream_tier(),
                                        "tiers": {t: {"format": f, "maxBitRate": b} for t, (f, b) in STREAM.items()}})
