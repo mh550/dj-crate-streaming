@@ -277,3 +277,74 @@ def test_http_client_errors_are_wrapped():
         mb, _ = client(Script(exc))
         with pytest.raises(MusicBrainzError):
             mb.isrc("X")
+
+
+# ---- releases (S2-03): live captures 2026-10-22, the first 10 of 11 for Al Green / I'm Still in Love With You ----
+
+AL_GREEN_CD = "3c9a52ee-ee0a-3362-a563-d9d28b02a53e"
+
+
+def test_release_search_is_one_request_and_returns_its_releases():
+    opener = Script(fixture("musicbrainz_release_search_al-green.json"))
+    mb, _ = client(opener)
+    releases = mb.release_search("Al Green", "I'm Still in Love With You")
+    assert len(releases) == 10 and releases[0]["id"] == AL_GREEN_CD and releases[0]["track-count"] == 9
+    [req] = opener.requests
+    q = urllib.parse.urlparse(req.full_url)
+    assert q.path == "/ws/2/release"
+    assert urllib.parse.parse_qs(q.query) == {
+        "fmt": ["json"], "query": ['artist:"Al Green" AND release:"I\'m Still in Love With You"'], "limit": ["25"]}
+    assert req.get_header("User-agent") == USER_AGENT
+
+
+def test_release_search_escapes_and_404_is_empty():
+    opener = Script({"releases": []})
+    mb, _ = client(opener)
+    mb.release_search('A "B"', "T\\", limit=5)
+    q = urllib.parse.parse_qs(urllib.parse.urlparse(opener.requests[0].full_url).query)
+    assert q["query"] == ['artist:"A \\"B\\"" AND release:"T\\\\"'] and q["limit"] == ["5"]
+    mb, _ = client(Script(http_error(404)))
+    assert mb.release_search("A", "B") == []
+
+
+def test_a_blank_field_is_left_out_of_the_query():
+    """S3-02's catalog search has a plain query with no artist: `artist:"" AND …` would match nothing."""
+    opener = Script({"releases": [], "recordings": []})
+    mb, _ = client(opener)
+    mb.release_search("  ", "I'm Still in Love")
+    mb.search("", "My Love Is Free")
+    queries = [urllib.parse.parse_qs(urllib.parse.urlparse(r.full_url).query)["query"] for r in opener.requests]
+    assert queries == [['release:"I\'m Still in Love"'], ['recording:"My Love Is Free"']]
+
+
+def test_release_asks_for_recordings_and_artist_credits_and_returns_the_body():
+    opener = Script(fixture("musicbrainz_release_al-green-still-in-love.json"))
+    mb, _ = client(opener)
+    rel = mb.release(AL_GREEN_CD)
+    assert rel["id"] == AL_GREEN_CD
+    tracks = [t for m in rel["media"] for t in m["tracks"]]
+    assert len(tracks) == 9
+    assert tracks[0]["recording"]["id"] == "cdac1a50-8ba6-4edd-8137-618928580d38"
+    assert tracks[8]["recording"]["id"].startswith("83f06455")
+    q = urllib.parse.urlparse(opener.requests[0].full_url)
+    assert q.path == f"/ws/2/release/{AL_GREEN_CD}"
+    # no artist-credit without artist-credits (add_release's artist), no first-release-date without release-groups (D53)
+    assert urllib.parse.parse_qs(q.query) == {"fmt": ["json"], "inc": ["recordings artist-credits release-groups"]}
+
+
+def test_release_404_is_none_and_503_backs_off():
+    mb, _ = client(Script(http_error(404)))
+    assert mb.release(AL_GREEN_CD) is None
+    mb, t = client(Script(http_error(503), fixture("musicbrainz_release_al-green-still-in-love.json")))
+    assert mb.release(AL_GREEN_CD)["id"] == AL_GREEN_CD and 2 in t.sleeps
+
+
+def test_release_answers_are_cached(tmp_path):
+    cache = tmp_path / "mb.jsonl"
+    first, _ = client(Script(fixture("musicbrainz_release_search_al-green.json")), cache=cache)
+    first.release_search("Al Green", "I'm Still in Love With You")
+
+    def forbidden(req, timeout=None):
+        raise AssertionError("network used")
+    again, t = client(forbidden, cache=cache)
+    assert len(again.release_search("Al Green", "I'm Still in Love With You")) == 10 and t.sleeps == []

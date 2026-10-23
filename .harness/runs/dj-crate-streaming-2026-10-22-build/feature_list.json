@@ -1,0 +1,429 @@
+{
+  "run": "dj-crate-streaming-2026-10-22-build",
+  "branch": "harness/dj-crate-streaming-2026-10-22-build",
+  "features": [
+    {
+      "id": "S2-01",
+      "milestone": "S2",
+      "kind": "build",
+      "model": "opus",
+      "description": "An album, playlist or track request is one `requests` row in crates.db whose rows are `external_wanted` rows carrying `request_id`, `track_no` and `mb_recording_id`, with the request's status derived from its rows, and the S2 plan file fixes the album-job design the later S2 features build on (spec S2-01).",
+      "steps": [
+        "Plan file `docs/plans/2026-10-22-s2-album-requests.md` exists with the sections `## Schema`, `## Request status` (derived, first that applies: `done` every row ok; `failed` no row ok and none open; `partly`; `approved`; `open`), `## Album job` (modules: `sourcing/album.py` pure planner for S2-04, `sourcing/album_job.py` worker side for S2-05a..c; the plan is cached with `CrateStore.set_preview(f\"req-<id>\", …)`; approvals get purpose `album`; fetch's planned mode: `planned=True` + `prefer=<planned candidate>` means no search and no enqueue of its own, it polls the transfer the job enqueued; the switch triggers and the per-row attempt cap: planned folder, one switched folder, one per-track fetch), `## Live steps` (none in this run: every live step goes to S4-01). A test in `tests/test_s2_plan_doc.py` asserts the file and those four headings exist (write it first, see it fail).",
+        "Failing test first in `tests/test_crates.py`, beside `test_store_migrates_old_external_wanted_table` (line ~174): a db created with the old `external_wanted` CREATE (no `request_id`) opened with `CrateStore(path)` has a `requests` table and the columns `request_id INTEGER`, `track_no INTEGER`, `mb_recording_id TEXT` on `external_wanted` (`PRAGMA table_info`); `_migrate` in `crates/store.py` (line ~292) adds them in the existing additive style, and the `CREATE TABLE IF NOT EXISTS requests` (id INTEGER PRIMARY KEY, kind TEXT CHECK in album|playlist|track, source TEXT, artist TEXT, album TEXT, year INTEGER, mb_release_id TEXT, created_at REAL) joins the schema string at line ~36.",
+        "Round trip on an in-memory `CrateStore()`: `add_request(kind='album', source=<url>, artist='Al Green', album=\"I'm Still in Love With You\", year=None) -> int`; `add_external_wanted(..., request_id=<id>, track_no=1)` records both columns (visible in `find_wanted(ext)['request_id']`, `['track_no']`); `set_recording_id(ext, 'cdac1a50-8ba6-4edd-8137-618928580d38')` and `set_release_id(request_id, mbid)`; `request(id) -> dict` with `rows` (the `wanted` dicts of its rows ordered by `track_no`) and `status`; `requests() -> list[dict]` newest first; `request_status(rows) -> str` is a pure function tested on each of the five outcomes from the plan file. Nothing stored twice: `status` is not a column (assert `'status' not in PRAGMA table_info(requests)`).",
+        "`store.public(request(id))` carries no peer name and no absolute path (reuse the existing `public` test pattern); `tests/test_crates.py` count grows by at least 6 tests.",
+        "Run `.harness/check.sh tests/test_crates.py tests/test_s2_plan_doc.py` green before the full suite.",
+        "The full suite is green: `.harness/check.sh` exits 0 (about 11-12 min; the test count may only grow from the previous feature's count)."
+      ],
+      "after": [],
+      "passes": true
+    },
+    {
+      "id": "S2-02",
+      "milestone": "S2",
+      "kind": "build",
+      "model": "opus",
+      "description": "A Spotify album URL fills every row with the album name, its track number and the year (when the embed has a `releaseDate`), and `python -m sourcing.cli seed-spotify <album url>` records one album request with those rows; playlist rows are unchanged (spec S2-02).",
+      "steps": [
+        "Failing test first in `tests/test_playlist_sources.py`: `rows_from_spotify(json.load(open('fixtures/spotify_embed_album_al-green-still-in-love.json')))` gives 9 rows, every `album == \"I'm Still in Love With You\"`, `track_no == position` (1..9), row 6 titled exactly as Spotify spells it (`Oh ,Pretty Woman`), and `year is None` because this capture has `\"releaseDate\": null`; a copy of the entity with `releaseDate` set to the string `\"1972-10-23\"` gives `year == 1972` on every row. `Row` in `sourcing/playlist_sources.py` gains `track_no: int | None = None` and `year: int | None = None`; for `entity['type'] == 'album'` `rows_from_spotify` fills them from `entity['name']` and `entity['releaseDate'][:4]`; for a playlist entity (`fixtures/spotify_embed_tea-tent-1.json`) `album`, `track_no` and `year` stay `None` (assert it).",
+        "New `sourcing/requests.py` with `add_spotify(store, url, *, fetch=fetch_entity) -> dict` (the request dict from `store.request(id)`): kind from the entity `type` (`album` → one `requests` row, artist = the lead artist of the entity's `subtitle`, album = `name`, year as above; every track becomes `add_external_wanted(..., request_id=, track_no=, album=, year=, source=url)`; `track` → a `track` request with one row; `playlist` → `None` for now, S2-07 fills it in). A plain `Row.album` is passed through, so `rows_from_spotify` is the one place that reads the entity.",
+        "`seed-spotify` in `sourcing/cli.py` (line ~226) calls `add_spotify` for an album URL and prints `request <id>: Al Green – I'm Still in Love With You (9 rows)`; a playlist URL behaves exactly as today (`tests/test_sourcing_cli.py::test_seed_spotify_adds_external_rows` stays green). Test with `monkeypatch.setattr(cli, 'fetch_entity', lambda url: entity)` as that test does: the 9 rows carry `request_id` and `track_no` 1..9 in `store.wanted()`.",
+        "Re-running the same album URL adds no second request and no second row (assert `len(store.requests()) == 1`, 9 rows): `add_spotify` finds an existing request by `source` first.",
+        "Run `.harness/check.sh tests/test_playlist_sources.py tests/test_sourcing_cli.py tests/test_crates.py` green.",
+        "The full suite is green: `.harness/check.sh` exits 0 (about 11-12 min; the test count may only grow from the previous feature's count)."
+      ],
+      "passes": true
+    },
+    {
+      "id": "S2-03",
+      "milestone": "S2",
+      "kind": "build",
+      "model": "opus",
+      "description": "An album request gets its MusicBrainz release (`mb_release_id`) and each row its recording id when exactly one release matches the rows one to one, and fetch passes a row's `mb_recording_id` to verify as the recording id so the existing hard AcoustID check applies (spec S2-03).",
+      "steps": [
+        "Failing test first in `tests/test_musicbrainz_client.py`: `MusicBrainz.release_search(artist, album, limit=25)` GETs `release?query=artist:\"…\" AND release:\"…\"` (one request through the shared limiter and cache; stub opener answers `fixtures/musicbrainz_release_search_al-green.json`) and returns its 10 `releases`; `MusicBrainz.release(mbid)` GETs `release/<id>?inc=recordings` and returns the body of `fixtures/musicbrainz_release_al-green-still-in-love.json` (id `3c9a52ee-ee0a-3362-a563-d9d28b02a53e`, 9 tracks, track 1 recording `cdac1a50-8ba6-4edd-8137-618928580d38`, track 9 `83f06455…`). 404 → None; 503 backoff as `get` already does.",
+        "Pure `match_release(rows, releases, fetch_release) -> ReleaseMatch | None` in `sourcing/musicbrainz.py` (or a new `sourcing/release_match.py`): keep the releases whose `track-count` equals `len(rows)`, fetch each (in tie order, stop at the first that matches), match titles one to one by `identity.loose(parse_title(title, artist).base)` so `Oh ,Pretty Woman` (Spotify) matches `Oh, Pretty Woman` (MusicBrainz); tie order: `media[0]['format']` `Digital Media` first, then `CD`, then the earliest `date` (a missing date sorts last). Tests: (a) with a `fetch_release` stub that answers only `3c9a52ee…` (404 for the rest), the 9 Spotify rows from the album fixture match it, every row gets its recording id and `tracks[i].position == rows[i].track_no`; (b) the same release body served under the digital id `095b1ca3-34ba-4d14-8eba-602fe6c1a5a1` wins over the CD; (c) 8 rows (one dropped) → `None`; (d) a release whose track 3 is titled `Love and Hate` → `None`.",
+        "`sourcing/requests.py` `match_request_release(store, request_id, mb: MusicBrainz) -> bool` stores `mb_release_id` and each row's `mb_recording_id` (`set_release_id`, `set_recording_id` from S2-01) and logs one `release` event `musicbrainz release <id> (<format> <date>)`, never a peer; `None` → nothing stored, returns False, the request goes on without ids. `seed-spotify` calls it when `MUSICBRAINZ_CACHE` or `--musicbrainz` is given, else skips (no network in tests: the test injects a `MusicBrainz(opener=stub)`).",
+        "Failing test first in `tests/test_fetch_filing.py` (`fetched(...)` captures the verifier's kwargs): an external row with `mb_recording_id` set is verified with `recording_id == that id` (today `rid` is None for anything but a copy upgrade, `sourcing/fetch.py` line ~553); a copy upgrade still uses the old copy's id; a row without one still passes `recording_id=None` and `asked_title` (S1-02 stays green).",
+        "Run `.harness/check.sh tests/test_musicbrainz_client.py tests/test_musicbrainz.py tests/test_fetch_filing.py tests/test_fetch.py` green.",
+        "The full suite is green: `.harness/check.sh` exits 0 (about 11-12 min; the test count may only grow from the previous feature's count)."
+      ],
+      "passes": true
+    },
+    {
+      "id": "S2-04",
+      "milestone": "S2",
+      "kind": "build",
+      "model": "opus",
+      "description": "`sourcing/album.py` turns one album search's responses and a request's rows into an album-first plan: a primary folder, at most one secondary folder of the same release, per-track rows for the rest, and the ranked remaining folders for a later switch (spec S2-04), pure and without I/O.",
+      "steps": [
+        "Failing tests first in new `tests/test_album_plan.py`, on synthetic responses in the exact shape of `fixtures/search_responses.sample.json` (copy a response dict and change `username`, `files[].filename`, `size`, `bitRate`, `length`, `extension`; never add keys): helper `folder(peer, dirpath, titles, lengths, fmt='flac')` builds one response whose files are `@@music\\Al Green\\I'm Still in Love With You (1972)\\Al Green - I'm Still in Love With You - NN - <title>.flac` for the 9 album titles (the ext-74 shape).",
+        "`plan_album(responses, rows, *, policy=DEFAULT_POLICY, listed_lengths=None) -> AlbumPlan` in `sourcing/album.py`: group files by `(username, directory)`; in each folder map rows to files with `scorer.rank([that folder's files], Wanted(row))` (S1-01's title-slot rejection included), each file serving at most one row, highest score first; `primary` = most rows covered (all rows wins outright), then the summed score, then free slot and speed (`Candidate` fields); `secondary` = the folder covering most of the rows the primary lacks, preferring the same release: every shared track's `length` within 2 s of the primary's (or of `listed_lengths` = the S2-03 release's track lengths) and the same format family; a folder covering only one missing row is not a folder source. `AlbumPlan` has `primary: FolderPick | None`, `secondary: FolderPick | None`, `per_track: list[row]`, `alternates: list[FolderPick]` (ranked, excluding primary and secondary), and `assignments(): list[(row, Candidate)]`; `FolderPick` has `username`, `directory`, `rows: list[(row, Candidate)]`, `score`.",
+        "The five spec cases pass: (1) one folder with all 9 → primary covers 9, no secondary, no per-track; (2) 7 of 9 in folder A and the other 2 in folder B → primary A (7), secondary B (2), per-track empty; (3) two same-named folders from two peers with all 9 → the higher summed score (bitRate 1000 vs 900) is primary, the other is `alternates[0]`; (4) primary has 7, folder C has the 2 missing but lengths 20 s off (another release), folder D has the same 2 within 2 s → secondary D, C in alternates; (5) nine peers each offering one different track → primary None, secondary None, all 9 rows per_track.",
+        "`album.describe(plan, peers=False) -> str` names folders as `folder 1`, `folder 2` (never the `username`), with coverage `7 of 9` and each row → basename; a test asserts no peer name in the text (the fetch header rule).",
+        "Run `.harness/check.sh tests/test_album_plan.py tests/test_scorer.py` green.",
+        "The full suite is green: `.harness/check.sh` exits 0 (about 11-12 min; the test count may only grow from the previous feature's count)."
+      ],
+      "passes": true
+    },
+    {
+      "id": "S2-05a",
+      "milestone": "S2",
+      "kind": "build",
+      "model": "opus",
+      "description": "Approving an album request records one `album` approval per open row with its planned file, and the worker runs the whole album from the primary folder in one enqueue: plan, enqueue every planned file to that peer in one POST, then each row through fetch in planned mode to `ok`, rows already in the library linked instead of downloaded (spec S2-05, happy path).",
+      "steps": [
+        "Failing test first in new `tests/test_album_job.py` using `world` and `header_only` from `tests/test_fetch.py` (import them as `tests/test_worker.py` does) and a `FakeSlskdServer` whose responses are one 9-track folder (the S2-04 helper) with 9 header-only FLAC byte bodies (`good_flac_bytes`); the request comes from `sourcing.requests.add_spotify` on the album fixture with `not_in_library` active.",
+        "`sourcing/album_job.py`: `plan_request(store, slskd, request_id, policy) -> dict` searches `\"<artist> <album>\"` once, calls `album.plan_album` over the request's open rows, stores the plan with `store.set_preview(f\"req-{id}\", …)` and returns `public`-safe JSON (folder labels, coverage, row → basename, per-track rows). `approve_request(store, request_id, approved_by='michael') -> list[int]` records, for each open row, `store.approve(ext, by, candidate, row['tier'], purpose='album')` (add `album` to `APPROVAL_PURPOSES`, `crates/store.py` line ~131); a row with no planned file gets an approval with `candidate=None` (per-track). 409-style refusal as `ValueError` while any row is `sourcing`/`verify`.",
+        "`Worker._spend` (`sourcing/worker.py` line ~267) hands approvals with purpose `album` to `album_job.run(request_id, approvals, **common)` grouped by the rows' `request_id`, instead of one fetch each: the job claims them all, re-plans if the cached plan is older than `ALBUM_PLAN_MAX_AGE_S` (default 3600, env in the CLI's `worker`), asks the library first per row (S1-07's `in_library` logic: a hit → `ok`, `matched`, approval `used` as `in library`), enqueues every remaining planned file of the primary with one `slskd.enqueue(username, [files…])`, then runs each row through `fetch(ext, approve=True, planned=True, prefer=candidate, enqueued=<record ids before the enqueue>, **common)`; each approval is marked used with the row's outcome as today.",
+        "fetch's planned mode (`sourcing/fetch.py`, the `attempt` closure at line ~475): with `planned=True` there is no search (`cands` is the planned candidate scored by `score_candidate`), and `download()` does not forget or enqueue: it polls `records()` for the record whose id is not in `enqueued` (S1-04's rule). `test_fetch.py`'s existing tests stay green (the default path is unchanged).",
+        "Happy path asserts: the fake saw exactly one `POST /api/v0/transfers/downloads/<peer>` with 9 files; all 9 rows end `ok`; `store.request(id)['status'] == 'done'`; events include one `plan` event per request (`folder 1: 9 of 9`), no peer name in any event (`store.events()`); the `recover_interrupted` path (`tests/test_album_job.py`): a worker restart with `album` approvals `started` marks their `sourcing` rows `failed` and the request `partly`/`failed`, as for a single row today.",
+        "Run `.harness/check.sh tests/test_album_job.py tests/test_worker.py tests/test_fetch.py tests/test_approvals.py` green.",
+        "The full suite is green: `.harness/check.sh` exits 0 (about 11-12 min; the test count may only grow from the previous feature's count)."
+      ],
+      "passes": true
+    },
+    {
+      "id": "S2-05b",
+      "milestone": "S2",
+      "kind": "build",
+      "model": "opus",
+      "description": "Trouble with a planned file switches the rest of that folder's unfiled rows to the next folder of the same release: a transfer error or timeout, a peer that never starts within `ALBUM_START_TIMEOUT_S`, a distrust finding (transcode or wrong recording) or two failures in one folder; the switched folder's queued transfers are cancelled and forgotten, rows already filed stay (spec S2-05, switching).",
+      "steps": [
+        "Failing tests first in `tests/test_album_job.py`, each with two folders in the fake's responses (primary A with 9 files, B with 9 files of the same lengths, another peer): (1) one row's verifier returns an ordinary finding (`duration`) → that row `failed`, the other 8 stay on A, no switch, no `DELETE`; (2) the verifier returns a `transcode` finding for A's first file → the remaining unfiled A rows switch to B: the fake's transfer list has no A record for them (`DELETE …?remove=true` seen, `test_fake_slskd` style), one `POST` to B's peer, every switched row `ok` from B, and a `switch` event `folder 1 distrusted: transcode (<basename>); 8 rows → folder 2`; (3) `FakeSlskdServer(complete=False)` for A's peer only → after `ALBUM_START_TIMEOUT_S` (pass 0.2 s in the test) with no A transfer past `Queued`/`Initializing`, all A rows switch to B; (4) A's first transfer ends `Completed, Errored` (seed the state) → S1-06's `again` switches that row and the rest of A's unfiled rows to B.",
+        "`album_job.run` keeps a per-folder failure count; triggers are: `FetchResult` with `again` (S1-06), the start timeout, a verify finding whose kind is in `DISTRUST = {'transcode', 'fake_24bit', 'fake_hires', 'recording'}` (from `verify.HARD_WHEN_STRICT` and `recording`), or 2 failures of any kind in one folder. On a switch: `slskd.remove_download(username, id)` (remove=true) for the folder's records of rows not yet filed, then re-plan the remaining rows with `album.plan_album` over the first search's responses plus one fresh `slskd.search` of the album, with the failed folder excluded (`exclude={(username, directory)}` parameter on `plan_album`) and the same-release preference, then enqueue and continue as S2-05a.",
+        "Rows already `ok` or `verify` from the first folder are untouched by a switch (assert their `library_song_id` and status after case 2).",
+        "No reason, event or plan text names the peer; the `switch` event names folders by label and files by basename (test asserts).",
+        "Run `.harness/check.sh tests/test_album_job.py tests/test_fake_slskd.py tests/test_fetch.py` green.",
+        "The full suite is green: `.harness/check.sh` exits 0 (about 11-12 min; the test count may only grow from the previous feature's count)."
+      ],
+      "passes": true
+    },
+    {
+      "id": "S2-05c",
+      "milestone": "S2",
+      "kind": "build",
+      "model": "opus",
+      "description": "A row's album attempts are capped at its planned folder, one switched folder and one per-track fetch excluding every failed peer and file; then it fails with every attempt in its reason, and rows no folder covers go per-track from the start (spec S2-05, last resort and caps).",
+      "steps": [
+        "Failing tests first in `tests/test_album_job.py`: (1) per-track last resort: the responses hold one folder with 8 of 9 tracks and a lone file of the 9th from a third peer → 8 rows from the folder, the 9th through an ordinary `fetch` (search by `\"<artist> <title>\"`, `prefer=None`) and `ok`; its events show `pick` from the per-track search, and the plan event says `1 row per track`; (2) caps: primary A fails with a transcode finding, secondary B's transfer ends `Completed, Errored`, and the per-track search returns only A's and B's files → the row is `failed` with a reason listing the three attempts in order (`folder 1: transcode (<basename>); folder 2: download ended: Completed, Errored; per track: no acceptable candidate from another peer`) and no fourth attempt (the fake saw no further `POST`).",
+        "`album_job.run` passes `exclude_peers`/`exclude_files` into the per-track `fetch` (a new `exclude: set[str]` of `username`s on `fetch`, applied after `rank`, so S1-06's retry also respects it) and counts attempts per row; the reason format is tested as a string.",
+        "A request whose every row ends `failed` is `failed`; one with some `ok` and some `failed` is `partly` (`store.request(id)['status']`, S2-01's rule).",
+        "`docs/worker.md` gains a section `## Album jobs` (what one tick does for an album approval, the switch triggers, the caps, the events `plan`, `switch`, `matched`, and that nothing is enqueued without Michael's approval, D7) and `## Approvals` mentions purpose `album`.",
+        "Run `.harness/check.sh tests/test_album_job.py tests/test_worker.py tests/test_fetch.py` green.",
+        "The full suite is green: `.harness/check.sh` exits 0 (about 11-12 min; the test count may only grow from the previous feature's count)."
+      ],
+      "passes": true
+    },
+    {
+      "id": "S2-06a",
+      "milestone": "S2",
+      "kind": "plan",
+      "model": "opus",
+      "description": "A reviewed tag plan for album rows (`docs/plans/2026-10-22-S2-album-tags.md`) and a measurement on this box's beets 1.6.0 with a scratch config whether a `--set` flexible field and a query-keyed path put a singleton import at `$albumartist/$album ($year)/$track - $title`; Michael's \"album path\" answer is recorded as the next free `D<n>` in the pivot spec (spec S2-06, plan and measurement).",
+      "steps": [
+        "Failing test first: `tests/test_album_tags_plan_doc.py` asserts `docs/plans/2026-10-22-S2-album-tags.md` exists with the headings `## Fields`, `## Writer`, `## When`, `## Reverse`, `## beets measurement`, `## Review`, and that `## Writer` names `write_minimal` and `## When` names `.staging`.",
+        "The plan says: fields `album`, `albumartist`, `track`, `tracktotal`, `year`, `mb_albumid` (from S2-03 when known) and `comp=False`; written only through `scripts.tag_cleanup.write_minimal` (the one field-by-field writer, never `beet write`/`beet modify`: the M2 trap in `docs/hard-won-facts.md` and `deploy/beets.yaml`'s header), only on our fresh download in `<downloads>/.staging/<id>-<ts>/` before beets imports it, never on a library file; the old values go into one `tagged` event per file (`{field: old}` JSON) and the reverse is `write_minimal(path, old)` on the filed file, worker stopped; plain rows (no `request_id`) keep `fill_missing_tags` as today; the SoulSync delta (an album folder that already holds files keeps their identity) is listed under `## Out`, not adopted unless Michael asks.",
+        "Measurement, offline and in scratch (`BEETSDIR=$HARNESS_SCRATCH/beets`, `directory:` a scratch folder, `library:` a scratch db; nothing under `/srv`, `beet` is `/usr/bin/beet` 1.6.0): a `tests/helpers.make_flac`-made file tagged with `write_minimal` as the plan says, imported with `beet -c <scratch yaml> import -q -s -m -W --set dj_album=1 <folder>` where the yaml's `paths:` has `dj_album:1: $albumartist/$album ($year)/$track - $title` before `singleton:`. `## beets measurement` records the exact command, the resulting path, and whether `beet ls -f '$path $dj_album' dj_album:1` lists it. If the path key does not take, the plan says so, keeps `Singles` and adds the question to S4-01's checklist list (progress.md entry).",
+        "Pivot spec `docs/specs/2026-10-17-amperfy-pivot.md`: append `D<n>` (next free after `git fetch -q` and a grep of `origin/main`, `origin/harness/dj-soulsync-review-2026-10-22` and this branch; D49 is the highest known) **not** marked *default*: the album path as Michael answered on 2026-10-22, with the measurement's result and `Singles` as the fallback.",
+        "An Opus review subagent reads the plan file and `scripts/tag_cleanup.py::write_minimal`, `sourcing/filer.py`, `deploy/beets.yaml`; its findings and what changed are under `## Review` in the plan (Critical/Important fixed in the plan text). No code beyond the measurement script, which is deleted or kept under `scripts/` only if tested.",
+        "Run `.harness/check.sh tests/test_album_tags_plan_doc.py tests/test_tag_cleanup.py` green.",
+        "The full suite is green: `.harness/check.sh` exits 0 (about 11-12 min; the test count may only grow from the previous feature's count)."
+      ],
+      "passes": true
+    },
+    {
+      "id": "S2-06b",
+      "milestone": "S2",
+      "kind": "build",
+      "model": "opus",
+      "description": "A track filed for an album request carries the request's album identity (album, albumartist, track, year, MusicBrainz release id) written field by field on the staged download, is imported with `--set dj_album=1`, and lands at `$albumartist/$album ($year)/$track - $title`, so primary, secondary and per-track files form one Navidrome album; plain rows stay in `Singles` (spec S2-06, code; follows the reviewed plan).",
+      "steps": [
+        "Failing test first in `tests/test_filer.py`: `BeetsFiler.file(folder, log, names=…, album=AlbumIdentity(album, albumartist, track, tracktotal, year, mb_albumid))` runs `write_minimal` on the staged file with exactly those fields (read them back with `mediafile.MediaFile`; skip when mediafile is missing as `test_tag_cleanup.py` does), passes `--set dj_album=1` to `beet import` (the `fake_beet` helper in `tests/helpers.py` records its argv; extend it, don't bypass it), and returns the old values; without `album=` nothing is written and no `--set` is passed (existing filer tests stay green).",
+        "`sourcing/fetch.py` builds `AlbumIdentity` from the row's request (`store.request(row['request_id'])`: album, artist as albumartist, `track_no`, the request's row count, year, `mb_release_id`) only for rows with a `request_id` whose request kind is `album` (S2-07's playlist-derived album jobs pass the same identity when they share artist and album), logs one `tagged` event with the old values (`tests/test_fetch_filing.py`), and leaves `fill_missing_tags` as today for plain rows.",
+        "`deploy/beets.yaml` `paths:` gains `dj_album:1: $albumartist/%if{$year,$album ($year),$album}/$track - $title` before `singleton:` (exactly the form S2-06a measured; if S2-06a found the key does not take, this feature keeps `Singles`, writes the tags anyway so Navidrome groups the album by tags, and says so in `docs/worker.md`). `tests/test_filer.py` or a new `tests/test_beets_yaml.py` asserts the key's order.",
+        "`docs/worker.md` `## Filing` describes the album path and the `tagged` event's reverse (from the plan).",
+        "Run `.harness/check.sh tests/test_filer.py tests/test_fetch_filing.py tests/test_tag_cleanup.py tests/test_album_job.py` green.",
+        "The full suite is green: `.harness/check.sh` exits 0 (about 11-12 min; the test count may only grow from the previous feature's count)."
+      ],
+      "after": [
+        "S2-06a",
+        "S2-05a"
+      ],
+      "passes": true
+    },
+    {
+      "id": "S2-07",
+      "milestone": "S2",
+      "kind": "build",
+      "model": "opus",
+      "description": "A playlist request is today's import plus one approval for all its open rows; rows sharing artist and album (3 or more) are sourced as one album job, the rest per track (spec S2-07).",
+      "steps": [
+        "Failing test first in `tests/test_album_job.py` or new `tests/test_playlist_request.py`: `sourcing.requests.add_spotify` on a playlist entity (a copy of `fixtures/spotify_embed_tea-tent-1.json` with 4 tracks given `album` \"I'm Still in Love With You\" by Al Green and 2 other tracks; the embed's playlist shape has no album field, so the test passes the rows through `import_playlist` as the CLI does and sets `album` on the rows from a report-shaped source where the shape carries it, `rows_from_report`) records a `playlist` request whose rows are the import's wanted rows (`request_id` set, `playlist_id` as today, `track_no` None).",
+        "`album_job.approve_request` on a playlist request records `album` approvals for groups of 3+ open rows sharing `identity.loose(artist)` and `identity.loose(album)` and ordinary `download` approvals for the rest; `album_job.run` plans a group with the album search `\"<artist> <album>\"` (listed lengths from S2-03 when the group's request has a release; a playlist request has none, so lengths come from the rows' `duration`); the other rows go through `_spend` as today.",
+        "Test asserts: one `POST /transfers/downloads/<peer>` with the 4 album files, 2 single-file enqueues for the rest, every row `ok`, `request(id)['status'] == 'done'`, and the import's playlist placement (N4, `place_due`) still inserts the filed rows at their positions (`tests/test_placement.py` stays green).",
+        "`sourcing.cli import-playlist` gains `--request`: after the import it records the playlist request and prints `request <id>: <name> (<n> open rows; approve with sourcing.cli request approve <id>)`; without the flag nothing changes (`tests/test_sourcing_cli.py` import tests stay green).",
+        "Run `.harness/check.sh tests/test_album_job.py tests/test_import_playlist.py tests/test_sourcing_cli.py tests/test_placement.py` green.",
+        "The full suite is green: `.harness/check.sh` exits 0 (about 11-12 min; the test count may only grow from the previous feature's count)."
+      ],
+      "after": [
+        "S2-05c",
+        "S2-02"
+      ],
+      "passes": true
+    },
+    {
+      "id": "S2-R1",
+      "milestone": "S2",
+      "kind": "review",
+      "model": "opus",
+      "description": "An Opus review of the S2 diff (requests, album planner, album job, album path) read from a file; Critical and Important findings fixed test-first; simplification passes applied; the docs S2 touched are updated (spec: closing review).",
+      "steps": [
+        "`git diff 1eb4259..HEAD -- crates sourcing scripts deploy tests docs > $HARNESS_SCRATCH/s2.diff` (the run's base is `1eb4259`); an Opus review subagent reads that file plus `docs/plans/2026-10-22-s2-album-requests.md` and `docs/plans/2026-10-22-S2-album-tags.md` and reports findings as Critical / Important / Minor with file:line; the list is appended to the progress entry.",
+        "Every Critical and Important finding is fixed RED→GREEN: a failing test that shows it, then the fix; Minor ones are fixed or listed as not done with a reason. Checked explicitly: no peer name or absolute library path in any new event, reason, plan text or API payload (`store.public`); no code path enqueues without an `album`/`download` approval (D7); `remove_download` is called with remove=true on every switch; the planned mode cannot loop (each row's attempt cap holds under a `FakeSlskdServer(fail_enqueue=True)`).",
+        "Simplify: duplicated logic between `album_job.run` and `fetch` (the library check, the status gates, the reason strings) is shared, not copied; `sourcing/album.py` stays pure (no I/O import; a test asserts it imports neither `slskd_client` nor `crates.store`).",
+        "Docs: `docs/architecture.md` §2 (components: `sourcing/album.py`, `sourcing/album_job.py`, `sourcing/requests.py`), §3 (the `requests` table and the new `external_wanted` columns), §4 a new `(e) Album request → plan → approve → album job`; `docs/hard-won-facts.md` (the embed's `releaseDate` is null for albums, so the year comes from MusicBrainz; slskd's multi-file enqueue shape is not captured); `docs/next-todos.md` State gets the S2 paragraph; the spec's S2 header gets a `**Built 2026-10-23**` line like S1's.",
+        "`git show --stat HEAD` lists only the files this feature meant to change; no scratch file is committed.",
+        "The full suite is green: `.harness/check.sh` exits 0 (about 11-12 min; the test count may only grow from the previous feature's count)."
+      ],
+      "after": [
+        "S2-01",
+        "S2-02",
+        "S2-03",
+        "S2-04",
+        "S2-05a",
+        "S2-05b",
+        "S2-05c",
+        "S2-06a",
+        "S2-06b",
+        "S2-07"
+      ],
+      "passes": true
+    },
+    {
+      "id": "S3-01",
+      "milestone": "S3",
+      "kind": "build",
+      "model": "opus",
+      "description": "`POST /api/requests {\"url\": …}` turns a Spotify track, album or playlist link (or `spotify:<kind>:<id>` URI) into a request and answers with the request and its rows; a playlist URL is the import with `--merge` semantics plus a playlist request; bad or unknown links are 400 with a reason (spec S3-01, URL kinds).",
+      "steps": [
+        "Failing test first in new `tests/test_requests_api.py`, built like `tests/test_service.py`'s `svc` fixture (`Config(... db_path=':memory:')`, `CrateApp(cfg, store=CrateStore())`, `CrateServer`) with `fetch_entity` injected (a `CrateApp(..., fetch_entity=lambda url: entity)` keyword, default `spotify_csv.fetch_entity`): `POST /api/requests` with the album fixture's URL `https://open.spotify.com/album/2nTlIPIQ7fHOnNN7BRch0Z` answers 201 with `{\"request\": {id, kind: \"album\", artist, album, year, mbReleaseId, status: \"open\", createdAt}, \"rows\": [9 × {id: \"ext-N\", trackNo, artist, title, status, librarySongId…}]}` (camelCase as `/api/wanted` does: follow `store.public` and the existing payloads), rows ordered by `trackNo`.",
+        "A track URL (`/track/<id>` or `spotify:track:<id>`; build the entity by taking one track of the album fixture and setting `type: 'track'`, the embed's track shape) → kind `track`, one row. A playlist URL → `import_playlist.import_playlist(name, rows, client, store, source=url, merge=True, …)` as the CLI's `--merge` does, then the `playlist` request from S2-07 (`sourcing.requests.add_spotify`), rows = the import's wanted rows. Only one Spotify fetch per call (count the stub's calls).",
+        "Errors: no `url` or not a string → 400 `url is required`; `https://music.apple.com/…` → 400 `unknown link kind: music.apple.com` (other platforms are out on purpose); `/artist/<id>` → 400 `unknown link kind: artist`; a fetch error (`urllib.error.HTTPError`/`URLError` from the stub) → 502 `cannot reach Spotify`. The link parser is `sourcing.requests.parse_link(url) -> (kind, id)` with its own tests for the four forms (open.spotify.com with and without `intl-xx/` path and query, the URI).",
+        "Repeating the same album URL answers 200 with the existing request (S2-02's `source` rule), not 201 and no new rows.",
+        "Run `.harness/check.sh tests/test_requests_api.py tests/test_service.py tests/test_import_playlist.py` green.",
+        "The full suite is green: `.harness/check.sh` exits 0 (about 11-12 min; the test count may only grow from the previous feature's count)."
+      ],
+      "after": [
+        "S2-01"
+      ],
+      "passes": true
+    },
+    {
+      "id": "S3-01b",
+      "milestone": "S3",
+      "kind": "build",
+      "model": "opus",
+      "description": "`POST /api/requests` also takes `{\"mbReleaseId\"}` (an album request from a MusicBrainz release) or `{\"mbRecordingId\"}` (a track request), and every new request's rows are checked against the library at creation so rows already there answer `ok` with their `librarySongId` and a `matched` event (spec S3-01, catalog picks and S1-07 marking).",
+      "steps": [
+        "Failing test first in `tests/test_requests_api.py`: `POST /api/requests {\"mbReleaseId\": \"3c9a52ee-ee0a-3362-a563-d9d28b02a53e\"}` with a `MusicBrainz(opener=stub)` injected into `CrateApp` (keyword `musicbrainz=`, default built from `MUSICBRAINZ_CACHE`) that serves `fixtures/musicbrainz_release_al-green-still-in-love.json` → 201, kind `album`, `mbReleaseId` set, 9 rows each with `mbRecordingId` and `trackNo` from the release's tracks, artist from `artist-credit[0].name`, year `1993` from `date[:4]`, durations from each track's `length` ms. `{\"mbRecordingId\": \"cdac1a50-8ba6-4edd-8137-618928580d38\"}` with the stub serving `fixtures/musicbrainz_recording.docs-example.json`'s shape → kind `track`, one row with that recording id. An unknown id (stub 404) → 404 `MusicBrainz has no release <id>`.",
+        "`sourcing/requests.py` gains `add_release(store, mb, mbid)` and `add_recording(store, mb, mbid)`; `add_spotify`, `add_release` and `add_recording` all end in one `mark_in_library(store, navidrome, request_id)` that runs `import_playlist.match(client, Row(...))` per open row (S1-07's rules, `fetch.in_library` at `sourcing/fetch.py` ~386 is the model: share the code, don't copy it) and on a same-recording/same-version hit sets the row `ok` with `library_song_id`, logs `matched`, and leaves `status` `done` when every row is there. Navidrome unreachable → rows stay `needs_source` with one `matched` event `library not asked: <error>` on the request (no exception to the client).",
+        "Test on the `svc` fixture's fake Navidrome: give one album track to the library (`FakeSubsonicServer` song with the title and artist of row 5, as `test_fetch.py`'s `new_song` does) → the response marks that row `status: \"ok\"` with its `librarySongId`; the other 8 are `needs_source`.",
+        "`POST /api/requests` with both `url` and `mbReleaseId` → 400 `one of url, mbReleaseId, mbRecordingId`.",
+        "Run `.harness/check.sh tests/test_requests_api.py tests/test_import_playlist.py tests/test_musicbrainz_client.py` green.",
+        "The full suite is green: `.harness/check.sh` exits 0 (about 11-12 min; the test count may only grow from the previous feature's count)."
+      ],
+      "passes": true
+    },
+    {
+      "id": "S3-02",
+      "milestone": "S3",
+      "kind": "build",
+      "model": "opus",
+      "description": "`GET /api/catalog/search?q=&kind=album|track` searches MusicBrainz releases or recordings through the existing client behind a small provider interface in `sourcing/catalog.py`, and each hit carries title, artist, year, track count or length, its ids, `provider` and `inLibrary` (spec S3-02).",
+      "steps": [
+        "Failing test first in new `tests/test_catalog.py`: `sourcing/catalog.py` defines `Hit` (`provider`, `kind`, `title`, `artist`, `year`, `trackCount` or `lengthS`, `ids: dict` e.g. `{\"mbReleaseId\": …}` / `{\"mbRecordingId\": …}`, `inLibrary: bool`) and `class MusicBrainzCatalog` with `search(q, kind) -> list[Hit]`: kind `album` → `MusicBrainz.release_search` from the plain query (`release:\"<q>\"` or the `artist`/`release` split on ` - ` when present), kind `track` → `MusicBrainz.get('recording', query=…)` parsed with `parse_recording`; stub opener serves `fixtures/musicbrainz_release_search_al-green.json` (10 album hits: `3c9a52ee…` is `1993`, `trackCount 9`, `CD`) and `fixtures/musicbrainz_search.sample.json` for tracks. `PROVIDERS = {\"musicbrainz\": MusicBrainzCatalog}`; a second provider is a new class, not a new endpoint (a test registers a stub provider and sees its hits with `provider: \"stub\"`).",
+        "`inLibrary`: for a track hit, `import_playlist.choose`/`match` on the hit's artist and title (same-recording or same-version → True); for an album hit, Navidrome `search3` album results (the `SubsonicClient` method that exists; check `subsonic/client.py`) with `identity.loose` equality on album name and artist → True. Navidrome unreachable → `inLibrary: null` for every hit, never a 5xx.",
+        "`GET /api/catalog/search?q=Al%20Green%20I%27m%20Still%20in%20Love&kind=album` on the `svc`-style fixture (with the injected `MusicBrainz`) answers 200 with `{\"hits\": [...]}`, `kind` missing or other → 400 `kind must be album or track`, empty `q` → 400; a `MusicBrainzError` (503 after retries) → 503 `MusicBrainz is busy, try again`. The limiter, cache and backoff are the client's (`tests/test_musicbrainz_client.py` patterns), not re-implemented.",
+        "Spotify is explicitly **not** a provider in this run (the February 2026 field removals; S3-06 captures first): `sourcing/catalog.py`'s docstring says so and names `scripts/capture_spotify.py`.",
+        "Run `.harness/check.sh tests/test_catalog.py tests/test_requests_api.py tests/test_musicbrainz_client.py` green.",
+        "The full suite is green: `.harness/check.sh` exits 0 (about 11-12 min; the test count may only grow from the previous feature's count)."
+      ],
+      "passes": true
+    },
+    {
+      "id": "S3-03",
+      "milestone": "S3",
+      "kind": "build",
+      "model": "opus",
+      "description": "`GET /api/requests`, `GET /api/requests/<id>`, `POST /api/requests/<id>/preview` (the album plan, cached, peer names never shown) and `POST /api/requests/<id>/approve` (S2-05's approvals; 409 while a row is `sourcing`/`verify`) with the same auth and exposure as today's `/api/*` (spec S3-03).",
+      "steps": [
+        "Failing tests first in `tests/test_requests_api.py`: `GET /api/requests` → `{\"requests\": [...]}` newest first, each with `status` (S2-01's derivation) and `rowCounts` `{ok, needsSource, sourcing, verify, failed, review}`; `GET /api/requests/<id>` → the S3-01 shape plus `preview` (the cached plan or null) and `approval` (the newest album approval's `ts`, `usedAt`, `result` per row, as `/api/wanted/<id>` shows); unknown id → 404.",
+        "`POST /api/requests/<id>/preview` with a `FakeSlskdServer` (the `svc`-style fixture gets `slskd=` as `CrateApp` already takes for `/api/wanted/<id>/preview`) runs `album_job.plan_request` and answers `{\"plan\": {\"folders\": [{\"label\": \"folder 1\", \"coverage\": \"7 of 9\", \"rows\": [{\"id\": \"ext-N\", \"file\": \"<basename>\"}]}], \"perTrack\": [\"ext-N\"], \"ts\": …}}`; the body contains no `username` anywhere (`json.dumps` of the response has no peer name: assert against the fake's peer names); the plan is stored under `req-<id>` in `previews`; `slskd` not configured → 503 as `/api/wanted/<id>/preview` answers.",
+        "`POST /api/requests/<id>/approve` → `album_job.approve_request(store, id, 'michael')`, answers 200 with the approvals (`{\"approved\": [{\"wantedId\", \"approvalId\", \"candidate\": {\"basename\"}}]}`, no peer); a row `sourcing` or `verify` → 409 `<ext-id> is sourcing (in progress): the worker finishes it` (the `_not_in_progress` wording); a `done` request → 409 `nothing to approve`; the worker test from S2-05a then runs the job from exactly these approvals (one assertion in `tests/test_album_job.py` goes through the HTTP approve).",
+        "Routes go into `_api` in `crates/service.py` (line ~431) beside `wanted`, behind the same handler, so the existing error mapping (`ApiError`, `SubsonicError`, `sqlite3.Error`) applies; `tests/test_service.py` stays green.",
+        "Run `.harness/check.sh tests/test_requests_api.py tests/test_service.py tests/test_album_job.py` green.",
+        "The full suite is green: `.harness/check.sh` exits 0 (about 11-12 min; the test count may only grow from the previous feature's count)."
+      ],
+      "passes": true
+    },
+    {
+      "id": "S3-04",
+      "milestone": "S3",
+      "kind": "build",
+      "model": "opus",
+      "description": "`python -m sourcing.cli request add <url> | preview <id> | approve <id> | show <id> | list` does from the shell what `/api/requests` does, for Michael's mornings without a client; `approve` is his click (D7) (spec S3-04).",
+      "steps": [
+        "Failing test first in `tests/test_sourcing_cli.py` (the `_env` + `monkeypatch.setattr(cli, 'fetch_entity', …)` pattern): `cli.main(['request', 'add', 'https://open.spotify.com/album/2nTlIPIQ7fHOnNN7BRch0Z'])` exits 0 and prints `request 1: Al Green – I'm Still in Love With You (album, 9 rows, 0 in library)` then one line per row `  01 ext-1  I'm Still In Love With You  needs_source`; a second `add` of the same URL prints the same request (`already requested`) and exits 0.",
+        "`request show <id>` prints the request, its MusicBrainz ids when set, each row's status and reason (`store.public` applied: no peer, no absolute path), and the cached plan if any; `request list` prints one line per request newest first with its status; `--json` on each prints the API's JSON shape (`tests` compare with `json.loads`).",
+        "`request preview <id>` needs `--slskd`/`$SLSKD_URL` (`add_slskd_args`), runs `album_job.plan_request` and prints `album.describe(plan, peers=False)` (folders by label, coverage, row → file); without slskd configured it prints `preview needs --slskd or $SLSKD_URL` and exits 2 (no network in tests: `FakeSlskdServer`).",
+        "`request approve <id>` records S2-05a's approvals and prints `approved <n> rows of request <id>; the worker downloads them on its next tick`, exit 0; a row in progress → the 409 text and exit 1. The command never downloads anything itself (the test's fake saw no `POST /transfers`).",
+        "`sourcing/cli.py`'s module docstring lists the new commands; `docs/worker.md` `## Album jobs` names them as the morning path.",
+        "Run `.harness/check.sh tests/test_sourcing_cli.py tests/test_album_job.py` green.",
+        "The full suite is green: `.harness/check.sh` exits 0 (about 11-12 min; the test count may only grow from the previous feature's count)."
+      ],
+      "passes": true
+    },
+    {
+      "id": "S3-05",
+      "milestone": "S3",
+      "kind": "docs",
+      "model": "sonnet",
+      "description": "`docs/api.md` documents every request endpoint with example request and response bodies taken from the tests, written for a future client (spec S3-05).",
+      "steps": [
+        "Failing test first: new `tests/test_api_doc.py` asserts `docs/api.md` exists and names each route string exactly as implemented: `POST /api/requests`, `GET /api/requests`, `GET /api/requests/<id>`, `POST /api/requests/<id>/preview`, `POST /api/requests/<id>/approve`, `GET /api/catalog/search`, and that every `ApiError` status the handlers raise for these routes (400, 404, 409, 502, 503) appears in the file (grep the handler code in `crates/service.py` for the list, hard-code it in the test).",
+        "`docs/api.md` has: a header on auth and exposure (the same as the existing `/api/*`: `docs/architecture.md` §2 and §8 say how the crates app is reached; tailnet only, no proxying of audio), one section per endpoint with the request body, a 2xx example body copied from a passing test's assertion (not invented), every error status with its reason text, the derived request `status` values and the row statuses, the `album`-approval semantics (approve is Michael's click, D7; the worker downloads later), and that peer names and library paths never appear in any payload.",
+        "A `## For a client` section: the flow search → request → preview → approve → poll `GET /api/requests/<id>` and `/api/events`, and what is not there yet (no UI, no Spotify provider, no `DELETE`/cancel).",
+        "`docs/architecture.md` §2 links `docs/api.md`; `README` or `docs/worker.md` `## Where things are` links it too if such a list exists.",
+        "Run `.harness/check.sh tests/test_api_doc.py tests/test_requests_api.py` green.",
+        "The full suite is green: `.harness/check.sh` exits 0 (about 11-12 min; the test count may only grow from the previous feature's count)."
+      ],
+      "after": [
+        "S3-03",
+        "S3-02"
+      ],
+      "passes": true
+    },
+    {
+      "id": "S3-06",
+      "milestone": "S3",
+      "kind": "build",
+      "model": "opus",
+      "description": "`scripts/capture_spotify.py` fetches, with Michael's own developer app, one Client Credentials token, one search and one album from the Spotify Web API and writes two fixtures, never leaking the token or secret, refusing without both environment variables, stopping on a 429; written and tested against a stub opener and **never run in this run** (spec S3-06).",
+      "steps": [
+        "Failing tests first in new `tests/test_capture_spotify.py` with a stub `opener(req, timeout)` recording each `urllib.request.Request` and answering canned JSON: `main(['Al Green I\\'m Still in Love With You'], opener=stub, env={...}, out_dir=tmp_path)` POSTs `https://accounts.spotify.com/api/token` with `grant_type=client_credentials` and `Authorization: Basic <base64(id:secret)>`, then GETs `https://api.spotify.com/v1/search?type=album,track&limit=10&q=…` and `https://api.spotify.com/v1/albums/<first album id>` with `Authorization: Bearer <token>`, and writes `fixtures/spotify_search.captured.json` and `fixtures/spotify_album.captured.json` (under `out_dir`) as the bodies, pretty-printed.",
+        "Secrecy: with secret `s3cr3t` and token `tok_ABC`, neither string appears in stdout, stderr, either written file, or the message of any exception raised (test every failure path: token 401, search 500, album 404, bad JSON); the `Authorization` header is set on the `Request` object, never printed; `--verbose` prints URLs only.",
+        "`SPOTIFY_CLIENT_ID` or `SPOTIFY_CLIENT_SECRET` unset → prints `set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET (read -rs …)` and exits 2 before any request (the stub saw no call). A 429 on any call → prints `rate limited; Retry-After: <value>` and exits 3 with no sleep and no retry (stub asserts one call).",
+        "The module docstring holds the usage from the spec's checklist step 6 (`read -rs SPOTIFY_CLIENT_SECRET; export SPOTIFY_CLIENT_SECRET SPOTIFY_CLIENT_ID=<id>; python3 -m scripts.capture_spotify \"Al Green I'm Still in Love With You\"`), says the fixtures are catalog data only and that the files are committed by Michael. `tests/test_python310_syntax.py` stays green (stdlib only, 3.10 syntax).",
+        "The script is not executed for real: the feature's commit contains no `fixtures/spotify_*.captured.json`, and no test opens a network socket (stub opener only).",
+        "Run `.harness/check.sh tests/test_capture_spotify.py tests/test_python310_syntax.py` green.",
+        "The full suite is green: `.harness/check.sh` exits 0 (about 11-12 min; the test count may only grow from the previous feature's count)."
+      ],
+      "after": [
+        "S3-01"
+      ],
+      "passes": true
+    },
+    {
+      "id": "S3-R1",
+      "milestone": "S3",
+      "kind": "review",
+      "model": "opus",
+      "description": "An Opus review of the S3 diff (request API, catalog, CLI, capture script) read from a file; Critical and Important findings fixed test-first; simplification passes applied; `docs/api.md`, `docs/architecture.md` and `docs/next-todos.md` updated (spec: closing review).",
+      "steps": [
+        "`git diff <S2-R1's commit>..HEAD -- crates sourcing scripts tests docs > $HARNESS_SCRATCH/s3.diff`; an Opus review subagent reads it plus `docs/api.md`; findings as Critical / Important / Minor with file:line, appended to the progress entry.",
+        "Every Critical and Important finding fixed RED→GREEN. Checked explicitly: every `/api/requests*` and `/api/catalog/*` response passes `store.public` (no `username`, no `/srv/music` path); `POST /api/requests` cannot trigger a Soulseek transfer (only `approve` records approvals; the worker downloads); the HTTP preview holds the app's `_lock` like `/api/wanted/<id>/preview`; a malformed body (`not JSON`, a list) is 400 not 500; `capture_spotify` leaks nothing (re-read its failure paths).",
+        "Simplify: the CLI (`sourcing.cli request`) and the HTTP handlers call the same functions in `sourcing/requests.py` and `sourcing/album_job.py` (no second implementation of add/preview/approve); the catalog provider interface has one class and one dict, no plugin machinery.",
+        "Docs: `docs/api.md` matches the final handlers (the S3-05 test still passes); `docs/architecture.md` §4 (e) gains the API and CLI entry points; `docs/next-todos.md` State gets the S3 paragraph and the \"Spotify provider: after S3-06's capture\" line; the spec's S3 header gets its `**Built**` line.",
+        "`git show --stat HEAD` lists only intended files.",
+        "The full suite is green: `.harness/check.sh` exits 0 (about 11-12 min; the test count may only grow from the previous feature's count)."
+      ],
+      "after": [
+        "S3-01",
+        "S3-01b",
+        "S3-02",
+        "S3-03",
+        "S3-04",
+        "S3-05",
+        "S3-06"
+      ],
+      "passes": true
+    },
+    {
+      "id": "S4-01",
+      "milestone": "S4",
+      "kind": "docs",
+      "model": "opus",
+      "description": "`docs/plans/2026-10-22-downloads-checklist.md` gains the S2/S3 live steps for Michael (the spec's addition steps 4 and 6, each with its check and undo, staged), the capture steps for the slskd shapes no fixture holds, the S2-06a measurement's open question if any, and `docs/architecture.md` §4 and `docs/next-todos.md` State describe requests and album jobs (spec S4-01).",
+      "steps": [
+        "Failing test first: extend the checklist's doc test if one exists (grep `tests/` for `downloads-checklist`), else new `tests/test_downloads_checklist_doc.py`: the file has sections `## 4. Album request through the request API` and `## 6. Spotify developer app and the capture`, each with a `Check:` and an `Undo:` line, and a `## Captures for the fixtures` section; every `scripts/live-run.sh` command in the file starts with `scripts/live-run.sh python3 -m` and every crates.db write is wrapped in `flock -n /srv/docker/crates/live.lock`.",
+        "Section 4 (after S2/S3 are deployed; the deploy itself is this checklist's step 2 with the new rollback tag written as `<the sha step 2 deployed>`): `scripts/live-run.sh python3 -m sourcing.cli request add https://open.spotify.com/album/2nTlIPIQ7fHOnNN7BRch0Z` → Check: `request <id>` with 9 rows, the ones already in the library `ok` (`matched` events); `… request preview <id>` → Check: `folder 1` covers ≥ 8 of 9, no peer name in the output; `… request approve <id>` (Michael's click, D7; the only step that leads to a transfer) → Check: `/api/events` shows `plan`, `pick`/`filed`/`ok` per row, at most one `switch`; files under `/srv/music/Al Green/I'm Still in Love With You (1972)/` **if S2-06b's path holds** (else `Al Green/Singles/` with album tags, and Navidrome groups them by tag); **check** green. Undo: a wrong row → `wanted reopen` (S1-08); nothing is trashed by hand; the request stays as history.",
+        "Section 6: the Spotify app (developer.spotify.com, Web API, Premium on the owning account), the exact command from `scripts/capture_spotify.py`'s docstring run on the host from a checkout of this branch, Check: two files under `fixtures/`, `grep -c tok_ fixtures/spotify_*.captured.json` is 0 and the secret is in neither, then `git add fixtures/spotify_search.captured.json fixtures/spotify_album.captured.json` and a commit. Undo: delete the two files; rotate the secret in the dashboard if it was ever printed. Where the secret lives for good is left as a question (not decided here).",
+        "`## Captures for the fixtures`: one real multi-file enqueue response (`POST /transfers/downloads/<peer>` body, from `docker logs dj-worker-1` or slskd's UI → `fixtures/slskd_enqueue.captured.json`, read by S2-05's fake later), a transfer record per state including two records of one file, and `DELETE …?remove=true` on a running and a finished record (the S1-R1 review's three questions, already at the end of the file); each says where the fixture goes and which test reads it. The SoulSync list (`origin/harness/dj-soulsync-review-2026-10-22:docs/research/2026-10-22-soulsync/04-soulseek.md`) is context only: include only shapes a feature in this run or S1 depends on.",
+        "`docs/plans/2026-10-22-morning-checklist.md` still has the line before its section 4 (`PR #16 must be on main first`, added by S1-09; verify, don't duplicate) and now links this checklist's sections 4 and 6 from its `## 9` section; `docs/architecture.md` §4 (e) and `docs/next-todos.md` State describe requests, album jobs, the API and the CLI, and say **not deployed, PRs open**; `docs/next-todos.md` item list gets \"Spotify provider (after the S3-06 capture)\" and \"client UI (question B)\".",
+        "Nothing live: this session runs no docker, no `scripts/*.sh`, reads and writes nothing under `/srv`; commands are verified with `--help` only (`python3 -m sourcing.cli request --help`, `python3 -m scripts.capture_spotify --help` exit 0 in the sandbox env).",
+        "The full suite is green: `.harness/check.sh` exits 0 (about 11-12 min; the test count may only grow from the previous feature's count)."
+      ],
+      "after": [
+        "S2-01",
+        "S2-02",
+        "S2-03",
+        "S2-04",
+        "S2-05a",
+        "S2-05b",
+        "S2-05c",
+        "S2-06a",
+        "S2-06b",
+        "S2-07",
+        "S2-R1",
+        "S3-01",
+        "S3-01b",
+        "S3-02",
+        "S3-03",
+        "S3-04",
+        "S3-05",
+        "S3-06",
+        "S3-R1"
+      ],
+      "passes": true
+    },
+    {
+      "id": "S4-02",
+      "milestone": "S4",
+      "kind": "review",
+      "model": "opus",
+      "description": "A whole-run Opus review of the diff since the run's base `1eb4259`; Critical and Important findings fixed test-first; the suite stays green (spec S4-02).",
+      "steps": [
+        "`git diff 1eb4259..HEAD > $HARNESS_SCRATCH/run.diff` (code, tests and docs); an Opus review subagent reads it with `docs/specs/2026-10-22-downloads-and-requests.md` S2–S4 and `docs/plans/2026-10-22-s2-album-requests.md`; findings as Critical / Important / Minor with file:line, appended to the progress entry together with what each became.",
+        "Every Critical and Important finding fixed RED→GREEN; Minor ones fixed or listed with a reason. Checked across the run: the four safety invariants in CLAUDE.md are untouched (no new trash path; placement unchanged); D7 (no transfer without an approval, `album` included); peer names and library paths in no payload, event or doc example; every new decision is in the pivot spec as `D<n>` (the album path, not default) or `D<n> *default*`, numbered without a gap or a clash with `origin/main`; the spec's S2, S3 and S4 headers carry `**Built**` lines; `docs/next-todos.md` and `docs/architecture.md` agree with the code on what exists and that nothing is deployed.",
+        "`tests/test_python310_syntax.py` green (no 3.11+ syntax: the container is 3.10-compatible); `grep -rn \"/srv/\" sourcing/album*.py sourcing/requests.py sourcing/catalog.py scripts/capture_spotify.py` finds only defaults read from the environment, as `fetch` does.",
+        "Final progress entry: test count before and after the run, the PR(s) to open (`gh pr create --base main --head harness/dj-crate-streaming-2026-10-22-build --draft` is the human's merge policy: open, never merge), and the questions for Michael collected from every entry.",
+        "The full suite is green: `.harness/check.sh` exits 0 (about 11-12 min; the test count may only grow from the previous feature's count)."
+      ],
+      "after": [
+        "S2-01",
+        "S2-02",
+        "S2-03",
+        "S2-04",
+        "S2-05a",
+        "S2-05b",
+        "S2-05c",
+        "S2-06a",
+        "S2-06b",
+        "S2-07",
+        "S2-R1",
+        "S3-01",
+        "S3-01b",
+        "S3-02",
+        "S3-03",
+        "S3-04",
+        "S3-05",
+        "S3-06",
+        "S3-R1",
+        "S4-01"
+      ],
+      "passes": true
+    }
+  ]
+}

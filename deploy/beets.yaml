@@ -29,6 +29,9 @@ import:
   incremental: yes     # skips folders already seen; every download has a fresh .staging/<id>-<ts>/ folder, so none is
 
 paths:
+  # An album request's track (the filer's `--set dj_album=1`, S2-06, D50): one folder per album. Keys match in this
+  # order, so this one stays before singleton:. The flag lives in library.db, not in the file.
+  dj_album:1: $albumartist/%if{$year,$album ($year),$album}/$track - $title
   # Artist/Album (Year)/NN - Title; %if drops "(0000)" when the year is unknown and files no-album tracks under Singles/
   default: $albumartist/%if{$album,%if{$year,$album ($year),$album},Singles}/$track - $title
   comp: Compilations/%if{$year,$album ($year),$album}/$track - $title

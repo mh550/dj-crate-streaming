@@ -21,7 +21,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 NEXT_DATA = re.compile(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', re.S)
-URL = re.compile(r"open\.spotify\.com/(?:intl-[a-z]+/)?(playlist|album)/([A-Za-z0-9]+)")
+URL = re.compile(r"open\.spotify\.com/(?:intl-[a-z]+/)?(playlist|album|track)/([A-Za-z0-9]+)")
 
 
 def _next_data(path):
@@ -43,7 +43,7 @@ def _next_data(path):
 def fetch_entity(url):
     m = URL.search(url)
     if not m:
-        sys.exit(f"not a Spotify playlist/album URL: {url}")
+        sys.exit(f"not a Spotify playlist/album/track URL: {url}")
     kind, sid = m.groups()
     return _next_data(f"{kind}/{sid}")
 
@@ -80,6 +80,8 @@ def main(argv=None):
     args = p.parse_args(argv)
 
     entity = fetch_entity(args.url)
+    if entity.get("type") == "track":
+        sys.exit("a track has no track list: queue it with `python -m sourcing.cli seed-spotify`")
     tracks = list(rows(entity))
     # The CSV's stem becomes the playlist's folder name downstream — keep it Windows-safe.
     name = re.sub(r"[^\w\-& ]+", "", entity["name"]).strip() or entity["id"]
