@@ -9,6 +9,18 @@ Michael steers from `INBOX.md` on this branch (status line `run | pause | stop`;
 session reads it at startup. Policy: **build-only** (`.harness/config.sh`) and the brief in `brief.md`: nothing live,
 no docker, no `/srv`, no network, no client UI, PRs only (open, never merge).
 
+### 2026-10-23 12:50 · S3-06 · passes
+
+- **What changed:** new `scripts/capture_spotify.py`, stdlib only, **never run in this run**. It makes 3 requests: a Client Credentials token, one `GET /v1/search?type=album,track&limit=10&q=…`, and one `GET /v1/albums/<first album id>`. It writes `fixtures/spotify_search.captured.json` and `fixtures/spotify_album.captured.json`, pretty-printed, both or neither (through `.tmp` + rename).
+  - Exit codes: 2 when either env variable is unset (before any request), 3 on a 429 (prints `Retry-After`, no sleep, no retry), 1 on any other failure, with one line on stderr naming the call, the HTTP status and Spotify's short reason (e.g. `invalid_client`).
+  - The secret, the Basic value and the token are never printed or written. A reply that repeats one of them is refused, and a redirect is an error, because urllib would carry `Authorization` to the new host. The docstring holds the checklist step 6 usage. `docs/api.md` points to the script.
+  - Tests: 40 new in `tests/test_capture_spotify.py`, all on a stub opener; an autouse fixture fails the test if a socket connects. The suite went from 2279 to **2319**.
+- **Verified:** `test_capture_spotify` + `test_python310_syntax`: 42 passed. Five hand mutants were each caught: printing the error body, printing the headers in `--verbose`, dropping the echo check, `and` instead of `or` in the env check, and echoing a non-numeric `Retry-After`. Full `check.sh` green, 2319 tests. No `fixtures/spotify_*.captured.json` exists or was committed.
+- **Opus review (0 Critical, 1 Important, 10 Minor):** I1 and M2–M10 were fixed test-first.
+  - I1: the secrecy check now also looks for the base64 Basic value, `Basic `, `Bearer ` and `Authorization`.
+  - The other fixes: both-or-neither writes, the redirect refusal, Spotify's short error reason, a null first album skipped, the echo check on the exact written text, the untested exception types (ValueError, http.client, SSL, a read that fails), a missing or odd `Retry-After`, and the default out dir.
+- **Proposed change (M11):** add `; unset SPOTIFY_CLIENT_SECRET` to the end of the morning usage, so the secret doesn't stay exported in Michael's shell. The spec's checklist step 6 and this feature's step 4 pin the exact string, so S4-01 can add it as a separate line in the checklist. No question for Michael.
+
 ### 2026-10-23 11:30 · S3-05 · passes
 
 - **What changed:** new `docs/api.md`: auth/exposure, row and request statuses, one section per endpoint (`POST/GET /api/requests`, `GET /api/requests/<id>`, `preview`, `approve`, `GET /api/catalog/search`) with 2xx bodies taken from the tests' assertions and every error status with its reason text, plus `## For a client` (flow, and what is missing: UI, Spotify provider, DELETE/cancel). Linked from `docs/architecture.md` §2 and `docs/worker.md` `## Where things are`. 5 new tests in `tests/test_api_doc.py` (routes, statuses 400/404/409/502/503, no unlisted status raised in the handlers, flow section and links, peer/path/tailnet statement).

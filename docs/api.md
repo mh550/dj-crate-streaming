@@ -161,4 +161,5 @@ Shell equivalent: `python -m sourcing.cli request add|list|show|preview|approve 
 morning path, without a client").
 
 Not there yet: a UI (the client is Michael's open question), a Spotify catalog provider, and any `DELETE` or
-cancel.
+cancel. The provider waits for real Web API responses: `scripts/capture_spotify.py` (usage in its docstring) captures
+them as fixtures.
