@@ -64,6 +64,13 @@ Anything that trashes files or writes tags needs a reviewed plan file and a reve
   `scripts/capture_spotify.py`, never run (S3-06). Closing review S3-R1. Architecture §4 (e).
   - **Spotify provider: after S3-06's capture.** Michael runs `scripts/capture_spotify.py` with his own app's
     credentials (usage in its docstring); the next run builds a `SpotifyCatalog` against the two captured fixtures.
+- **2026-10-23, same run, milestone S4:** S2 and S3 are **not deployed, PRs open**: the run's PR (branch
+  `harness/dj-crate-streaming-2026-10-22-build`, which contains S1) merges after PR #16 and S1's PR. What it brings
+  live: a request (album, track or playlist, `requests` rows over its `external_wanted` rows), its album plan and the
+  album job the worker runs from Michael's approval, through `/api/requests` (`api.md`) or `python -m sourcing.cli
+  request add | list | show | preview | approve`. The live steps, each with its check and undo:
+  [`plans/2026-10-22-downloads-checklist.md`](plans/2026-10-22-downloads-checklist.md) sections 4 (the Al Green
+  album as a request) and 6 (the Spotify capture), then "Captures for the fixtures" (three slskd shapes).
 
 ## In order
 
@@ -109,5 +116,10 @@ Anything that trashes files or writes tags needs a reviewed plan file and a reve
    idea; note it reverses "no hashtags in names", so ask first) or kept in the crates app.
 10. **When the custom client replaces Amperfy:** remove the vestigial tier code (`crates.tier`, `crates/attrs.py`,
     `crates/migrate_attrs.py`, stream presets in `sourcing/policy.py`) and build the client features listed in the pivot spec.
+11. **Spotify provider (after the S3-06 capture):** a `SpotifyCatalog` in `sourcing/catalog.py`'s `PROVIDERS`, built
+    against `fixtures/spotify_search.captured.json` and `fixtures/spotify_album.captured.json` once Michael has run
+    `scripts/capture_spotify.py` (downloads checklist section 6). Where its secret lives is decided then.
+12. **client UI (question B):** a search bar, a request screen and album progress over `/api/requests` and
+    `/api/catalog/search` (`api.md`), once Michael answers B. Not before.
 
 ## Michael's open items (not for the agent): `~/projects/TODO-MICHAEL.md`

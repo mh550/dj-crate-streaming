@@ -280,7 +280,9 @@ Runs in the worker (`scripts/identity_backfill.py`), because it has `/srv/music`
 
 ### (e) Album request → plan → approve → album job
 
-Built in S2 and S3 against the fakes, not deployed. Spec S2/S3, plan `plans/2026-10-22-s2-album-requests.md`.
+Built in S2 and S3 (run `dj-crate-streaming-2026-10-22-build`) against the fakes: **not deployed, PRs open**. Spec
+S2/S3, plan `plans/2026-10-22-s2-album-requests.md`; the live steps for Michael are
+`plans/2026-10-22-downloads-checklist.md` sections 4 (a request, its album job) and 6 (the Spotify capture).
 Entry points (S3), the HTTP routes and the CLI calling the same `CrateApp` methods, so add, preview and approve have
 one implementation each:
 - HTTP (`crates/service.py`, documented for clients in [`api.md`](api.md)): `POST /api/requests` (`{url}` →
@@ -295,7 +297,9 @@ one implementation each:
 1. **Request.** `seed-spotify <album or track URL> [--musicbrainz]` → `requests.add_spotify`: one `requests` row, one
    `external_wanted` row per track (`request_id`, `track_no`, `year`). A row belongs to the first request that asked
    for it. The embed has no year for an album; `match_request_release` takes the MusicBrainz release that matches the
-   rows one to one (`mb_release_id`, `year`, each row's `mb_recording_id`), else the request goes on without ids.
+   rows one to one (`mb_release_id` and each row's `mb_recording_id`; not its year), else the request goes on without
+   ids. Only `seed-spotify` with `--musicbrainz` or `$MUSICBRAINZ_CACHE` calls it: `POST /api/requests` and `request add` with a Spotify album link
+   make the request without asking MusicBrainz.
    `import-playlist --request` records the import as one `playlist` request (`add_playlist`, keyed by the playlist's
    name); a later album request takes its rows that nothing is doing yet.
 2. **Plan.** `album_job.plan_request`: one slskd search `"<artist> <album>"`, `album.plan_album` over the responses
