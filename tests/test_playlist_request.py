@@ -478,3 +478,29 @@ def test_cli_a_comment_navidrome_did_not_keep_still_records_the_request(tmp_path
         out = capsys.readouterr().out
     [req] = CrateStore(db).requests()
     assert f"request {req['id']}: Tea tent (6 open rows;" in out
+
+
+def test_a_playlist_request_s_album_group_over_http(world, tmp_path, not_in_library):
+    """S3-03: `POST /api/requests/<id>/preview` of a playlist answers each album group's plan and the per-track rows;
+    `GET /api/requests/<id>` shows the same; neither names a peer."""
+    from crates.service import Config, CrateApp, CrateServer
+    from tests.test_service import get, post
+    store = world["store"]
+    _, req = playlist_request(world)
+    rows = req["rows"]
+    green = [dict(r, track_no=n) for n, r in enumerate((rows[1], rows[2], rows[4], rows[5]), 1)]
+    resp, data = album_folder(tmp_path, green)
+    with FakeSlskdServer([resp], world["dl"], files=data) as srv:
+        app = CrateApp(Config(subsonic_url=world["nd"].url, username="demo", password="demo", db_path=":memory:",
+                              port=0), store=store, slskd=SlskdClient(srv.url, srv.api_key))
+        with CrateServer(app) as web:
+            s, body = post(web.url + f"/api/requests/{req['id']}/preview", {})
+            detail = get(web.url + f"/api/requests/{req['id']}")[2]
+    assert s == 200 and detail["preview"] == body["plan"]
+    [group] = body["plan"]["albums"]
+    assert (group["artist"], group["album"]) == ("Al Green", ALBUM) and group["ts"] > 0
+    assert [(f["label"], f["coverage"]) for f in group["folders"]] == [("folder 1", "4 of 4")]
+    assert [r["id"] for r in group["folders"][0]["rows"]] == [rows[i]["song_id"] for i in (1, 2, 4, 5)]
+    assert group["perTrack"] == []
+    assert body["plan"]["perTrack"] == [rows[0]["song_id"], rows[3]["song_id"]]
+    assert PEER not in json.dumps(body) and PEER not in json.dumps(detail) and "username" not in json.dumps(body)

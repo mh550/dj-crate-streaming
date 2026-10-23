@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -26,12 +27,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from sourcing import catalog, requests as requests_
+from sourcing import album_job, catalog, requests as requests_
 from sourcing.fetch import fetch
 from sourcing.import_playlist import NameCollision
 from sourcing.musicbrainz import MusicBrainz, MusicBrainzError
 from sourcing.policy import DEFAULT_POLICY, STREAM, QualityPolicy, check_stream
-from sourcing.slskd_client import SlskdClient
+from sourcing.slskd_client import SlskdClient, SlskdError
 from sourcing.spotify_csv import fetch_entity as spotify_fetch_entity
 from subsonic.client import SubsonicClient, SubsonicError
 from .reconcile import CommentNotKept, NameMarked, ReconcileBusy, Reconciler
@@ -274,6 +275,65 @@ class CrateApp:
         requests_.mark_in_library(self.store, self.api, request_id, lock=self._lock)
         with self._lock:
             return self.store.request(request_id)
+
+    def requests(self) -> dict:
+        """Every request, newest first, with its status and its rows counted by status (S3-03)."""
+        with self._lock:                            # an approval commits row by row: never half of one
+            return {"requests": [requests_.listed(r) for r in self.store.requests()]}
+
+    def request_detail(self, request_id: str) -> dict:
+        with self._lock:
+            req = self._request(request_id)
+            return requests_.detail(req, album_job.shown(self.store, req))
+
+    def _request(self, request_id: str) -> dict:
+        if not re.fullmatch(r"\d+", request_id, re.ASCII):
+            raise ApiError(400, f"request id must be a number, not {request_id!r}")
+        req = self.store.request(int(request_id))
+        if req is None:
+            raise ApiError(404, f"no request #{int(request_id)}")
+        return req
+
+    def _actionable(self, request_id: str, nothing: str) -> dict:
+        """The request, unless one of its rows is in progress (409, _not_in_progress: the worker finishes it) or
+        it has no row to approve (409 `nothing`). The caller holds the lock."""
+        req = self._request(request_id)
+        for r in req["rows"]:
+            if r["status"] not in ("ok", "removed"):
+                self._not_in_progress(r["song_id"])
+        if not album_job.approvable(req):
+            raise ApiError(409, nothing)
+        return req
+
+    def preview_request(self, request_id: str) -> dict:
+        """The album plan (album_job.plan_request: one search per album, nothing enqueued), cached as `req-<id>` and
+        shown without peers (album_job.shown). The searches run outside the lock: each may take half a minute."""
+        if self.slskd is None:
+            raise ApiError(503, "slskd is not configured")
+        with self._lock:
+            rid = self._actionable(request_id, "nothing to plan")["id"]
+        try:
+            album_job.plan_request(self.store, self.slskd, rid, lock=self._lock)
+        except SlskdError as e:
+            raise ApiError(502, public(f"cannot reach slskd ({e})")) from None
+        with self._lock:
+            return {"plan": album_job.shown(self.store, self.store.request(rid))}
+
+    def approve_request(self, request_id: str) -> dict:
+        """Michael's yes for the whole request (album_job.approve_request, D7): each approval with its planned file's
+        basename (null: the job plans, or the row goes per track). The worker downloads."""
+        with self._lock:
+            req = self._actionable(request_id, "nothing to approve")
+            try:
+                ids = album_job.approve_request(self.store, req["id"], "michael")
+            except ValueError as e:                 # a row claimed meanwhile (another process)
+                raise ApiError(409, str(e)) from None
+            approved = []
+            for a in map(self.store.approval_by_id, ids):
+                c = a["candidate"]
+                approved.append({"wantedId": a["wanted_id"], "approvalId": a["id"],
+                                 "candidate": {"basename": c.get("basename")} if c else None})
+            return public({"approved": approved})
 
     # --- approvals (D23): a preview searches and ranks but never downloads; an approval is what lets the worker
     def _not_in_progress(self, wanted_id: str) -> dict:
@@ -540,6 +600,10 @@ def make_handler(app: CrateApp):
                     return self._json(public(app.store.events(int(q.get("limit", 50)))))
                 if head == "search":
                     return self._json(app.search(q.get("q", ""), int(q.get("count", 25))))
+                if head == "requests" and len(p) == 1:
+                    return self._json(app.requests())
+                if head == "requests" and len(p) == 2:
+                    return self._json(app.request_detail(p[1]))
                 if head == "catalog" and p[1:] == ["search"]:
                     return self._json(app.catalog_search(q.get("q"), q.get("kind")))
                 if head == "stream-tier":
@@ -561,6 +625,10 @@ def make_handler(app: CrateApp):
                 if head == "requests" and len(p) == 1:
                     out, created = app.add_request(body)
                     return self._json(out, 201 if created else 200)
+                if head == "requests" and len(p) == 3 and p[2] in ("preview", "approve"):
+                    if p[2] == "preview":
+                        return self._json(app.preview_request(p[1]))
+                    return self._json(app.approve_request(p[1]))
                 if head == "playlists" and len(p) == 3 and p[2] == "crate":
                     return self._json(app.set_crate(p[1], bool(body.get("enabled", True))))
                 if head == "playlists" and len(p) == 3 and p[2] == "tier":

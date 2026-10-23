@@ -266,7 +266,7 @@
         "Run `.harness/check.sh tests/test_requests_api.py tests/test_service.py tests/test_album_job.py` green.",
         "The full suite is green: `.harness/check.sh` exits 0 (about 11-12 min; the test count may only grow from the previous feature's count)."
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "S3-04",

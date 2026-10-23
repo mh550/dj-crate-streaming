@@ -9,6 +9,26 @@ Michael steers from `INBOX.md` on this branch (status line `run | pause | stop`;
 session reads it at startup. Policy: **build-only** (`.harness/config.sh`) and the brief in `brief.md`: nothing live,
 no docker, no `/srv`, no network, no client UI, PRs only (open, never merge).
 
+### 2026-10-23 09:20 · S3-03 · passes
+
+- **What changed:** four new routes in `crates/service.py`, with the same handler and error mapping as the other routes.
+  - `GET /api/requests` → `{requests: [...]}`, newest first. Each entry is view's request plus `rowCounts {ok, needsSource, sourcing, verify, failed, review}` (from `requests.listed`).
+  - `GET /api/requests/<id>` → the S3-01 shape plus `preview` (the cached plan or null). Each row also gets `approval {id, purpose, ts, usedAt, result}`: its newest approval of any purpose, so a play-now shows too (from `requests.detail`).
+  - `POST /api/requests/<id>/preview` → `{plan: {folders: [{label, coverage, rows: [{id, file}]}], perTrack, ts}}`. A playlist's plan is `{albums: [...+artist, album], perTrack}`; one with no album group answers `albums: []`, never null (from `album_job.shown`).
+  - `POST /api/requests/<id>/approve` → `{approved: [{wantedId, approvalId, candidate: {basename}|null}]}`.
+  - Errors: 503 when no slskd is configured; 502 `cannot reach slskd (…)`; 409 with `_not_in_progress`'s wording for a row that is sourcing, verify or claimed; 409 `nothing to approve|plan`; 404 `no request #N`; 400 for a non-digit id.
+  - Tests: S3-03 section of `tests/test_requests_api.py`, plus 3 in `test_album_job.py` (one is the HTTP approve → worker tick) and 1 in `test_playlist_request.py`. The suite went from 2223 to **2255**, green in 886 s.
+- **Opus review (0 Critical, 2 Important, 6 Minor):** these were fixed test-first.
+  - I1: `plan_request(lock=)` searches outside the app lock.
+  - I2: the failed folders are read again after the search, so a folder the job distrusted meanwhile stays out.
+  - M3: `approve_request` takes no file from a plan marked stale (`at` 0).
+  - M5: the GETs read under the lock.
+  - M7: `open_rows` drops a `review` row that is waiting for a pick, for every kind and not only playlists.
+  - M8: ASCII-digit ids.
+- **Not fixed (for S3-R1):** M6. An approve commits row by row, and a crates.db `sqlite3.Error` answers "Navidrome's database can't be read". That mapping is the same on every existing route.
+- **Verified:** the step-5 subset plus `test_playlist_request` and `test_fetch_filing`: 225 passed. Full `check.sh` green, 2255 tests.
+- **Next session:** S3-04's CLI should call `CrateApp.preview_request` / `approve_request` / `request_detail` so the rules stay in one place. S3-05's `docs/api.md` should document the shapes above. No question for Michael.
+
 ### 2026-10-23 07:40 · S3-02 · passes
 
 - **What changed:** `GET /api/catalog/search?q=&kind=album|track` answers 200 with `{hits: [...]}`. Each hit has `provider, kind, title, artist, year, trackCount, lengthS, format, ids, inLibrary`.

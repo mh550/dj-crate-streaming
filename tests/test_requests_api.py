@@ -508,3 +508,298 @@ def test_an_odd_navidrome_answer_is_an_event_not_an_error(mb_api, monkeypatch, e
     assert s == 201 and body["rows"][0]["status"] == "needs_source"
     assert [e["detail"] for e in app.store.events(200) if e["kind"] == "matched"] == [
         f"#{body['request']['id']} library not asked: {type(error).__name__}"]
+
+
+# --- S3-03: the request list, one request, its album plan (preview) and Michael's approval of it
+
+from sourcing.fake_slskd import FakeSlskdServer               # noqa: E402
+from sourcing.slskd_client import SlskdClient, SlskdError     # noqa: E402
+from tests.test_album_job import DIR, PEER, album_folder      # noqa: E402
+from tests.test_service import get                            # noqa: E402
+
+ALBUM_TITLE = "I'm Still in Love With You"
+COUNTS = ("ok", "needsSource", "sourcing", "verify", "failed", "review")
+
+
+@pytest.fixture
+def rq(tmp_path):
+    """A fake Navidrome, the app with a stub Spotify (album, then whatever `spotify.entity` is set to) and a fake
+    slskd (`slskd=False`: none configured) whose responses a test sets after making its request."""
+    made = []
+
+    def make(slskd=True):
+        fake = FakeSubsonicServer().__enter__()
+        made.append(fake)
+        sk = None
+        if slskd:
+            sk = FakeSlskdServer([], tmp_path / "dl", files={}).__enter__()
+            made.append(sk)
+        cfg = Config(subsonic_url=fake.url, username="demo", password="demo", db_path=":memory:", port=0)
+        spotify = Spotify(album())
+        app = CrateApp(cfg, store=CrateStore(), fetch_entity=spotify,
+                       slskd=SlskdClient(sk.url, sk.api_key) if sk else None)
+        srv = CrateServer(app).__enter__()
+        made.append(srv)
+        return app, srv, sk, spotify
+    yield make
+    for x in reversed(made):
+        x.__exit__(None, None, None)
+
+
+def album_request(app, srv, sk=None, tmp_path=None, skip=()):
+    """POST the album link; with `sk`, the fake slskd answers the album search with PEER's folder (minus `skip`)."""
+    s, body = post(srv.url + "/api/requests", {"url": ALBUM_URL})
+    assert s == 201
+    rid = body["request"]["id"]
+    if sk is not None:
+        resp, _ = album_folder(tmp_path, app.store.request(rid)["rows"], skip=skip)
+        sk.responses = [resp]
+    return rid, body
+
+
+def test_get_requests_lists_them_newest_first_with_status_and_row_counts(rq):
+    app, srv, _, spotify = rq(slskd=False)
+    rid, _ = album_request(app, srv)
+    spotify.entity = playlist()
+    s, t = post(srv.url + "/api/requests", {"url": PLAYLIST_URL})
+    assert s == 201
+    store = app.store
+    for ext, status in (("ext-1", "ok"), ("ext-2", "sourcing"), ("ext-3", "failed"), ("ext-4", "review"),
+                        ("ext-5", "removed")):
+        store.set_wanted_status(ext, status, "why")
+    s, _, body = get(srv.url + "/api/requests")
+    assert s == 200 and list(body) == ["requests"]
+    newest, older = body["requests"]
+    assert [newest["id"], older["id"]] == [t["request"]["id"], rid]
+    assert newest == t["request"] | {"rowCounts": dict.fromkeys(COUNTS, 0) | {"needsSource": 3}}
+    assert older["status"] == "partly" and older["kind"] == "album" and older["album"] == "I'm Still in Love With You"
+    assert older["rowCounts"] == {"ok": 1, "needsSource": 4, "sourcing": 1, "verify": 0, "failed": 1, "review": 1}
+
+
+def test_get_requests_is_an_empty_list_at_first(rq):
+    app, srv, _, _ = rq(slskd=False)
+    assert get(srv.url + "/api/requests")[::2] == (200, {"requests": []})
+
+
+def test_get_one_request_is_the_post_shape_plus_preview_and_each_rows_approval(rq):
+    app, srv, _, _ = rq(slskd=False)
+    rid, posted = album_request(app, srv)
+    s, _, body = get(srv.url + f"/api/requests/{rid}")
+    assert s == 200 and set(body) == {"request", "rows", "preview"}
+    assert body["preview"] is None and body["request"] == posted["request"]
+    assert [{k: v for k, v in r.items() if k != "approval"} for r in body["rows"]] == posted["rows"]
+    assert {r["approval"] is None for r in body["rows"]} == {True}
+    from sourcing import album_job
+    ids = album_job.approve_request(app.store, rid)
+    app.store.claim_approval(ids[0])
+    app.store.mark_approval_used(ids[0], "ok: in library (al01)")
+    _, _, body = get(srv.url + f"/api/requests/{rid}")
+    first, second = body["rows"][:2]
+    assert set(first["approval"]) == {"id", "purpose", "ts", "usedAt", "result"}
+    assert first["approval"] | {"ts": 0, "usedAt": 0} == {"id": ids[0], "purpose": "album", "ts": 0, "usedAt": 0,
+                                                         "result": "ok: in library (al01)"}
+    assert first["approval"]["usedAt"] >= first["approval"]["ts"] > 0
+    assert second["approval"] == {"id": ids[1], "purpose": "album", "ts": second["approval"]["ts"], "usedAt": None,
+                                  "result": None}
+    assert body["request"]["status"] == "approved"
+
+
+@pytest.mark.parametrize("method,path", [("GET", ""), ("POST", "/preview"), ("POST", "/approve")])
+def test_an_unknown_request_is_404_and_a_word_is_400(rq, method, path):
+    app, srv, _, _ = rq()
+    call = (lambda url: get(url)[::2]) if method == "GET" else (lambda url: post(url, {}))
+    assert call(srv.url + f"/api/requests/99{path}") == (404, {"error": "no request #99"})
+    assert call(srv.url + f"/api/requests/abc{path}") == (400, {"error": "request id must be a number, not 'abc'"})
+
+
+def test_preview_plans_the_album_caches_it_and_names_no_peer(rq, tmp_path):
+    app, srv, sk, _ = rq()
+    rid, _ = album_request(app, srv, sk, tmp_path, skip={9})
+    s, body = post(srv.url + f"/api/requests/{rid}/preview", {})
+    assert s == 200 and list(body) == ["plan"]
+    plan = body["plan"]
+    assert set(plan) == {"folders", "perTrack", "ts"} and plan["ts"] > 0
+    [folder] = plan["folders"]
+    assert (folder["label"], folder["coverage"]) == ("folder 1", "8 of 9")
+    assert folder["rows"][0] == {"id": "ext-1", "file": "Al Green - I'm Still in Love With You - 01 - I'm Still In "
+                                                        "Love With You.flac"}
+    assert [r["id"] for r in folder["rows"]] == [f"ext-{n}" for n in range(1, 9)]
+    assert plan["perTrack"] == ["ext-9"]
+    text = json.dumps(body)
+    assert PEER not in text and "username" not in text and DIR not in text and "@@" not in text
+    assert sk.searched == [f"Al Green {ALBUM_TITLE}"] and sk.enqueued == []
+    cached = app.store.preview(f"req-{rid}")
+    assert cached["assign"]["ext-1"]["candidate"]["username"] == PEER       # kept server side
+    _, _, detail = get(srv.url + f"/api/requests/{rid}")
+    assert detail["preview"] == plan
+
+
+def test_preview_without_slskd_is_503(rq):
+    app, srv, _, _ = rq(slskd=False)
+    rid, _ = album_request(app, srv)
+    assert post(srv.url + f"/api/requests/{rid}/preview", {}) == (503, {"error": "slskd is not configured"})
+    assert app.store.preview(f"req-{rid}") is None
+
+
+def test_preview_with_slskd_away_is_502_and_caches_nothing(rq, tmp_path, monkeypatch):
+    app, srv, sk, _ = rq()
+    rid, _ = album_request(app, srv, sk, tmp_path)
+
+    def away(*a, **kw):
+        raise SlskdError("POST", "/searches", None, "connection refused")
+    monkeypatch.setattr(app.slskd, "search", away)
+    s, body = post(srv.url + f"/api/requests/{rid}/preview", {})
+    assert (s, body) == (502, {"error": "cannot reach slskd (slskd POST /searches: connection refused)"})
+    assert app.store.preview(f"req-{rid}") is None
+
+
+def test_approve_records_the_album_approvals_of_the_previewed_plan(rq, tmp_path):
+    app, srv, sk, _ = rq()
+    rid, _ = album_request(app, srv, sk, tmp_path, skip={9})
+    post(srv.url + f"/api/requests/{rid}/preview", {})
+    s, body = post(srv.url + f"/api/requests/{rid}/approve", {})
+    assert s == 200 and list(body) == ["approved"]
+    approved = body["approved"]
+    pending = {a["id"]: a for a in app.store.pending_approvals()}
+    assert [a["approvalId"] for a in approved] == sorted(pending)
+    assert [a["wantedId"] for a in approved] == [f"ext-{n}" for n in range(1, 10)]
+    assert {a["purpose"] for a in pending.values()} == {"album"}
+    assert approved[0] == {"wantedId": "ext-1", "approvalId": approved[0]["approvalId"], "candidate": {
+        "basename": "Al Green - I'm Still in Love With You - 01 - I'm Still In Love With You.flac"}}
+    assert approved[8]["candidate"] is None                                  # ext-9: per track
+    assert PEER not in json.dumps(body) and "username" not in json.dumps(body)
+    assert pending[approved[0]["approvalId"]]["candidate"]["username"] == PEER
+    _, _, detail = get(srv.url + f"/api/requests/{rid}")
+    assert detail["request"]["status"] == "approved"
+    assert sk.enqueued == []                                                  # the worker downloads, not this
+
+
+def test_approve_without_a_preview_leaves_the_planning_to_the_job(rq):
+    app, srv, _, _ = rq(slskd=False)
+    rid, _ = album_request(app, srv)
+    s, body = post(srv.url + f"/api/requests/{rid}/approve", {})
+    assert s == 200 and len(body["approved"]) == 9 and {a["candidate"] for a in body["approved"]} == {None}
+
+
+@pytest.mark.parametrize("action", ["preview", "approve"])
+@pytest.mark.parametrize("status", ["sourcing", "verify"])
+def test_a_row_in_progress_is_409_and_nothing_is_recorded(rq, tmp_path, action, status):
+    app, srv, sk, _ = rq()
+    rid, _ = album_request(app, srv, sk, tmp_path)
+    app.store.set_wanted_status("ext-3", status, "filed as x.flac but Navidrome has not picked it up yet")
+    s, body = post(srv.url + f"/api/requests/{rid}/{action}", {})
+    assert (s, body) == (409, {"error": f"ext-3 is {status} (in progress): the worker finishes it"})
+    assert app.store.pending_approvals() == [] and app.store.preview(f"req-{rid}") is None
+    assert sk.searched == []
+
+
+def test_a_claimed_approval_is_409_until_the_worker_ends_it(rq):
+    app, srv, _, _ = rq(slskd=False)
+    rid, _ = album_request(app, srv)
+    post(srv.url + f"/api/requests/{rid}/approve", {})
+    first = app.store.pending_approvals()[0]
+    app.store.claim_approval(first["id"])
+    s, body = post(srv.url + f"/api/requests/{rid}/approve", {})
+    assert (s, body) == (409, {"error": f"ext-1: a download is in progress (approval #{first['id']}); "
+                                        "the worker finishes it"})
+    assert len(app.store.pending_approvals()) == 8                            # none superseded
+
+
+def test_a_done_request_has_nothing_to_approve_or_plan(rq):
+    app, srv, sk, _ = rq()
+    rid, _ = album_request(app, srv)
+    for n in range(1, 10):
+        app.store.set_wanted_status(f"ext-{n}", "ok", "already in the library")
+    assert get(srv.url + f"/api/requests/{rid}")[2]["request"]["status"] == "done"
+    assert post(srv.url + f"/api/requests/{rid}/approve", {}) == (409, {"error": "nothing to approve"})
+    assert post(srv.url + f"/api/requests/{rid}/preview", {}) == (409, {"error": "nothing to plan"})
+    assert app.store.pending_approvals() == [] and sk.searched == []
+
+
+def test_a_playlist_request_without_an_album_group_previews_and_approves_per_track(rq):
+    app, srv, sk, spotify = rq()
+    spotify.entity = playlist()
+    s, made = post(srv.url + "/api/requests", {"url": PLAYLIST_URL})
+    assert s == 201
+    rid, ids = made["request"]["id"], [r["id"] for r in made["rows"]]
+    s, body = post(srv.url + f"/api/requests/{rid}/preview", {})
+    assert (s, body) == (200, {"plan": {"albums": [], "perTrack": ids}})
+    assert sk.searched == []                                                  # nothing to search as an album
+    s, body = post(srv.url + f"/api/requests/{rid}/approve", {})
+    assert s == 200 and [a["wantedId"] for a in body["approved"]] == ids
+    assert {a["purpose"] for a in app.store.pending_approvals()} == {"download"}
+
+
+def test_the_request_routes_answer_get_and_post_only_where_they_exist(rq):
+    app, srv, _, _ = rq(slskd=False)
+    rid, _ = album_request(app, srv)
+    assert get(srv.url + f"/api/requests/{rid}/preview")[0] == 404
+    assert post(srv.url + f"/api/requests/{rid}/play", {})[0] == 404
+    assert post(srv.url + f"/api/requests/{rid}", {})[0] == 404
+
+
+def test_preview_searches_without_holding_the_apps_lock(rq, tmp_path, monkeypatch):
+    """A search takes seconds (one per album group): approvals, play-now and reconcile must not wait for it."""
+    app, srv, sk, _ = rq()
+    rid, _ = album_request(app, srv, sk, tmp_path)
+    held = []
+    search = app.slskd.search
+    monkeypatch.setattr(app.slskd, "search", lambda q: held.append(app._lock.locked()) or search(q))
+    assert post(srv.url + f"/api/requests/{rid}/preview", {})[0] == 200
+    assert held == [False]
+
+
+def test_preview_is_409_while_the_job_has_claimed_a_row(rq, tmp_path):
+    app, srv, sk, _ = rq()
+    rid, _ = album_request(app, srv, sk, tmp_path)
+    post(srv.url + f"/api/requests/{rid}/approve", {})
+    first = app.store.pending_approvals()[0]
+    app.store.claim_approval(first["id"])
+    s, body = post(srv.url + f"/api/requests/{rid}/preview", {})
+    assert s == 409 and body["error"].startswith("ext-1: a download is in progress")
+    assert sk.searched == [] and app.store.preview(f"req-{rid}") is None
+
+
+def test_a_request_whose_rows_are_all_removed_counts_nothing_and_has_nothing_to_approve(rq):
+    app, srv, sk, _ = rq()
+    rid, _ = album_request(app, srv)
+    for n in range(1, 10):
+        app.store.set_wanted_status(f"ext-{n}", "removed", "superseded")
+    [listed] = get(srv.url + "/api/requests")[2]["requests"]
+    assert listed["rowCounts"] == dict.fromkeys(COUNTS, 0)
+    assert post(srv.url + f"/api/requests/{rid}/approve", {}) == (409, {"error": "nothing to approve"})
+    assert post(srv.url + f"/api/requests/{rid}/preview", {}) == (409, {"error": "nothing to plan"})
+
+
+@pytest.mark.parametrize("word", ["%C2%B2", "-1", "1.0"])
+def test_a_request_id_that_is_not_ascii_digits_is_400(rq, word):
+    app, srv, _, _ = rq(slskd=False)
+    s, body = post(srv.url + f"/api/requests/{word}/approve", {})
+    assert s == 400 and body["error"].startswith("request id must be a number")
+
+
+def test_a_zero_padded_id_names_the_request_by_its_number(rq):
+    app, srv, _, _ = rq(slskd=False)
+    rid, _ = album_request(app, srv)
+    assert get(srv.url + f"/api/requests/000{rid}")[2]["request"]["id"] == rid
+    assert get(srv.url + "/api/requests/0099")[::2] == (404, {"error": "no request #99"})
+
+
+def test_a_row_waiting_for_a_version_pick_is_not_approved_with_its_album(rq):
+    """A `review` row approving cannot answer (a pick between library versions): the album goes without it."""
+    app, srv, _, _ = rq(slskd=False)
+    rid, _ = album_request(app, srv)
+    app.store.set_wanted_status("ext-4", "review", "2 versions in the library: pick one")
+    s, body = post(srv.url + f"/api/requests/{rid}/approve", {})
+    assert s == 200 and [a["wantedId"] for a in body["approved"]] == [f"ext-{n}" for n in range(1, 10) if n != 4]
+
+
+def test_a_failed_approval_result_names_no_peer_or_absolute_path(rq):
+    app, srv, _, _ = rq(slskd=False)
+    rid, _ = album_request(app, srv)
+    post(srv.url + f"/api/requests/{rid}/approve", {})
+    a = app.store.pending_approvals()[0]
+    app.store.claim_approval(a["id"])
+    app.store.mark_approval_used(a["id"], "failed: folder 1: transcode (01 - x.flac); /srv/incoming/soulseek/x/01.flac")
+    text = json.dumps(get(srv.url + f"/api/requests/{rid}")[2])
+    assert "/srv/incoming" not in text and "folder 1: transcode (01 - x.flac)" in text

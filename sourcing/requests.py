@@ -138,6 +138,27 @@ def view(req: dict) -> dict:
                  for r in req["rows"]]})
 
 
+ROW_COUNTS = {"ok": "ok", "needsSource": "needs_source", "sourcing": "sourcing", "verify": "verify",
+              "failed": "failed", "review": "review"}           # a `removed` row is not the request's any more
+
+
+def listed(req: dict) -> dict:
+    """`GET /api/requests`' entry (S3-03): view's request with its rows counted by status (`rowCounts`)."""
+    statuses = [r["status"] for r in req["rows"]]
+    return view(req)["request"] | {"rowCounts": {k: statuses.count(v) for k, v in ROW_COUNTS.items()}}
+
+
+def detail(req: dict, preview: dict | None) -> dict:
+    """`GET /api/requests/<id>` (S3-03): view's shape, each row with its newest approval (`id`, `purpose`, `ts`,
+    `usedAt`, `result`; never the candidate, which names the peer) and the request's cached plan (`preview`)."""
+    out = view(req)
+    for row, r in zip(out["rows"], req["rows"]):
+        a = r["approval"]
+        row["approval"] = None if a is None else public({"id": a["id"], "purpose": a["purpose"], "ts": a["ts"],
+                                                         "usedAt": a["used_at"], "result": a["result"]})
+    return out | {"preview": preview}
+
+
 def canonical(url: str) -> str:
     """The URL without its share parameters, so a re-run of the same album finds its request."""
     m = URL.search(url)
