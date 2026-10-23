@@ -63,7 +63,7 @@ from crates import placement
 from crates.reconcile import ReconcileBusy
 from scripts.export_playlists import export, playlist_health
 from . import album_job, replace
-from .fetch import fetch
+from .fetch import error_outcome, fetch
 
 
 class WorkerRunning(Exception):
@@ -292,9 +292,9 @@ class Worker:
             extra = {"score_tier": "low", "provisional": True} if a.get("purpose") == "play-now" else {}
             try:
                 r = self.fetcher(a["wanted_id"], approve=True, prefer=a["candidate"], **extra, **self.common)
-                outcome = r.approval_result or f"{r.status}: {r.reason}"
+                outcome = r.outcome
             except Exception as e:
-                outcome = f"error: {type(e).__name__}: {e}"
+                outcome = error_outcome(e)
                 self.log(f"fetch {a['wanted_id']} failed: {outcome}")
             self.store.mark_approval_used(a["id"], outcome)
             self.store.commit()

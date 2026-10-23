@@ -55,6 +55,11 @@ on this system.
   You" (Spotify 196 s) and got track 09 "One of These Good Old Days" (195 s) from a folder named after the album;
   AcoustID said so at 0.958, MusicBrainz has the two at 195.7 s and 195.6 s. Duration can't catch it: the file's
   title slot (S1-01), AcoustID's title against the asked one (S1-02) and Navidrome's title at filing (S1-03) do.
+- **Spotify's album embed has `releaseDate: null`** (captured 2026-10-22): an album request's year comes from
+  MusicBrainz (`requests.match_request_release`, S2-03), else it stays unknown (D51 *default*: the files' year is cleared).
+- **slskd's multi-file enqueue is not captured.** The album job POSTs one peer's planned files in one
+  `POST /transfers/downloads/<peer>` (S2-05) and, like fetch, never reads the response: it follows the records whose
+  ids weren't listed before. Capture the response shape on the live box before relying on it (S4 checklist).
 
 ## SQLite
 - `crates.db` and `navidrome.db` are in WAL mode: data can sit in `<db>-wal` while the main file is 4 KB. Copy them

@@ -11,20 +11,24 @@ approved as one, sourced album-first.
   than `plan_max_age_s`, enqueue each peer's planned files in one POST, then run each row through fetch in planned
   mode (no search, no enqueue: it polls the transfer enqueued here). Only a row a fetch would download, whose planned
   file still passes at the row's own tier, is enqueued; any other is an ordinary fetch (which says `already ok`,
-  `in flight`, ...), as is a row without a planned file. A planned file its fetch did not file (an error, a failed
+  `in flight`, ...), as is a row without a planned file, and one whose own tier rejects its planned file goes per
+  track (the plan is made at the first row's tier; S2-R1). A planned file its fetch did not file (an error, a failed
   check) and a POST slskd refused are cancelled and forgotten (remove=true), so nothing lands unfiled later. Each
   approval is marked used with its row's outcome; one being run refuses a second approve_request.
 
 Switching (S2-05b): trouble with a planned file switches the rest of that folder's unfiled rows, the failed one
 included, to another folder. The triggers: a transfer fetch says another peer may fix (`FetchResult.again`, S1-06:
-fetch does not retry in planned mode), a peer that has started none of its files `start_timeout_s` after the enqueue
-(`ALBUM_START_TIMEOUT_S`; then every folder of that peer), one verify finding of the "not what it claims" kind
-(`DISTRUST`), or `MAX_FOLDER_FAILURES` failed rows in one folder (an ordinary finding alone fails only its row, whose
-approval waits for the job's end: a later switch of its folder takes it along). On a switch the folder's records of
+fetch does not retry in planned mode; a planned transfer that timed out too, S2-R1), a peer that has started none of
+its files `start_timeout_s` after the enqueue (`ALBUM_START_TIMEOUT_S`; then every folder of that peer), one verify
+finding of the "not what it claims" kind (`DISTRUST`), or `MAX_FOLDER_FAILURES` failed rows in one folder (an
+ordinary finding alone fails only its row, whose approval waits for the job's end: a later switch of its folder takes
+it along). On a switch the folder's records of
 rows not yet filed are cancelled and forgotten (remove=true), and the moved rows are planned again over the first
 search's responses (cached with the plan) plus one fresh album search (when slskd answers), without the failed
 folders, the release the job has been filing first (the planned files' lengths), one row being enough; rows already
-filed stay. One `switch` event per failed folder: `folder 1 distrusted: transcode (<basename>); 8 rows → folder 2`.
+filed stay. The cache keeps the failed folders and is marked stale, so approving the request again plans afresh
+without them (S2-R1). One `switch` event per failed folder: `folder 1 distrusted: transcode (<basename>); 8 rows →
+folder 2`.
 
 The caps (S2-05c): a row gets its planned folder, one switched folder and one per-track fetch (an ordinary fetch,
 `exclude` = every failed folder's peer, so neither its pick nor S1-06's retry is one of theirs); a row no folder
@@ -49,7 +53,8 @@ import time
 from crates.store import filed_path, public, retryable_review
 from . import album
 from .identity import loose
-from .fetch import FetchResult, copy_of, fetch, in_library, planned_candidate
+from .fetch import (FetchResult, error_outcome, fetch, forget_finished, forget_new, in_library, new_file,
+                    planned_candidate, search, to_download)
 from .policy import DEFAULT_POLICY, TIERS
 from .scorer import split_remote
 from .slskd_client import SlskdError, transfer_files
@@ -144,12 +149,7 @@ def _request(store, request_id: int) -> dict:
 
 def _search(slskd, req: dict, poll_s: float) -> list[dict]:
     """One search for `"<artist> <album>"`: its responses."""
-    sid = slskd.search(" ".join(x for x in (req["artist"], req["album"]) if x))
-    try:
-        st = slskd.wait_search(sid, poll_s=poll_s, max_s=30)
-        return slskd.search_responses(sid, expect=st.get("responseCount") or 0, poll_s=poll_s)
-    finally:
-        slskd.delete_search(sid)
+    return search(slskd, " ".join(x for x in (req["artist"], req["album"]) if x), poll_s)
 
 
 def plan_request(store, slskd, request_id: int, policy=None, *, poll_s: float = 1.0, group: str | None = None) -> dict:
@@ -165,10 +165,11 @@ def plan_request(store, slskd, request_id: int, policy=None, *, poll_s: float = 
                                   for g in groups(req)],
                        "per_track": [{"id": r["song_id"], "title": r["title"]} for r in per_track(req)]})
     req = _scope(store, request_id, group)
-    rows = open_rows(req)
+    rows = _playlist_open(req) if group else open_rows(req)      # a group plans the rows approve_request approves
     policy = policy or (TIERS[rows[0]["tier"]] if rows else DEFAULT_POLICY)
+    failed = _failed(store.preview(preview_key(request_id, group)))
     responses = _search(slskd, req, poll_s)
-    plan = album.plan_album(responses, rows, policy=policy)
+    plan = album.plan_album(responses, rows, policy=policy, exclude=failed)
     folders, assign = [], {}
     for n, (role, f) in enumerate(((r, f) for r, f in (("primary", plan.primary), ("secondary", plan.secondary)) if f), 1):
         label = f"folder {n}"
@@ -182,8 +183,14 @@ def plan_request(store, slskd, request_id: int, policy=None, *, poll_s: float = 
              "text": album.describe(plan)} | ({"artist": req["artist"], "album": req["album"]} if group else {})
     store.log(None, None, "plan", f"{_tag(req)} {summary(plan) or 'nothing to plan'}")
     store.set_preview(preview_key(request_id, group),     # commits the event; `at`, `assign`, `responses`: server side
-                      shown | {"at": time.time(), "assign": assign, "responses": responses})
+                      shown | {"at": time.time(), "assign": assign, "responses": responses,
+                               "failed": sorted(failed)})
     return public(shown)
+
+
+def _failed(cache: dict | None) -> set[tuple[str, str]]:
+    """The folders (peer, directory) earlier runs of the job failed (a switch's cause): never planned again."""
+    return {(p, d) for p, d in (cache or {}).get("failed") or []}
 
 
 def approve_request(store, request_id: int, approved_by: str = "michael") -> list[int]:
@@ -203,29 +210,6 @@ def approve_request(store, request_id: int, approved_by: str = "michael") -> lis
     if req["kind"] == "playlist":
         ids += [store.approve(r["song_id"], approved_by, None, r["tier"]) for r in per_track(req)]
     return ids
-
-
-def _to_download(row: dict | None) -> bool:
-    """A row an approved fetch would download (not ok, removed, in flight, filed, or a question no download answers)."""
-    return row is not None and filed_path(row.get("reason")) is None and (
-        row["status"] in ("needs_source", "failed") or (row["status"] == "review" and retryable_review(row.get("reason"))))
-
-
-def _new_file(row: dict | None) -> bool:
-    """A row the library may already have (fetch's S1-07 rule): an external row that is not a copy, still to fetch."""
-    return _to_download(row) and bool(row.get("external")) and copy_of(row) is None
-
-
-def _forget(slskd, peer: str, names: set[str], before: set[str]) -> None:
-    """Best effort: cancel and forget (remove=true) the job's records of `names`, so none lands unfiled later."""
-    try:
-        for t in transfer_files(slskd.downloads(peer)):
-            if t.get("filename") in names and t.get("id") and t["id"] not in before:
-                slskd.remove_download(peer, t["id"])
-    except SlskdError:
-        pass
-
-
 
 
 def _started(slskd, peer: str, names: set[str], before: set[str], timeout_s: float, poll_s: float, sleep) -> bool:
@@ -290,10 +274,9 @@ def _plain(approvals: list[dict], *, fetcher=fetch, plan_max_age_s=None, start_t
         if not store.claim_approval(a["id"]):
             continue
         try:
-            r = fetcher(a["wanted_id"], approve=True, prefer=a["candidate"], **common)
-            outcome = r.approval_result or f"{r.status}: {r.reason}"
+            outcome = fetcher(a["wanted_id"], approve=True, prefer=a["candidate"], **common).outcome
         except Exception as e:
-            outcome = f"error: {type(e).__name__}: {e}"
+            outcome = error_outcome(e)
         store.mark_approval_used(a["id"], outcome)
         out.append((a, outcome))
     return out
@@ -308,6 +291,7 @@ def _run(request_id: int, group: str | None, approvals: list[dict], *, fetcher=f
     poll_s, sleep = common.get("poll_s", 1.0), common.get("sleep") or time.sleep
     claimed: list[dict] = []
     out: list[tuple[dict, str]] = []
+    sent: list[tuple[str, set[str], set[str]]] = []   # each POST's (peer, its files, the record ids before it)
     held: dict[int, tuple[dict, dict, str]] = {}   # approval id → (approval, file, outcome): failed in a folder a
                                                    # later switch may still take it from; marked at the end
     def done(a: dict, outcome: str) -> None:
@@ -321,16 +305,17 @@ def _run(request_id: int, group: str | None, approvals: list[dict], *, fetcher=f
     def spend(call) -> tuple[FetchResult | None, str]:
         try:
             r = call()
-            return r, r.approval_result or f"{r.status}: {r.reason}"
+            return r, r.outcome
         except Exception as e:                     # fetch has failed the row (or kept it `verify`) already
-            return None, f"error: {type(e).__name__}: {e}"
+            return None, error_outcome(e)
 
     try:
         claimed += [a for a in approvals if store.claim_approval(a["id"])]
         todo = []
         for a in claimed:                          # the library first (S1-07): linked, not downloaded
             row = store.find_wanted(a["wanted_id"])
-            hit = in_library(store, common["navidrome"], a["wanted_id"], row) if _new_file(row) else None
+            hit = (in_library(store, common["navidrome"], a["wanted_id"], row)
+                   if to_download(row) and new_file(row) else None)
             if hit is not None:
                 done(a, f"ok: in library ({hit.new_song_id})")
             else:
@@ -350,7 +335,7 @@ def _run(request_id: int, group: str | None, approvals: list[dict], *, fetcher=f
         tried = {a["wanted_id"]: 1 for a, _ in planned}    # folders each row has been planned on
         attempts: dict[str, list[str]] = {}                # row → its failed folders: `folder 1: <why>`, in order
         failures: dict[tuple[str, str], list[str]] = {}    # folder → the basenames of its failed rows
-        bad: set[tuple[str, str]] = set()                  # failed folders: never planned again
+        bad = _failed(cache)                               # failed folders (this run's, earlier runs'): never again
         stalled: set[str] = set()                          # peers that started nothing: none of their folders either
         while planned:
             moved: list[tuple[dict, dict]] = []            # this round's switched rows, with their failed folder's file
@@ -359,33 +344,26 @@ def _run(request_id: int, group: str | None, approvals: list[dict], *, fetcher=f
             by_peer: dict[str, list[tuple[dict, dict]]] = {}
             for a, c in planned:
                 row = store.find_wanted(a["wanted_id"])
-                if not _to_download(row):
+                if not to_download(row):
                     plain.append((a, a["candidate"]))
                 elif planned_candidate(c, album.wanted(row), TIERS[row["tier"]]).rejected:
-                    if attempts.get(a["wanted_id"]):          # a switched row: its last attempt is per track
-                        plain.append((a, None))
-                        continue
-                    done(a, spend(lambda: fetcher(a["wanted_id"], approve=True, planned=True, prefer=c,
-                                                  enqueued=set(), **common))[1])    # scored again: never enqueued
-                else:
+                    plain.append((a, None))        # its own tier rejects the file (the plan's is the first row's,
+                else:                              # or the file changed since): never enqueued, per track
                     by_peer.setdefault(c["username"], []).append((a, c))
             for peer, items in by_peer.items():    # one POST per peer: every planned file of its folder(s)
                 names, before = {c["filename"] for _, c in items}, None
                 try:
-                    listed = [t for t in transfer_files(slskd.downloads(peer)) if t.get("id")]
-                    for t in listed:               # earlier attempts' final records go, as fetch does (S1-04)
-                        if t.get("filename") in names and str(t.get("state", "")).startswith("Completed"):
-                            slskd.remove_download(peer, t["id"])
-                    before = {t["id"] for t in listed}
+                    before = forget_finished(slskd, peer, names)     # as fetch does (S1-04)
+                    sent.append((peer, names, before))
                     slskd.enqueue(peer, [{"filename": c["filename"], "size": c["size"]} for _, c in items])
                 except SlskdError as e:            # the rows stay as they were; Michael may approve again
                     if before is not None:         # the POST failed: slskd may have taken part of it
-                        _forget(slskd, peer, names, before)
+                        forget_new(slskd, peer, names, before)
                     for a, _ in items:
-                        done(a, f"error: {type(e).__name__}: {e}")
+                        done(a, error_outcome(e))
                     continue
                 if not _started(slskd, peer, names, before, start_timeout_s, poll_s, sleep):
-                    _forget(slskd, peer, names, before)
+                    forget_new(slskd, peer, names, before)
                     stalled.add(peer)
                     for key in dict.fromkeys(_key(c) for _, c in items):
                         bad.add(key)
@@ -406,7 +384,7 @@ def _run(request_id: int, group: str | None, approvals: list[dict], *, fetcher=f
                         filed.add(a["wanted_id"])
                         done(a, outcome)
                         continue
-                    _forget(slskd, peer, {c["filename"]}, before)    # not filed: nothing of it may land later
+                    forget_new(slskd, peer, {c["filename"]}, before)    # not filed: nothing of it may land later
                     if r is None or r.status != "failed":          # an error (not the folder's), nothing downloaded
                         done(a, outcome)
                         continue
@@ -424,7 +402,7 @@ def _run(request_id: int, group: str | None, approvals: list[dict], *, fetcher=f
                                 f"{labels[key]}: {len(fails)} failures ({', '.join(fails)})")
                     cause[key] = f"{labels[key]}: {own}" if distrust else why[key]
                     moved += take_held(key) + [(a, c)]
-                    _forget(slskd, peer, {c2["filename"] for a2, c2 in items                 # the folder's queued rest
+                    forget_new(slskd, peer, {c2["filename"] for a2, c2 in items                 # the folder's queued rest
                                           if _key(c2) == key and a2["wanted_id"] not in filed}, before)
             planned = []
             if not moved:
@@ -468,6 +446,8 @@ def _run(request_id: int, group: str | None, approvals: list[dict], *, fetcher=f
                 store.log(None, None, "switch", f"{_tag(_scope(store, request_id, group))} {event}; "
                           f"{_moves([dest[a['id']] for a, c in moved if _key(c) == key])}")
             store.commit()
+        if bad - _failed(cache):                   # an approval again plans afresh, without them
+            store.set_preview(preview_key(request_id, group), (cache or {}) | {"at": 0, "failed": sorted(bad)})
         def give_up(a: dict, last: list[str]) -> str:
             """Fail the row with every attempt in its reason; the approval's outcome says the same."""
             reason = "; ".join(attempts[a["wanted_id"]] + last)
@@ -486,9 +466,11 @@ def _run(request_id: int, group: str | None, approvals: list[dict], *, fetcher=f
                     and filed_path(row.get("reason")) is None:  # its folders failed, and so did this: every attempt
                 outcome = give_up(a, [f"per track: {r.reason if r is not None else outcome}"])  # or the error
             done(a, outcome)
-    except Exception as e:                         # e.g. a search: every claimed approval gets an outcome
+    except Exception as e:                         # e.g. a search: every claimed approval gets an outcome, and
+        for peer, names, before in sent:           # nothing sent lands unfiled later (a filed file's record goes too)
+            forget_new(slskd, peer, names, before)
         seen = {a["id"] for a, _ in out}
         for a in claimed:
             if a["id"] not in seen:
-                done(a, held[a["id"]][2] if a["id"] in held else f"error: {type(e).__name__}: {e}")
+                done(a, held[a["id"]][2] if a["id"] in held else error_outcome(e))
     return out

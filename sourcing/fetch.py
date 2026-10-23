@@ -125,6 +125,61 @@ class FetchResult:
     again: bool = False            # planned mode: the transfer failed as another peer may fix (S1-06); the job switches
     kinds: tuple[str, ...] = ()    # a failed verification's problem kinds (verify's checks), for the album job
 
+    @property
+    def outcome(self) -> str:
+        """What the approval records (`approvals.result`)."""
+        return self.approval_result or f"{self.status}: {self.reason}"
+
+
+def error_outcome(e: Exception) -> str:
+    """What an approval records when its fetch raised."""
+    return f"error: {type(e).__name__}: {e}"
+
+
+def search(slskd: SlskdClient, query: str, poll_s: float) -> list[dict]:
+    """One slskd search: its responses (the search is deleted afterwards)."""
+    sid = slskd.search(query)
+    try:
+        st = slskd.wait_search(sid, poll_s=poll_s, max_s=30)
+        return slskd.search_responses(sid, expect=st.get("responseCount") or 0, poll_s=poll_s)
+    finally:
+        slskd.delete_search(sid)
+
+
+def forget_finished(slskd: SlskdClient, peer: str, names: set[str]) -> set[str]:
+    """Before an enqueue of `names` at `peer`: forget (remove=true) the final records of earlier attempts at those
+    files, so none is mistaken for the new one, and return the ids listed before it; the new record is the one whose id
+    is not among them (slskd's listing order and the enqueue response are not relied on, S1-04)."""
+    listed = [t for t in transfer_files(slskd.downloads(peer)) if t.get("id")]
+    for t in listed:
+        if t.get("filename") in names and str(t.get("state", "")).startswith("Completed"):
+            slskd.remove_download(peer, t["id"])
+    return {t["id"] for t in listed}
+
+
+def forget_new(slskd: SlskdClient, peer: str, names: set[str], before: set[str]) -> None:
+    """Best effort: cancel and forget (remove=true) the records of `names` made since `before`, so none lands
+    unfiled later."""
+    try:
+        for t in transfer_files(slskd.downloads(peer)):
+            if t.get("filename") in names and t.get("id") and t["id"] not in before:
+                slskd.remove_download(peer, t["id"])
+    except SlskdError:
+        pass
+
+
+def to_download(row: dict | None) -> bool:
+    """A row an approved fetch would download: not ok, removed, in flight, filed, or a question no download answers
+    (fetch's gates below, the album job's too)."""
+    return row is not None and filed_path(row.get("reason")) is None and (row["status"] in ("needs_source", "failed")
+                                                                       or (row["status"] == "review"
+                                                                           and retryable_review(row.get("reason"))))
+
+
+def new_file(row: dict) -> bool:
+    """An external row that is not a copy upgrade: the library may have it already (S1-07)."""
+    return bool(row.get("external")) and copy_of(row) is None
+
 
 def _find_landed(downloads_root: Path, best: Candidate) -> Path | None:
     """slskd writes <downloads>/<remote parent folder>/<basename>; fall back to a walk by name+size."""
@@ -475,7 +530,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
     if status == "sourcing" and time.time() - (row.get("updated_at") or 0) < download_timeout_s:
         return FetchResult("sourcing", "in flight (started less than the download timeout ago)")
 
-    if external and copy_id is None and not planned:   # a new file: the library may have it (S1-07); a job asked
+    if new_file(row) and not planned:         # the library may have it (S1-07); a job asked already
         hit = in_library(store, navidrome, wanted_id, row)
         if hit is not None:
             return hit
@@ -484,13 +539,8 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
     if planned:                               # the album job searched, planned and enqueued it
         cands = [planned_candidate(prefer, _owned(wanted, navidrome, copy_id), policy)]
     else:
-        sid = slskd.search(f"{wanted.artist} {wanted.title}".strip())
-        try:
-            st = slskd.wait_search(sid, poll_s=poll_s, max_s=30)
-            responses = slskd.search_responses(sid, expect=st.get("responseCount") or 0, poll_s=poll_s)
-            cands = rank(responses, _owned(wanted, navidrome, copy_id), policy)
-        finally:
-            slskd.delete_search(sid)
+        responses = search(slskd, f"{wanted.artist} {wanted.title}".strip(), poll_s)
+        cands = rank(responses, _owned(wanted, navidrome, copy_id), policy)
         dropped = bool(exclude) and any(not c.rejected and c.username in exclude for c in cands)
         if exclude:
             cands = [c for c in cands if c.username not in exclude]
@@ -538,17 +588,10 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
 
         def download() -> tuple[Path | None, str, bool]:
             nonlocal before
-            # forget earlier attempts at the same file so their final state can't be mistaken for this one; ours is
-            # then the record whose id wasn't there before the enqueue: slskd's listing order and the enqueue
-            # response are not relied on (S1-04)
             if planned:                       # the album job enqueued it
                 before = set(enqueued or ())
             else:
-                listed = records()
-                for t in listed:
-                    if str(t.get("state", "")).startswith("Completed"):
-                        slskd.remove_download(cand.username, t["id"])
-                before = {t["id"] for t in listed}
+                before = forget_finished(slskd, cand.username, {cand.filename})
                 slskd.enqueue(cand.username, [{"filename": cand.filename, "size": cand.size}])
             t0 = time.time()
             while True:
@@ -561,8 +604,8 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
                     return None, f"slskd reports success but {cand.basename} is not under {downloads_root}", False
                 if state.startswith("Completed"):
                     return None, f"download ended: {state}", state in TRANSFER_ERRORS
-                if time.time() - t0 > download_timeout_s:
-                    return None, "download timed out", False
+                if time.time() - t0 > download_timeout_s:    # the album job switches the folder (S2-05), fetch
+                    return None, "download timed out", planned    # itself never retries a timeout (S1-06)
                 sleep(poll_s)
 
         try:
@@ -572,12 +615,7 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
                 raise                         # a 4xx is ours to fix, not the peer's: the row fails as before
             got = None, f"{type(e).__name__}: {e}", True
         if got[0] is None and before is not None:
-            try:
-                for t in records():
-                    if t["id"] not in before:
-                        slskd.remove_download(cand.username, t["id"])
-            except SlskdError:
-                pass
+            forget_new(slskd, cand.username, {cand.filename}, before)
         return got
 
     if external and copy_id is None:          # what this download is for, recorded before it starts (D20)

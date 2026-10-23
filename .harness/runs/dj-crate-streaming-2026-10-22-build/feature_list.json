@@ -199,7 +199,7 @@
         "S2-06b",
         "S2-07"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "S3-01",

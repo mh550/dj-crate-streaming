@@ -115,7 +115,7 @@ The spec's S2-04..S2-07, as the features build them:
   planned row `fetch(..., planned=True, prefer=<candidate>, enqueued=<the peer's record ids before>)`, then the rows
   without a planned file as an ordinary fetch. An error after the claim is the outcome of every approval not yet
   marked. In planned mode fetch neither asks the library nor searches (the one candidate is `prefer` scored again:
-  `fetch.planned_candidate`; rejected → `needs_source`, nothing downloaded) and logs `pick` `planned file: <basename>`.
+  `fetch.planned_candidate`; rejected → `needs_source`, nothing downloaded; since S2-R1 the job does not send such a row to a planned fetch at all: it goes per track) and logs `pick` `planned file: <basename>`.
   The secondary's files go in the same POST when it is the primary's peer. `listed_lengths` is still None (S2-03's
   tracks have no length). Review fixes: only a row fetch would download (needs_source, failed, a retryable review;
   nothing filed) whose planned file passes at its own tier is enqueued; a planned file not filed afterwards (fetch
@@ -187,6 +187,33 @@ The spec's S2-04..S2-07, as the features build them:
   album files as one); ambiguous `review` rows are neither grouped nor approved; an `album` approval whose row lost
   its album is fetched per track without a plan; no empty request. Known limit: a Spotify playlist URL's embed has
   no album, so its rows all go per track (album groups need an Exportify CSV or a SpotiFLAC report).
+
+## Closing review (S2-R1)
+
+An Opus review of `git diff 1eb4259..HEAD` (crates, sourcing, scripts, deploy, tests, docs) against both S2 plans:
+no Critical, 2 Important, 10 Minor. Fixed test-first (`tests/test_album_job.py`, "S2-R1 review fixes"):
+- **Important 1.** The plan is made at the first open row's tier; a row whose planned file its own tier rejects went
+  to a planned fetch that only said `needs_source`, on every approval again. It now goes per track at once.
+- **Important 2.** A run's failed folders were forgotten and the cached plan reused (up to `ALBUM_PLAN_MAX_AGE_S`),
+  so approving again re-downloaded a distrusted folder. The cache now keeps `failed` (peer, directory pairs, server
+  side only) and is marked stale (`at` 0); `plan_request` and every later run exclude them, and their peers are
+  excluded from per-track fetches.
+- **Minor.** A planned transfer that times out switches its folder (`again`, spec S2-05 "a transfer error or
+  timeout"); an error escaping the job after a POST forgets every record it sent; a playlist group plans only the
+  rows `approve_request` approves (no ambiguous import row); `CrateStore.wanted` no longer reads request plans.
+
+Not done, with the reason: a 5xx refusal of the per-peer POST stays `error:` on each row, no switch (this plan's
+choice: "the rows stay as they were; Michael may approve again", now with a fresh plan); `forget_new` stays best effort
+(a forget that fails while slskd is away cannot be retried without a queue of its own; the row's next approval forgets
+completed records first); a never-indexed row counts as going (S2-01's tested rule: its file is in the library, and
+the Re-check resolves it); `import-playlist --request` names `sourcing.cli request approve`, which S3-04 builds; the
+`tagged` event's two shapes stay (S2-06b: the JSON one is the reverse's record, read before `filed`); a restart
+mid-album leaving queued transfers is the known gap above. Checked and holding: no peer name or absolute library path
+in events, plan text or payloads (`store.public`); no enqueue without an `album` or `download` approval (D7); every
+switch forgets with `remove=true`; the planned mode cannot loop (`fail_enqueue` ends each row's approval at once,
+`tried` caps a row at two folders). Simplified: fetch's `FetchResult.outcome`, `error_outcome`, `search`,
+`forget_finished`, `forget_new`, `to_download` and `new_file` are shared by fetch, the album job and the worker;
+`sourcing/album.py` stays pure (`tests/test_album_plan.py::test_album_module_is_pure`).
 
 ## Live steps
 

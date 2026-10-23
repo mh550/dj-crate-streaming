@@ -163,16 +163,18 @@ Nothing is enqueued without Michael's approval of the request (D7): the plan onl
   `ALBUM_PLAN_MAX_AGE_S` (3600 s); enqueue each peer's planned files in one POST; then run each row through fetch in
   planned mode (no search, no enqueue of its own: it polls the job's transfer), verify, file and finish as any
   download. The rows no folder covers go per track: an ordinary fetch of `"<artist> <title>"` (a `pick` event
-  `per track: <basename>`).
+  `per track: <basename>`), and so does a row whose own tier rejects its planned file (the plan is made at the first
+  row's tier).
 - **Switch triggers.** Trouble with a planned file switches the rest of that folder's unfiled rows (the failed one
   included) to another folder: a transfer error another peer may fix (`Completed, Errored|TimedOut|Rejected|Cancelled`,
-  slskd away); a peer that has started none of its files `ALBUM_START_TIMEOUT_S` (600 s) after the enqueue; one
+  slskd away) or a planned transfer that timed out (`download_timeout_s`); a peer that has started none of its files `ALBUM_START_TIMEOUT_S` (600 s) after the enqueue; one
   verify finding of the "not what it claims" kind (`transcode`, `fake_24bit`, `fake_hires`, `recording`: fakes come
   as folders); or 2 failed rows in one folder. An ordinary finding (`duration`, `truncated`) alone fails only its
   row. On a switch, the folder's queued transfers of unfiled rows are cancelled and forgotten (`?remove=true`), and
   the moved rows are planned again over the first search plus one fresh album search, without the failed folders,
   preferring the release already being filed. Rows already filed stay. One `switch` event per failed folder:
-  `#<id> folder 1 distrusted: transcode (<basename>); 8 rows → folder 2`.
+  `#<id> folder 1 distrusted: transcode (<basename>); 8 rows → folder 2`. The cached plan keeps the failed folders and
+  goes stale: approving the request again plans afresh without them (S2-R1).
 - **Caps.** A row gets at most its planned folder, one switched folder and one per-track fetch, which never takes a
   file from a peer whose folder failed in this job (S1-06's second source included). Then it fails, every attempt in
   its reason, in order: `folder 1: transcode (<basename>); folder 2: download ended: Completed, Errored; per track: no

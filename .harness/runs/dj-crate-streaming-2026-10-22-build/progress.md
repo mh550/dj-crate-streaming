@@ -9,6 +9,30 @@ Michael steers from `INBOX.md` on this branch (status line `run | pause | stop`;
 session reads it at startup. Policy: **build-only** (`.harness/config.sh`) and the brief in `brief.md`: nothing live,
 no docker, no `/srv`, no network, no client UI, PRs only (open, never merge).
 
+### 2026-10-23 03:59 · S2-R1 · passes
+
+- **Changed.** Opus review of `git diff 1eb4259..HEAD` (`$HARNESS_SCRATCH/s2.diff`, 5817 lines) against both S2 plans:
+  **0 Critical, 2 Important, 10 Minor.** Fixed test-first in `sourcing/album_job.py`/`fetch.py`: **I1** a row whose
+  planned file its own tier rejects (the plan uses the first row's tier) stopped at `needs_source` on every approval →
+  now per track; **I2** a run's failed folders were forgotten and the cache reused, so approving again re-downloaded a
+  distrusted folder → the cache keeps `failed` and goes stale (`at` 0), plans and per-track fetches exclude them.
+  Minor fixed: planned timeout switches (`again`), an escaping error forgets every record sent, a playlist group plans
+  only approvable rows, `CrateStore.wanted` skips `req-*` plans. Not done (reasons in the S2 plan's "Closing review"):
+  5xx POST refusal stays `error:` (plan's choice), `forget_new` best effort, never-indexed row counts as going (S2-01
+  test), CLI hint names S3-04's `request approve`, two `tagged` shapes (S2-06b), restart gap (known).
+- **Simplified.** `fetch.py` now owns `FetchResult.outcome`, `error_outcome`, `search`, `forget_finished`, `forget_new`,
+  `to_download`, `new_file`; album_job and worker use them (album_job −40 lines of copies). `album.py` purity test
+  (fails with an slskd import). Docs: architecture §2/§3/§4 (e), hard-won-facts (embed `releaseDate` null; multi-file
+  enqueue shape not captured), next-todos State S2, spec S2 `**Built 2026-10-23**`, worker.md Album jobs, S2 plan.
+- **Verified.** 5 new tests red first (one, #6, passed at first and was rewritten to raise after the POST); the
+  old `test_a_planned_file_the_policy_now_rejects_is_not_enqueued` now asserts the per-track fetch. Checklist held:
+  no peer/absolute path in events, plan text or payloads; no enqueue without `album`/`download` approval (D7);
+  every switch forgets with remove=true; `fail_enqueue` cannot loop. Subset 249 passed; full suite green, 2118 → 2124
+  tests, 796 s.
+- **Next session must know.** A request's cache `req-<id>` now has `failed` ([peer, dir] pairs, server side only);
+  failed folders stay excluded for that request for good (a new request starts clean).
+- **Question for Michael.** Still D51. None new.
+
 ### 2026-10-23 07:20 · S2-07 · passes
 
 - **Changed.** `sourcing/requests.py` `add_playlist` (+ `add_spotify(…, playlist_id=)`): the import's last

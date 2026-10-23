@@ -268,3 +268,15 @@ def test_like_ranks_folders_of_the_release_being_filed_first():
     one = rows()[8:]
     assert plan_album(responses, one).per_track == one
     assert plan_album(responses, one, like=like, min_rows=1).primary.username == "charlie"
+
+
+def test_album_module_is_pure():
+    """S2-R1: the planner stays pure. Imported in a fresh interpreter, it pulls in neither the slskd client nor the
+    store, nor any module that does I/O on its own."""
+    import subprocess, sys
+    code = ("import sys, sourcing.album; "
+            "print(' '.join(m for m in ('sourcing.slskd_client', 'crates.store', 'crates', 'sqlite3', 'subprocess', "
+            "'urllib.request', 'http.client', 'socket') if m in sys.modules))")
+    out = subprocess.run([sys.executable, "-c", code], cwd=Path(__file__).parent.parent, capture_output=True,
+                         text=True, check=True)
+    assert out.stdout.strip() == ""

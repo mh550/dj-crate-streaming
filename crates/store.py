@@ -506,7 +506,8 @@ class CrateStore:
         ext = self.db.execute(f"SELECT * FROM external_wanted WHERE status IN {live} ORDER BY id")
         rows = self._crate_wanted(f"t.status IN {live}") + [self._ext_row(r) for r in ext]
         checks = dict(self.db.execute("SELECT song_id, result FROM verifications").fetchall())   # parse only rows shown
-        previews = dict(self.db.execute("SELECT song_id, result FROM previews").fetchall())
+        previews = dict(self.db.execute("SELECT song_id, result FROM previews "        # not a request's plan
+                                         "WHERE song_id NOT LIKE 'req-%'").fetchall())
         for row in rows:
             self._decorate(row, checks.get(row["song_id"]), previews.get(row["song_id"]))
         return rows

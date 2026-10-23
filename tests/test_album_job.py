@@ -305,6 +305,8 @@ def test_planned_fetch_needs_the_records_before_the_enqueue(world, tmp_path, not
 
 
 def test_a_planned_file_the_policy_now_rejects_is_not_enqueued(world, tmp_path, not_in_library):
+    """The job does not enqueue it; the row goes per track (S2-R1 review #1: it used to stop at `needs_source`, and
+    every approval again met the same cached file)."""
     store, req = world["store"], request(world)
     resp, data = album_folder(tmp_path, req["rows"])
     first = req["rows"][0]["song_id"]
@@ -315,9 +317,9 @@ def test_a_planned_file_the_policy_now_rejects_is_not_enqueued(world, tmp_path, 
         store.set_preview(f"req-{req['id']}", cached)
         album_job.approve_request(store, req["id"])
         worker(world, srv, tmp_path).tick()
-    assert srv.posts == [(PEER, 8)] and not any(" - 01 - " in f for _, f in srv.enqueued)
-    assert store.external(first)["status"] == "needs_source"
-    assert store.approval(first)["result"] == "needs_source: no acceptable candidate"
+    assert srv.posts == [(PEER, 8), (PEER, 1)] and not any(" - 01 - " in f for _, f in srv.enqueued[:8])
+    assert len(srv.searched) == 2                                       # the album's, then row 1's own
+    assert store.external(first)["status"] == "ok"
 
 
 def test_a_row_ok_since_its_approval_is_not_enqueued(world, tmp_path, not_in_library):
@@ -983,3 +985,103 @@ def test_a_switched_row_whose_new_file_is_now_rejected_goes_per_track(world, tmp
     assert [c for c in calls if c[0] == rows[8]["song_id"]][-1] == (rows[8]["song_id"], False, {PEER})
     assert srv.posts == [(PEER, 9), (PEER_B, 1)]                              # the per-track fetch's own POST
     assert store.external(rows[8]["song_id"])["status"] == "ok"
+
+
+# --- S2-R1 review fixes
+
+def test_a_row_whose_first_planned_file_fails_its_own_tier_goes_per_track(world, tmp_path, not_in_library,
+                                                                          monkeypatch):
+    """Review #1: the plan is made at the first row's tier; a row whose planned file its own tier rejects is fetched
+    per track at once (a planned fetch of that file would only say `needs_source`, again on every approval)."""
+    store, req = world["store"], request(world)
+    rows = req["rows"]
+    resp, data = album_folder(tmp_path, rows)
+    real = album_job.planned_candidate
+
+    def scored(prefer, wanted, policy):
+        c = real(prefer, wanted, policy)
+        if prefer["filename"] == a_file(rows, 4):
+            c.rejected = "below its tier"
+        return c
+
+    monkeypatch.setattr(album_job, "planned_candidate", scored)
+    with FakeSlskdServer([resp], world["dl"], files=data) as srv:
+        calls = []
+
+        def fetcher(wanted_id, **kw):
+            calls.append((wanted_id, kw.get("planned", False)))
+            return fetch(wanted_id, **kw)
+
+        run_album(world, srv, tmp_path, store, req, fetcher=fetcher)
+    assert [c for c in calls if c[0] == rows[3]["song_id"]] == [(rows[3]["song_id"], False)]
+    assert srv.posts == [(PEER, 8), (PEER, 1)]                         # the folder's 8, then row 4's own fetch
+    assert store.external(rows[3]["song_id"])["status"] == "ok"
+
+
+def test_a_folder_that_failed_is_not_planned_again_when_the_request_is_approved_again(world, tmp_path,
+                                                                                    not_in_library):
+    """Review #2: the cached plan remembers the folders a run failed; approving the request again plans afresh
+    without them, so a transcode folder is not downloaded a second time."""
+    store, req = world["store"], request(world)
+    rows = req["rows"]
+    resp, data = album_folder(tmp_path, rows)
+    with FakeSlskdServer([resp], world["dl"], files=data) as srv:
+        c = common(world, srv, tmp_path, verifier=verifier_failing("transcode", 2))
+        album_job.plan_request(store, c["slskd"], req["id"], poll_s=0.01)
+        album_job.approve_request(store, req["id"])
+        album_job.run(req["id"], store.pending_approvals(), **c)
+        assert srv.posts == [(PEER, 9)]
+        assert {r["status"] for r in store.request(req["id"])["rows"]} == {"ok", "failed"}
+        album_job.approve_request(store, req["id"])
+        album_job.run(req["id"], store.pending_approvals(), **c)
+    assert srv.posts == [(PEER, 9)]                                    # nothing sent to the distrusted folder again
+    cached = store.preview(f"req-{req['id']}")
+    assert cached["folders"] == [] and len(cached["failed"]) == 1
+    no_peer_anywhere(store, album_job.plan_request.__doc__)
+
+
+def test_a_planned_download_that_times_out_switches_its_folder(world, tmp_path, not_in_library):
+    """Review #4: a planned transfer that times out is a switch trigger (spec S2-05: "a transfer error or timeout"),
+    not an ordinary finding that waits for a second failure."""
+    store, req = world["store"], request(world)
+    rows = req["rows"]
+    responses, data = two_folders(tmp_path, rows)
+    with FakeSlskdServer(responses, world["dl"], files=data, complete=False) as srv:
+        run_album(world, srv, tmp_path, store, req, download_timeout_s=0.2)
+    first = switches(store)[0]
+    assert first.startswith(f"#{req['id']} folder 1: download timed out ({basename(a_file(rows, 1))}); "), first
+
+
+def test_records_sent_are_forgotten_when_the_job_fails_on_the_way(world, tmp_path, not_in_library, monkeypatch):
+    """Review #6: an error that escapes the job after a POST (here while it waits for the peer to start) cancels and
+    forgets the records it sent, so none lands unfiled later."""
+    store, req = world["store"], request(world)
+    resp, data = album_folder(tmp_path, req["rows"])
+
+    def broken(*a, **kw):
+        raise RuntimeError("store locked")
+
+    monkeypatch.setattr(album_job, "_started", broken)
+    with FakeSlskdServer([resp], world["dl"], files=data, complete=False) as srv:
+        out = run_album(world, srv, tmp_path, store, req)
+        left = transfer_files(SlskdClient(srv.url, srv.api_key).downloads(PEER))
+    assert srv.posts == [(PEER, 9)]
+    assert {o for _, o in out} == {"error: RuntimeError: store locked"}
+    assert left == [] and len([d for d in srv.deleted if d[2]]) == 9    # each record cancelled and forgotten
+
+
+def test_a_playlist_group_plan_counts_only_the_rows_it_approves(world, tmp_path, not_in_library):
+    """Review #9: plan_request for a playlist's album group plans the rows approve_request approves (an ambiguous
+    import row is neither)."""
+    store, req = world["store"], request(world)
+    rows = req["rows"]
+    store.db.execute("UPDATE requests SET kind='playlist', album='Mix', artist=NULL WHERE id=?", (req["id"],))
+    store.set_wanted_status(rows[8]["song_id"], "review", "several versions fit: s1, s2")
+    store.commit()
+    resp, data = album_folder(tmp_path, rows)
+    req = store.request(req["id"])
+    [g] = album_job.groups(req)
+    with FakeSlskdServer([resp], world["dl"], files=data) as srv:
+        shown = album_job.plan_request(store, SlskdClient(srv.url, srv.api_key), req["id"], poll_s=0.01,
+                                       group=g["key"])
+    assert [f["covers"] for f in shown["folders"]] == ["8 of 8"]
