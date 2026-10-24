@@ -1,0 +1,29 @@
+- 2026-10-22 06:56 · feature list written: 0/15 passing
+- 2026-10-22 07:20 · V1-01 · claude-opus-5-5 · passes=true · 23 min · 1/15 passing
+- 2026-10-22 07:32 · V1-02 · claude-sonnet-5-5 · passes=true · 11 min · 2/15 passing
+- 2026-10-22 07:32 · merged main into harness/dj-soulsync-review-2026-10-22
+- 2026-10-22 07:44 · V1 verified and tagged run/dj-soulsync-review-2026-10-22/V1
+- 2026-10-22 07:44 · V1 proposed for merging · https://github.com/mh550/dj-crate-streaming/pull/23
+- 2026-10-22 08:17 · V2-01 · claude-opus-5-5 · passes=true · 33 min · 3/15 passing
+- 2026-10-22 08:48 · V2-02 · claude-opus-5-5 · passes=true · 30 min · 4/15 passing
+- 2026-10-22 09:29 · V2-03a · claude-opus-5-5 · passes=true · 40 min · 5/15 passing
+- 2026-10-22 10:14 · V2-03b · claude-opus-5-5 · passes=true · 45 min · 6/15 passing
+- 2026-10-22 10:47 · V2-04 · claude-opus-5-5 · passes=true · 32 min · 7/15 passing
+- 2026-10-22 11:22 · V2-05 · claude-opus-5-5 · passes=true · 35 min · 8/15 passing
+- 2026-10-22 12:00 · V2-06 · claude-opus-5-5 · passes=true · 37 min · 9/15 passing
+- 2026-10-22 12:34 · V2-07 · claude-opus-5-5 · passes=true · 34 min · 10/15 passing
+- 2026-10-22 13:22 · V2-08 · claude-opus-5-5 · passes=true · 47 min · 11/15 passing
+- 2026-10-22 13:25 · verify V2: V2-08 failed the re-check, back in the queue (one more attempt)
+- 2026-10-22 13:38 · V2-08 · claude-opus-5-5 · passes=true · 13 min · 11/15 passing
+- 2026-10-22 13:42 · V2 verified and tagged run/dj-soulsync-review-2026-10-22/V2
+- 2026-10-22 13:42 · V2 proposed for merging · https://github.com/mh550/dj-crate-streaming/pull/24
+- 2026-10-22 14:03 · V3-01 · claude-opus-5-5 · passes=true · 21 min · 12/15 passing
+- 2026-10-22 14:27 · V3-02 · claude-opus-5-5 · passes=true · 23 min · 13/15 passing
+- 2026-10-22 14:29 · V3 verified and tagged run/dj-soulsync-review-2026-10-22/V3
+- 2026-10-22 14:29 · V3 proposed for merging · https://github.com/mh550/dj-crate-streaming/pull/25
+- 2026-10-22 15:15 · V4-01 · claude-opus-5-5 · passes=true · 46 min · 14/15 passing
+- 2026-10-22 15:37 · V4-02 · claude-opus-5-5 · passes=true · 22 min · 15/15 passing
+- 2026-10-22 15:39 · verify V4: V4-01 failed the re-check, back in the queue (one more attempt)
+- 2026-10-22 15:39 · verify V4: V4-02 failed the re-check, back in the queue (one more attempt)
+- 2026-10-22 16:00 · V4-01 · claude-opus-5-5 · passes=true · 21 min · 14/15 passing
+- 2026-10-22 16:15 · V4-02 · claude-opus-5-5 · passes=true · 14 min · 15/15 passing

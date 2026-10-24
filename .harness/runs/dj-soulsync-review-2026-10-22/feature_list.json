@@ -1,0 +1,321 @@
+{
+  "run": "dj-soulsync-review-2026-10-22",
+  "branch": "harness/dj-soulsync-review-2026-10-22",
+  "features": [
+    {
+      "id": "V1-01",
+      "milestone": "V1",
+      "kind": "docs",
+      "model": "opus",
+      "description": "docs/research/2026-10-22-soulsync/01-map.md describes what SoulSync is (process model, data stores, settings and credentials, deployment, tests and CI, module map, license) from the pinned clone, and docs/research/2026-10-22-soulsync/README.md exists as the report skeleton linking 01-09.",
+      "steps": [
+        "docs/research/2026-10-22-soulsync/README.md exists with: a `## Summary` placeholder (one line: `(written by V4-02)`), then a `## Sections` list linking `01-map.md` … `09-recommendations.md` by the spec's names, then empty headings `## Stage-by-stage comparison` (V3-01) and `## Fit to goals` (V3-02); the eight section links resolve once the files exist (01 exists now, the rest are named).",
+        "docs/research/2026-10-22-soulsync/01-map.md `## Process model` cites gunicorn.conf.py (worker_class gthread, workers 1 at SoulSync:gunicorn.conf.py:4-5), wsgi.py, web_server.py's app creation, how background workers are started (name the thread/worker classes under core/ with citations), and automation_engine.py's scheduler; a small ASCII diagram shows request → web_server → workers → database.",
+        "docs/research/2026-10-22-soulsync/01-map.md `## Data stores` says which SQLite files exist and where (grep `sqlite3.connect`/db paths in database/music_database.py and core/settings.py), gives the count of `CREATE TABLE` in database/music_database.py (118 at 34bf7cf9c741: `grep -c 'CREATE TABLE' database/music_database.py`), and lists the music tables grouped by subsystem (library, playlists/sync, wishlist/watchlist, downloads/candidates/peers, requests, quarantine/blocklist, metadata caches, settings/auth) with one line per table or per group of near-identical tables, each line citing its CREATE TABLE line; video_database.py and the audiobook/podcast tables are named once as skipped.",
+        "docs/research/2026-10-22-soulsync/01-map.md `## Settings and credentials` cites core/settings.py (config file path and format, env overrides) and core/credentials/ (what is stored, how encrypted or not), and states whether any API credential is embedded in the source (report the file and line and the mechanism, never the value; `grep -rnE 'client_id|client_secret|api_key' core/spotify*.py core/credentials` is the starting point).",
+        "docs/research/2026-10-22-soulsync/01-map.md `## Deployment` cites Dockerfile (base image, what is installed, which binaries: ffmpeg, fpcalc, beets?), docker-compose.yml (services, volumes, ports) and entrypoint.sh (what runs at start, migrations), and `## Tests and CI` gives the test file count (`find tests -name 'test_*.py' | wc -l`) and names the five .github/workflows files with one line each.",
+        "docs/research/2026-10-22-soulsync/01-map.md `## Module map` has one table row per V2 subsystem (intake, matching, soulseek, other sources, verification, filing/library, UI/API) listing its SoulSync files with line counts (`wc -l`), using the corrected paths from progress.md (post_processing.py, atomic_* and review_reject.py are under core/downloads/), and one line naming the skipped non-music modules (video_*, audiobook_*, podcast_*, database/video_database.py, api/video*).",
+        "docs/research/2026-10-22-soulsync/01-map.md `## License` quotes the MIT notice from SoulSync:license.txt:1-18 (copyright line and the notice-retention clause) and says what it requires of anything ported.",
+        "docs/research/2026-10-22-soulsync/01-map.md `## Maintenance health` is present as a heading with the line `(written by V1-02)`.",
+        "the citation check from progress.md (every `SoulSync:<path>:<line>` and `ours:<path>:<line>` in the file names an existing file and a line number no greater than its length) prints no BAD line",
+        "every claim without a citation carries the literal mark `*unverified*` (grep `unverified` finds them); no sentence states a SoulSync mechanism without either a citation or that mark",
+        ".harness/check.sh is green (docs only, so it must be: every test passes, none newly skipped)"
+      ],
+      "after": [],
+      "passes": true
+    },
+    {
+      "id": "V1-02",
+      "milestone": "V1",
+      "kind": "docs",
+      "model": "sonnet",
+      "description": "docs/research/2026-10-22-soulsync/01-map.md `## Maintenance health` reports SoulSync's release cadence, contributors and bus factor, open issues and the size of recent changes from read-only GitHub API calls, each figure with the `gh api` call that produced it and the date.",
+      "steps": [
+        "`## Maintenance health` in docs/research/2026-10-22-soulsync/01-map.md has a releases table: total count across all pages (`gh api --paginate 'repos/Nezreka/SoulSync/releases?per_page=100' --jq length` summed), the latest 10 tags with dates (3.5.9 on 2026-10-22 is the newest at init), and the median days between the latest 20 releases.",
+        "A contributors table from `gh api 'repos/Nezreka/SoulSync/contributors?per_page=100'`: the top 5 by contributions and the share of the top one (Nezreka had 7,590 of the total at init); a one-sentence bus-factor judgement follows from the numbers.",
+        "Open issues and PR counts (`gh api repos/Nezreka/SoulSync --jq '.open_issues_count'`, `gh api 'search/issues?q=repo:Nezreka/SoulSync+is:pr+is:open' --jq .total_count`), stars, created date, and the five most recent closed issues with titles, each from a cited `gh api` call.",
+        "Size of recent change: the number of commits in the last 30 days (`gh api --paginate 'repos/Nezreka/SoulSync/commits?since=2026-09-22T00:00:00Z&per_page=100' --jq length` summed) and the files changed and lines added/removed for the five newest merge commits to main (`gh api repos/Nezreka/SoulSync/commits/<sha> --jq '.stats, (.files|length)'`); a sentence on how often the internals the report cites (core/soulseek_client.py, core/downloads/) changed in those commits.",
+        "Every figure has the date it was read (2026-10-22 or later) and the command beside it; nothing was executed from the clone (`git -C ~/research/soulsync-src/SoulSync log` is depth-1 and useless for history: the section says so).",
+        ".harness/check.sh is green (docs only, so it must be: every test passes, none newly skipped)"
+      ],
+      "passes": true
+    },
+    {
+      "id": "V2-01",
+      "milestone": "V2",
+      "kind": "docs",
+      "model": "opus",
+      "description": "docs/research/2026-10-22-soulsync/02-intake.md explains where SoulSync's wanted music comes from (Spotify auth flows, other playlist sources, wishlist and watchlist, requests, Lidarr compatibility) with citations, and compares it with our playlist sources, import-playlist, seed-spotify and the planned S2-02 and S3.",
+      "steps": [
+        "docs/research/2026-10-22-soulsync/02-intake.md `## What SoulSync does` has a `### Spotify` part citing core/spotify_client.py (which OAuth flow(s): authorization code, PKCE, client credentials; where client id/secret come from; whether the user brings their own app), core/spotify_public_api.py and core/spotify_public_scraper.py (what is fetched without credentials and from which URL/endpoint shape), core/spotify_token_cache.py and core/spotify_free_metadata.py, and states how it copes with Spotify's 2026 developer-mode limits, citing the code or marking the claim `*unverified*`.",
+        "A `### Other playlist sources` part covers Tidal, Deezer, YouTube Music, Beatport, ListenBrainz with one paragraph each citing api/source_playlists.py, api/mirrored_playlists.py, core/playlists/, core/sync/ and services/sync_service.py (what a 'mirrored playlist' is, how often sync runs, what it writes).",
+        "`### Wishlist and watchlist` cites core/wishlist*.py and core/watchlist*.py (what enters the wishlist, retry cadence, how an artist watchlist adds albums); `### Requests` cites api/music_requests.py, api/request.py and core/requests/ (request record fields, states, who approves); `### Lidarr compatibility` cites core/lidarr_compat/ in at most one paragraph.",
+        "An ASCII flow shows source → wanted record → download queue with the function names at each arrow.",
+        "`## How ours does it` cites ours:sourcing/playlist_sources.py, ours:sourcing/import_playlist.py, ours:sourcing/spotify_csv.py, the `seed-spotify` subcommand in ours:sourcing/cli.py, ours:crates/store.py's wanted rows, and the planned S2-02 and S3-01/S3-02 in ours:docs/specs/2026-10-22-downloads-and-requests.md (line-cited).",
+        "`## The difference that matters` judges against goals C (requests from the phone, Spotify only through Michael's own app) and D (albums and playlists at once) by name.",
+        "the file has the four section headings in order: `## What SoulSync does`, `## How ours does it`, `## The difference that matters`, `## Worth taking?`, and ends with a `## Worth taking?` verdict line starting with `**Verdict:** yes`, `**Verdict:** adapt` or `**Verdict:** no`",
+        "the citation check from progress.md (every `SoulSync:<path>:<line>` and `ours:<path>:<line>` in the file names an existing file and a line number no greater than its length) prints no BAD line",
+        "every claim without a citation carries the literal mark `*unverified*` (grep `unverified` finds them); no sentence states a SoulSync mechanism without either a citation or that mark",
+        ".harness/check.sh is green (docs only, so it must be: every test passes, none newly skipped)"
+      ],
+      "after": [
+        "V1-01"
+      ],
+      "passes": true
+    },
+    {
+      "id": "V2-02",
+      "milestone": "V2",
+      "kind": "docs",
+      "model": "opus",
+      "description": "docs/research/2026-10-22-soulsync/03-matching.md explains how SoulSync decides 'have it / missing', track identity, versions and editions, with citations, and compares it with import_playlist.choose, sourcing/identity.py, docs/identity.md and D26.",
+      "steps": [
+        "docs/research/2026-10-22-soulsync/03-matching.md `## What SoulSync does` cites core/matching_engine.py (the scoring function(s): which fields, normalisation, thresholds as numbers from the code), core/matching/, core/client_match.py (library match), core/source_ids.py (which external ids are kept: Spotify, ISRC, MusicBrainz, Deezer, …), core/download_plugins/release_identity.py and core/edition_grouping.py (how editions and versions are grouped), core/discovery/isrc_match.py, core/musicbrainz_*.py and core/acoustid_client.py (when AcoustID is used).",
+        "It answers in a short table: how a remaster, a live take, an extended mix and a radio edit of the same song are told apart, each cell citing the code or marked `*unverified*`.",
+        "`## How ours does it` cites `choose` in ours:sourcing/import_playlist.py, ours:sourcing/identity.py (song/version/copy), ours:docs/identity.md, the title-slot rule in ours:sourcing/scorer.py and D26 at ours:docs/specs/2026-10-17-amperfy-pivot.md:21.",
+        "`## The difference that matters` says, with citations, whether SoulSync's matching would have accepted or rejected the ext-74 wrong-song case described in ours:docs/specs/2026-10-22-downloads-and-requests.md (the same-named album folder).",
+        "the file has the four section headings in order: `## What SoulSync does`, `## How ours does it`, `## The difference that matters`, `## Worth taking?`, and ends with a `## Worth taking?` verdict line starting with `**Verdict:** yes`, `**Verdict:** adapt` or `**Verdict:** no`",
+        "the citation check from progress.md (every `SoulSync:<path>:<line>` and `ours:<path>:<line>` in the file names an existing file and a line number no greater than its length) prints no BAD line",
+        "every claim without a citation carries the literal mark `*unverified*` (grep `unverified` finds them); no sentence states a SoulSync mechanism without either a citation or that mark",
+        ".harness/check.sh is green (docs only, so it must be: every test passes, none newly skipped)"
+      ],
+      "after": [
+        "V1-01"
+      ],
+      "passes": true
+    },
+    {
+      "id": "V2-03a",
+      "milestone": "V2",
+      "kind": "docs",
+      "model": "opus",
+      "description": "docs/research/2026-10-22-soulsync/04-soulseek.md part 1: how SoulSync searches Soulseek, builds query variants, scores candidates, chooses a folder for an album, falls back when a track fails, and remembers peers, with citations, compared with our scorer, fetch and the planned S1-06 and S2-04.",
+      "steps": [
+        "docs/research/2026-10-22-soulsync/04-soulseek.md exists with the four section headings; `## What SoulSync does` has `### Search and candidates` citing core/download_plugins/query_variants.py (every variant form, in order), core/soulseek_client.py's search call and its wait/poll for results, core/downloads/candidates.py and core/downloads/candidate_pool.py (the candidate record fields) and core/download_plugins/candidate_store.py.",
+        "`### Scoring` gives the scoring terms and their weights or thresholds as numbers with line citations (format, bitrate, size, filename/title match, peer speed and queue length, duration), from core/downloads/prioritize.py, core/downloads/observed_speed.py and the scorer in soulseek_client.py or matching_engine.py.",
+        "`### Album requests and folder choice` cites core/download_plugins/album_bundle.py and core/downloads/album_bundle_dispatch.py and core/downloads/pinned_batch.py: how one peer folder is chosen for an album, what 'pinned' means, how release identity (release_identity.py) is used, and an ASCII flow of album request → folder candidates → chosen folder → per-track dispatch.",
+        "`### When a track fails` states, with citations, the order of retries: same peer again, another peer for that track, or a switch of the whole album to another folder, and how many times; then compares it line by line with goal E (primary folder → one secondary folder preferring the same release → per-track last) and with the planned S2-04 and S1-06 in ours:docs/specs/2026-10-22-downloads-and-requests.md.",
+        "`### Peer memory` cites core/downloads/failed_blocklist.py, core/downloads/peer_observation.py and core/downloads/soulseek_identity.py: what is remembered per peer, for how long, and what blocks a peer.",
+        "`## How ours does it` (part 1) cites ours:sourcing/scorer.py (the score terms), ours:sourcing/fetch.py (search and pick), ours:sourcing/policy.py (D24 floor), ours:sourcing/fake_slskd.py (what the fake models) and the 'one album spread across 5 peers and 4 releases' finding in the downloads spec.",
+        "`## The difference that matters` and `## Worth taking?` exist with content for part 1 and a line `(part 2, transfers: V2-03b)` where part 2 will add to them.",
+        "the citation check from progress.md (every `SoulSync:<path>:<line>` and `ours:<path>:<line>` in the file names an existing file and a line number no greater than its length) prints no BAD line",
+        "every claim without a citation carries the literal mark `*unverified*` (grep `unverified` finds them); no sentence states a SoulSync mechanism without either a citation or that mark",
+        ".harness/check.sh is green (docs only, so it must be: every test passes, none newly skipped)"
+      ],
+      "after": [
+        "V1-01"
+      ],
+      "passes": true
+    },
+    {
+      "id": "V2-03b",
+      "milestone": "V2",
+      "kind": "docs",
+      "model": "opus",
+      "description": "docs/research/2026-10-22-soulsync/04-soulseek.md part 2: how SoulSync enqueues, finds, polls, times out, cancels and removes slskd transfers, handles 4xx/5xx and slskd or VPN outages, and throttles; with the table of every slskd endpoint it calls, compared with our slskd_client and fetch and the planned S1-04/S1-05.",
+      "steps": [
+        "docs/research/2026-10-22-soulsync/04-soulseek.md gains `### Transfers` under `## What SoulSync does`, citing core/soulseek_client.py for enqueue (one POST per file or per peer with many files: cite the body built), how it finds its own transfer afterwards (by id, by filename, by peer), the poll loop and interval, the timeout(s) as numbers, cancel, and remove (whether `remove=true` is sent; SoulSync:core/soulseek_client.py:1250 names the pattern), plus core/downloads/monitor.py, cancel.py, lifecycle.py and staging.py (what a download's state machine is: list the states).",
+        "`### Errors and outages` cites how a 4xx/5xx from slskd is handled (which exceptions, retries, backoff), how slskd being down or a VPN drop is detected (core/connection_detect.py, the server-state probe at SoulSync:core/soulseek_client.py:2901-2902) and what happens to in-flight transfers then; `### Throttling` cites core/slskd_throttle.py (limits as numbers) and core/download_engine/rate_limit.py.",
+        "A table `### Every slskd endpoint SoulSync calls` has one row per distinct method+path (found via `grep -nE 'transfers/|searches|users/|server|session|application' core/soulseek_client.py`, note the `/api/v0/` prefix at :210 and the direct path at :316), with columns: method, path, request body fields, response fields read, cite line(s), and the fixed note `from SoulSync's code, not captured`; the row count is stated and is at least 8.",
+        "The table is followed by a short list `### What our S1-04 and S2 should capture`: the response shapes we have never captured (the enqueue response, `/users/{peer}/directory` browse, the per-transfer record), each tied to an S1-04 or S2 feature by id.",
+        "`## How ours does it` gains part 2 citing ours:sourcing/slskd_client.py (every call it makes, by line), the transfer loop in ours:sourcing/fetch.py, the hotfix's per-peer 404 handling, and the planned S1-04 (hygiene), S1-05 (reasons name endpoint) and S1-06 in the downloads spec.",
+        "`## The difference that matters` covers each of the 2026-10-21 failure classes that touch transfers (404 from GET /transfers/downloads/{peer}, stale records from DELETE without remove=true, VPN drop mid-transfer) with what SoulSync would have done, each cited; the `(part 2, transfers: V2-03b)` placeholders from V2-03a are gone.",
+        "the file has the four section headings in order: `## What SoulSync does`, `## How ours does it`, `## The difference that matters`, `## Worth taking?`, and ends with a `## Worth taking?` verdict line starting with `**Verdict:** yes`, `**Verdict:** adapt` or `**Verdict:** no`",
+        "the citation check from progress.md (every `SoulSync:<path>:<line>` and `ours:<path>:<line>` in the file names an existing file and a line number no greater than its length) prints no BAD line",
+        "every claim without a citation carries the literal mark `*unverified*` (grep `unverified` finds them); no sentence states a SoulSync mechanism without either a citation or that mark",
+        ".harness/check.sh is green (docs only, so it must be: every test passes, none newly skipped)"
+      ],
+      "after": [
+        "V1-01",
+        "V2-03a"
+      ],
+      "passes": true
+    },
+    {
+      "id": "V2-04",
+      "milestone": "V2",
+      "kind": "docs",
+      "model": "opus",
+      "description": "docs/research/2026-10-22-soulsync/05-other-sources.md gives one short paragraph per non-Soulseek music source in SoulSync (how it gets audio, which credentials, a legality / terms-of-service flag) and explains how the orchestrator picks between sources.",
+      "steps": [
+        "docs/research/2026-10-22-soulsync/05-other-sources.md has one `### <Source>` paragraph for each of Deezer, Tidal, Qobuz, Amazon, HiFi, YouTube/yt-dlp, SoundCloud, Bandcamp, JioSaavn, torrent, Usenet/Prowlarr, Lidarr (12 headings), each citing its client file (core/deezer_download_client.py, core/qobuz_client.py, core/amazon_download_client.py, core/hifi_client.py, core/bandcamp_client.py, core/jiosaavn_client.py, core/download_plugins/torrent.py, core/download_plugins/usenet.py, core/prowlarr_client.py, core/lidarr_download_client.py, and the Tidal/YouTube/SoundCloud files found by `ls core | grep -iE 'tidal|youtube|ytdlp|yt_dlp|soundcloud'`) and ending with a bold flag: `**ToS/legal:** streaming rip`, `**ToS/legal:** grey`, or `**ToS/legal:** clean`, with one clause of reasoning; a source whose code is absent is listed as `not in the clone at 34bf7cf9c741`.",
+        "Each paragraph says which credentials it needs (account/ARL/token/API key) and whether any are embedded in the source (file and line, mechanism only, no values).",
+        "`### How the orchestrator chooses` cites core/download_orchestrator.py and core/download_plugins/registry.py and base.py: the source order, the per-source enable flags, and when it falls through to the next source; an ASCII flow of request → plugin order → first success.",
+        "`## How ours does it` says in two sentences that ours is Soulseek-only by design (D7, D26) citing ours:docs/architecture.md and ours:sourcing/fetch.py; `## The difference that matters` names the risk of streaming rips for a DJ library (quality provenance, D24) and `## Worth taking?` gives a verdict per source group.",
+        "the file has the four section headings in order: `## What SoulSync does`, `## How ours does it`, `## The difference that matters`, `## Worth taking?`, and ends with a `## Worth taking?` verdict line starting with `**Verdict:** yes`, `**Verdict:** adapt` or `**Verdict:** no`",
+        "the citation check from progress.md (every `SoulSync:<path>:<line>` and `ours:<path>:<line>` in the file names an existing file and a line number no greater than its length) prints no BAD line",
+        "every claim without a citation carries the literal mark `*unverified*` (grep `unverified` finds them); no sentence states a SoulSync mechanism without either a citation or that mark",
+        ".harness/check.sh is green (docs only, so it must be: every test passes, none newly skipped)"
+      ],
+      "after": [
+        "V1-01"
+      ],
+      "passes": true
+    },
+    {
+      "id": "V2-05",
+      "milestone": "V2",
+      "kind": "docs",
+      "model": "opus",
+      "description": "docs/research/2026-10-22-soulsync/06-verification.md explains what SoulSync does to prove a download is right and good (validation, post-processing, atomic publish, album consistency, AcoustID verification, quality rules, quarantine, blocklist) and compares it with sourcing/verify.py, acoustid.py, policy.py, D24 and the S1-02/S2-03 plans.",
+      "steps": [
+        "docs/research/2026-10-22-soulsync/06-verification.md `## What SoulSync does` cites core/downloads/validation.py (each check in order: extension, size, duration vs expected, bitrate, header/decode, with thresholds as numbers), core/downloads/post_processing.py (steps after a transfer completes), core/downloads/atomic_album_publish.py, atomic_manifest.py and atomic_recovery.py (what 'atomic' protects, where the manifest lives, what recovery replays), core/album_consistency.py (what must agree across an album), core/acoustid_verification.py and core/audio_length.py, core/quality/ (quality profiles and the rules), core/replaygain.py (when gain is computed), api/quarantine.py and core/downloads/review_reject.py (what lands in quarantine, how a human resolves it) and core/blocklist/.",
+        "A table answers: fake/transcode detection (yes/no, how), wrong-song protection, album consistency checks, quarantine; and a paragraph `### Would ext-74 have been caught?` answers for the wrong-song case in ours:docs/specs/2026-10-22-downloads-and-requests.md with the exact SoulSync check (or marks `*unverified*` and says why).",
+        "`## How ours does it` cites ours:sourcing/verify.py (the checks and `_acoustid_check`), ours:sourcing/acoustid.py, ours:sourcing/policy.py and deploy/policy.toml (D24 floor), ours:docs/download-validation.md, and the planned S1-02 and S2-03 in the downloads spec.",
+        "`## The difference that matters` judges against D24 (one DJ quality) and D26 (exact track) by name.",
+        "the file has the four section headings in order: `## What SoulSync does`, `## How ours does it`, `## The difference that matters`, `## Worth taking?`, and ends with a `## Worth taking?` verdict line starting with `**Verdict:** yes`, `**Verdict:** adapt` or `**Verdict:** no`",
+        "the citation check from progress.md (every `SoulSync:<path>:<line>` and `ours:<path>:<line>` in the file names an existing file and a line number no greater than its length) prints no BAD line",
+        "every claim without a citation carries the literal mark `*unverified*` (grep `unverified` finds them); no sentence states a SoulSync mechanism without either a citation or that mark",
+        ".harness/check.sh is green (docs only, so it must be: every test passes, none newly skipped)"
+      ],
+      "after": [
+        "V1-01"
+      ],
+      "passes": true
+    },
+    {
+      "id": "V2-06",
+      "milestone": "V2",
+      "kind": "docs",
+      "model": "opus",
+      "description": "docs/research/2026-10-22-soulsync/07-filing-library.md explains SoulSync's tags, file placement, library model and Navidrome handling (beets or not, what tags are written and when, scans, playlist edits and their guards, deletes/moves and reverse logs) and compares it with filer.py, playlist_edit.py, trash.py, D18/D22/D29/D44 and the CLAUDE.md safety invariants.",
+      "steps": [
+        "docs/research/2026-10-22-soulsync/07-filing-library.md `## What SoulSync does` answers five questions, each as a `### ` heading with citations: does it use beets (core/settings.py and the files found by `grep -rli beets core --include=*.py`: what role beets has, if any); what it writes into tags and when (core/tag_writer.py: the tag list by field, core/metadata/, core/enrichment/); how it triggers and awaits Navidrome scans (core/navidrome_client.py: the endpoint, the poll, the timeout; core/media_server/); how it edits Navidrome playlists and with what guards (navidrome_client.py and core/playlists/: create/update/delete calls, whether it reads before it writes, whether it touches playlists it did not create); what it deletes or moves and whether there is a reverse log (core/library_reorganize.py, core/reorganize_queue.py, core/reorganize_runner.py, core/repair_worker.py, api/deleted_files.py, core/maintenance/).",
+        "The import path is one ASCII flow: completed download → core/imports/pipeline.py → core/auto_import_worker.py → library path template (cite the template and its settings key) → tags → Navidrome scan.",
+        "`## How ours does it` cites ours:sourcing/filer.py (D18 one beets writer, D22 version label, D29 confident-match tags), ours:crates/playlist_edit.py (the guarded index edit), ours:crates/trash.py and MOVES.txt, ours:crates/placement.py (D44), the four safety invariants in ours:CLAUDE.md, ours:docs/hard-won-facts.md (the Navidrome scan and playlist facts), and the album-path decision (S2-06 in the downloads spec).",
+        "`## The difference that matters` has a table with one row per CLAUDE.md safety invariant (never trash while a playlist holds the file; scan between repoint and trash; recompute groups before acting; every destructive step has a logged reverse) and the column 'SoulSync: honours / conflicts / not addressed' with a citation each.",
+        "the file has the four section headings in order: `## What SoulSync does`, `## How ours does it`, `## The difference that matters`, `## Worth taking?`, and ends with a `## Worth taking?` verdict line starting with `**Verdict:** yes`, `**Verdict:** adapt` or `**Verdict:** no`",
+        "the citation check from progress.md (every `SoulSync:<path>:<line>` and `ours:<path>:<line>` in the file names an existing file and a line number no greater than its length) prints no BAD line",
+        "every claim without a citation carries the literal mark `*unverified*` (grep `unverified` finds them); no sentence states a SoulSync mechanism without either a citation or that mark",
+        ".harness/check.sh is green (docs only, so it must be: every test passes, none newly skipped)"
+      ],
+      "after": [
+        "V1-01"
+      ],
+      "passes": true
+    },
+    {
+      "id": "V2-07",
+      "milestone": "V2",
+      "kind": "docs",
+      "model": "opus",
+      "description": "docs/research/2026-10-22-soulsync/08-ui-api.md explains SoulSync's UI, API and phone story (routes, webui, auth and profiles, streaming/playback/radio, MCP, automation, webhooks; phone and home-screen use; how a request flows from a phone, link or search) and compares it with crates/service.py, web/ and the planned S3 API, against the B options.",
+      "steps": [
+        "docs/research/2026-10-22-soulsync/08-ui-api.md `## What SoulSync does` cites: how routes are registered (web_server.py blueprint registration lines and the api/ package list: give the count of api/*.py files and the route count from `grep -cE '@.*\\.route\\(' web_server.py api/*.py` summed), webui/index.html (one-file SPA of 12,932 lines at 34bf7cf9c741; which framework, if any; whether a web app manifest or service worker exists: `grep -nE 'manifest|serviceWorker|viewport' webui/index.html` and the `templates/` folder content), api/auth.py and the profiles files (login, sessions, per-profile permissions), core/streaming/, core/playback/ and core/radio/ (does it stream audio itself; which endpoint; transcoding?), core/mcp/ and api/mcp.py (what the MCP server exposes), core/automation_engine.py (triggers and actions), and webhooks (grep `webhook` under api/ and core/).",
+        "`### A request from the phone` traces three paths with citations: a search in the UI, a pasted link, and a share-sheet or bookmarklet if any exists; each ends at the API call and the record it creates (api/music_requests.py or api/request.py).",
+        "`### Phone fit` states, from the code, whether the UI is responsive (viewport meta, CSS breakpoints: cite the `@media` lines or their absence) and installable (manifest/service worker present or absent), and marks anything not provable from code `*unverified*`.",
+        "`## How ours does it` cites ours:crates/service.py (the routes), ours:web/ (index.html, app.js widths), ours:docs/architecture.md section on streaming (D19/D25) and the planned S3-01..S3-06; `## The difference that matters` has one paragraph per B option (Amperfy + web app + Shortcut; Subsonic proxy in crates; native fork) saying how SoulSync would fit or not.",
+        "the file has the four section headings in order: `## What SoulSync does`, `## How ours does it`, `## The difference that matters`, `## Worth taking?`, and ends with a `## Worth taking?` verdict line starting with `**Verdict:** yes`, `**Verdict:** adapt` or `**Verdict:** no`",
+        "the citation check from progress.md (every `SoulSync:<path>:<line>` and `ours:<path>:<line>` in the file names an existing file and a line number no greater than its length) prints no BAD line",
+        "every claim without a citation carries the literal mark `*unverified*` (grep `unverified` finds them); no sentence states a SoulSync mechanism without either a citation or that mark",
+        ".harness/check.sh is green (docs only, so it must be: every test passes, none newly skipped)"
+      ],
+      "after": [
+        "V1-01"
+      ],
+      "passes": true
+    },
+    {
+      "id": "V2-08",
+      "milestone": "V2",
+      "kind": "review",
+      "model": "opus",
+      "description": "Review of the V2 section files: citations spot-checked and fixed, unverified marks checked, the four-section structure and the 'Worth taking?' verdicts consistent across 02-08, before V3 builds on them.",
+      "steps": [
+        "For each of the seven files 02-intake.md … 08-ui-api.md in docs/research/2026-10-22-soulsync, at least two `SoulSync:` citations and one `ours:` citation were opened at the cited line and confirmed to support the sentence that cites them (a table in the progress entry lists file, citation, holds yes/no); every wrong one is fixed in the file.",
+        "The citation check from progress.md prints no BAD line for every file in the folder; every `*unverified*` mark was reread and either kept (with a clause saying what would verify it) or replaced by a citation now found.",
+        "Each of 02-08 has exactly the four `## ` section headings in order and a `**Verdict:**` line; README.md's `## Sections` list links all eight files and each link resolves (`ls`).",
+        "Any claim about SoulSync that two section files make differently (e.g. the retry order, whether beets is used, whether it streams) is reconciled: both files now say the same thing, with the citation, or the disagreement is written down as a finding in the progress entry.",
+        "No file under docs/research/2026-10-22-soulsync/ contains a code block longer than 10 lines copied from the clone (`grep -c` of SoulSync function bodies; paraphrase and cite instead).",
+        ".harness/check.sh is green (docs only, so it must be: every test passes, none newly skipped)"
+      ],
+      "after": [
+        "V2-01",
+        "V2-02",
+        "V2-03a",
+        "V2-03b",
+        "V2-04",
+        "V2-05",
+        "V2-06",
+        "V2-07"
+      ],
+      "passes": true
+    },
+    {
+      "id": "V3-01",
+      "milestone": "V3",
+      "kind": "docs",
+      "model": "opus",
+      "description": "docs/research/2026-10-22-soulsync/README.md `## Stage-by-stage comparison` holds the stage table (SoulSync, ours built, ours planned S1-S4, which is stronger and why), what SoulSync would have done for each 2026-10-21 failure class, and how SoulSync stands to each of Michael's decisions.",
+      "steps": [
+        "The table in docs/research/2026-10-22-soulsync/README.md has exactly these 11 rows: intake, matching, search/score, album sourcing and fallback, transfer handling, verification, tagging/filing, Navidrome/playlists, UI/API, operations (deploy, backups, locks, observability), safety (approval gate, one beets writer, reverse logs, trash rules); and these columns: SoulSync, ours (built), ours (planned S1-S4), stronger and why; every cell that states a mechanism links the section file (`04-soulseek.md#...`) or cites a line.",
+        "`### The 2026-10-21 failure classes` has five sub-items (404 from GET /transfers/downloads/{peer}; wrong song from a same-named album folder; stale transfer records from DELETE without remove=true; VPN drop mid-transfer; one album across 5 peers and 4 releases), each stating with a citation what SoulSync would have done, and what ours did (ours:docs/specs/2026-10-22-downloads-and-requests.md, the findings table) and what the planned S-feature does.",
+        "`### Michael's decisions` is a table with one row per decision D7, D18, D22/D29, D24, D26, D27, D31/D35, D44: the decision in five words, SoulSync honours / conflicts / not addressed, and the citation; the decision text is cited from ours:docs/specs/2026-10-13-next-session-design.md (D7:61, D18:72, D22:76) and ours:docs/specs/2026-10-17-amperfy-pivot.md (D24:19, D26:21, D27:22, D29:24, D31:26, D35:30, D44:39).",
+        "The operations row cites ours:CLAUDE.md (Live system section) for ours and SoulSync's Dockerfile/docker-compose.yml/entrypoint.sh and any backup or lock code (grep `backup`, `lock` under core/) for SoulSync.",
+        "the citation check from progress.md (every `SoulSync:<path>:<line>` and `ours:<path>:<line>` in the file names an existing file and a line number no greater than its length) prints no BAD line",
+        "every claim without a citation carries the literal mark `*unverified*` (grep `unverified` finds them); no sentence states a SoulSync mechanism without either a citation or that mark",
+        ".harness/check.sh is green (docs only, so it must be: every test passes, none newly skipped)"
+      ],
+      "after": [
+        "V2"
+      ],
+      "passes": true
+    },
+    {
+      "id": "V3-02",
+      "milestone": "V3",
+      "kind": "docs",
+      "model": "opus",
+      "description": "docs/research/2026-10-22-soulsync/README.md `## Fit to goals` says for each of goals B, C, D, E and crates whether SoulSync has it, partly, or not, how, and the cost of getting it from SoulSync versus building it ourselves.",
+      "steps": [
+        "`## Fit to goals` in docs/research/2026-10-22-soulsync/README.md has five `### ` parts: B the client (one paragraph per option 1-3 as named in ours:docs/specs/2026-10-22-soulsync-review.md), C requests from the phone, D more than one song at a time, E album-first sourcing, Crates for DJing (synced playlists, Mixxx reading the same library, D24, D26, D7).",
+        "Each part starts with a bold `**SoulSync: has / partly / no**` line, then how (linking the section file and citing), then a two-column cost line: `from SoulSync: <effort in harness nights> / build ours: <effort in harness nights>` with one sentence of reasoning each (the unit 'harness night' is defined once at the top of the section as one overnight run of this harness).",
+        "For E the part quotes goal E's three steps from the spec and marks each step as present, absent or different in SoulSync, citing 04-soulseek.md's `### When a track fails`.",
+        "For crates, the part states whether SoulSync would write to the same Navidrome playlists and beets index as ours and names the conflict (two writers; D18) with citations to 07-filing-library.md.",
+        "the citation check from progress.md (every `SoulSync:<path>:<line>` and `ours:<path>:<line>` in the file names an existing file and a line number no greater than its length) prints no BAD line",
+        "every claim without a citation carries the literal mark `*unverified*` (grep `unverified` finds them); no sentence states a SoulSync mechanism without either a citation or that mark",
+        ".harness/check.sh is green (docs only, so it must be: every test passes, none newly skipped)"
+      ],
+      "passes": true
+    },
+    {
+      "id": "V4-01",
+      "milestone": "V4",
+      "kind": "docs",
+      "model": "opus",
+      "description": "docs/research/2026-10-22-soulsync/09-recommendations.md weighs the four options (adopt wholesale, run beside, port pieces, learn only) on effort, risk, maintenance, licensing and what changes in our stack, recommends one with ordered next steps, and says keep/change/drop for every S1-S4 feature of the queued runs, with draft spec deltas and a 'Questions for Michael' section.",
+      "steps": [
+        "docs/research/2026-10-22-soulsync/09-recommendations.md has `## Options` with four `### (a) Adopt wholesale`, `### (b) Run it beside ours`, `### (c) Port specific pieces`, `### (d) Learn only` parts, each with a table of: effort (in harness nights, and a days/weeks equivalent), risk (named failure modes), ongoing maintenance (SoulSync's release cadence from 01-map.md `## Maintenance health`, cited), licensing (MIT notice retention from 01-map.md `## License`), what changes or is lost in our stack (named modules).",
+        "`### (b)` names the integration points (which SoulSync endpoints or files ours would call or watch) and the conflicts: two writers to the library and beets (D18), Navidrome playlists (D27), the approval gate (D7), the `amperfy` account; each with a citation to the section file or code.",
+        "`### (c)` lists each candidate module as a table row: SoulSync file(s), what it would replace or extend in ours (file), the port effort, and the MIT notice requirement.",
+        "`## Recommendation` names one option in the first sentence and gives a numbered list of next steps (at least 5), each one with a verb, a file or spec it touches, and a size.",
+        "`## What it means for the queued runs` has one table row per S feature in ours:docs/specs/2026-10-22-downloads-and-requests.md (S1-01..S1-08, S2-01..S2-07, S3-01..S3-06, S4-01, S4-02: 23 rows) with columns: keep / change / drop, why (one sentence, citing the SoulSync section that motivates it); every `change` row has a `### Spec delta: S<n>-<m>` block below the table with the proposed replacement text, marked `draft, not applied`.",
+        "`## Questions for Michael` lists every question raised during the run (including those in progress.md's initializer entry) as: the question, the simplest assumption taken, where in the report the assumption is used; none is left without an assumption.",
+        "the citation check from progress.md (every `SoulSync:<path>:<line>` and `ours:<path>:<line>` in the file names an existing file and a line number no greater than its length) prints no BAD line",
+        "every claim without a citation carries the literal mark `*unverified*` (grep `unverified` finds them); no sentence states a SoulSync mechanism without either a citation or that mark",
+        ".harness/check.sh is green (docs only, so it must be: every test passes, none newly skipped)"
+      ],
+      "after": [
+        "V3"
+      ],
+      "passes": true
+    },
+    {
+      "id": "V4-02",
+      "milestone": "V4",
+      "kind": "review",
+      "model": "opus",
+      "description": "An Opus review subagent read the whole report, spot-checked at least 20 citations and fixed the wrong ones, checked every unverified mark; docs/research/2026-10-22-soulsync/README.md starts with a one-page summary (verdict, top 5 findings, next steps), and docs/next-todos.md has one line pointing at the report.",
+      "steps": [
+        "A review subagent (Opus) read every file in docs/research/2026-10-22-soulsync; its spot-check table (in the progress entry) has at least 20 rows: 15 `SoulSync:` and 5 `ours:` citations across at least six files, each with the sentence checked and holds yes/no; every 'no' is fixed in the file and the fix is named.",
+        "Every `*unverified*` mark across the folder is listed in the progress entry with: kept (and what would verify it) or resolved (the citation added); the citation check from progress.md prints no BAD line for the whole folder.",
+        "`## Summary` at the top of docs/research/2026-10-22-soulsync/README.md is at most one page (under 60 lines): the verdict (which option, one sentence), `### Top 5 findings` (numbered, each one sentence linking its section file), `### Next steps` (numbered, mirroring 09-recommendations.md `## Recommendation`), and the line `Questions for Michael: see 09-recommendations.md`.",
+        "docs/next-todos.md has exactly one new line, under a dated 2026-10-22 bullet in `## State at hand-off` or a new `## Research` heading, linking `research/2026-10-22-soulsync/README.md` and stating the verdict in five words; `git diff --stat origin/main..HEAD -- docs/next-todos.md` shows one file and only insertions.",
+        "`git diff --stat origin/main..HEAD` lists only files under docs/research/2026-10-22-soulsync/, docs/next-todos.md and .harness/runs/dj-soulsync-review-2026-10-22/; no .py file changed in this run.",
+        "Every section file 01-09 and README.md is linked from README.md `## Sections` and each link resolves; the report nowhere contains a copied secret or credential value (`grep -rnE '[A-Za-z0-9]{32,}' docs/research/2026-10-22-soulsync/` shows only commit shas or nothing).",
+        ".harness/check.sh is green (docs only, so it must be: every test passes, none newly skipped)"
+      ],
+      "passes": true
+    }
+  ]
+}

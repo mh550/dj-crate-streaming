@@ -1,0 +1,238 @@
+{
+ "type": "album",
+ "name": "I'm Still in Love With You",
+ "uri": "spotify:album:2nTlIPIQ7fHOnNN7BRch0Z",
+ "id": "2nTlIPIQ7fHOnNN7BRch0Z",
+ "title": "I'm Still in Love With You",
+ "subtitle": "Al Green",
+ "isPreRelease": false,
+ "releaseDate": null,
+ "duration": 0,
+ "isPlayable": true,
+ "playabilityReason": "PLAYABLE",
+ "isExplicit": false,
+ "hasVideo": false,
+ "relatedEntityUri": "spotify:album:2nTlIPIQ7fHOnNN7BRch0Z",
+ "trackList": [
+  {
+   "uri": "spotify:track:2OdD7yoTyaj3E5lqV9Oyhe",
+   "uid": "e27225763df54e00ca7b",
+   "title": "I'm Still In Love With You",
+   "subtitle": "Al Green",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 196266,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/8c7beb23516468b44512ef6c6b4945a169be8335"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:1x2FFSPAozrroJ3P6I8wS0",
+   "uid": "b6caca49d3147ec9d3a6",
+   "title": "I'm Glad You're Mine",
+   "subtitle": "Al Green",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 179360,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/3b092db9dcd6ae3977d3ae4ad2b1060b4a3400a9"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:6NW0y8AxOfqqC7FxRjWTGF",
+   "uid": "60736b647c6efcefe42a",
+   "title": "Love And Happiness",
+   "subtitle": "Al Green",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 303306,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/aa3aab6e807bc84c4453080a4194c30f7e3f8cd4"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:1td7A04UmSHRrsp9wf4fE1",
+   "uid": "f4721487cc6f4f0c5c7e",
+   "title": "What A Wonderful Thing Love Is",
+   "subtitle": "Al Green",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 218026,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/6ce93a0912a9a1029a57c31b532bbd1b140755eb"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:68oj0IaxJA04kgnta1ZXeq",
+   "uid": "3621fe42784027d61e6a",
+   "title": "Simply Beautiful",
+   "subtitle": "Al Green",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 255666,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/228a8461147c656a04b0a75c4011c29b595de8e5"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:4NBM6N6e5sSiGm6jJbjJID",
+   "uid": "077780f3075ba0cdfe8c",
+   "title": "Oh ,Pretty Woman",
+   "subtitle": "Al Green",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 205733,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/89e17d8c6cb77dad89d79a3a4d68994408aa78e2"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:5U7H4owmRZEpyxI7I0js1k",
+   "uid": "d033acdad73f34629474",
+   "title": "For The Good Times",
+   "subtitle": "Al Green",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 392840,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/f6c48a778df58e5486987116d7a962358608e0f8"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:5vMFdxWvoBj6ikAcbARLgs",
+   "uid": "6e079143fb12c21fb20d",
+   "title": "Look What You Done For Me",
+   "subtitle": "Al Green",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 186893,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/2a5ac1d8a0a1028b489d4ecc429dd5a18da3d8f9"
+   },
+   "entityType": "track"
+  },
+  {
+   "uri": "spotify:track:5et6dcJzYJB9ZnQBHMDXPa",
+   "uid": "facf66645e87e9823bb5",
+   "title": "One Of These Good Old Days",
+   "subtitle": "Al Green",
+   "isExplicit": false,
+   "isNineteenPlus": false,
+   "contentRatings": {
+    "labels": []
+   },
+   "duration": 197400,
+   "isPlayable": true,
+   "playabilityReason": "PLAYABLE",
+   "audioPreview": {
+    "format": "MP3_96",
+    "url": "https://p.scdn.co/mp3-preview/07574e3bcb2fdc4db9069b04ae6ca130dad07652"
+   },
+   "entityType": "track"
+  }
+ ],
+ "visualIdentity": {
+  "backgroundBase": {
+   "alpha": 255,
+   "blue": 85,
+   "green": 85,
+   "red": 78
+  },
+  "backgroundTintedBase": {
+   "alpha": 255,
+   "blue": 52,
+   "green": 52,
+   "red": 46
+  },
+  "textBase": {
+   "alpha": 255,
+   "blue": 255,
+   "green": 255,
+   "red": 255
+  },
+  "textBrightAccent": {
+   "alpha": 255,
+   "blue": 255,
+   "green": 255,
+   "red": 255
+  },
+  "textSubdued": {
+   "alpha": 255,
+   "blue": 207,
+   "green": 207,
+   "red": 199
+  },
+  "image": [
+   {
+    "url": "https://image-cdn-fa.spotifycdn.com/image/ab67616d00001e02ec0ba596bd66df067594942a",
+    "maxHeight": 300,
+    "maxWidth": 300
+   },
+   {
+    "url": "https://image-cdn-fa.spotifycdn.com/image/ab67616d00004851ec0ba596bd66df067594942a",
+    "maxHeight": 64,
+    "maxWidth": 64
+   },
+   {
+    "url": "https://image-cdn-fa.spotifycdn.com/image/ab67616d0000b273ec0ba596bd66df067594942a",
+    "maxHeight": 640,
+    "maxWidth": 640
+   }
+  ]
+ }
+}

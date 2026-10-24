@@ -37,6 +37,7 @@ Anything that trashes files or writes tags needs a reviewed plan file and a reve
   disambiguation-only version labels, and a re-import reuses a failed unfiled row. (R7) The Identity tab writes `identity-choices.json`;
   `identity_backfill apply --choices` merges it (D47). The live steps in order, each with its check and undo:
   [`plans/2026-10-22-morning-checklist.md`](plans/2026-10-22-morning-checklist.md).
+- **2026-10-22, run `dj-soulsync-review-2026-10-22` (docs only):** [SoulSync review](research/2026-10-22-soulsync/README.md); verdict: port pieces, never adopt SoulSync.
 
 ## In order
 
