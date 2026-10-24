@@ -73,6 +73,32 @@ def test_name_match_requires_artist_context_for_title_only():
     assert s < 0.75
 
 
+def _named(*names):
+    return parse_responses([{"username": f"p{i}", "files": [{"filename": f"Music\\Al Green\\{n}", "size": 1, "extension": "flac"}]}
+                            for i, n in enumerate(names)])
+
+
+def test_a_title_track_wanted_never_matches_another_track_through_the_album_name():
+    """2026-10-21, ext-74: "I'm Still In Love With You" (the album's title track) scored 1.00 against
+    "Al Green - I'm Still in Love With You - 09 - One of These Good Old Days.flac" and that song was filed."""
+    w = Wanted("Al Green", "I'm Still In Love With You", duration_s=196)
+    other, real, real2 = _named("Al Green - I’m Still in Love With You - 09 - One of These Good Old Days.flac",
+                                "Al Green - I’m Still in Love With You - 01 - I’m Still in Love With You.flac",
+                                "Al Green_I’m Still in Love With You_01_I’m Still in Love With You.flac")
+    assert name_match(other, w)[0] < name_match(real, w)[0] == 1.0
+    assert name_match(real2, w)[0] == 1.0
+    assert rank([{"username": "a", "files": [{"filename": "M\\" + other.basename, "size": 1, "extension": "flac"}]},
+                 {"username": "b", "files": [{"filename": "M\\" + real.basename, "size": 1, "extension": "flac"}]}],
+                w)[0].username == "b"
+
+
+def test_the_title_slot_after_a_track_number_still_matches_and_numbers_in_titles_survive():
+    for name, title in [("Al Green - I’m Still in Love With You - 03 - Love and Happiness.flac", "Love And Happiness"),
+                        ("Nena - 99 Luftballons.flac", "99 Luftballons"),
+                        ("Al Green - Greatest Hits - 05 - Love and Happiness.flac", "Love And Happiness")]:
+        assert name_match(_named(name)[0], Wanted("Al Green" if "Green" in name else "Nena", title))[0] == 1.0, name
+
+
 def test_unknown_duration_is_neutral():
     w = Wanted("Chic", "Good Times")
     cands = rank(FIX, w)

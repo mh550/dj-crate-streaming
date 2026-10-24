@@ -385,8 +385,9 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
 
     sid = slskd.search(f"{wanted.artist} {wanted.title}".strip())
     try:
-        slskd.wait_search(sid, poll_s=poll_s, max_s=30)
-        cands = rank(slskd.search_responses(sid), _owned(wanted, navidrome, copy_id), policy)
+        st = slskd.wait_search(sid, poll_s=poll_s, max_s=30)
+        responses = slskd.search_responses(sid, expect=st.get("responseCount") or 0, poll_s=poll_s)
+        cands = rank(responses, _owned(wanted, navidrome, copy_id), policy)
     finally:
         slskd.delete_search(sid)
     text = explain(cands, peers=False)
