@@ -338,6 +338,41 @@ def test_remove_ids_deletes_only_the_named_id_fields(tmp_path):
         tc.remove_ids(m, ["title"])
 
 
+
+def test_restore_fields_puts_back_an_album_tag_write(tmp_path):
+    """The `tagged` event's reverse (S2-06 plan, ## Reverse): one save, year before month and day, null deletes."""
+    f = tmp_path / "a.flac"; _audio(f)
+    tags = FLAC(f); tags["TITLE"] = "Le Freak"; tags["DATE"] = "1972-05-01"; tags["COMPILATION"] = "1"
+    tags["MUSICBRAINZ_ALBUMID"] = "uploader-rel"; tags["GENRE"] = ["Disco", "Funk"]; tags.save()
+    old = {"album": None, "albumartist": None, "comp": True, "day": 1, "mb_albumid": "uploader-rel",
+           "mb_albumartistid": None, "month": 5, "track": None, "tracktotal": None, "year": 1972}
+    tc.write_minimal(f, {"album": "Risqué", "albumartist": "Chic", "comp": False, "track": 3, "tracktotal": 9,
+                         "year": None, "month": None, "day": None, "mb_albumid": None})
+    tc.restore_fields(f, old)
+    t = FLAC(f)
+    for gone in ("ALBUM", "ALBUMARTIST", "ALBUM ARTIST", "ALBUM_ARTIST", "TRACKNUMBER", "TRACK", "TRACKTOTAL",
+                 "TOTALTRACKS", "TRACKC", "MUSICBRAINZ_ALBUMARTISTID"):
+        assert gone not in t, gone
+    assert t["DATE"] == ["1972-05-01"] and t["MUSICBRAINZ_ALBUMID"] == ["uploader-rel"]
+    assert MediaFile(str(f)).comp is True
+    assert t["TITLE"] == ["Le Freak"] and t["GENRE"] == ["Disco", "Funk"]
+
+
+def test_restore_fields_on_mp3_keeps_the_id3_version(tmp_path):
+    m = tmp_path / "b.mp3"; _audio(m)
+    id3 = ID3(); id3.add(TIT2(encoding=1, text="Le Freak")); id3.save(m, v2_version=3)
+    tc.write_minimal(m, {"album": "Risqué", "track": 3, "tracktotal": 9, "year": 1979})
+    tc.restore_fields(m, {"album": None, "track": None, "tracktotal": None, "year": None, "month": None, "day": None})
+    t = ID3(m)
+    assert t.version[:2] == (2, 3) and not [k for k in t.keys() if k.startswith(("TALB", "TRCK", "TDRC", "TYER"))]
+    assert str(t["TIT2"]) == "Le Freak"
+
+
+def test_restore_fields_refuses_fields_the_album_writer_never_writes(tmp_path):
+    f = tmp_path / "a.flac"; _audio(f)
+    with pytest.raises(ValueError):
+        tc.restore_fields(f, {"title": None})
+
 # M9 §6: retag and move write beets and the library, so they run only with the worker stopped (its worker.lock).
 from sourcing.worker import WorkerRunning, hold_lock                  # noqa: E402
 

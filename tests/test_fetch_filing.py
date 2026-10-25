@@ -1,13 +1,19 @@
 """fetch files a verified download through beets (D18, D22) and copies Navidrome's names back onto the row."""
+import json
 import sqlite3
 from pathlib import Path
 
 import pytest
 
 from sourcing.fake_slskd import FakeSlskdServer
+from sourcing.fetch import fetch
 from sourcing.filer import BeetsFiler, FilingError
+from sourcing.playlist_sources import rows_from_spotify
+from sourcing.requests import add_spotify
+from sourcing.slskd_client import SlskdClient, transfer_files
 from sourcing.verify import verify
 from tests.test_export_playlists import SCHEMA
+from tests import test_album_job as aj
 from tests.helpers import beets_items_db, fake_beet, make_flac
 from tests.test_fetch import GOOD, RESPONSES, good_flac_bytes, new_song, run, world, not_in_library  # noqa: F401  (fixtures)
 
@@ -251,6 +257,37 @@ def test_external_row_has_no_reference_and_no_recording_id(world, tmp_path):
 
 
 @pytest.mark.usefixtures("not_in_library")
+def test_a_request_rows_musicbrainz_recording_reaches_verify(world, tmp_path):
+    """S2-03: the release match's recording id makes verify's AcoustID check hard (it would have caught ext-74)."""
+    st = world["store"]
+    ext = st.add_external_wanted("Chic", "Good Times", album="Risqué", duration_s=501, year=1979)
+    st.set_recording_id(ext, "cdac1a50-8ba6-4edd-8137-618928580d38")
+    f = lambda p: []
+    kw = fetched(world, tmp_path, wanted_id=ext, lookup=f, navidrome_db=tmp_path / "nope.db")["kw"]
+    assert kw == {"recording_id": "cdac1a50-8ba6-4edd-8137-618928580d38", "lookup": f, "asked_title": "Good Times"}
+
+
+def test_a_copy_upgrade_keeps_the_old_copys_recording_over_the_rows(world, tmp_path):
+    st = world["store"]
+    world["nd"].state.songs["s4"]["musicBrainzId"] = "rec-9"
+    ext = st.add_external_wanted("Chic", "Good Times", album="Risqué", duration_s=501, year=1979)
+    st.set_library_song(ext, "s4")
+    st.set_recording_id(ext, "rec-row")
+    assert st.find_wanted(ext)["library_song_id"] == "s4"
+    kw = fetched(world, tmp_path, wanted_id=ext, lookup=lambda p: [], navidrome_db=tmp_path / "nope.db")["kw"]
+    assert kw["recording_id"] == "rec-9"
+
+
+def test_a_copy_upgrade_of_a_copy_without_a_recording_id_uses_the_rows(world, tmp_path):
+    st = world["store"]
+    ext = st.add_external_wanted("Chic", "Good Times", album="Risqué", duration_s=501, year=1979)
+    st.set_library_song(ext, "s4")                      # Navidrome's s4 has no musicBrainzId
+    st.set_recording_id(ext, "rec-row")
+    kw = fetched(world, tmp_path, wanted_id=ext, lookup=lambda p: [], navidrome_db=tmp_path / "nope.db")["kw"]
+    assert kw["recording_id"] == "rec-row"
+
+
+@pytest.mark.usefixtures("not_in_library")
 def test_a_renamed_external_row_passes_the_title_it_asked_for_not_its_current_name(world, tmp_path):
     """S1-02: verify compares AcoustID's title with what the row asked for; a rename may already have moved it."""
     st = world["store"]
@@ -321,7 +358,7 @@ def test_filing_error_without_an_item_keeps_the_item_the_import_callback_set(wor
     from sourcing.filer import FiledItem
 
     class FilesThenFails:
-        def file(self, staging, log, names=None, on_imported=None):
+        def file(self, staging, log, names=None, on_imported=None, album=None, on_tagged=None):
             target = world["music"] / TARGET
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(b"x")
@@ -446,3 +483,125 @@ def test_reseeding_a_never_indexed_row_finds_the_same_row(world):
     other = store.add_external_wanted("Chic", "Le Freak")
     store.set_wanted_status(other, "failed", "download timed out")
     assert store.add_external_wanted("Chic", "Le Freak") != other          # an ordinary failure still re-queues
+
+
+# --- album rows (S2-06b): the request's identity on the staged file, `--set dj_album=1`, one `tagged` record each
+
+def album_tags(path: Path) -> dict:
+    mf = pytest.importorskip("mediafile")
+    m = mf.MediaFile(str(path))
+    return {k: getattr(m, k) for k in ("album", "albumartist", "track", "tracktotal", "year", "mb_albumid")}
+
+
+def album_events(store) -> list[dict]:
+    return [json.loads(e["detail"]) for e in reversed(store.events(limit=1000))
+            if e["kind"] == "tagged" and (e["detail"] or "").startswith("{")]
+
+
+def fetch_planned_row(world, tmp_path, req, n=1, wrap=None):
+    """fetch's planned mode for the request's track `n` (the album job's call), with the job's enqueue done here;
+    `wrap(runner)` replaces the album filer's fake beet."""
+    resp, data = aj.album_folder(tmp_path, req["rows"])
+    row = next(r for r in req["rows"] if r["track_no"] == n)
+    with FakeSlskdServer([resp], world["dl"], files=data) as srv:
+        c = aj.common(world, srv, tmp_path)
+        if wrap is not None:
+            c["filer"].runner = wrap(c["filer"].runner)
+        aj.album_job.plan_request(world["store"], c["slskd"], req["id"], poll_s=0.01)
+        job = aj.album_job
+        key = job.group_key(row) if world["store"].request(req["id"])["kind"] == "playlist" else None   # S2-07
+        cand = world["store"].preview(job.preview_key(req["id"], key))["assign"][row["song_id"]]["candidate"]
+        before = {t["id"] for t in transfer_files(c["slskd"].downloads(aj.PEER))}
+        c["slskd"].enqueue(aj.PEER, [{"filename": cand["filename"], "size": cand["size"]}])
+        return row, fetch(row["song_id"], approve=True, planned=True, prefer=cand, enqueued=before, **c), c["filer"]
+
+
+def test_every_track_of_an_album_request_carries_its_identity(world, tmp_path, not_in_library):
+    store, req = world["store"], aj.request(world)
+    resp, data = aj.album_folder(tmp_path, req["rows"])
+    with FakeSlskdServer([resp], world["dl"], files=data) as srv:
+        aj.album_job.plan_request(store, SlskdClient(srv.url, srv.api_key), req["id"], poll_s=0.01)
+        aj.album_job.approve_request(store, req["id"])
+        w = aj.worker(world, srv, tmp_path)
+        w.tick()
+    assert store.request(req["id"])["status"] == "done"
+    imports = [c for c in w.common["filer"].runner.calls if "import" in c]
+    assert len(imports) == 9 and all(c[c.index("--set") + 1] == "dj_album=1" for c in imports)
+    for row in store.request(req["id"])["rows"]:
+        filed = next((world["music"] / "Al Green" / f"{aj.ALBUM} (1972)").glob(f"{row['track_no']:02d} - *.flac"))
+        assert album_tags(filed) == {"album": aj.ALBUM, "albumartist": "Al Green", "track": row["track_no"],
+                                     "tracktotal": 9, "year": None, "mb_albumid": None}
+    fresh = {"album": None, "albumartist": None, "track": None, "tracktotal": None}
+    assert album_events(store) == [fresh] * 9
+    details = [e["detail"] for e in store.events(limit=1000) if e["kind"] == "tagged"]
+    assert details[0] == json.dumps(fresh, sort_keys=True)
+
+
+def test_the_requests_year_and_release_id_are_written_and_tracktotal_is_the_highest_track(world, tmp_path, not_in_library):
+    store, req = world["store"], aj.request(world)
+    store.set_release_id(req["id"], "rel-1")
+    store.db.execute("UPDATE requests SET year=1972 WHERE id=?", (req["id"],))
+    store.db.execute("UPDATE external_wanted SET request_id=NULL WHERE request_id=? AND track_no=5", (req["id"],))
+    store.commit()                                       # 8 rows left, the highest track still 9
+    row, r, _ = fetch_planned_row(world, tmp_path, store.request(req["id"]), n=3)
+    assert r.status == "ok", r.reason
+    filed = next((world["music"] / "Al Green" / f"{aj.ALBUM} (1972)").glob("03 - *.flac"))
+    assert album_tags(filed) == {"album": aj.ALBUM, "albumartist": "Al Green", "track": 3, "tracktotal": 9,
+                                 "year": 1972, "mb_albumid": "rel-1"}
+
+
+
+def test_tracktotal_stays_the_albums_when_its_last_track_is_held_by_another_request(world, tmp_path, not_in_library):
+    """add_external_wanted keeps a row's first request: track 9 queued earlier under a track request is not this
+    album's row, yet the album still has 9 tracks (the tracklist's highest number, stored on the request)."""
+    store = world["store"]
+    last = rows_from_spotify(aj.entity())[-1]
+    held = store.add_request(kind="track", source="search", artist="Al Green", album=None, year=None)
+    store.add_external_wanted("Al Green", last.title, duration_s=last.duration_s, request_id=held)
+    store.commit()
+    req = add_spotify(store, aj.URL, fetch=lambda url: aj.entity())
+    assert max(r["track_no"] for r in req["rows"]) == 8 and req["tracktotal"] == 9
+    row, r, _ = fetch_planned_row(world, tmp_path, req, n=3)
+    assert r.status == "ok", r.reason
+    filed = next((world["music"] / "Al Green" / f"{aj.ALBUM} (1972)").glob("03 - *.flac"))
+    assert album_tags(filed)["tracktotal"] == 9
+
+def test_a_playlist_requests_row_gets_no_album_tags(world, tmp_path, not_in_library):
+    store, req = world["store"], aj.request(world)
+    store.db.execute("UPDATE requests SET kind='playlist' WHERE id=?", (req["id"],))
+    store.commit()
+    row, r, filer = fetch_planned_row(world, tmp_path, req)
+    assert r.status == "ok", r.reason
+    assert not [c for c in filer.runner.calls if "--set" in c] and album_events(store) == []
+    filed = next((world["music"] / "Al Green" / f"{aj.ALBUM} (1972)").glob("01 - *.flac"))
+    assert album_tags(filed)["album"] is None
+
+
+def test_a_plain_row_is_filed_without_album_tags(world, tmp_path):
+    flac = good_flac_bytes(tmp_path)
+    with FakeSlskdServer(RESPONSES, world["dl"], files={GOOD: flac}) as srv:
+        new_song(world["nd"], len(flac))
+        assert run(world, srv, approve=True).status == "ok"
+    assert not [c for c in world["filer"].runner.calls if "--set" in c]
+    assert album_events(world["store"]) == []
+
+
+def test_the_tagged_record_is_committed_before_beets_runs(world, tmp_path, not_in_library):
+    """A kill while beets imports (up to 600 s) keeps the record of the write already made: the event is committed
+    before the write, so the rollback a kill amounts to cannot lose it."""
+    store, req = world["store"], aj.request(world)
+    seen = []
+
+    def wrap(runner):
+        def killed(cmd, **kw):
+            if "import" in cmd:
+                seen.append((store.db.in_transaction, album_events(store)))
+                raise KeyboardInterrupt
+            return runner(cmd, **kw)
+        return killed
+    with pytest.raises(KeyboardInterrupt):
+        fetch_planned_row(world, tmp_path, req, wrap=wrap)
+    store.db.rollback()
+    fresh = {"album": None, "albumartist": None, "track": None, "tracktotal": None}
+    assert seen == [(False, [fresh])]
+    assert album_events(store) == [fresh]

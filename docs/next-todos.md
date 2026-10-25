@@ -46,6 +46,15 @@ Anything that trashes files or writes tags needs a reviewed plan file and a reve
   drop (S1-06); the library is asked before downloading (S1-07); `crates.cli wanted reopen` (S1-08, D49). The live
   steps, each with its check and undo:
   [`plans/2026-10-22-downloads-checklist.md`](plans/2026-10-22-downloads-checklist.md) (S1-09).
+- **2026-10-23, run `dj-crate-streaming-2026-10-22-build` (branch `harness/dj-crate-streaming-2026-10-22-build`,
+  milestone S2 of `specs/2026-10-22-downloads-and-requests.md`):** built and tested against the fakes, **not
+  deployed**. Album requests sourced album-first: a `requests` table whose status is derived from its rows (S2-01); a
+  Spotify album or track URL is one request (S2-02) matched to its MusicBrainz release (S2-03); the album planner
+  `sourcing/album.py` (one folder, a same-release second, per track last, S2-04); the album job `sourcing/album_job.py`
+  (one `album` approval per row, one enqueue per peer, folder switches, per-row attempt caps, S2-05); album rows filed
+  with the request's tags at `Artist/Album (Year)/NN - Title` via `dj_album=1` (S2-06, D50, D51 *default*); a playlist
+  import as one request whose album groups go as album jobs (S2-07). Closing review S2-R1. No CLI or API approves a
+  request yet (S3). Architecture §4 (e).
 
 ## In order
 

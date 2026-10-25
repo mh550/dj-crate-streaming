@@ -98,6 +98,10 @@ D48 and D49 (*default*) in the pivot spec.
    playlist. Dry run by default; the reverse is in the event. Tests on a fake store.
 
 ## S2: album requests, sourced album-first (after: [S1-01, S1-02])
+**Built 2026-10-23** (run `dj-crate-streaming-2026-10-22-build`, commits `88eba88`…S2-R1 on branch
+`harness/dj-crate-streaming-2026-10-22-build`, base `1eb4259`): against the fakes only, not deployed. Plans
+`docs/plans/2026-10-22-s2-album-requests.md` and `docs/plans/2026-10-22-S2-album-tags.md`; decisions D50 and D51
+(*default*) in the pivot spec. Approving a request from a client is S3's.
 The need (Michael, 2026-10-22): one album in one go. Ideally one source (one peer's folder) has every track and all
 come from it. On any trouble, switch, and ideally to **one other folder for the rest**, not track by track. Per-track
 sourcing is the last resort, for what no folder has. Why this order: one folder is one master (the same lengths,

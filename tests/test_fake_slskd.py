@@ -149,3 +149,18 @@ def test_fail_enqueue_may_name_the_peers_that_answer_500(tmp_path):
             assert e.status == 500
         c.enqueue("vinylhead77", [{"filename": GOOD, "size": 1}])
         assert srv.enqueued == [("vinylhead77", GOOD)]
+
+
+def test_a_stalled_peer_s_transfers_stay_queued_and_deletes_are_recorded(tmp_path):
+    """A peer that never starts (S2-05b's start timeout): its transfers stay `Queued, Remotely` and nothing lands.
+    `deleted` lists every DELETE of a transfer as (peer, filename, remove)."""
+    with FakeSlskdServer(RESPONSES, tmp_path, files={GOOD: b"x"}, stalled_peers={"p-slow"}) as srv:
+        c = SlskdClient(srv.url, "k")
+        c.enqueue("p-slow", [{"filename": GOOD, "size": 1}])
+        t = c.downloads("p-slow")["directories"][0]["files"][0]
+        assert t["state"] == "Queued, Remotely" and list(tmp_path.iterdir()) == []
+        c.enqueue("vinylhead77", [{"filename": GOOD, "size": 1}])
+        assert c.downloads("vinylhead77")["directories"][0]["files"][0]["state"] == "Completed, Succeeded"
+        c.remove_download("p-slow", t["id"])
+        _delete(srv, f"/api/v0/transfers/downloads/vinylhead77/{c.downloads('vinylhead77')['directories'][0]['files'][0]['id']}")
+        assert srv.deleted == [("p-slow", GOOD, True), ("vinylhead77", GOOD, False)]

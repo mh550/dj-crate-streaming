@@ -26,3 +26,15 @@ def test_verify_ok(tmp_path):
     make_flac(p, total=44100 * 300, pad_bytes=300 * 900_000 // 8)  # ~900 kbps
     v = verify(p, expected_duration_s=302)
     assert v.ok, v.problems
+
+
+def test_a_verdict_names_the_kind_of_each_problem(tmp_path):
+    """The album job (S2-05b) tells a finding that distrusts a whole folder (transcode, wrong recording) from an
+    ordinary one (duration) by its kind, not by its text."""
+    p = tmp_path / "d.flac"
+    make_flac(p, total=44100 * 300, pad_bytes=10_000)
+    v = verify(p, expected_duration_s=501)
+    assert len(v.kinds) == len(v.problems) and v.kinds == ["duration", "implied_kbps"]
+    assert v.as_dict("crate")["kinds"] == v.kinds
+    ok = verify(tmp_path / "missing.flac")
+    assert ok.kinds == ["missing"]
