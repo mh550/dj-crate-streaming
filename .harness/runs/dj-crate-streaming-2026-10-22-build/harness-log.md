@@ -24,3 +24,7 @@
 - 2026-10-23 08:14 · S3 proposed for merging · https://github.com/mh550/dj-crate-streaming/pull/29
 - 2026-10-23 08:48 · S4-01 · claude-opus-5-5 · passes=true · 33 min · 20/21 passing
 - 2026-10-23 09:34 · S4-02 · claude-opus-5-5 · passes=true · 46 min · 21/21 passing
+- 2026-10-23 09:35 · S4 verified and tagged run/dj-crate-streaming-2026-10-22-build/S4
+- 2026-10-23 09:35 · S4 proposed for merging · https://github.com/mh550/dj-crate-streaming/pull/30
+- 2026-10-23 09:35 · every feature passes
+- 2026-10-23 09:35 · run ended (done): 21/21 passing · 25 sessions (25 real) · 21 features passed · $100.27 · 11.7 h · by kind: init 1 ($6.04), coding 21 ($92.45), verify 3 ($1.77) · by model: claude-fable-5-1 1 ($6.04), claude-opus-5-5 20 ($91.97), claude-sonnet-5-5 4 ($2.26)
