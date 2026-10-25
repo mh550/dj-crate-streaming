@@ -2,7 +2,7 @@
 
 Written 2026-10-17. Michael approved this plan; items 1-4 are built on branch `harness/dj-2026-10-17` (not live), the rest
 is not built. Read first:
-[`specs/2026-10-17-amperfy-pivot.md`](specs/2026-10-17-amperfy-pivot.md) (decisions D24–D34),
+[`specs/2026-10-17-amperfy-pivot.md`](specs/2026-10-17-amperfy-pivot.md) (decisions D24 on, now in [`decisions.md`](decisions.md)),
 [`hard-won-facts.md`](hard-won-facts.md), [`architecture.md`](architecture.md). Deploy with `scripts/deploy.sh`.
 Anything that trashes files or writes tags needs a reviewed plan file and a reverse log, as in M3/M8.
 

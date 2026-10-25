@@ -4,7 +4,7 @@ Written 2026-10-16 from the code on `overnight2/2026-10-15` at `e73e803`. Where 
 file says what the code does (see §10b). History of M1–M5: [`RECAP-M1-M5.md`](../../RECAP-M1-M5.md).
 Legend: **built** = in the code; **live** = also running on the box; **planned** = only in a plan.
 
-> **2026-10-17 pivot** ([`specs/2026-10-17-amperfy-pivot.md`](specs/2026-10-17-amperfy-pivot.md)): one download quality
+> **2026-10-17 pivot** ([`specs/2026-10-17-amperfy-pivot.md`](specs/2026-10-17-amperfy-pivot.md); decisions in [`decisions.md`](decisions.md)): one download quality
 > (lossless, or lossy at 256 kbps or more), no 12" preference or stand-in (exact track), and **the crates app owns the
 > crate flag** (`CRATES_OWNER=app`; no `#tier` or `#crate` in playlist comments). Text below that describes the
 > comment-owned design (D21, tiers, D16) is the retired design, kept where the code still has it.
