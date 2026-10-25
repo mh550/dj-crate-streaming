@@ -26,11 +26,11 @@ CI, module map, license, maintenance health); the comparison with ours comes aft
  browser (React app + legacy index.html) ─┬─ HTTP  ─▶ gunicorn :8008, 1 process, gthread × 8
  phone / API client                        └─ Socket.IO (threading mode)      │
                                                                               ▼
-                     web_server.py: Flask app + 43 api/ blueprints ─── module import builds clients,
+                     web_server.py: Flask app + 43 blueprints ──────── module import builds clients,
                           │                                                 executors and workers
                           │ start_runtime_services() (once per process)
                           ├─ AutomationEngine: threading.Timer per automation, emit() → thread per event
-                          ├─ daemon threads: download monitor, auto-import, repair, MusicBrainz/Spotify/…
+                          ├─ daemon threads: download monitor, auto-import (opt-in), repair, MusicBrainz/Spotify/…
                           │  enrichment workers, simple background monitor, gc sweeper
                           ├─ ThreadPoolExecutors: downloads, album bundles, post-processing, sync, …
                           └─ ~20 socketio background loops pushing status to the browser
@@ -73,8 +73,8 @@ CI, module map, license, maintenance health); the comparison with ours comes aft
   `socketio.start_background_task(_emit_*_loop)` status pushers (`SoulSync:web_server.py:24854-24887`).
 - **Background worker classes** (each a `threading.Thread(daemon=True)` owner):
   - `AutoImportWorker` (`SoulSync:core/auto_import_worker.py:210`, thread at
-    `SoulSync:core/auto_import_worker.py:437`), created and started from the import blueprint
-    (`SoulSync:api/import_routes.py:356-365`);
+    `SoulSync:core/auto_import_worker.py:437`), created from the import blueprint and started only when
+    `auto_import.enabled` is on (default off) (`SoulSync:api/import_routes.py:356-366`);
   - `RepairWorker` (`SoulSync:core/repair_worker.py:393`, thread `SoulSync:core/repair_worker.py:813`);
   - `MusicBrainzWorker` (`SoulSync:core/musicbrainz_worker.py:25`, thread `SoulSync:core/musicbrainz_worker.py:64`);
   - `SpotifyWorker` (`SoulSync:core/spotify_worker.py:35`, thread `SoulSync:core/spotify_worker.py:107`);
@@ -109,8 +109,9 @@ CI, module map, license, maintenance health); the comparison with ours comes aft
   (`SoulSync:core/automation_engine.py:153`), clean completed downloads every 5 min
   (`SoulSync:core/automation_engine.py:191`), weekly deep scan (`SoulSync:core/automation_engine.py:219`), database
   backup every 3 days (`SoulSync:core/automation_engine.py:238`). Automations are rows in a table
-  (`SoulSync:database/music_database.py:1426`), so the schedule is data, not code (user-editable from the Automations
-  pages: *unverified*, V2-07 reads the routes).
+  (`SoulSync:database/music_database.py:1426`), so the schedule is data, not code, edited through `POST|PUT|DELETE /api/automations`
+  and a toggle route (`SoulSync:api/automations.py:93`, `SoulSync:api/automations.py:117`,
+  `SoulSync:api/automations.py:153`, `SoulSync:api/automations.py:176`).
 - **Consequence.** Everything shares one address space: in-process locks, module globals and ~20 polling loops. That
   is why `workers = 1` is fixed: a second gunicorn worker would start a second set of threads and timers
   (*unverified*: inferred from the import-time starts above; no comment in `gunicorn.conf.py` says so). Peer speed
@@ -445,7 +446,7 @@ factor and the unreviewed `:latest` publication are the two risks for any "run S
 
 - **Process model.** Separate containers with separate jobs (`ours:deploy/compose.yml:12`, `ours:deploy/compose.yml:37`,
   `ours:deploy/compose.yml:74`, `ours:deploy/compose.yml:119`): Navidrome serves and scans; `crates` is a stdlib
-  `ThreadingHTTPServer` (`ours:crates/service.py:25`, `ours:crates/service.py:488`) with no library mount; `worker`
+  `ThreadingHTTPServer` (`ours:crates/service.py:25`, `ours:crates/service.py:511`) with no library mount; `worker`
   runs `python -m sourcing.cli worker` (`ours:sourcing/cli.py:145`), refuses to start outside its container
   (`ours:sourcing/cli.py:243`), and is the only process that downloads, runs beets or moves files into `/srv/music`
   (`ours:docs/architecture.md:72-75`, D18 at `ours:docs/specs/2026-10-13-next-session-design.md:72`). One-off
@@ -482,8 +483,8 @@ factor and the unreviewed `:latest` publication are the two risks for any "run S
   `:latest` on every push to `main`; ours pins beets, Navidrome and gatus and tags images by commit.
 - **Useful as data, not as a runtime.** The table list itself is a design checklist we lack in places: provenance per
   file with the peer and filename (`track_downloads`), an audit of every pick with its alternatives
-  (`download_decisions`), expiring blocklists keyed by fingerprint and size (`failed_download_blocklist`), per-peer
-  quarantine (`quarantine_source_blocks`), and a request queue with admin responses (`music_requests`). V2 judges
+  (`download_decisions`), expiring blocklists keyed by fingerprint and size (`failed_download_blocklist`), per-(peer,
+  file) quarantine blocks (`quarantine_source_blocks`, `SoulSync:core/imports/quarantine.py:590-602`), and a request queue with admin responses (`music_requests`). V2 judges
   each in its own section.
 
 ## Worth taking?
