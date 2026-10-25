@@ -3,14 +3,14 @@
   "project": "dj-crate-streaming",
   "branch": "harness/dj-2026-10-17",
   "started": "2026-10-17T06:24:34.000Z",
-  "ended_at": "2026-10-19T12:06:49.000Z",
-  "end_reason": "no feature left to try",
-  "continuations": 3,
+  "ended_at": "2026-10-19T14:06:25.000Z",
+  "end_reason": "done",
+  "continuations": 4,
   "features": {
     "total": 33,
     "passing": 33,
-    "verified": 31,
-    "merged": 31
+    "verified": 33,
+    "merged": 33
   },
   "milestones": [
     {
@@ -73,8 +73,8 @@
       "id": "N5",
       "features": 2,
       "passing": 2,
-      "verified": false,
-      "merged": false
+      "verified": true,
+      "merged": true
     }
   ],
   "tests": {
@@ -82,50 +82,50 @@
     "end": 1523
   },
   "cost": {
-    "total": 103.89,
-    "per_passing_feature": 3.15,
+    "total": 104.76,
+    "per_passing_feature": 3.17,
     "by_role": {
       "init": 6.25,
       "plan": 11.71,
       "build": 47.94,
       "review": 35.15,
-      "verify": 2.1,
-      "docs": 0.48,
-      "retro": 0.29
+      "verify": 2.65,
+      "docs": 0.66,
+      "retro": 0.43
     },
     "by_model": {
       "claude-fable-5-1": 6.25,
       "claude-opus-5-5": 94.26,
-      "claude-sonnet-5-5": 3.41
+      "claude-sonnet-5-5": 4.28
     },
     "manager": 0
   },
   "time": {
-    "wall_h": 14.08,
-    "sessions_h": 13.03,
-    "driver_h": 1.06,
+    "wall_h": 14.3,
+    "sessions_h": 13.23,
+    "driver_h": 1.07,
     "by_role_h": {
       "init": 0.16,
       "plan": 1.13,
       "build": 7.33,
       "review": 3.79,
-      "verify": 0.39,
-      "docs": 0.18,
-      "retro": 0.02
+      "verify": 0.43,
+      "docs": 0.34,
+      "retro": 0.03
     }
   },
   "sessions": {
-    "total": 76,
-    "real": 48,
+    "total": 80,
+    "real": 52,
     "environmental": 28
   },
   "guards": {
     "repairs": 0,
     "red_unpass": 0,
-    "verify_failed": 1,
+    "verify_failed": 2,
     "limit_waits": 0,
     "verify_escalations": 0,
-    "merges": 8
+    "merges": 9
   },
   "features_detail": [
     {
@@ -599,12 +599,12 @@
       "kind": "docs",
       "model": "sonnet",
       "passes": true,
-      "verified": false,
-      "merged": false,
-      "sessions": 1,
+      "verified": true,
+      "merged": true,
+      "sessions": 2,
       "refused": 2,
-      "minutes": 11,
-      "cost": 0.48,
+      "minutes": 21,
+      "cost": 0.66,
       "cause": null,
       "detail": null
     },
@@ -614,8 +614,8 @@
       "kind": "review",
       "model": "opus",
       "passes": true,
-      "verified": false,
-      "merged": false,
+      "verified": true,
+      "merged": true,
       "sessions": 1,
       "refused": 2,
       "minutes": 46,
