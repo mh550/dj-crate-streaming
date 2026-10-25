@@ -8,6 +8,44 @@ Michael steers through `INBOX.md` on this branch (first line `status: run|pause|
 Every session reads `INBOX.md` and this file first, then the spec `docs/specs/2026-10-22-soulsync-review.md` and the
 brief `brief.md` (the brief wins on scope).
 
+### 2026-10-22 16:00 · verify V3
+
+Independent re-run, both features hold (14 steps). Nothing live touched, no code or doc edited. Citation check on README: no BAD line. Sampled ~25 cites against the clone and our files; all supported their sentences.
+
+| Feature | Step | What you ran or read | What you saw | Holds |
+|---|---|---|---|---|
+| V3-01 | 1 | awk-style count of `| **` rows in lines 32-52; read header and every row; sampled cites (matching_engine 1307-1335, monitor 690/759/936, gunicorn 4-6, automation_engine 77-83/238-243, settings 745-748) | 11 rows in the listed order, 4 columns as required; mechanism cells link a section anchor or cite; sampled lines support the cells | yes |
+| V3-01 | 2 | read `### The 2026-10-21 failure classes` (53-126) | 5 numbered items, each with SoulSync / Ours did / Planned bullets, cites to the downloads spec findings table (23-50, 25, 27, 44-50) and S1/S2 features | yes |
+| V3-01 | 3 | read `### Michael's decisions`; `sed -n` of design.md 61/72/76 and pivot spec 19,21,22,24,26,30,39 | table has D7, D18, D22/D29, D24, D26, D27, D31/D35, D44 with five-word gloss, verdict and cites; spec lines match the named decisions | yes |
+| V3-01 | 4 | read Operations row; `sed -n` CLAUDE.md 43-68; SoulSync docker-compose.yml 8-9, automation_engine 238-243; grep for fcntl/filelock stated as *absence inferred* | ours cell cites CLAUDE.md Live system (deploy, restic, lock, Check); SoulSync cell cites Dockerfile, compose, entrypoint.sh, backup and lock evidence; lines match | yes |
+| V3-01 | 5 | progress.md citation loop over README.md | no BAD line | yes |
+| V3-01 | 6 | `grep -c unverified` (13 in README); read all of 32-145 | uncited statements carry `*unverified*` or *absence inferred*; sampled mechanism sentences all have cite or link | yes |
+| V3-01 | 7 | `lib/check.sh` | green (cached for this tree), 1757 tests; docs only | yes |
+| V3-02 | 1 | `grep -n '^### '` (171,229,267,292,337); B options vs spec lines 35-37 | five parts B/C/D/E/Crates; B has one paragraph each for options 1-3 matching spec names; Crates covers sync, Mixxx, D24, D26, D7 | yes |
+| V3-02 | 2 | read each part's first line and Cost line; read lines 146-170 | each part starts `**SoulSync: partly/has/no.**`; each ends `from SoulSync: … / build ours: …` with one-sentence reasons; harness night defined once at 154 | yes |
+| V3-02 | 3 | read E (292-336); spec 41-42 | spec's three steps quoted and marked Present / Different / Present-with-difference with cites; links 04-soulseek.md#when-a-track-fails | yes |
+| V3-02 | 4 | read Crates (337-399); sampled playlist_edit.py:38, architecture.md:76-77, navidrome_client 1216-1226, sync/playlist_edit 96-108 | states shared Navidrome playlists yes if shared account, beets index not directly, two writers vs D18, links 07-filing-library.md; cites match | yes |
+| V3-02 | 5 | progress.md citation loop | no BAD line | yes |
+| V3-02 | 6 | grep unverified; sampled request.py:287-306, monitor 410-413, release_identity 80-83, web_server 16757-16762, enrichment 110-123 | unverified marks on estimates, native app, forks, Mixxx, crate concept; sampled cites support their sentences | yes |
+| V3-02 | 7 | `lib/check.sh` | green (cached), 1757 tests | yes |
+
+### 2026-10-22 14:27 · V3-02 · passes
+
+- **What changed:** README.md `## Fit to goals` (docs only; 1757 tests before and after). It defines "harness night" once, cites the S-run as 23 features ≈ 3 nights, and names one fixed setup cost (≈ 1 night) shared by the "run SoulSync" routes. Then five `### ` parts, each with a bold verdict line and one cost line per goal (B has one per option). **B: partly** (option 1 only, in part: 1.5 / 0.5 nights; options 2 and 3 have nothing to take: 2-3 and ≥ 5 nights either way). **C: partly** (2 + a fork / 1.5). **D: has** (1.5 / 0.5). **E: partly** (1.5 / 1): step 1 present, step 2 different (up to 4 switches, no same-release rule, no distrust), step 3 present with the folder drifting. **Crates: no** (not reachable without a fork / 0 more): it would reconcile same-named playlists on a shared account, its admin profile could reach `amperfy`'s playlists, and it is a second library writer beside beets (D18).
+- **Verified:** the citation check printed no BAD line, and `anchors.py` printed "links ok" (12 section-file anchors). An Opus review spot-checked 48 cites: 38 held and 10 held partly. Its 3 medium findings were fixed: "approval: no" became "only for member profiles" with four ways it misses D7; the effort figures were rescaled to the unit; each cost reason was cut to one sentence. All 13 low findings were fixed too, and I re-read 7 of the new cites in the clone. Suite: `lib/check.sh` printed "green in 651 s, 1757 tests".
+- **`*unverified*` marks:** 10 in the section: the effort unit and estimates, no native app, which endpoints Amperfy calls, the forks' sources, the iOS Shortcut, member access to `start-missing-process`, no crate concept, no Mixxx. Each says what was grepped or what would settle it.
+- **Next session (V4-01):** use the cost lines and the fixed setup cost to weigh options (a)-(d). The crates part is the strongest argument against (a) and (b).
+- **Questions for Michael:** none new. Question 1 (the effort unit) still stands, because every figure in this section rests on it. **Proposed changes:** none.
+
+### 2026-10-22 15:10 · V3-01 · passes
+
+- **What changed:** README.md `## Stage-by-stage comparison` (docs only; 1757 tests before and after). It has an 11-row stage table with columns SoulSync / ours (built) / ours (planned S1-S4) / stronger and why. Every cell either links its section-file anchor or cites a line. Below it are `### The 2026-10-21 failure classes` (5 items, each with SoulSync's behaviour, what ours did and the planned S-feature) and `### Michael's decisions` (8 rows; SoulSync conflicts with 7 and does not address D27; D31/D35 is "conflicts, partly honours"). 04-soulseek.md:812 has one wording fix: the error retry is "at once, then ≥ 5 s apart", read from `monitor.py:936-937`.
+- **Operations evidence found:** SoulSync's only backup is an "Auto-Backup Database" automation, every 3 days (`core/automation_engine.py:238-243`). It is an integrity-checked SQLite online backup of the database alone, written beside it, with 5 kept and the newest healthy copy never pruned (`core/db_integrity.py:83-140`, `core/automation/handlers/maintenance.py:98-128`). It has no file lock (grep for fcntl/flock/filelock: 0 files), only thread locks inside one gunicorn process.
+- **Verified:** the citation check printed no BAD line (139 unique cites in README). A link and anchor check (scratch `anchors.py`) passes for every README link to 01-08. The table has 11 rows (awk count). An Opus review spot-checked 34 cites: 29 held, 4 held partly, 1 did not (the 300 s scan figure was on the wrong lines). It found 2 medium and 11 low wording or cite-scope findings. I re-read the clone lines for 8 of them and all held, and all 13 are fixed. Suite: `lib/check.sh` printed "green in 646 s, 1757 tests". `*unverified*` marks: 2 new ones (the per-peer route reached with a UUID; a retry inside the VPN drop), each saying what would settle it.
+- **Next session (V3-02):** `## Fit to goals` goes under this section. The "stronger" column and the failure classes are its inputs. The S1 branch still does not exist (`git ls-remote`), so "ours (built)" is the base.
+- **Reading of D7:** its recorded text (next-session-design.md:61) is "automatic downloads only after one manual approval and go". The README reads it as the review spec does, "nothing downloads without approval", and says that SoulSync conflicts with both readings. This is a reading, not a new decision.
+- **Questions for Michael:** none new. **Proposed changes:** none.
+
 ### 2026-10-22 13:42 · verify V2
 
 Independent re-run, all 9 features hold. Nothing live touched, no code or doc edited. Citation check on the final tree: 2,182 unique cites, no BAD line. I opened a fresh seeded sample (seed 777, 3 SoulSync + 1 ours per file, 28 cites, none from earlier samples) with the cited lines beside the sentence: all supported the claim (03:157 supports the penalty lift; the gate lift is elsewhere). I also re-ran the endpoint-table count (36), the `api/*.py` count (63) and route sum (1,212), `@media` in mobile.css (43), index.html length (12,932) and four flow cites in 07. Suite: `lib/check.sh` printed "green (cached for this code tree, 1757 tests)"; it shows no skip count.

@@ -259,7 +259,7 @@
       "after": [
         "V2"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "V3-02",
@@ -276,7 +276,7 @@
         "every claim without a citation carries the literal mark `*unverified*` (grep `unverified` finds them); no sentence states a SoulSync mechanism without either a citation or that mark",
         ".harness/check.sh is green (docs only, so it must be: every test passes, none newly skipped)"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "V4-01",
