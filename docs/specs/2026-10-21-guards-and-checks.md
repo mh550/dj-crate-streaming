@@ -1,7 +1,7 @@
 # Guards, checks and doc truth (night of 2026-10-21, milestones R1–R8)
 
 Written 2026-10-21 from the read-only review `~/projects/dj-review-2026-10-21.md`. **Build-only:** nothing here runs live;
-every live step is written into `docs/plans/2026-10-17-morning-checklist.md` for Michael (R8). The pivot spec wins on
+every live step is written into `docs/runbooks/2026-10-17-morning-checklist.md` for Michael (R8). The pivot spec wins on
 conflict; M9 items keep the mechanism and safety rules of `docs/specs/2026-10-17-m9-remaining-ownership.md`.
 
 Facts this spec relies on (checked 2026-10-21):
@@ -107,7 +107,7 @@ As M9 §5a "Mechanism":
 - The live apply stays Michael's (next-todos 6), written into the checklist.
 
 ## R8: morning checklist v2 and whole-run review (after: [R1, R2, R3, R4, R5, R6, R7])
-1. Rewrite `docs/plans/2026-10-17-morning-checklist.md` as `docs/plans/2026-10-22-morning-checklist.md`. Keep the old file,
+1. Rewrite `docs/runbooks/2026-10-17-morning-checklist.md` as `docs/runbooks/2026-10-22-morning-checklist.md`. Keep the old file,
    with a pointer to the new one. In order, each step with its check and undo:
    1. Pull the main checkout (the `git checkout -- …INBOX.md` first, if still there).
    2. The H3-03 timer.

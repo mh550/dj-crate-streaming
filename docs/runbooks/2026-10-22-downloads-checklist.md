@@ -10,7 +10,7 @@ ask.
 
 ## Conventions
 
-The same as `docs/plans/2026-10-22-morning-checklist.md` → "Conventions", in short:
+The same as `docs/runbooks/2026-10-22-morning-checklist.md` → "Conventions", in short:
 
 - **Lock.** Wrap each live write and each deploy in `flock -n /srv/docker/crates/live.lock <command>`.
 - **Window.** No live write and no deploy from 03:15 to 04:30, or while `systemctl is-active restic-backup.service`
@@ -42,7 +42,7 @@ force-push to main).
 First the morning checklist's sections 1–3 (main checkout pulled, `/srv/docker/compose.yml` follows it; no pinned
 `GIT_SHA`). If you did them before step 1's merges, pull again: `git -C ~/projects/dj-crate-streaming pull --ff-only`.
 
-Then `docs/plans/2026-10-22-morning-checklist.md` section 4 ("Deploy `main` from a fresh worktree"), with this one
+Then `docs/runbooks/2026-10-22-morning-checklist.md` section 4 ("Deploy `main` from a fresh worktree"), with this one
 change: the image running before the deploy, and so the rollback, is **`dj-crates:41fcc5bc01`** (the hotfix), not
 `f4882ab85b`. Confirm it with `docker compose ps` and `docker image ls dj-crates` before you deploy.
 

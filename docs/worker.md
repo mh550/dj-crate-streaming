@@ -646,7 +646,7 @@ docker compose exec -T crates python3 -m crates.cli reconcile
 - `--limit N` counts groups in plan order. A re-run does not write the done ones again.
 
 **4. Trash (the worker stopped).** Only `trash --dry-run` may run live until Michael lifts the hold (CLAUDE.md
-"Staged runbooks"); the order with flock and the checks is `docs/plans/2026-10-22-morning-checklist.md` step 6.
+"Staged runbooks"); the order with flock and the checks is `docs/runbooks/2026-10-22-morning-checklist.md` step 6.
 
 ```
 docker compose stop worker

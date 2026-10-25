@@ -173,7 +173,7 @@ Next steps, in order:
    `dj-crate-streaming-2026-10-22-build` run. Size: one short docs session (< 0.1 harness night).
 4. **Run** S2-S4 (`dj-crate-streaming-2026-10-22-build`) on the same spec's S2-S4, 15 features. Size: about 2.25
    harness nights (2 as planned, plus about 0.25 for the folded rows of the (c) table), the album ones at the slow end.
-5. **Capture** the slskd shapes in Michael's morning (the S4-01 checklist, `docs/plans/2026-10-22-downloads-checklist.md`,
+5. **Capture** the slskd shapes in Michael's morning (the S4-01 checklist, `docs/runbooks/2026-10-22-downloads-checklist.md`,
    delta below): the multi-file enqueue response, transfer records per state, `DELETE … ?remove=true`, the search
    timeout key, `GET /server` during a drop. Size: about 30 min live, Michael's (D7).
 6. **Write** a follow-up spec for the pieces that wait for step 5 or for B (rows 4, 6, 10, 12 of the (c) table: the

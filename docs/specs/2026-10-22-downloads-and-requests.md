@@ -235,8 +235,8 @@ this run** (concern B is open).
 **Built 2026-10-23** (run `dj-crate-streaming-2026-10-22-build`, S4-01 `b3658c9` and S4-02 on branch
 `harness/dj-crate-streaming-2026-10-22-build`): the checklist (§4, §6, Captures) and the whole-run review, its
 Important findings fixed test-first; not deployed, PRs open. Decision D53 (*default*) in the pivot spec.
-1. **S4-01** `docs/plans/2026-10-22-downloads-checklist.md`, each step with its check and undo, from "Morning checklist
-   addition" below. Link it from `docs/plans/2026-10-22-morning-checklist.md` (the 10-21 run's R8) when that file is on
+1. **S4-01** `docs/runbooks/2026-10-22-downloads-checklist.md`, each step with its check and undo, from "Morning checklist
+   addition" below. Link it from `docs/runbooks/2026-10-22-morning-checklist.md` (the 10-21 run's R8) when that file is on
    main. Add a line before that checklist's deploy step: "PR #16 must be on main first". Update `docs/architecture.md`
    §4 (requests, album jobs) and `docs/next-todos.md` State.
 2. **S4-02** A whole-run review (Opus) of the diff since the base. Fix Critical and Important findings; the suite stays

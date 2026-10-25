@@ -1,8 +1,8 @@
-> **Superseded by [`docs/plans/2026-10-22-morning-checklist.md`](2026-10-22-morning-checklist.md)** (R8 of run dj-crate-streaming-2026-10-21): use that one. This file is kept as it was.
+> **Superseded by [`docs/runbooks/2026-10-22-morning-checklist.md`](2026-10-22-morning-checklist.md)** (R8 of run dj-crate-streaming-2026-10-21): use that one. This file is kept as it was.
 
 # Morning checklist: the live steps for the dj-2026-10-17 run
 
-> **R8 replaces this checklist** (`docs/plans/2026-10-22-morning-checklist.md`, run dj-crate-streaming-2026-10-21).
+> **R8 replaces this checklist** (`docs/runbooks/2026-10-22-morning-checklist.md`, run dj-crate-streaming-2026-10-21).
 > Until then: **check** and the trash step below run in the deployed image through `scripts/live-check.sh` and
 > `scripts/live-run.sh` (R2, D45).
 

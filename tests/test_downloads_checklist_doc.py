@@ -5,8 +5,8 @@ import re
 from pathlib import Path
 
 DOCS = Path(__file__).resolve().parent.parent / "docs"
-CHECKLIST = DOCS / "plans" / "2026-10-22-downloads-checklist.md"
-MORNING = DOCS / "plans" / "2026-10-22-morning-checklist.md"
+CHECKLIST = DOCS / "runbooks" / "2026-10-22-downloads-checklist.md"
+MORNING = DOCS / "runbooks" / "2026-10-22-morning-checklist.md"
 CAPTURE = Path(__file__).resolve().parent.parent / "scripts" / "capture_spotify.py"
 LOCK = "flock -n /srv/docker/crates/live.lock "
 S4 = "## 4. Album request through the request API"
