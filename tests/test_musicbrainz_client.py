@@ -307,6 +307,16 @@ def test_release_search_escapes_and_404_is_empty():
     assert mb.release_search("A", "B") == []
 
 
+def test_a_blank_field_is_left_out_of_the_query():
+    """S3-02's catalog search has a plain query with no artist: `artist:"" AND …` would match nothing."""
+    opener = Script({"releases": [], "recordings": []})
+    mb, _ = client(opener)
+    mb.release_search("  ", "I'm Still in Love")
+    mb.search("", "My Love Is Free")
+    queries = [urllib.parse.parse_qs(urllib.parse.urlparse(r.full_url).query)["query"] for r in opener.requests]
+    assert queries == [['release:"I\'m Still in Love"'], ['recording:"My Love Is Free"']]
+
+
 def test_release_asks_for_recordings_and_returns_the_body():
     opener = Script(fixture("musicbrainz_release_al-green-still-in-love.json"))
     mb, _ = client(opener)

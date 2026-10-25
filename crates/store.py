@@ -685,6 +685,10 @@ class CrateStore:
         self.db.execute("UPDATE approvals SET used_at=?, result=? WHERE id=?", (time.time(), result, approval_id))
         self.db.commit()
 
+    def approval_by_id(self, approval_id: int) -> dict | None:
+        r = self.db.execute("SELECT * FROM approvals WHERE id=?", (approval_id,)).fetchone()
+        return self._approval_row(r) if r else None
+
     def approval(self, wanted_id: str) -> dict | None:
         """The latest approval for a wanted id, used or not."""
         r = self.db.execute("SELECT * FROM approvals WHERE wanted_id=? ORDER BY id DESC LIMIT 1", (wanted_id,)).fetchone()

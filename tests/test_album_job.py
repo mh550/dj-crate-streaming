@@ -1085,3 +1085,64 @@ def test_a_playlist_group_plan_counts_only_the_rows_it_approves(world, tmp_path,
         shown = album_job.plan_request(store, SlskdClient(srv.url, srv.api_key), req["id"], poll_s=0.01,
                                        group=g["key"])
     assert [f["covers"] for f in shown["folders"]] == ["8 of 8"]
+
+
+# --- S3-03: the same job, approved over HTTP
+
+def test_the_worker_runs_the_album_from_the_approvals_post_approve_answered(world, tmp_path, not_in_library):
+    """`POST /api/requests/<id>/preview` then `/approve` (crates.service), and the worker's tick spends exactly the
+    approvals the approve answered: one enqueue, nine rows filed."""
+    from crates.service import Config, CrateApp, CrateServer
+    from tests.test_service import post
+    store, req = world["store"], request(world)
+    resp, data = album_folder(tmp_path, req["rows"])
+    with FakeSlskdServer([resp], world["dl"], files=data) as srv:
+        app = CrateApp(Config(subsonic_url=world["nd"].url, username="demo", password="demo", db_path=":memory:",
+                              port=0), store=store, slskd=SlskdClient(srv.url, srv.api_key))
+        with CrateServer(app) as web:
+            assert post(web.url + f"/api/requests/{req['id']}/preview", {})[0] == 200
+            s, body = post(web.url + f"/api/requests/{req['id']}/approve", {})
+        assert s == 200
+        approved = {a["approvalId"] for a in body["approved"]}
+        assert approved == {a["id"] for a in store.pending_approvals()} and len(approved) == 9
+        report = worker(world, srv, tmp_path).tick()
+    assert srv.posts == [(PEER, 9)] and len(srv.searched) == 1                # the preview's search, reused
+    done = store.request(req["id"])
+    assert done["status"] == "done", [(r["status"], r["reason"]) for r in done["rows"]]
+    assert {r["approval"]["id"] for r in done["rows"]} == approved
+    assert all(r["approval"]["result"].startswith("ok: ") for r in done["rows"])
+    assert report.approvals == 9
+    no_peer_anywhere(store, body, report.results)
+
+
+def test_a_folder_the_job_fails_during_a_preview_s_search_stays_failed(world, tmp_path, not_in_library):
+    """The worker (another process) may distrust a folder while a preview searches: the preview's plan leaves it out
+    and its cache keeps it failed (S3-03 review)."""
+    from sourcing import album
+    store, req = world["store"], request(world)
+    resp, data = album_folder(tmp_path, req["rows"])
+    key = f"req-{req['id']}"
+    folder = [PEER, album.folder_of(resp["files"][0]["filename"])]
+    with FakeSlskdServer([resp], world["dl"], files=data) as srv:
+        slskd = SlskdClient(srv.url, srv.api_key)
+        search = slskd.search
+
+        def meanwhile(q):
+            store.set_preview(key, {"at": 0, "failed": [folder], "assign": {}, "folders": [], "per_track": []})
+            return search(q)
+        slskd.search = meanwhile
+        shown = album_job.plan_request(store, slskd, req["id"], poll_s=0.01)
+    assert shown["folders"] == [] and len(shown["per_track"]) == 9
+    assert store.preview(key)["failed"] == [folder]
+
+
+def test_approve_request_takes_no_file_from_a_plan_marked_stale(world, tmp_path, not_in_library):
+    """A plan a failed folder marked stale (`at` 0) is made again by the job: its files are not the approvals'."""
+    store, req = world["store"], request(world)
+    resp, data = album_folder(tmp_path, req["rows"])
+    with FakeSlskdServer([resp], world["dl"], files=data) as srv:
+        album_job.plan_request(store, SlskdClient(srv.url, srv.api_key), req["id"], poll_s=0.01)
+    key = f"req-{req['id']}"
+    store.set_preview(key, store.preview(key) | {"at": 0})
+    album_job.approve_request(store, req["id"])
+    assert {a["candidate"] is None for a in store.pending_approvals()} == {True}

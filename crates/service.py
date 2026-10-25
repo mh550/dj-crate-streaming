@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -26,9 +27,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from sourcing import album_job, catalog, requests as requests_
 from sourcing.fetch import fetch
+from sourcing.import_playlist import NameCollision
+from sourcing.musicbrainz import MusicBrainz, MusicBrainzError
 from sourcing.policy import DEFAULT_POLICY, STREAM, QualityPolicy, check_stream
-from sourcing.slskd_client import SlskdClient
+from sourcing.slskd_client import SlskdClient, SlskdError
+from sourcing.spotify_csv import fetch_entity as spotify_fetch_entity
 from subsonic.client import SubsonicClient, SubsonicError
 from .reconcile import CommentNotKept, NameMarked, ReconcileBusy, Reconciler
 from . import identity_view, proposals, trash
@@ -90,8 +95,14 @@ class CrateApp:
     """Everything the HTTP layer needs, so it can also be driven directly from tests/CLI."""
 
     def __init__(self, cfg: Config, policy: QualityPolicy = DEFAULT_POLICY, store: CrateStore | None = None,
-                 slskd: SlskdClient | None = None):
+                 slskd: SlskdClient | None = None, fetch_entity=spotify_fetch_entity,
+                 musicbrainz: MusicBrainz | None = None):
         self.cfg = cfg
+        self.fetch_entity = fetch_entity      # a Spotify link's embed (sourcing.spotify_csv; tests inject a stub)
+        if musicbrainz is None:               # a catalog pick's release or recording (S3-01b), cached as the CLI's
+            cache = os.environ.get("MUSICBRAINZ_CACHE")
+            musicbrainz = MusicBrainz(cache=Path(cache) if cache else None)
+        self.musicbrainz = musicbrainz
         self.api = SubsonicClient(cfg.subsonic_url, cfg.username, cfg.password)
         self.media = SubsonicClient(cfg.public_url or cfg.subsonic_url, cfg.username, cfg.password, client_name=STREAM_CLIENT_NAME)
         if store is None:
@@ -185,6 +196,147 @@ class CrateApp:
         if crate:
             return self.set_crate(pl.id, True)
         return self.reconciler.crate_view(pl)
+
+    # --- catalog (S3-02): what a client searches before it asks for a request
+    def catalog_search(self, q: str | None, kind: str | None) -> dict:
+        """Every registered provider's hits for `q` (sourcing.catalog), each with `inLibrary`. No lock: nothing is
+        written. A provider that cannot answer → 503; Navidrome down → 200 with `inLibrary: null`."""
+        if kind not in catalog.KINDS:
+            raise ApiError(400, "kind must be album or track")
+        if not (q or "").strip():
+            raise ApiError(400, "q is required")
+        providers = [cls.from_app(self) for cls in catalog.PROVIDERS.values()]
+        try:
+            hits = catalog.search(providers, q.strip(), kind, self.api)
+        except catalog.CatalogBusy as e:
+            raise ApiError(503, str(e)) from None
+        return {"hits": [h.as_json() for h in hits]}
+
+    # --- requests (S3): an album, track or playlist asked for as one; downloads nothing (approve does, D7)
+    def add_request(self, body) -> tuple[dict, bool]:
+        """`{"url": <Spotify link>}`, `{"mbReleaseId": …}` or `{"mbRecordingId": …}` (a catalog pick, S3-01b) →
+        (the request view, created); its rows the library has are `ok` already (requests.mark_in_library). Bad
+        body or link → 400; an id MusicBrainz does not know → 404; Spotify or MusicBrainz unreachable → 502;
+        another user's playlist of that name → 409. The fetches (Spotify, MusicBrainz, the library check) run outside
+        the lock: each may take seconds."""
+        keys = [k for k in ("url", "mbReleaseId", "mbRecordingId") if k in body] if isinstance(body, dict) else []
+        if len(keys) > 1:
+            raise ApiError(400, "one of url, mbReleaseId, mbRecordingId")
+        if keys and keys[0] != "url":
+            return self._add_pick(keys[0], body[keys[0]])
+        url = body.get("url") if isinstance(body, dict) else None
+        if not isinstance(url, str) or not url.strip():
+            raise ApiError(400, "url is required")
+        try:
+            link = requests_.fetch_link(url, fetch=self.fetch_entity)
+        except requests_.UnknownLink as e:
+            raise ApiError(400, str(e)) from None
+        except requests_.SpotifyUnreachable as e:
+            raise ApiError(502, public(str(e))) from None
+        try:
+            added = requests_.add_link(self.store, self.api, link, lock=self._lock)   # matches outside the lock
+        except NameCollision as e:
+            raise ApiError(409, str(e)) from None
+        req = added.request
+        if req is not None and link.kind != "playlist":         # a playlist's import has just matched its rows
+            req = self._marked(req["id"])
+        out = requests_.view(req) if req else {"request": None, "rows": []}
+        if added.report is not None:
+            r = added.report
+            out["playlist"] = {"id": r.playlist_id, "name": r.name, "matched": r.matched, "wanted": r.wanted,
+                               "ambiguous": r.ambiguous}
+        return out, added.created
+
+    def _add_pick(self, key: str, mbid) -> tuple[dict, bool]:
+        """A MusicBrainz release (`mbReleaseId`, an album request) or recording (`mbRecordingId`, a track request).
+        It is asked outside the lock; add_release/add_recording ask it again inside, which the client's cache
+        answers."""
+        mbid = mbid.strip().lower() if isinstance(mbid, str) else ""
+        if not requests_.MB_ID.match(mbid):
+            raise ApiError(400, f"{key} is not a MusicBrainz id")
+        kind = "release" if key == "mbReleaseId" else "recording"
+        source = requests_.MB_SOURCE.format(kind=kind, mbid=mbid)
+        try:
+            if getattr(self.musicbrainz, kind)(mbid) is None:
+                raise ApiError(404, f"MusicBrainz has no {kind} {mbid}")
+            with self._lock:
+                before = self.store.find_request(source)
+                add = requests_.add_release if kind == "release" else requests_.add_recording
+                req = add(self.store, self.musicbrainz, mbid)
+        except requests_.UnknownId as e:
+            raise ApiError(404, str(e)) from None
+        except (MusicBrainzError, OSError) as e:          # MusicBrainz down or busy, or an unusable cache file
+            raise ApiError(502, public(f"cannot reach MusicBrainz ({type(e).__name__}: {e})")) from None
+        except (KeyError, TypeError) as e:                # a reply of another shape: not the client's 400
+            raise ApiError(502, f"MusicBrainz sent a reply this code cannot read ({type(e).__name__}: {e})") from None
+        return requests_.view(self._marked(req["id"])), before is None and req["source"] == source
+
+    def _marked(self, request_id: int) -> dict:
+        """The request after mark_in_library: Navidrome is asked outside the lock (a long album, a slow scan)."""
+        requests_.mark_in_library(self.store, self.api, request_id, lock=self._lock)
+        with self._lock:
+            return self.store.request(request_id)
+
+    def requests(self) -> dict:
+        """Every request, newest first, with its status and its rows counted by status (S3-03)."""
+        with self._lock:                            # an approval commits row by row: never half of one
+            return {"requests": [requests_.listed(r) for r in self.store.requests()]}
+
+    def request_detail(self, request_id: str) -> dict:
+        with self._lock:
+            req = self._request(request_id)
+            return requests_.detail(req, album_job.shown(self.store, req))
+
+    def _request(self, request_id: str) -> dict:
+        if not re.fullmatch(r"\d+", request_id, re.ASCII):
+            raise ApiError(400, f"request id must be a number, not {request_id!r}")
+        req = self.store.request(int(request_id))
+        if req is None:
+            raise ApiError(404, f"no request #{int(request_id)}")
+        return req
+
+    def _actionable(self, request_id: str, nothing: str) -> dict:
+        """The request, unless one of its rows is in progress (409, _not_in_progress: the worker finishes it) or
+        it has no row to approve (409 `nothing`). The caller holds the lock."""
+        req = self._request(request_id)
+        for r in req["rows"]:
+            if r["status"] not in ("ok", "removed"):
+                self._not_in_progress(r["song_id"])
+        if not album_job.approvable(req):
+            raise ApiError(409, nothing)
+        return req
+
+    def preview_request(self, request_id: str) -> dict:
+        """The album plan (album_job.plan_request: one search per album, nothing enqueued), cached as `req-<id>` and
+        shown without peers (album_job.shown). The searches run outside the lock: each may take half a minute."""
+        if self.slskd is None:
+            raise ApiError(503, "slskd is not configured")
+        with self._lock:
+            rid = self._actionable(request_id, "nothing to plan")["id"]
+        try:
+            album_job.plan_request(self.store, self.slskd, rid, lock=self._lock, idle=True)
+        except SlskdError as e:
+            raise ApiError(502, public(f"cannot reach slskd ({e})")) from None
+        except album_job.InFlight as e:             # approved and claimed during the search (another process)
+            raise ApiError(409, str(e)) from None
+        with self._lock:
+            return {"plan": album_job.shown(self.store, self.store.request(rid))}
+
+    def approve_request(self, request_id: str) -> dict:
+        """Michael's yes for the whole request (album_job.approve_request, D7): each approval with its planned file's
+        basename (null: the job plans, or the row goes per track). The worker downloads."""
+        with self._lock:
+            req = self._actionable(request_id, "nothing to approve")
+            try:
+                ids = album_job.approve_request(self.store, req["id"], "michael")
+            except ValueError as e:                 # a row claimed meanwhile (another process)
+                raise ApiError(409, str(e)) from None
+            approved = []
+            for a in map(self.store.approval_by_id, ids):
+                c = a["candidate"]
+                approved.append({"wantedId": a["wanted_id"], "approvalId": a["id"],
+                                 "candidate": {"basename": c.get("basename")} if c else None})
+            return public({"approved": approved})
 
     # --- approvals (D23): a preview searches and ranks but never downloads; an approval is what lets the worker
     def _not_in_progress(self, wanted_id: str) -> dict:
@@ -399,7 +551,10 @@ def make_handler(app: CrateApp):
 
         def _body(self) -> dict:
             n = int(self.headers.get("Content-Length") or 0)
-            return json.loads(self.rfile.read(n) or b"{}") if n else {}
+            body = json.loads(self.rfile.read(n) or b"{}") if n else {}
+            if not isinstance(body, dict):          # a list, string, number or null: every route reads fields
+                raise ApiError(400, "body must be a JSON object")
+            return body
 
         def _route(self, method: str):
             u = urlparse(self.path)
@@ -451,6 +606,12 @@ def make_handler(app: CrateApp):
                     return self._json(public(app.store.events(int(q.get("limit", 50)))))
                 if head == "search":
                     return self._json(app.search(q.get("q", ""), int(q.get("count", 25))))
+                if head == "requests" and len(p) == 1:
+                    return self._json(app.requests())
+                if head == "requests" and len(p) == 2:
+                    return self._json(app.request_detail(p[1]))
+                if head == "catalog" and p[1:] == ["search"]:
+                    return self._json(app.catalog_search(q.get("q"), q.get("kind")))
                 if head == "stream-tier":
                     return self._json({"tier": app.store.stream_tier(),
                                        "tiers": {t: {"format": f, "maxBitRate": b} for t, (f, b) in STREAM.items()}})
@@ -467,6 +628,13 @@ def make_handler(app: CrateApp):
                     return self._redirect(app.cover_url(p[1], int(sz) if sz else None))
             elif method == "POST":
                 body = self._body()
+                if head == "requests" and len(p) == 1:
+                    out, created = app.add_request(body)
+                    return self._json(out, 201 if created else 200)
+                if head == "requests" and len(p) == 3 and p[2] in ("preview", "approve"):
+                    if p[2] == "preview":
+                        return self._json(app.preview_request(p[1]))
+                    return self._json(app.approve_request(p[1]))
                 if head == "playlists" and len(p) == 3 and p[2] == "crate":
                     return self._json(app.set_crate(p[1], bool(body.get("enabled", True))))
                 if head == "playlists" and len(p) == 3 and p[2] == "tier":

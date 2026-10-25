@@ -537,3 +537,25 @@ def test_a_dry_run_reimport_leaves_a_failed_row_failed():
         store.set_wanted_status(ext, "failed", "download timed out")
         ip.import_playlist("Tea tent", ROWS, c, store, source="s", dry_run=True)
         assert store.external(ext)["status"] == "failed"
+
+
+def test_an_import_that_finishes_while_another_matches_leaves_one_playlist():
+    """S3-R1: the crates app matches outside its lock; the playlist is looked up again under it, so an import of
+    the same name that finished meanwhile is that playlist, not a second one."""
+    with FakeSubsonicServer() as srv:
+        _lib(srv)
+        c, store = SubsonicClient(srv.url, "demo", "demo"), CrateStore()
+
+        class Meanwhile:
+            done = False
+
+            def __enter__(self):
+                if not self.done:
+                    self.done = True
+                    ip.import_playlist("Tea tent", ROWS, c, store, source="s")
+
+            def __exit__(self, *exc):
+                return False
+        rep = ip.import_playlist("Tea tent", ROWS, c, store, source="s", lock=Meanwhile())
+        assert [p.id for p in c.playlists() if p.name == "Tea tent"] == [rep.playlist_id]
+        assert not rep.created and store.external_count() == 2

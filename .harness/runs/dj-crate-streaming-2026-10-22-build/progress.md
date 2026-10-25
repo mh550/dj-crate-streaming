@@ -9,6 +9,204 @@ Michael steers from `INBOX.md` on this branch (status line `run | pause | stop`;
 session reads it at startup. Policy: **build-only** (`.harness/config.sh`) and the brief in `brief.md`: nothing live,
 no docker, no `/srv`, no network, no client UI, PRs only (open, never merge).
 
+### 2026-10-23 15:30 · verify S3
+
+All 8 features hold (50 step rows). Ran the 10 S3 test files (380 passed, 242 s); the full 2352-test suite is the harness's cached green run, not re-run here. No `passes` flags changed.
+
+| Feature | Step | What you ran or read | What you saw | Holds |
+|---|---|---|---|---|
+| S3-01 | 1 | read `tests/test_requests_api.py::test_an_album_url_answers_201_with_the_request_and_its_nine_rows`; ran the file | asserts 201, request {kind album, artist, album, year, mbReleaseId, status open, id, createdAt}, 9 rows ext-1..9 ordered by trackNo, row-1 dict exact camelCase, one fetch; passes | yes |
+| S3-01 | 2 | `test_a_track_link_is_a_track_request_with_one_row` (both forms), `test_a_playlist_url_is_the_merge_import_plus_a_playlist_request` | track → kind track, one row; playlist → merge import + playlist request, rows = wanted rows, calls == [PLAYLIST_URL] (one fetch); pass | yes |
+| S3-01 | 3 | parametrized 400 test, 502 tests, `test_parse_link_*` | `url is required`, `unknown link kind: music.apple.com`, `…: artist`, HTTPError/URLError → 502 `cannot reach Spotify`; parse_link covers intl path/query/URI/refusals; pass | yes |
+| S3-01 | 4 | `test_the_same_album_again_answers_200_with_the_existing_request_and_no_new_rows` | intl-de/?si and `spotify:album:` forms → 200 equal to first body, 1 request, 9 rows; pass | yes |
+| S3-01 | 5 | `.harness/check.sh` on the 10 S3 test files (test_requests_api, test_service, test_import_playlist, test_musicbrainz_client, test_catalog, test_album_job, test_sourcing_cli, test_api_doc, test_capture_spotify, test_python310_syntax) | 380 passed in 242 s | yes |
+| S3-01 | 6 | harness `check.sh` / `.harness/check.sh` full suite | green, 2352 tests (harness output, cached for this tree; S3-R1 commit says 2319 → 2352, count only grew); pass | yes |
+| S3-01b | 1 | `test_an_mb_release_id_is_an_album_request_with_the_releases_tracks`, `test_an_mb_recording_id_is_a_track_request_with_one_row`, `test_an_id_musicbrainz_does_not_know_is_404` | 201 album, mbReleaseId, 9 rows w/ mbRecordingId/trackNo/durations, year 1993; recording → track, 1 row; unknown → 404 `MusicBrainz has no release/recording <id>`; pass | yes |
+| S3-01b | 2 | `sourcing/requests.py` add_release/add_recording/mark_in_library use; `test_mark_in_library_links_only_open_rows`, `test_navidrome_unreachable_leaves_the_rows_open_with_one_event_on_the_request` | all adders end in mark_in_library; ok + library_song_id, one `matched` event; unreachable → rows needs_source, `library not asked: URLError` event, no exception; pass | yes |
+| S3-01b | 3 | `test_an_album_row_the_library_has_answers_ok_with_its_library_song` | FakeSubsonic song for row 5 → row 5 ok with `ag5`, other 8 needs_source, one matched event; pass | yes |
+| S3-01b | 4 | `test_two_keys_or_a_malformed_id_is_400_and_asks_nothing` | url+mbReleaseId → 400 `one of url, mbReleaseId, mbRecordingId`, nothing asked; pass | yes |
+| S3-01b | 5 | `.harness/check.sh` on the 10 S3 test files (test_requests_api, test_service, test_import_playlist, test_musicbrainz_client, test_catalog, test_album_job, test_sourcing_cli, test_api_doc, test_capture_spotify, test_python310_syntax) | 380 passed | yes |
+| S3-01b | 6 | harness `check.sh` / `.harness/check.sh` full suite | green, 2352 tests (harness output, cached for this tree; S3-R1 commit says 2319 → 2352, count only grew); pass | yes |
+| S3-02 | 1 | `tests/test_catalog.py` album/track/dash-split/registry/stub-provider tests | Hit fields incl. provider, ids, in_library; 10 album hits, 3c9a52ee year 1993, 9 tracks, CD; track via recording parse; PROVIDERS == {musicbrainz}; stub provider hit with provider `stub`; pass | yes |
+| S3-02 | 2 | `test_an_album_the_library_has_by_name_and_artist_is_in_library`, `test_a_track_is_in_library_when_import_playlist_would_match_it`, `test_navidrome_unreachable_leaves_in_library_unknown_for_every_hit`, `test_any_navidrome_failure_is_unknown` | track via match, album via search3 + loose equality; unreachable/odd errors → inLibrary None, 200; pass | yes |
+| S3-02 | 3 | `test_an_album_search_answers_200_with_camel_case_hits`, kind/q 400 tests, `test_musicbrainz_busy_after_the_clients_retries_is_503` | 200 `{hits}` camelCase; 400 `kind must be album or track`, 400 `q is required`; 503 `MusicBrainz is busy, try again` after client's 4 attempts; pass | yes |
+| S3-02 | 4 | read `sourcing/catalog.py` docstring; `test_the_registry_has_musicbrainz_only_and_spotify_is_named_as_not_yet` | docstring says Spotify deliberately not a provider and names `scripts/capture_spotify.py`; asserted; pass | yes |
+| S3-02 | 5 | `.harness/check.sh` on the 10 S3 test files (test_requests_api, test_service, test_import_playlist, test_musicbrainz_client, test_catalog, test_album_job, test_sourcing_cli, test_api_doc, test_capture_spotify, test_python310_syntax) | 380 passed | yes |
+| S3-02 | 6 | harness `check.sh` / `.harness/check.sh` full suite | green, 2352 tests (harness output, cached for this tree; S3-R1 commit says 2319 → 2352, count only grew); pass | yes |
+| S3-03 | 1 | `test_get_requests_lists_them_newest_first_with_status_and_row_counts`, `test_get_one_request_is_the_post_shape_plus_preview_and_each_rows_approval`, `test_an_unknown_request_is_404_and_a_word_is_400` | list newest first with status + rowCounts {ok,needsSource,sourcing,verify,failed,review}; detail = rows + preview (None) + approval {id,purpose,ts,usedAt,result}; unknown id 404 `no request #99`; pass | yes |
+| S3-03 | 2 | `test_preview_plans_the_album_caches_it_and_names_no_peer`, `test_preview_without_slskd_is_503` | plan {folders[label folder 1, coverage 8 of 9, rows{id,file}], perTrack, ts}; json has no PEER/username/DIR; cached as req-<id> with username server-side; 503 `slskd is not configured`; pass | yes |
+| S3-03 | 3 | `test_approve_records_the_album_approvals_of_the_previewed_plan`, 409 tests, `test_the_worker_runs_the_album_from_the_approvals_post_approve_answered` (tests/test_album_job.py:1092) | approved [{wantedId, approvalId, candidate{basename}}], no peer; sourcing/verify → 409 `ext-3 is sourcing (in progress): the worker finishes it`; done → 409 `nothing to approve`; album_job test drives HTTP approve then a worker tick spends exactly those 9 approvals; pass | yes |
+| S3-03 | 4 | read `crates/service.py` preview_request/approve_request and route wiring; test_service in the run | routes inside CrateApp/_api with the ApiError mapping; test_service green; pass | yes |
+| S3-03 | 5 | `.harness/check.sh` on the 10 S3 test files (test_requests_api, test_service, test_import_playlist, test_musicbrainz_client, test_catalog, test_album_job, test_sourcing_cli, test_api_doc, test_capture_spotify, test_python310_syntax) | 380 passed | yes |
+| S3-03 | 6 | harness `check.sh` / `.harness/check.sh` full suite | green, 2352 tests (harness output, cached for this tree; S3-R1 commit says 2319 → 2352, count only grew); pass | yes |
+| S3-04 | 1 | `test_request_add_prints_the_request_and_its_rows_and_again_finds_it` | exit 0; line 1 `request 1: Al Green – I'm Still in Love With You (album, 9 rows, 0 in library)`, row line `  01 ext-1  I'm Still In Love With You  needs_source`; repeat prints `; already requested`; pass | yes |
+| S3-04 | 2 | `test_request_list_and_show`, `test_request_add_json_is_the_apis_shape` | show has source, musicbrainz release, rows with status/reason (no /srv/music), plan line; list newest first; --json equals API shape via json.loads; pass | yes |
+| S3-04 | 3 | `test_request_preview_without_slskd_exits_2`, `test_request_preview_prints_the_plan_without_peers_and_show_has_it` | exit 2 `preview needs --slskd or $SLSKD_URL`; plan printed with coverage, row → file, no PEER/DIR; fake slskd enqueued == []; pass | yes |
+| S3-04 | 4 | `test_request_approve_records_approvals_and_downloads_nothing`, `test_request_approve_of_a_row_in_progress_prints_the_409_and_exits_1` | `approved 9 rows of request 1; the worker downloads them on its next tick`, exit 0; in-progress → 409 text on stderr, exit 1; enqueued == []; pass | yes |
+| S3-04 | 5 | read `sourcing/cli.py` docstring lines 11-14, `docs/worker.md` lines 160-168 | docstring lists request add/list/show/preview/approve; worker.md Album jobs names the morning path; pass | yes |
+| S3-04 | 6 | `.harness/check.sh` on the 10 S3 test files (test_requests_api, test_service, test_import_playlist, test_musicbrainz_client, test_catalog, test_album_job, test_sourcing_cli, test_api_doc, test_capture_spotify, test_python310_syntax) | 380 passed | yes |
+| S3-04 | 7 | harness `check.sh` / `.harness/check.sh` full suite | green, 2352 tests (harness output, cached for this tree; S3-R1 commit says 2319 → 2352, count only grew); pass | yes |
+| S3-05 | 1 | read `tests/test_api_doc.py`; ran it | asserts doc exists, six route strings in backticks, statuses 400/404/409/502/503 present and no other ApiError status raised in the handlers' source; pass | yes |
+| S3-05 | 2 | read `docs/api.md` headings and statuses | Auth and exposure (tailnet), Statuses, six endpoint sections, examples from test assertions, approve = Michael's click, no peer/path; all five statuses found; pass | yes |
+| S3-05 | 3 | `grep '^## ' docs/api.md`; test asserts | `## For a client` at line 156; `/api/events` asserted; pass | yes |
+| S3-05 | 4 | `grep api.md docs/architecture.md docs/worker.md` | architecture line 73 and worker.md link api.md; pass | yes |
+| S3-05 | 5 | `.harness/check.sh` test_api_doc + test_requests_api (inside the 380) | passed | yes |
+| S3-05 | 6 | harness `check.sh` / `.harness/check.sh` full suite | green, 2352 tests (harness output, cached for this tree; S3-R1 commit says 2319 → 2352, count only grew); pass | yes |
+| S3-06 | 1 | `test_captures_search_and_first_album` | token POST with grant_type + Basic base64, search URL prefix, album URL, Bearer on both, two pretty-printed files under out_dir; pass | yes |
+| S3-06 | 2 | `FAILURES` parametrized (19 paths), `assert_no_secret`, `test_verbose_prints_urls_only` | token 401/bad JSON/search 500/album 404 etc. exit 1, no secret/token in stdout, stderr, files or exceptions; verbose prints URLs only; pass | yes |
+| S3-06 | 3 | `test_refuses_without_both_variables`, `test_429_on_any_call_stops_without_retry` | exit 2 with `set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET (read -rs …)`, zero calls; 429 → exit 3 `rate limited; Retry-After: 17`, time.sleep patched to fail, one call; pass | yes |
+| S3-06 | 4 | `test_docstring_has_the_morning_usage`; read module docstring; test_python310_syntax in the run | exact usage line, 'catalog data only', Michael commits; stdlib only; syntax test green; pass | yes |
+| S3-06 | 5 | `git show --stat 46f8e26 | grep fixtures/spotify`; `ls fixtures | grep captured`; read `no_sockets` fixture | no captured fixtures committed or present; sockets blocked in tests; pass | yes |
+| S3-06 | 6 | `.harness/check.sh` test_capture_spotify + test_python310_syntax (inside the 380) | passed | yes |
+| S3-06 | 7 | harness `check.sh` / `.harness/check.sh` full suite | green, 2352 tests (harness output, cached for this tree; S3-R1 commit says 2319 → 2352, count only grew); pass | yes |
+| S3-R1 | 1 | read the progress entry for S3-R1 and `s3.diff` in scratch | diff file exists (3499 lines); entry lists 0 Critical / 2 Important / 9 Minor with details; pass | yes |
+| S3-R1 | 2 | `test_a_playlist_url_matches_its_tracks_without_holding_the_apps_lock`, `test_preview_plans_nothing_when_the_job_claimed_a_row_during_its_search`, `test_a_list_body_is_400`, `test_failures_exit_1_and_leak_nothing`; read preview_request/plan_request | RED→GREEN tests for I1/I2 exist; no username in payloads; POST creates no transfer (enqueued == []); malformed body 400 `body must be a JSON object`; capture leaks nothing. Preview takes `_lock` for every store read/write but, by design, not during the slskd search (asserted `held == [False]`), unlike `/api/wanted/<id>/preview`, which holds it throughout: meets the intent; flagged | yes |
+| S3-R1 | 3 | read `sourcing/cli.py` request commands and `crates/service.py` | CLI builds `CrateApp` and calls the same add/preview/approve methods; one PROVIDERS dict, one class; pass | yes |
+| S3-R1 | 4 | `git show --stat 76d4f05`; grep architecture, next-todos, spec; ran test_api_doc | api.md, architecture §4(e) entry points (line 284), next-todos S3 paragraph + Spotify provider line, spec `**Built 2026-10-23**` all present; pass | yes |
+| S3-R1 | 5 | `git show --stat 76d4f05` | 15 files, all code/tests/docs/harness state; no stray files; pass | yes |
+| S3-R1 | 6 | harness `check.sh` / `.harness/check.sh` full suite | green, 2352 tests (harness output, cached for this tree; S3-R1 commit says 2319 → 2352, count only grew); pass | yes |
+
+### 2026-10-23 14:40 · S3-R1 · passes
+
+- **Review:** an Opus review of `git diff a399566..HEAD -- crates sourcing scripts tests docs` (3499 lines, `$HARNESS_SCRATCH/s3.diff`) found 0 Critical, 2 Important and 9 Minor. A second Opus review of the fixes found 0 Critical, 0 Important and 6 Minor.
+- **Fixed, each with a failing test first:**
+  - **I1:** a playlist link's `POST /api/requests` searched Navidrome once per row while holding the app's `_lock`. Now `requests.add_link(lock=)` and `import_playlist(lock=)` take the lock only for crates.db and the playlist edit. The playlist is looked up again under the lock, so two imports of one name still make one playlist.
+  - **I2:** a preview whose search ran while Michael approved and the worker claimed a row could replace the job's cache. Now `plan_request(idle=True)` re-checks after the search and answers 409 `album_job.InFlight`, caching nothing. The check is shared with `approve_request` as `_not_in_flight`.
+  - **Minor:** every POST with a body that is not a JSON object (a list, string, number or `null`) now answers 400 `body must be a JSON object`. Before, the older routes dropped the connection.
+  - **Minor:** `capture_spotify.write_both` no longer deletes an earlier capture when a later write fails.
+  - **Minor:** a MusicBrainz reply of another shape is now 502, not 400.
+  - **Minor:** the `_playlist_open` alias is removed.
+  - **Minor:** `docs/api.md` is corrected: `usedAt` and `result` are set when the worker claims, a playlist's album groups get album approvals, there is no Spotify entry in the registry, and the relative paths that can appear in a `reason` are described.
+- **Checked and holding:** every request and catalog body passes `store.public`. POST never reaches slskd; only approve records approvals. Preview searches outside the lock on purpose (S3-03), and its store reads and writes are under it. Every malformed body is 400. `capture_spotify` leaks nothing on any failure path. The CLI and HTTP call the same `CrateApp` methods. The catalog is one class plus the `PROVIDERS` dict.
+- **Docs:** architecture §4 (e) lists the API and CLI entry points, next-todos State has the S3 paragraph and the "Spotify provider: after S3-06's capture" line, and the spec's S3 header has its **Built** line.
+- **Tests:** 33 new, 2319 → 2352. Full `check.sh` green (2352 tests, 923 s). Each new test was confirmed to fail without its fix (mutants, and the second review).
+- **Not fixed (Minor; for S4-02 if it wants them):**
+  - The tier `at` is computed from the first playlist lookup.
+  - Two identical playlist POSTs at once can both answer 201.
+  - NameCollision now comes after lead-artist resolution, which only costs time.
+  - An approval made but not yet claimed doesn't stop a preview from replacing the plan. This was already the case before S3-R1.
+  - The MusicBrainz search cache is never refreshed in the crates process.
+  - `approve_request` commits row by row.
+  - The CLI doesn't map KeyError/ValueError.
+  - Small duplicates: `_format`, `_credit` and `_year`.
+  - CLI `list` re-reads the store; S3-04 kept that on purpose (M5).
+- No question for Michael.
+
+### 2026-10-23 12:50 · S3-06 · passes
+
+- **What changed:** new `scripts/capture_spotify.py`, stdlib only, **never run in this run**. It makes 3 requests: a Client Credentials token, one `GET /v1/search?type=album,track&limit=10&q=…`, and one `GET /v1/albums/<first album id>`. It writes `fixtures/spotify_search.captured.json` and `fixtures/spotify_album.captured.json`, pretty-printed, both or neither (through `.tmp` + rename).
+  - Exit codes: 2 when either env variable is unset (before any request), 3 on a 429 (prints `Retry-After`, no sleep, no retry), 1 on any other failure, with one line on stderr naming the call, the HTTP status and Spotify's short reason (e.g. `invalid_client`).
+  - The secret, the Basic value and the token are never printed or written. A reply that repeats one of them is refused, and a redirect is an error, because urllib would carry `Authorization` to the new host. The docstring holds the checklist step 6 usage. `docs/api.md` points to the script.
+  - Tests: 40 new in `tests/test_capture_spotify.py`, all on a stub opener; an autouse fixture fails the test if a socket connects. The suite went from 2279 to **2319**.
+- **Verified:** `test_capture_spotify` + `test_python310_syntax`: 42 passed. Five hand mutants were each caught: printing the error body, printing the headers in `--verbose`, dropping the echo check, `and` instead of `or` in the env check, and echoing a non-numeric `Retry-After`. Full `check.sh` green, 2319 tests. No `fixtures/spotify_*.captured.json` exists or was committed.
+- **Opus review (0 Critical, 1 Important, 10 Minor):** I1 and M2–M10 were fixed test-first.
+  - I1: the secrecy check now also looks for the base64 Basic value, `Basic `, `Bearer ` and `Authorization`.
+  - The other fixes: both-or-neither writes, the redirect refusal, Spotify's short error reason, a null first album skipped, the echo check on the exact written text, the untested exception types (ValueError, http.client, SSL, a read that fails), a missing or odd `Retry-After`, and the default out dir.
+- **Proposed change (M11):** add `; unset SPOTIFY_CLIENT_SECRET` to the end of the morning usage, so the secret doesn't stay exported in Michael's shell. The spec's checklist step 6 and this feature's step 4 pin the exact string, so S4-01 can add it as a separate line in the checklist. No question for Michael.
+
+### 2026-10-23 11:30 · S3-05 · passes
+
+- **What changed:** new `docs/api.md`: auth/exposure, row and request statuses, one section per endpoint (`POST/GET /api/requests`, `GET /api/requests/<id>`, `preview`, `approve`, `GET /api/catalog/search`) with 2xx bodies taken from the tests' assertions and every error status with its reason text, plus `## For a client` (flow, and what is missing: UI, Spotify provider, DELETE/cancel). Linked from `docs/architecture.md` §2 and `docs/worker.md` `## Where things are`. 5 new tests in `tests/test_api_doc.py` (routes, statuses 400/404/409/502/503, no unlisted status raised in the handlers, flow section and links, peer/path/tailnet statement).
+- **Verified:** `test_api_doc` + `test_requests_api`: 94 passed. Full `check.sh` green, 2279 tests (was 2274), 895 s.
+- **Next session:** timestamps and some ids in the doc's examples are illustrative where the tests assert only their type. No question for Michael.
+
+### 2026-10-23 10:45 · S3-04 · passes
+
+- **What changed:** `python -m sourcing.cli request add <link> | list | show <id> | preview <id> | approve <id>`, each with `--json` (the API's JSON). The code is `request_cmd` in `sourcing/cli.py`, which calls the five `CrateApp` methods the HTTP routes use, so add, preview and approve have no second implementation.
+  - `add` takes a Spotify link, and also a `musicbrainz.org/release|recording/<id>` link, the same as POSTing `mbReleaseId`/`mbRecordingId`.
+  - The `CRATES_DB` guard is now `_crates_db`, shared with `fetch --approve`.
+  - The module docstring lists the new commands. `docs/worker.md` `## Album jobs` gains "The morning path, without a client".
+  - Tests: 19 new in `tests/test_sourcing_cli.py`. The suite went from 2255 to **2274**.
+- **Verified:** `test_sourcing_cli` + `test_album_job`: 86 passed. Full `check.sh` green, 2274 tests in 906 s. In the tests, approve leaves the fake slskd's `enqueued` empty, and the preview output has no peer and no `@@` directory.
+- **Opus review (0 Critical, 2 Important, 6 Minor):** these were fixed test-first.
+  - I1: Navidrome down (a `URLError`), `CommentNotKept` or `sqlite3.Error` gave a traceback. Each now prints one line and exits 1, as the HTTP handler maps them.
+  - I2: a playlist request's headline printed `None – <name>`.
+  - M3: a playlist plan that went stale now says it is stale.
+  - M4: the wording when nothing new is requested.
+  - Added tests: slskd away, a missing API key, a stale plan, a playlist's per-track preview.
+- **Not fixed (for S3-R1):**
+  - M5: `list` builds its text from `requests.view` and not from `app.requests()`, because `listed` has no rows and a track request has no album to name it by.
+  - M6: `add --json` cannot tell new from existing (the API's 201/200). Text mode says `; already requested`.
+  - M8: `show` prints the plan text as cached, so rows that are done since then still appear in it, the same as the API's `folders`.
+- **Next session:** S3-05's `docs/api.md` can point to the CLI as the shell equivalent. No question for Michael.
+
+### 2026-10-23 09:20 · S3-03 · passes
+
+- **What changed:** four new routes in `crates/service.py`, with the same handler and error mapping as the other routes.
+  - `GET /api/requests` → `{requests: [...]}`, newest first. Each entry is view's request plus `rowCounts {ok, needsSource, sourcing, verify, failed, review}` (from `requests.listed`).
+  - `GET /api/requests/<id>` → the S3-01 shape plus `preview` (the cached plan or null). Each row also gets `approval {id, purpose, ts, usedAt, result}`: its newest approval of any purpose, so a play-now shows too (from `requests.detail`).
+  - `POST /api/requests/<id>/preview` → `{plan: {folders: [{label, coverage, rows: [{id, file}]}], perTrack, ts}}`. A playlist's plan is `{albums: [...+artist, album], perTrack}`; one with no album group answers `albums: []`, never null (from `album_job.shown`).
+  - `POST /api/requests/<id>/approve` → `{approved: [{wantedId, approvalId, candidate: {basename}|null}]}`.
+  - Errors: 503 when no slskd is configured; 502 `cannot reach slskd (…)`; 409 with `_not_in_progress`'s wording for a row that is sourcing, verify or claimed; 409 `nothing to approve|plan`; 404 `no request #N`; 400 for a non-digit id.
+  - Tests: S3-03 section of `tests/test_requests_api.py`, plus 3 in `test_album_job.py` (one is the HTTP approve → worker tick) and 1 in `test_playlist_request.py`. The suite went from 2223 to **2255**, green in 886 s.
+- **Opus review (0 Critical, 2 Important, 6 Minor):** these were fixed test-first.
+  - I1: `plan_request(lock=)` searches outside the app lock.
+  - I2: the failed folders are read again after the search, so a folder the job distrusted meanwhile stays out.
+  - M3: `approve_request` takes no file from a plan marked stale (`at` 0).
+  - M5: the GETs read under the lock.
+  - M7: `open_rows` drops a `review` row that is waiting for a pick, for every kind and not only playlists.
+  - M8: ASCII-digit ids.
+- **Not fixed (for S3-R1):** M6. An approve commits row by row, and a crates.db `sqlite3.Error` answers "Navidrome's database can't be read". That mapping is the same on every existing route.
+- **Verified:** the step-5 subset plus `test_playlist_request` and `test_fetch_filing`: 225 passed. Full `check.sh` green, 2255 tests.
+- **Next session:** S3-04's CLI should call `CrateApp.preview_request` / `approve_request` / `request_detail` so the rules stay in one place. S3-05's `docs/api.md` should document the shapes above. No question for Michael.
+
+### 2026-10-23 07:40 · S3-02 · passes
+
+- **What changed:** `GET /api/catalog/search?q=&kind=album|track` answers 200 with `{hits: [...]}`. Each hit has `provider, kind, title, artist, year, trackCount, lengthS, format, ids, inLibrary`.
+  - Code: new `sourcing/catalog.py` (`Hit`, `MusicBrainzCatalog`, `PROVIDERS`, `search`, `CatalogBusy`) and `CrateApp.catalog_search` in `crates/service.py`.
+  - `MusicBrainz.phrase_query` leaves a blank field out of the query, so `release_search("", album)` is `release:"…"`.
+  - `requests.match_request_release` no longer searches an album request that has no artist (it would match anyone's album of that name).
+  - Tests: new `tests/test_catalog.py` (36), plus 1 in `test_musicbrainz_client.py` and 1 in `test_requests.py`. The suite went from 2185 to **2223**, green in 844 s.
+- **Errors:** 400 `kind must be album or track`; 400 `q is required`; 503 `MusicBrainz is busy, try again` (after the client's 4 tries, or no network). Navidrome down or answering oddly gives 200 with `inLibrary: null` on every hit, asked only once.
+- **inLibrary:**
+  - Tracks use `fetch.library_match` (same recording or same version).
+  - Albums use search3 *song* results with `identity.loose` equality on `album` and on the artist, `displayAlbumArtist` or `albumArtists[].name` (the captured 0.64 shape), retrying with the title's words alone. Album search3 results are not captured, so no `search_albums` was invented.
+  - Each search page is asked once per call (`_Library` memoises `search_songs`). A hit with no artist, or a name that folds to nothing ("÷", "!!!"), is `null`, not `false`.
+- **Verified:** step-5 subset plus neighbours (catalog, requests_api, musicbrainz_client, requests, service, musicbrainz, sourcing_cli, import_playlist, fetch): 279 passed. Full `check.sh` green, 2223 tests.
+- **Opus review (0 Critical, 3 Important, 8 Minor):**
+  - Fixed, test-first: I1 (album artist read from a key Navidrome never sends), I2 (18 Navidrome calls for 10 track hits, now 2), M1 to M5, and the en dash in M6.
+- **Proposed changes / questions for Michael:**
+  - (I3) Step 1 prescribes `release:"<q>"` for a query without " - ". On real MusicBrainz, "Al Green I'm Still in Love" as one title phrase finds nothing; only `Artist - Title` works. Should a plain query be sent as unfielded words? `docs/api.md` (S3-05) should state the " - " rule either way.
+  - (M7) Every distinct search stays in the MusicBrainz client's cache: in memory until a restart, and in `MUSICBRAINZ_CACHE` forever if that is set. Should searches skip the cache (keeping the limiter and backoff)?
+  - (Step 2) It says "search3 album results"; this uses search3's song results instead (reason above). Capturing a real `search3` with `albumCount>0` would allow a `search_albums`.
+- **Next session:** S3-05's `docs/api.md` should document the hit shape and that a pick posts `ids` to `POST /api/requests`.
+
+### 2026-10-23 06:10 · S3-01b · passes
+
+- **What changed:** `POST /api/requests` also takes `{"mbReleaseId"}` (an album request: the release's tracks across all media, recording ids, lead credit, year from `date[:4]`, lengths; source `https://musicbrainz.org/release/<id>`) or `{"mbRecordingId"}` (a track request). Code: `sourcing/requests.py` (`add_release`, `add_recording`, `mark_in_library`, shared `_record`), `sourcing/fetch.py` (`in_library` split into `library_match` / `library_error` / `link_library_song`, behaviour unchanged), `crates/service.py` (`CrateApp(musicbrainz=…)`, built from `MUSICBRAINZ_CACHE` by default; `_add_pick`). Tests: 22 new in `tests/test_requests_api.py`. The suite went from 2163 to **2185**, green in 834 s.
+- **Library marking:** every new album or track request (Spotify or MusicBrainz) has rows the library already has set to `ok`, with `librarySongId` and a `matched` event (S1-07's rules). If Navidrome is down or answers oddly, the rows stay `needs_source`, one event `#<id> library not asked: <type>` is logged, and the request is still 201. Playlists are not re-marked, because their import has just matched them.
+- **Errors:** 404 `MusicBrainz has no release|recording <id>` and `… lists no tracks`; 400 `one of url, mbReleaseId, mbRecordingId` and `<key> is not a MusicBrainz id`; 502 `cannot reach MusicBrainz (…)`.
+- **Verified:** step-5 subset 130 passed. Full `check.sh` green, 2185 tests.
+- **Opus review (0 Critical, 3 Important, 7 Minor), fixed test-first:**
+  - I1: Navidrome is now asked outside the app lock (`mark_in_library(lock=)`); a hit is linked under the lock only if its row is still open.
+  - I2: any error during the library check is an event, never a 4xx/5xx or a dropped connection.
+  - I3: a release with no tracks is a 404, not an empty request.
+  - Added tests for the skips, a pick whose rows another request holds, a repeat recording pick, and a mid-way Navidrome failure.
+- **Not done (Minor), for S3-R1:**
+  - The service's in-memory MusicBrainz cache keeps 404s until a restart.
+  - A repeated POST while Navidrome is down logs another event.
+  - `seed-spotify` still marks nothing; fetch asks the library before it downloads anyway.
+- **Next session:** S3-04's `request add` should call `add_link`, `add_release` / `add_recording` and then `mark_in_library`, as `CrateApp._marked` does. No question for Michael.
+
+### 2026-10-23 05:10 · S3-01 · passes
+
+- **What changed:** `POST /api/requests {"url"}`. Code in `sourcing/requests.py` (`parse_link`, `fetch_link`, `add_link`, `view`, `UnknownLink`, `SpotifyUnreachable`) and `crates/service.py` (`CrateApp(fetch_entity=…)`, `add_request`, the route). New `tests/test_requests_api.py` (39 tests). Suite went from 2124 to **2163** tests, green in 816 s.
+- **Behaviour:**
+  - An album or track answers 201 with `{request, rows}` in camelCase, through `public`.
+  - The same link again (URL, `intl-xx/`, `?si=` or URI form) answers 200 with the same body, and Spotify is fetched once per call.
+  - A playlist is imported with `merge=True` and then becomes add_playlist's request; the reply also has `playlist {id, name, matched, wanted, ambiguous}`. A playlist the library already has whole answers 200 with `request: null`.
+  - Errors: 400 `url is required`, 400 `unknown link kind: <host|kind>`, 409 for another user's playlist of that name, 502 `cannot reach Spotify (…)` for a fetch error or an unreadable embed.
+- **Verified:** step 5 subset (`test_requests_api`, `test_service`, `test_import_playlist`): 92 passed. Full `check.sh`: green, 2163 tests.
+- **Opus review (0 Critical, 1 Important, 4 Minor), all done test-first:**
+  - I1 (Important): an `IncompleteRead` or `TypeError` from the page left the client with no HTTP response. Fixed: any fetch failure is now a 502.
+  - M2: an embed this code can't read used to answer 400; it is now 502 (`_readable`).
+  - M3: an empty `url` now answers `url is required`.
+  - M4: a playlist is known by its name. Recorded as **D52 *default*** in the pivot spec, with a test.
+  - M5: added tests for the CommentNotKept path, the wrong-kind embed, and Navidrome being untouched on 409.
+- **Next session (S3-01b):** `add_link` and `view` are what the CLI `request add` (S3-04) should call too. The fetch runs outside `_lock`; the import and add run inside it.
+- **Question for Michael (D52):** should a second, different playlist URL whose playlist has the same name join the first one (the default now), or be refused with 409?
+- **Proposed change:** step 1 says the payload is "camelCase as `/api/wanted` does", but `/api/wanted` is snake_case (`song_id`, `library_song_id`). I followed the camelCase shape the step lists; `docs/api.md` (S3-05) should say the two differ.
+
 ### 2026-10-23 verify S2
 
 All 11 S2 features hold; none set to false. Init check green (2124 tests). I also ran the union of S2 test files (605 passed) and re-ran the S2-06a beets measurement in scratch.

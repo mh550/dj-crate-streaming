@@ -22,6 +22,7 @@ have no artist tag (library titles sometimes carry it: "A Change Is Gonna Come -
 """
 from __future__ import annotations
 
+import contextlib
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -261,7 +262,8 @@ class Report:
 
 
 def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: CrateStore,
-                    source: str, dry_run: bool = False, merge: bool = False, resolve=track_lead, tier: str | None = None) -> Report:
+                    source: str, dry_run: bool = False, merge: bool = False, resolve=track_lead, tier: str | None = None,
+                    lock=contextlib.nullcontext()) -> Report:
     """Create or update the playlist `name`: matched tracks in row order (appending only what is
     missing on a re-run, never removing), public; everything else becomes an external_wanted row
     that remembers the playlist and position. Ambiguous rows are parked as `verify` with the ids. A real run also
@@ -278,29 +280,20 @@ def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: C
     Without `tier`, rows are matched and queued at the playlist's effective tier (reconcile.effective_tier: its
     comment's #crate / #tier:, or a crate name marker), else IMPORT_TIER. A written comment is read back before
     crates.db caches it; if Navidrome did not keep it, the playlist edit and the wanted rows are still recorded, then CommentNotKept is
-    raised with `.report` set."""
+    raised with `.report` set.
+
+    `lock` (the crates app's, S3-R1) is held for crates.db and the playlist edit, never while the rows are matched
+    (search3 per row) or their lead artists resolved; under it the playlist is looked up again, so two imports of
+    one name still make one playlist."""
     existing = next((p for p in client.playlists() if p.name == name), None)
     app_owned = default_owner() == "app"        # 2026-10-17: the crates app owns the flag; no comment is written (D33)
     if app_owned:
-        at = tier or (store.playlist_tier(existing.id) if existing else None) or IMPORT_TIER
+        with lock:
+            at = tier or (store.playlist_tier(existing.id) if existing else None) or IMPORT_TIER
     else:
         at = tier or effective_tier(name, existing.comment if existing else None) or IMPORT_TIER   # D21: the comment's (or name's)
     accept = frozenset(TIERS[at].accept_versions)
     matches = [match(client, r, accept) for r in rows]
-    ours = existing is not None and store.is_playlist_imported(existing.id)
-    if existing is not None and existing.owner and existing.owner != client.user:   # getPlaylists lists others' public ones
-        raise NameCollision(name, existing.id, existing.owner, client.user)
-    if existing is not None and not ours and not merge:
-        raise NameCollision(name, existing.id)
-    have = {e.id for e in client.playlist(existing.id).entries} if existing else set()
-    added_before = store.imported(existing.id) if existing else set()
-    present = have | added_before
-    for m in matches:                    # a copy of this track is already there (or was, until Michael removed it)
-        if m.status == "matched" and m.song_id not in present:
-            m.song_id = next((i for i in m.candidates if i in present), m.song_id)
-    ordered = list(dict.fromkeys(m.song_id for m in matches if m.status == "matched"))
-    new_ids = [i for i in ordered if i not in present]          # a track Michael removed stays removed
-    playlist_id = existing.id if existing else None
     # Resolve lead artists (may ask Spotify) before touching anything, so a failure leaves nothing half-written.
     failed = set()
 
@@ -317,52 +310,68 @@ def import_playlist(name: str, rows: list[Row], client: SubsonicClient, store: C
               for m in matches if (m.how or "").startswith("other version")]
     notes += [f"same recording by ISRC, but the labels differ: {m.row.position} {m.row.artist} — {m.row.title} → "
               f"{m.title}" for m in matches if m.note]
-    if not dry_run:
-        if existing is None:
-            target = client.create_playlist(name, new_ids)
-            playlist_id = target.id
-            store.mark_playlist_imported(playlist_id, name, source)       # at once: a later failure leaves it ours
+    with lock:
+        existing = next((p for p in client.playlists() if p.name == name), None)   # made meanwhile: that one
+        ours = existing is not None and store.is_playlist_imported(existing.id)
+        if existing is not None and existing.owner and existing.owner != client.user:   # getPlaylists lists others' public ones
+            raise NameCollision(name, existing.id, existing.owner, client.user)
+        if existing is not None and not ours and not merge:
+            raise NameCollision(name, existing.id)
+        have = {e.id for e in client.playlist(existing.id).entries} if existing else set()
+        added_before = store.imported(existing.id) if existing else set()
+        present = have | added_before
+        for m in matches:                    # a copy of this track is already there (or was, until Michael removed it)
+            if m.status == "matched" and m.song_id not in present:
+                m.song_id = next((i for i in m.candidates if i in present), m.song_id)
+        ordered = list(dict.fromkeys(m.song_id for m in matches if m.status == "matched"))
+        new_ids = [i for i in ordered if i not in present]          # a track Michael removed stays removed
+        playlist_id = existing.id if existing else None
+        if not dry_run:
+            if existing is None:
+                target = client.create_playlist(name, new_ids)
+                playlist_id = target.id
+                store.mark_playlist_imported(playlist_id, name, source)       # at once: a later failure leaves it ours
+                store.commit()
+                comment = None if app_owned else attrs.write("", tier=tier or IMPORT_TIER)   # D15 (comment owner only)
+                client.update_playlist(playlist_id, public=True)                      # spec §2a: visible to every user
+            else:                                       # visibility is set once, at creation: Michael may change it
+                target = existing                       # merge adopts it at once, as asked; its comment is left as it is
+                store.mark_playlist_imported(existing.id, name, source,           # ours: refreshes the row's name only
+                                             detail=None if ours else f"adopted with --merge: {source}")
+                store.commit()
+                old = existing.comment or ""            # D15 (owner comment only): a given tier rewrites #tier:, else alone
+                comment = None if app_owned or tier is None else attrs.write(old, tier=tier)
+                comment = None if comment == old else comment
+                client.update_playlist(existing.id, add_song_ids=new_ids)
+            not_kept = None
+            if comment is not None:
+                try:
+                    Reconciler(client, store).refresh_cache(write_comment(client, target, comment))   # read back, then cache
+                except CommentNotKept as e:          # the songs are in: still record our own facts, then raise
+                    not_kept = e
+                except Exception as e:               # SubsonicError, URLError...: the same, so the CLI prints the report, exit 1
+                    not_kept = CommentNotKept(f"{target.name}: could not write comment {comment!r}: {type(e).__name__}: {e}")
+                    not_kept.__cause__ = e
+            store.mark_imported(playlist_id, ordered)
+            queued = {r["position"]: r for r in store.external_for_playlist(playlist_id)}
+            for m in matches:                           # a wanted row whose track is now in the library is done,
+                r = queued.get(m.row.position)          # unless it has a library song already: then it is an upgrade
+                if (m.status == "matched" and r and norm(r["title"]) == norm(m.row.title) and not r.get("library_song_id")
+                        and r["status"] in ("needs_source", "review", "failed")):   # (play-now's provisional copy matched)
+                    store.set_external_status(r["song_id"], "ok", f"in library: {m.song_id}")
+            queued_as = {}                              # Spotify position → the wanted row it queued
+            for m, lead in pending:
+                ext = queued_as[m.row.position] = store.add_external_wanted(lead, m.row.title, album=m.row.album, duration_s=m.row.duration_s,
+                                                source=source, playlist_id=playlist_id, position=m.row.position, tier=tier,
+                                                default_tier=at, reask=name)   # a failed row is asked again (M9 §8h)
+                if m.status == "ambiguous" and store.external(ext)["status"] in ("needs_source", "review"):
+                    store.set_external_status(ext, "review", f"ambiguous ({m.why}): " + ", ".join(m.candidates))
+            store.record_import_order(playlist_id, [         # N4: the newest real import is the playlist's order
+                (m.row.position, m.song_id if m.status == "matched" else None, queued_as.get(m.row.position))
+                for m in matches])
             store.commit()
-            comment = None if app_owned else attrs.write("", tier=tier or IMPORT_TIER)   # D15 (comment owner only)
-            client.update_playlist(playlist_id, public=True)                      # spec §2a: visible to every user
-        else:                                       # visibility is set once, at creation: Michael may change it
-            target = existing                       # merge adopts it at once, as asked; its comment is left as it is
-            store.mark_playlist_imported(existing.id, name, source,           # ours: refreshes the row's name only
-                                         detail=None if ours else f"adopted with --merge: {source}")
-            store.commit()
-            old = existing.comment or ""            # D15 (owner comment only): a given tier rewrites #tier:, else alone
-            comment = None if app_owned or tier is None else attrs.write(old, tier=tier)
-            comment = None if comment == old else comment
-            client.update_playlist(existing.id, add_song_ids=new_ids)
-        not_kept = None
-        if comment is not None:
-            try:
-                Reconciler(client, store).refresh_cache(write_comment(client, target, comment))   # read back, then cache
-            except CommentNotKept as e:          # the songs are in: still record our own facts, then raise
-                not_kept = e
-            except Exception as e:               # SubsonicError, URLError...: the same, so the CLI prints the report, exit 1
-                not_kept = CommentNotKept(f"{target.name}: could not write comment {comment!r}: {type(e).__name__}: {e}")
-                not_kept.__cause__ = e
-        store.mark_imported(playlist_id, ordered)
-        queued = {r["position"]: r for r in store.external_for_playlist(playlist_id)}
-        for m in matches:                           # a wanted row whose track is now in the library is done,
-            r = queued.get(m.row.position)          # unless it has a library song already: then it is an upgrade
-            if (m.status == "matched" and r and norm(r["title"]) == norm(m.row.title) and not r.get("library_song_id")
-                    and r["status"] in ("needs_source", "review", "failed")):   # (play-now's provisional copy matched)
-                store.set_external_status(r["song_id"], "ok", f"in library: {m.song_id}")
-        queued_as = {}                              # Spotify position → the wanted row it queued
-        for m, lead in pending:
-            ext = queued_as[m.row.position] = store.add_external_wanted(lead, m.row.title, album=m.row.album, duration_s=m.row.duration_s,
-                                            source=source, playlist_id=playlist_id, position=m.row.position, tier=tier,
-                                            default_tier=at, reask=name)   # a failed row is asked again (M9 §8h)
-            if m.status == "ambiguous" and store.external(ext)["status"] in ("needs_source", "review"):
-                store.set_external_status(ext, "review", f"ambiguous ({m.why}): " + ", ".join(m.candidates))
-        store.record_import_order(playlist_id, [         # N4: the newest real import is the playlist's order
-            (m.row.position, m.song_id if m.status == "matched" else None, queued_as.get(m.row.position))
-            for m in matches])
-        store.commit()
-    rep = Report(name, playlist_id, existing is None, matches, len(new_ids), len(have), notes)
-    if not dry_run and not_kept is not None:
-        not_kept.report = rep                    # what was done, for the CLI to print before the error
-        raise not_kept
-    return rep
+        rep = Report(name, playlist_id, existing is None, matches, len(new_ids), len(have), notes)
+        if not dry_run and not_kept is not None:
+            not_kept.report = rep                    # what was done, for the CLI to print before the error
+            raise not_kept
+        return rep

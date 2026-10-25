@@ -48,6 +48,7 @@ lengths come from the rows' `duration` (a playlist has no release). Its other ro
 """
 from __future__ import annotations
 
+import contextlib
 import time
 
 from crates.store import filed_path, public, retryable_review
@@ -78,8 +79,10 @@ def group_key(row: dict) -> str | None:
 
 
 def open_rows(req: dict) -> list[dict]:
-    """The rows an approval of the request covers: not `ok`, not `removed`, no file of theirs filed already."""
-    return [r for r in req["rows"] if r["status"] not in ("ok", "removed") and filed_path(r.get("reason")) is None]
+    """The rows an approval of the request covers: not `ok`, not `removed`, no file of theirs filed already, and not
+    a question no download answers (a `review` row waiting for a pick: the library may have it; S3-03 review)."""
+    return [r for r in req["rows"] if r["status"] not in ("ok", "removed") and filed_path(r.get("reason")) is None
+            and (r["status"] != "review" or retryable_review(r.get("reason")))]
 
 
 def groups(req: dict) -> list[dict]:
@@ -88,7 +91,7 @@ def groups(req: dict) -> list[dict]:
     its other open rows go per track (`per_track`)."""
     if req["kind"] != "playlist":
         return [{"key": None, "artist": req["artist"], "album": req["album"], "rows": open_rows(req)}]
-    rows = _playlist_open(req)
+    rows = open_rows(req)
     by: dict[str, list[dict]] = {}
     for r in rows:
         if group_key(r) is not None:
@@ -97,16 +100,10 @@ def groups(req: dict) -> list[dict]:
             for k, g in by.items() if len(g) >= MIN_GROUP_ROWS]
 
 
-def _playlist_open(req: dict) -> list[dict]:
-    """A playlist request's open rows, without the import's questions (an ambiguous `review` row: the library may
-    have it, and no download answers that)."""
-    return [r for r in open_rows(req) if r["status"] != "review" or retryable_review(r.get("reason"))]
-
-
 def per_track(req: dict) -> list[dict]:
     """A playlist request's open rows in no album group: approved as ordinary downloads."""
     grouped = {r["song_id"] for g in groups(req) for r in g["rows"]}
-    return [r for r in _playlist_open(req) if r["song_id"] not in grouped]
+    return [r for r in open_rows(req) if r["song_id"] not in grouped]
 
 
 def approvable(req: dict) -> list[dict]:
@@ -152,23 +149,42 @@ def _search(slskd, req: dict, poll_s: float) -> list[dict]:
     return search(slskd, " ".join(x for x in (req["artist"], req["album"]) if x), poll_s)
 
 
-def plan_request(store, slskd, request_id: int, policy=None, *, poll_s: float = 1.0, group: str | None = None) -> dict:
+def plan_request(store, slskd, request_id: int, policy=None, *, poll_s: float = 1.0, group: str | None = None,
+                 lock=contextlib.nullcontext(), idle: bool = False) -> dict:
     """Search the album once, plan its open rows, cache the plan (`req-<id>`) and return what a client may see:
     folder labels, coverage, row → basename, the per-track rows. One `plan` event. Nothing is enqueued. The cache
     also keeps, server side only, `at`, `assign` and the search's `responses` (a switch plans over them again).
     A playlist request plans each album group so (`group`: that one only) and returns {"request_id", "albums": [each
-    group's plan, with its artist and album], "per_track": [its rows in no group]}."""
-    req = _request(store, request_id)
+    group's plan, with its artist and album], "per_track": [its rows in no group]}.
+    `lock` (the service's) is held for the store's reads and writes, never during a search (S3-03); the folders a
+    job (another process) failed meanwhile are read again after it, and stay out and failed. `idle` (a preview's):
+    InFlight, and that plan not cached, when a row went in flight during the search (approved and claimed
+    meanwhile: the running job reads this cache; a playlist's album groups planned before it stay cached); the
+    job's own re-plan leaves it off."""
+    with lock:
+        req = _request(store, request_id)
+        if req["kind"] == "playlist" and group is None:
+            keys, singles = [g["key"] for g in groups(req)], per_track(req)
     if req["kind"] == "playlist" and group is None:
         return public({"request_id": request_id,
-                       "albums": [plan_request(store, slskd, request_id, policy, poll_s=poll_s, group=g["key"])
-                                  for g in groups(req)],
-                       "per_track": [{"id": r["song_id"], "title": r["title"]} for r in per_track(req)]})
+                       "albums": [plan_request(store, slskd, request_id, policy, poll_s=poll_s, group=k, lock=lock,
+                                               idle=idle) for k in keys],
+                       "per_track": [{"id": r["song_id"], "title": r["title"]} for r in singles]})
+    with lock:
+        req = _scope(store, request_id, group)
+    responses = _search(slskd, req, poll_s)
+    with lock:
+        if idle:
+            _not_in_flight(_scope(store, request_id, group))
+        return _plan(store, request_id, group, policy, responses)
+
+
+def _plan(store, request_id: int, group: str | None, policy, responses: list[dict]) -> dict:
+    """plan_request's plan over the search's `responses`, cached; the caller holds the lock."""
     req = _scope(store, request_id, group)
-    rows = _playlist_open(req) if group else open_rows(req)      # a group plans the rows approve_request approves
+    rows = open_rows(req)                                   # what approve_request approves
     policy = policy or (TIERS[rows[0]["tier"]] if rows else DEFAULT_POLICY)
     failed = _failed(store.preview(preview_key(request_id, group)))
-    responses = _search(slskd, req, poll_s)
     plan = album.plan_album(responses, rows, policy=policy, exclude=failed)
     folders, assign = [], {}
     for n, (role, f) in enumerate(((r, f) for r, f in (("primary", plan.primary), ("secondary", plan.secondary)) if f), 1):
@@ -188,9 +204,47 @@ def plan_request(store, slskd, request_id: int, policy=None, *, poll_s: float = 
     return public(shown)
 
 
+def shown(store, req: dict) -> dict | None:
+    """The request's cached plan as the API shows it (S3-03): {"folders": [{"label", "coverage", "rows": [{"id",
+    "file"}]}], "perTrack": [row ids], "ts"}, `ts` when it was made (None once a folder failed: the job plans again);
+    folder labels and basenames, never a peer. A playlist's: {"albums": [each album group's, with its "artist" and
+    "album"], "perTrack": its rows in no group}. None while the request, or one of its album groups, has none cached."""
+    if req["kind"] != "playlist":
+        return _shown(store.preview(preview_key(req["id"])))
+    albums = []
+    for g in groups(req):
+        plan = _shown(store.preview(preview_key(req["id"], g["key"])))
+        if plan is None:
+            return None
+        albums.append({"artist": g["artist"], "album": g["album"]} | plan)
+    return {"albums": albums, "perTrack": [r["song_id"] for r in per_track(req)]}
+
+
+def _shown(cache: dict | None) -> dict | None:
+    if cache is None:
+        return None
+    return public({"folders": [{"label": f["label"], "coverage": f["covers"],
+                                "rows": [{"id": r["id"], "file": r["basename"]} for r in f["rows"]]}
+                               for f in cache["folders"]],
+                   "perTrack": [r["id"] for r in cache["per_track"]], "ts": cache.get("at") or None})
+
+
 def _failed(cache: dict | None) -> set[tuple[str, str]]:
     """The folders (peer, directory) earlier runs of the job failed (a switch's cause): never planned again."""
     return {(p, d) for p, d in (cache or {}).get("failed") or []}
+
+
+class InFlight(ValueError):
+    """A row of the request is being sourced: approve and preview wait until it has ended."""
+
+
+def _not_in_flight(req: dict) -> None:
+    """InFlight when a row of `req` is being sourced (a row the running job has not reached yet is still
+    `needs_source`, its approval `started`)."""
+    busy = [r["song_id"] for r in req["rows"]
+            if r["status"] in ("sourcing", "verify") or (r.get("approval") or {}).get("result") == "started"]
+    if busy:
+        raise InFlight(f"request #{req['id']}: {', '.join(busy)} in flight; approve it again once that has ended")
 
 
 def approve_request(store, request_id: int, approved_by: str = "michael") -> list[int]:
@@ -198,13 +252,11 @@ def approve_request(store, request_id: int, approved_by: str = "michael") -> lis
     the cached plan; None without one: the job plans first, or the row goes per track). Returns the approval ids.
     A playlist request: `album` approvals for its album groups' rows, `download` approvals for the rest (S2-07)."""
     req = _request(store, request_id)
-    busy = [r["song_id"] for r in req["rows"]          # a row the running job has not reached yet is `needs_source`
-            if r["status"] in ("sourcing", "verify") or (r.get("approval") or {}).get("result") == "started"]
-    if busy:
-        raise ValueError(f"request #{request_id}: {', '.join(busy)} in flight; approve it again once that has ended")
+    _not_in_flight(req)
     ids = []
     for g in groups(req):
-        assign = (store.preview(preview_key(request_id, g["key"])) or {}).get("assign") or {}
+        cache = store.preview(preview_key(request_id, g["key"])) or {}
+        assign = cache.get("assign") or {} if cache.get("at") else {}    # stale (a folder failed): the job plans
         ids += [store.approve(r["song_id"], approved_by, (assign.get(r["song_id"]) or {}).get("candidate"), r["tier"],
                               purpose="album") for r in g["rows"]]
     if req["kind"] == "playlist":
