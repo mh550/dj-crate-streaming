@@ -45,6 +45,16 @@ on this system.
 - Test audio: an `anullsrc` concat silently negotiates down to 8-bit; force `aformat=sample_fmts=…` at every stage
   (`tests/helpers.make_audio`, `convert`).
 - A full-library `verify` takes about 75 minutes with 6 in parallel (CPU-bound).
+- **slskd 0.26.1 keeps a transfer on a plain `DELETE /transfers/downloads/<peer>/<id>`** (it only cancels, 204); the
+  record goes only with `?remove=true`, and an unknown id is 404. Its listing order is not known: fetch follows the
+  record whose id wasn't there before its enqueue (S1-04), never the last one.
+- **slskd 0.26.1 answers 404 to `GET /transfers/downloads/<peer>` for a peer with no transfers** (yet, or any more),
+  not an empty listing. `SlskdClient.downloads` reads that 404 as empty; it failed all 8 Al Green rows on 2026-10-21
+  before any enqueue.
+- **A confident AcoustID result can name another song of the same length.** ext-74 asked for "I'm Still In Love With
+  You" (Spotify 196 s) and got track 09 "One of These Good Old Days" (195 s) from a folder named after the album;
+  AcoustID said so at 0.958, MusicBrainz has the two at 195.7 s and 195.6 s. Duration can't catch it: the file's
+  title slot (S1-01), AcoustID's title against the asked one (S1-02) and Navidrome's title at filing (S1-03) do.
 
 ## SQLite
 - `crates.db` and `navidrome.db` are in WAL mode: data can sit in `<db>-wal` while the main file is 4 KB. Copy them

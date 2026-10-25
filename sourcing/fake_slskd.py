@@ -7,8 +7,11 @@ Searches always complete immediately with `responses` (slskd response shape, see
 fixtures/search_responses.sample.json). Enqueueing a file "downloads" it the way slskd does:
 the bytes land at downloads_dir/<remote parent folder>/<basename>, and transfers are reported
 per user as {username, directories:[{directory, files:[{id, filename, state, size}]}]}.
-complete=False keeps transfers InProgress forever (timeout tests); fail_enqueue=True makes
-POST /transfers/downloads answer 500 (peer gone).
+complete=False keeps transfers InProgress forever (timeout tests). fail_enqueue=True makes
+POST /transfers/downloads answer 500 (peer gone); a set of peers makes it do so for those peers only. An enqueue
+to one of `errored_peers` records a transfer in `error_state` (default `Completed, Errored`) with no file (a VPN
+drop). DELETE of a transfer acts as slskd 0.26.1 does: without ?remove=true it only cancels (the record stays),
+with it the record goes; an unknown id is 404.
 """
 from __future__ import annotations
 
@@ -25,9 +28,11 @@ from .scorer import split_remote
 
 class FakeSlskdServer:
     def __init__(self, responses: list[dict], downloads_dir: Path, files: dict[str, bytes],
-                 api_key: str = "k", complete: bool = True, fail_enqueue: bool = False, port: int = 0):
+                 api_key: str = "k", complete: bool = True, fail_enqueue: bool | set[str] = False, port: int = 0,
+                 errored_peers: set[str] = frozenset()):
         self.responses, self.downloads_dir, self.files = responses, Path(downloads_dir), files
         self.api_key, self.complete, self.fail_enqueue = api_key, complete, fail_enqueue
+        self.errored_peers, self.error_state = set(errored_peers), "Completed, Errored"
         self.searches: dict[str, str] = {}            # id → searchText
         self.enqueued: list[tuple[str, str]] = []     # (username, filename)
         self.transfers: list[dict] = []
@@ -48,16 +53,19 @@ class FakeSlskdServer:
         self.httpd.shutdown()
         self.httpd.server_close()
 
-    def seed_transfer(self, username: str, filename: str, state: str) -> dict:
+    def seed_transfer(self, username: str, filename: str, state: str, transfer_id: str | None = None) -> dict:
         """Pretend an earlier attempt left this record behind (slskd keeps completed transfers)."""
-        t = {"id": str(uuid.uuid4()), "username": username, "filename": filename, "size": 0, "state": state}
+        t = {"id": transfer_id or str(uuid.uuid4()), "username": username, "filename": filename, "size": 0,
+             "state": state}
         self.transfers.append(t)
         return t
 
     def _download(self, username: str, filename: str, size: int) -> dict:
         self.enqueued.append((username, filename))
         t = {"id": str(uuid.uuid4()), "username": username, "filename": filename, "size": size, "state": "InProgress"}
-        if self.complete:
+        if username in self.errored_peers:
+            t["state"] = self.error_state
+        elif self.complete:
             folder, base = split_remote(filename)
             dest = self.downloads_dir / folder / base
             dest.parent.mkdir(parents=True, exist_ok=True)
@@ -67,8 +75,9 @@ class FakeSlskdServer:
         return t
 
     def _user_view(self, username: str) -> dict:
+        # sorted by id: slskd's real order isn't captured, so no code may rely on it (e.g. "the last is the newest")
         dirs: dict[str, list[dict]] = {}
-        for t in self.transfers:
+        for t in sorted(self.transfers, key=lambda t: t["id"]):
             if t["username"] == username:
                 dirs.setdefault(split_remote(t["filename"])[0], []).append(t)
         return {"username": username, "directories": [{"directory": d, "files": fs} for d, fs in dirs.items()]}
@@ -107,9 +116,9 @@ class FakeSlskdServer:
                     fake.searches[body["id"]] = body["searchText"]
                     self._send({"id": body["id"], "state": "Completed, Succeeded"})
                 elif path.startswith("/api/v0/transfers/downloads/"):
-                    if fake.fail_enqueue:
-                        return self._send({"error": "peer unreachable"}, 500)
                     user = path.rsplit("/", 1)[1]
+                    if fake.fail_enqueue is True or user in (fake.fail_enqueue or ()):
+                        return self._send({"error": "peer unreachable"}, 500)
                     self._send([fake._download(user, f["filename"], f.get("size", 0)) for f in body])
                 else:
                     self._send({"error": "not found"}, 404)
@@ -142,12 +151,20 @@ class FakeSlskdServer:
             def do_DELETE(self):
                 if not self._auth():
                     return
-                path = urllib.parse.unquote(self.path)
+                parts = urllib.parse.urlsplit(self.path)
+                path = urllib.parse.unquote(parts.path)
                 m = re.fullmatch(r"/api/v0/transfers/downloads/([^/]+)/([^/]+)", path)
-                if m:
-                    fake.transfers = [t for t in fake.transfers if not (t["username"] == m.group(1) and t["id"] == m.group(2))]
-                else:
+                if not m:
                     fake.searches.pop(path.rsplit("/", 1)[1], None)
-                self._send({})
+                    return self._send({})
+                t = next((t for t in fake.transfers if t["username"] == m.group(1) and t["id"] == m.group(2)), None)
+                if t is None:
+                    return self._send({"error": "not found"}, 404)
+                if "true" in urllib.parse.parse_qs(parts.query).get("remove", []):
+                    fake.transfers.remove(t)
+                elif not t["state"].startswith("Completed"):      # a plain DELETE cancels; the record stays
+                    t["state"] = "Completed, Cancelled"
+                self.send_response(204)
+                self.end_headers()
 
         return H

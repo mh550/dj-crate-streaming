@@ -10,10 +10,22 @@
 Filing is beets' job (D18): the verified download moves to its own `<downloads>/.staging/<id>-<ts>/`
 folder and BeetsFiler imports it from there, so beets never sees slskd's folders or the library's
 originals. Navidrome's names for the filed song then go back onto the wanted row (`renamed` event),
-because they are what the library now calls it. Soulseek peer names never reach a reason or an event.
+because they are what the library now calls it, unless its title cannot be the asked song (identity.can_be_song):
+then the row keeps its names, is not placed, and becomes `review` ("filed <X> as <rel>, asked for <Y>", a
+`wrong_song` event; approving it downloads again, D48). Soulseek peer names never reach a reason or an event.
 
 `prefer` (an approval's candidate, D18) makes the download that exact file while it is still offered and
 unrejected; otherwise the top-ranked one is used, and a `pick` event says which of the two happened.
+
+One more source per approval (S1-06): a transfer that ends `Completed, Errored|TimedOut|Rejected|Cancelled`, or slskd
+unreachable or answering 5xx while downloading (a VPN drop), downloads the next unrejected candidate from another peer
+after `retry_pause_s` (a `retry` event); a second failure fails the row with both attempts in the reason. Our own
+timeout, a 4xx, a missing landed file and every verify finding fail as before. A failed attempt cancels and forgets
+(remove=true) its own transfer, so a late file can't land unfiled.
+
+The library first (S1-07): before searching for an external row that is not a copy, Navidrome is asked as the import
+asks it (import_playlist.match, no stand-ins). Its same recording or same version is the row's song: `ok` with that
+`library_song_id` and a `matched` event, nothing downloaded, previews included. A doubt or a Navidrome error searches.
 
 Re-running `fetch` on a `verify` row (or on a row failed as "Navidrome never indexed <path>", see
 filed_path) skips the download and just re-checks Navidrome for the
@@ -47,7 +59,8 @@ to `needs_source` as the upgrade ("provisional low copy filed as <rel>; upgrade 
 `upgrade_queued` event). The upgrade is then an ordinary copy upgrade of the provisional song, approved by Michael:
 with proof it replaces the provisional file (trash), else both are kept and the row asks.
 
-    filed, Navidrome lists it ─┬─ provisional (play-now) ────────────────────▶ needs_source: the upgrade, queued
+    filed, Navidrome lists it ─┬─ as another song than asked ───────────────▶ review "filed <X> as …, asked for <Y>"
+                               ├─ provisional (play-now) ────────────────────▶ needs_source: the upgrade, queued
                                ├─ not a copy upgrade ───────────────────────▶ ok
                                ├─ withdrawn (no tiered playlist holds it) ──▶ review, both copies kept
                                ├─ proven ─▶ replacement: repoint ─▶ trash ─▶ scan ─▶ done (else the worker resumes)
@@ -68,15 +81,20 @@ from crates.store import CrateStore, filed_path, never_indexed, retryable_review
 from scripts.export_playlists import open_ro
 from subsonic.client import SubsonicClient, SubsonicError
 from .filer import BeetsFiler, FilingError
-from .identity import parse_filename, parse_title
+from .identity import can_be_song, parse_filename, parse_title
+from .import_playlist import match as match_in_library
+from .playlist_sources import Row
 from .policy import TIERS, QualityPolicy, check_tier
 from . import replace as replacement
 from .scorer import Candidate, Wanted, explain, rank
-from .slskd_client import SlskdClient, transfer_files
+from .slskd_client import SlskdClient, SlskdError, transfer_files
 from .verify import verify
 
 _CHECK = re.compile(r"\(check (\d+)\)$")                # how many re-checks have not found it, also in the reason
 RECHECK_LIMIT = 12      # re-checks without Navidrome finding the file before the row fails, so Michael sees it
+RETRY_PAUSE_S = 20      # before the second source: gluetun's drop logs slskd out of Soulseek for about 10 s
+# final transfer states that are the peer's or the network's fault (a VPN drop), not the file's: another peer may do
+TRANSFER_ERRORS = {"Completed, Errored", "Completed, TimedOut", "Completed, Rejected", "Completed, Cancelled"}
 
 
 def _file_names(path: Path) -> tuple[str, str] | None:
@@ -163,11 +181,12 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
           scan_timeout_s: float = 120, verifier=verify, filer: BeetsFiler | None = None,
           navidrome_db: Path | None = None, lookup=None, prefer: dict | None = None,
           trash_root: Path | None = None, score_tier: str | None = None, provisional: bool = False,
-          sleep=None) -> FetchResult:
+          sleep=None, retry_pause_s: float = RETRY_PAUSE_S) -> FetchResult:
     """`score_tier` ranks and verifies at that tier's policy and leaves the row's tier alone (unlike `tier`, which
     re-tiers an external row). `provisional` (play-now, D20; external rows without a library song) files the copy
     as provisional: see the module docstring. `sleep` (default time.sleep) waits each poll of the download and of
-    the scan; the worker passes one that also beats its heartbeat, so a long download doesn't look like a dead worker."""
+    the scan; the worker passes one that also beats its heartbeat, so a long download doesn't look like a dead worker.
+    `retry_pause_s` is the wait before the second source (S1-06), through `sleep` too."""
     sleep = sleep or time.sleep
     music_root, downloads_root = Path(music_root), Path(downloads_root)
     row = store.find_wanted(wanted_id)
@@ -228,8 +247,17 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
             why = f"filed as {rel} but Navidrome has not picked it up yet" + (f" (check {check})" if check else "")
             set_status("verify", why)
             return FetchResult("verify", why, best, filed, explain=text)
-        store.set_wanted_names(wanted_id, new.artist or "", new.title)      # what the library calls it now
         rel = filed.relative_to(music_root).as_posix()
+        asked = row.get("asked_title") or row["title"]
+        if not can_be_song(new.title, asked):
+            # Another song (ext-74: a same-named album's track 9): never renamed onto it, never placed. The file
+            # stays in the library as its own song; approving the row again is a fresh download (RETRYABLE_REVIEW).
+            why = f"filed {new.title} as {rel}, asked for {asked}"
+            set_status("review", why)
+            store.log(None, wanted_id, "wrong_song", f"{rel} is song {new.id} ({new.title}), not {asked}")
+            store.commit()
+            return FetchResult("review", why, best, filed, new.id, text)
+        store.set_wanted_names(wanted_id, new.artist or "", new.title)      # what the library calls it now
         done = f"filed as {rel}"
         if copy_id is None and external and (store.external(wanted_id) or {}).get("provisional"):
             # A fast copy that already meets the row's tier is the row's file, but only when it was verified at
@@ -355,6 +383,28 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
             set_status("review", f"replacement #{j['id']} {j['state']}: {detail}")
         return FetchResult("ok", f"filed; replacement #{j['id']} {what} ({detail})", best, filed, new_id, text)
 
+    def in_library() -> FetchResult | None:
+        """Ask Navidrome as the import does (import_playlist.match, the same rules, no stand-ins: D26) before searching.
+        Its same recording or same version is the row's song: linked (`ok`, placed like any filed row), nothing
+        downloaded. Every doubt (ambiguous, another version, missing) or a Navidrome error goes on to the search."""
+        asked = Row(position=row.get("position") or 0, title=row.get("asked_title") or row["title"],
+                    artist=row.get("asked_artist") or row.get("artist") or "", duration_s=row.get("duration"),
+                    album=row.get("album"), sep="; ")      # the stored artist is one lead: a comma is its own
+        try:
+            m = match_in_library(navidrome, asked)
+        except (SubsonicError, OSError, ValueError) as e:     # down, or an answer that is not JSON
+            # SubsonicError's text is Navidrome's answer; urllib's may be the URL, with the token and salt in it
+            why = f"{type(e).__name__}: {e}" if isinstance(e, SubsonicError) else type(e).__name__
+            store.log(None, wanted_id, "matched", f"library not asked: {why}")
+            store.commit()
+            return None
+        if m.status != "matched" or m.how not in ("same recording", "same version"):
+            return None
+        store.set_external_song(wanted_id, m.song_id, False)    # its library song, and not a play-now copy
+        store.log(None, wanted_id, "matched", f"{m.how}: {m.title}")
+        set_status("ok", f"already in the library: {m.title} ({m.song_id})")      # commits all three at once
+        return FetchResult("ok", "already in the library; nothing downloaded", new_song_id=m.song_id)
+
     status = row.get("status")
     if status == "removed":              # an upgrade row a tiered playlist's row superseded (one request per song)
         return FetchResult("removed", f"{wanted_id} is closed ({row.get('reason')}); nothing searched")
@@ -362,12 +412,12 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         return FetchResult("ok", "already ok; nothing to do")
     if status == "review" and not retryable_review(row.get("reason")):     # import-playlist: several versions fit
         return FetchResult("review", f"needs a pick first ({row.get('reason')}); nothing searched")
-    # A replacement's review (kept beside / declined / not made / filed beside) falls through: approving it is a
-    # fresh download attempt, and the row becomes `sourcing` like any other.
+    # A replacement's review (kept beside / declined / not made / filed beside) and a wrong song's (filed <X> as …,
+    # asked for <Y>) fall through: approving it is a fresh download attempt, and the row becomes `sourcing` like any other.
     reason = row.get("reason") or ""
     rel = filed_path(reason)
     if status == "verify" or (status == "failed" and rel is not None):    # filed already: re-check, never download
-        if not approve:       # a preview (the crates container: no library mounted) touches neither row nor Navidrome
+        if not approve:       # a preview (the crates container: no library mounted) re-checks nothing
             return FetchResult(status, f"already filed as {rel or '?'}; the worker re-checks it")
         if rel is not None and (music_root / rel).exists():
             filed = music_root / rel
@@ -382,6 +432,11 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         return fail(f"verify row without a filed path (reason was: {row.get('reason')!r})", None, "")
     if status == "sourcing" and time.time() - (row.get("updated_at") or 0) < download_timeout_s:
         return FetchResult("sourcing", "in flight (started less than the download timeout ago)")
+
+    if external and copy_id is None:          # a new file: the library may have it already (S1-07, ext-81)
+        hit = in_library()
+        if hit is not None:
+            return hit
 
     sid = slskd.search(f"{wanted.artist} {wanted.title}".strip())
     try:
@@ -404,45 +459,93 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
         store.log(None, wanted_id, "pick", f"approved candidate still offered: {best.basename}" if same is not None
                   else f"approved candidate no longer offered; using the top-ranked {best.basename}")
 
-    # What this download is for, which tells verify what to compare it with (M7): a copy upgrade (copy_of) is
-    # compared with the old file (the reference), an external row that gets another version is a new version (no
-    # reference, and no expected length: a version's length differs from the row's, and the candidate's own listed
-    # length would be it vouching for itself), anything else is checked as before.
-    intent, expected = None, wanted.duration_s
-    if copy_id is not None:
-        intent = "copy"
-    else:
-        got = parse_filename(best.basename, wanted.artist, wanted.title)   # as the scorer read it
+    def intent_for(cand: Candidate) -> tuple[str | None, float | None]:
+        """What this download is for, which tells verify what to compare it with (M7): a copy upgrade (copy_of) is
+        compared with the old file (the reference), an external row that gets another version is a new version (no
+        reference, and no expected length: a version's length differs from the row's, and the candidate's own listed
+        length would be it vouching for itself), anything else is checked as before."""
+        if copy_id is not None:
+            return "copy", wanted.duration_s
+        got = parse_filename(cand.basename, wanted.artist, wanted.title)   # as the scorer read it
         if got.key != parse_title(wanted.title, wanted.artist).key:
-            intent, expected = "version", None
-            store.log(None, wanted_id, "pick", f"another version ({got.label or 'no label'}) of {wanted.title}: {best.basename}")
+            store.log(None, wanted_id, "pick", f"another version ({got.label or 'no label'}) of {wanted.title}: {cand.basename}")
+            return "version", None
+        return None, wanted.duration_s
+
+    def attempt(cand: Candidate) -> tuple[Path | None, str, bool]:
+        """Download `cand`: (the landed file, "") or (None, why, whether another peer may be tried: S1-06). A failed
+        attempt cancels and forgets (remove=true) what its enqueue left in slskd, best effort: a transfer still
+        running after our timeout or a connection error must not land later, where the next download is looked for."""
+        def records() -> list[dict]:
+            return [t for t in transfer_files(slskd.downloads(cand.username))
+                    if t.get("filename") == cand.filename and t.get("id")]
+
+        before: set | None = None             # the file's records before our enqueue; None: nothing sent yet
+
+        def download() -> tuple[Path | None, str, bool]:
+            nonlocal before
+            # forget earlier attempts at the same file so their final state can't be mistaken for this one; ours is
+            # then the record whose id wasn't there before the enqueue: slskd's listing order and the enqueue
+            # response are not relied on (S1-04)
+            listed = records()
+            for t in listed:
+                if str(t.get("state", "")).startswith("Completed"):
+                    slskd.remove_download(cand.username, t["id"])
+            before = {t["id"] for t in listed}
+            slskd.enqueue(cand.username, [{"filename": cand.filename, "size": cand.size}])
+            t0 = time.time()
+            while True:
+                mine = [t for t in records() if t["id"] not in before]
+                state = str(mine[0].get("state", "")) if mine else ""      # none yet: keep waiting (the timeout bounds it)
+                if state.startswith("Completed, Succeeded"):
+                    landed = _find_landed(downloads_root, cand)
+                    if landed:
+                        return landed, "", False
+                    return None, f"slskd reports success but {cand.basename} is not under {downloads_root}", False
+                if state.startswith("Completed"):
+                    return None, f"download ended: {state}", state in TRANSFER_ERRORS
+                if time.time() - t0 > download_timeout_s:
+                    return None, "download timed out", False
+                sleep(poll_s)
+
+        try:
+            got = download()
+        except SlskdError as e:               # slskd unreachable or failing (a VPN drop): another peer may do
+            if e.status is not None and e.status < 500:
+                raise                         # a 4xx is ours to fix, not the peer's: the row fails as before
+            got = None, f"{type(e).__name__}: {e}", True
+        if got[0] is None and before is not None:
+            try:
+                for t in records():
+                    if t["id"] not in before:
+                        slskd.remove_download(cand.username, t["id"])
+            except SlskdError:
+                pass
+        return got
 
     if external and copy_id is None:          # what this download is for, recorded before it starts (D20)
         store.set_provisional(wanted_id, provisional)
     set_status("sourcing", f"downloading {best.basename}")
     item = None                                                  # the library file, once beets has filed it
     try:
-        # forget earlier attempts at the same file so their final state can't be mistaken for this one
-        for t in transfer_files(slskd.downloads(best.username)):
-            if t.get("filename") == best.filename and str(t.get("state", "")).startswith("Completed") and t.get("id"):
-                slskd.remove_download(best.username, t["id"])
-        slskd.enqueue(best.username, [{"filename": best.filename, "size": best.size}])
-        t0 = time.time()
-        while True:
-            mine = [t for t in transfer_files(slskd.downloads(best.username)) if t.get("filename") == best.filename]
-            state = str(mine[-1].get("state", "")) if mine else ""
-            if state.startswith("Completed, Succeeded"):
-                landed = _find_landed(downloads_root, best)
-                if landed:
-                    break
-                why = f"slskd reports success but {best.basename} is not under {downloads_root}"
-            elif state.startswith("Completed"):
-                why = f"download ended: {state}"
-            elif time.time() - t0 > download_timeout_s:
-                why = "download timed out"
-            else:
-                sleep(poll_s)
-                continue
+        intent, expected = intent_for(best)
+        landed, why, again = attempt(best)
+        if landed is None and again:          # one more source, another peer's, once per approval (S1-06)
+            first, why1 = best, why
+            best = next((c for c in cands if not c.rejected and c.username != first.username), None)
+            if best is None:
+                return fail(why1, first, text)
+            store.log(None, wanted_id, "retry", f"{first.basename}: {why1}; trying another peer")
+            set_status("sourcing", f"downloading {best.basename}")    # commits: no write lock held while we wait
+            sleep(retry_pause_s)              # a VPN drop logs slskd out for about 10 s: don't meet the same one
+            intent, expected = intent_for(best)
+            try:
+                landed, why, _ = attempt(best)
+            except SlskdError as e:           # a 4xx: fails as before, but the reason keeps the first attempt
+                landed, why = None, f"{type(e).__name__}: {e}"
+            if landed is None:
+                return fail(f"{why1} ({first.basename}); then {why} ({best.basename})", best, text)
+        if landed is None:
             return fail(why, best, text)
 
         ref, rid = None, None
@@ -453,6 +556,8 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
                 store.commit()                # the verifier decodes for minutes: hold no write transaction meanwhile
             rid = navidrome.song(copy_id).music_brainz_id or None
         extra = {"recording_id": rid, "lookup": lookup} if lookup is not None else {}    # see header_only in tests
+        if lookup is not None:          # with no recording id, AcoustID's title is checked against the asked one (S1-02)
+            extra["asked_title"] = row.get("asked_title") or row["title"]
         if intent == "version" and best.length_s:        # the peer's listing of this file, checked against what arrived
             extra["listed_length_s"] = best.length_s
         set_status("sourcing", f"checking {best.basename}")      # committed: the web's progress strip shows the phase

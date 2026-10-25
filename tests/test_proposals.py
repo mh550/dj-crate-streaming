@@ -21,7 +21,7 @@ from sourcing.scorer import Candidate, Wanted, score_candidate, version_rank
 from sourcing.verify import verify
 from subsonic.client import SubsonicClient
 from subsonic.fake_server import FakeSubsonicServer
-from tests.test_fetch import GOOD, RESPONSES, good_flac_bytes, new_song, run, world  # noqa: F401  (fixture)
+from tests.test_fetch import GOOD, RESPONSES, good_flac_bytes, new_song, run, world, not_in_library  # noqa: F401  (fixtures)
 from tests.test_worker import worker
 
 RADIO = {"id": "r1", "title": "My Love Is Free", "artist": "Double Exposure", "album": "Ten Percent", "year": 1976,
@@ -375,6 +375,7 @@ def file_external_as_version(world, tmp_path, **kw):
         return ext, run(world, srv, approve=True, wanted_id=ext, **kw)
 
 
+@pytest.mark.usefixtures("not_in_library")
 def test_filing_an_external_row_proposes_the_swaps_its_song_earns(world, tmp_path):
     ext, r = file_external_as_version(world, tmp_path)
     assert r.status == "ok" and world["store"].external(ext)["status"] == "ok"
@@ -384,6 +385,7 @@ def test_filing_an_external_row_proposes_the_swaps_its_song_earns(world, tmp_pat
     assert [e.id for e in world["client"].playlist("pl-2").entries] == ["s3", "s4", "s5"]    # nothing swapped
 
 
+@pytest.mark.usefixtures("not_in_library")
 def test_a_failing_hook_never_fails_the_fetch(world, tmp_path, monkeypatch):
     def boom(*a, **kw):
         raise RuntimeError("navidrome.db locked")
@@ -394,6 +396,7 @@ def test_a_failing_hook_never_fails_the_fetch(world, tmp_path, monkeypatch):
                for e in world["store"].events(limit=1000))
 
 
+@pytest.mark.usefixtures("not_in_library")
 def test_proposals_are_never_approvals(world, tmp_path):
     file_external_as_version(world, tmp_path)
     store = world["store"]
@@ -506,6 +509,7 @@ def test_an_unproven_copy_superseded_by_a_swap_settles_its_row(world, tmp_path):
     assert row["status"] == "review" and row["reason"].startswith(f"declined replacement #{u3}; ")
 
 
+@pytest.mark.usefixtures("not_in_library")
 def test_the_not_asked_event_names_the_filed_file_by_its_library_path(world, tmp_path):
     flac = good_flac_bytes(tmp_path)
     ext = world["store"].add_external_wanted("Chic", "Good Times", album="Risqué", duration_s=501, year=1979)

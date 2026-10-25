@@ -190,10 +190,17 @@ Other stores:
 3. **Worker tick** every 30 s (`worker.py`): play-now approvals first, then the reconcile (every 600 s), the
    `verify` re-checks (below), then for each pending approval `claim_approval` (atomic conditional UPDATE, `store.py:324`) and `fetch(approve=True, prefer=candidate)`.
    The outcome is written to `approvals.result`.
-4. **fetch** (`sourcing/fetch.py:127`): search + rank again; take the approved file if still offered, else the
-   top one (`pick` event). Intent (`fetch.py:252-259`): crate row = **copy** upgrade; external row whose file
-   name parses to another version = **version**; else plain. Row → `sourcing`; slskd enqueue; poll until
-   `Completed` (timeout 600 s); find the file under the downloads folder.
+4. **fetch** (`sourcing/fetch.py` `fetch`): **library first** (S1-07): an external row that is not a copy upgrade
+   is matched against Navidrome as the import does (`import_playlist.match`); its same recording or same version
+   makes the row `ok` with that `library_song_id` (`matched` event) and nothing is downloaded. Else search + rank
+   again (a candidate whose title slot names another song is rejected, S1-01); take the approved file if still
+   offered, else the top one (`pick` event). Intent (`intent_for`): crate row = **copy** upgrade; external row whose
+   file name parses to another version = **version**; else plain. Row → `sourcing`; forget the file's completed
+   records (`?remove=true`), enqueue, poll the record whose id wasn't there before the enqueue (S1-04) until
+   `Completed` (timeout 600 s); find the file under the downloads folder. **Retry once** (S1-06): `Completed,
+   Errored|TimedOut|Rejected|Cancelled`, or slskd unreachable or 5xx, cancels and forgets that attempt, waits 20 s
+   and downloads the next acceptable candidate from another peer (`retry` event); a second failure fails the row with
+   both reasons. Every failed attempt, our own timeout included, cancels and forgets its own transfer.
 5. **verify** (`sourcing/verify.py:232`) at the row's tier. For a copy upgrade the reference is the old file, read
    from `navidrome.db` (`_library_file`); with `ACOUSTID_KEY` an AcoustID lookup also runs. Result →
    `verifications`. A failed file is deleted (it is our download, not library material) and the row `failed`.
@@ -205,7 +212,9 @@ Other stores:
    `beets matched: …` or `beets as-is: … (why)`.
 7. **finish** (`fetch.py:176`): `start_scan`, wait ≤120 s, `search3` by the filed file's artist + title, pick the
    hit with the same suffix and byte size. Found: `set_wanted_names` copies Navidrome's names onto the row
-   (`renamed` event; the Spotify names stay in `asked_*`). External row → `ok`. A copy upgrade of a
+   (`renamed` event; the Spotify names stay in `asked_*`). External row → `ok`. A title that can't be the asked
+   song (`identity.can_be_song`, S1-03) is not copied: the row is `review` "filed <X> as <rel>, asked for <Y>"
+   (`wrong_song` event), not placed; `crates.cli wanted reopen` puts it back to `needs_source` (S1-08). A copy upgrade of a
    playlist row → a **copy replacement** (§9): proof, then repoint every playlist through `playlist_edit`, then the old
    file to the trash. No proof → both files stay and the row is `review`.
    **Placement** (N4, D44, `crates/placement.py`): no call from here. Each tick the worker asks
@@ -337,7 +346,11 @@ the test fixture `tests/fixtures/policy-legacy.toml` holds.
 | One reconcile at a time | flock on `/data/reconcile.lock`, 60 s, then 503 / skip (`reconcile.py`) |
 | Never overwrite an id | `apply` writes only empty fields, file unchanged since propose (`identity_backfill.py:732`) |
 | Other tags untouched | `write_minimal` sets only named fields; `apply` re-reads all others |
-| Peer names never in UI/logs/events | `explain(peers=False)`, basenames only in events and worker stdout |
+| Peer names never in UI/logs/events | `explain(peers=False)`, basenames only in events and worker stdout; a slskd error is `SlskdError` "slskd <method> <endpoint template>: HTTP <code>" (S1-05), never the peer, URL or key |
+| A file is never filed as another song (S1, built, not deployed) | scorer rejects a title slot naming another song (S1-01); with no recording id, a confident AcoustID title that can't be the asked one is a hard `recording` finding (S1-02, `verify._acoustid_check`); `finish` never renames a row onto another song's title, the row goes to `review` (S1-03) |
+| fetch follows only its own transfer (S1) | forgets with `?remove=true`; follows the record whose id wasn't there before its enqueue, never the last one (S1-04); one switch to another peer per fetch call, the first attempt cancelled and forgotten first (S1-06) |
+| No download of a song the library has (S1-07) | an external non-copy row is matched against Navidrome before any search; a hit is `ok` with that song |
+| `wanted reopen` writes only crates.db (S1-08) | `store.reopen_external`: one write lock, dry run by default, refuses in-flight and question rows, the `reopened` event holds the reverse |
 | Duplicate cleanup never trashes a file a playlist holds (built N1, not run live) | `scripts/duplicate_cleanup.py`: groups recomputed from navidrome.db right before each repoint and move; `repoint` only via `playlist_edit.repoint_everywhere`, reverse line before each write, then a waited scan; `trash` under `worker.lock`, no scan running, `references()` empty (hidden rows, other owners) before and after each move and after the closing scan (else put back), `CrateStore.song_in_use` empty, `MOVES.txt` before each move; every repoint and move a `cleanup` event |
 | Placement only inserts, only in our imported playlists, once per track (built N4, not deployed) | `crates/placement.py`: the playlist needs an `imported_playlists` row (D37); a track already in `imported_entries` is never due, so a removed one stays removed; every edit is one `playlist_edit.rewrite` (refuses on hidden missing rows, another owner, a smart playlist or a concurrent edit); an unconfirmed edit is looked at, never resent; `given_up` after 12 refusals, with a `not_placed` event |
 | Navidrome DB read-only | `open_ro` (`mode=ro`) and a `:ro` mount |
