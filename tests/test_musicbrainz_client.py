@@ -317,7 +317,7 @@ def test_a_blank_field_is_left_out_of_the_query():
     assert queries == [['release:"I\'m Still in Love"'], ['recording:"My Love Is Free"']]
 
 
-def test_release_asks_for_recordings_and_returns_the_body():
+def test_release_asks_for_recordings_and_artist_credits_and_returns_the_body():
     opener = Script(fixture("musicbrainz_release_al-green-still-in-love.json"))
     mb, _ = client(opener)
     rel = mb.release(AL_GREEN_CD)
@@ -328,7 +328,8 @@ def test_release_asks_for_recordings_and_returns_the_body():
     assert tracks[8]["recording"]["id"].startswith("83f06455")
     q = urllib.parse.urlparse(opener.requests[0].full_url)
     assert q.path == f"/ws/2/release/{AL_GREEN_CD}"
-    assert urllib.parse.parse_qs(q.query) == {"fmt": ["json"], "inc": ["recordings"]}
+    # no artist-credit without artist-credits (add_release's artist), no first-release-date without release-groups (D53)
+    assert urllib.parse.parse_qs(q.query) == {"fmt": ["json"], "inc": ["recordings artist-credits release-groups"]}
 
 
 def test_release_404_is_none_and_503_backs_off():

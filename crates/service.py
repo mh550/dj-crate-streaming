@@ -238,6 +238,8 @@ class CrateApp:
         except NameCollision as e:
             raise ApiError(409, str(e)) from None
         req = added.request
+        if req is not None and link.kind == "album":            # S2-03: the recordings verify checks against
+            self._release(req["id"])
         if req is not None and link.kind != "playlist":         # a playlist's import has just matched its rows
             req = self._marked(req["id"])
         out = requests_.view(req) if req else {"request": None, "rows": []}
@@ -271,6 +273,18 @@ class CrateApp:
             raise ApiError(502, f"MusicBrainz sent a reply this code cannot read ({type(e).__name__}: {e})") from None
         return requests_.view(self._marked(req["id"])), before is None and req["source"] == source
 
+    def _release(self, request_id: int) -> None:
+        """An album link's MusicBrainz release and recordings (requests.match_request_release), asked outside the
+        lock. Best effort, as mark_in_library: MusicBrainz down or an odd reply leaves the request without ids and
+        one `release` event (`#<id> musicbrainz not asked: …`); no match leaves it without ids too."""
+        try:
+            requests_.match_request_release(self.store, request_id, self.musicbrainz, lock=self._lock)
+        except Exception as e:                            # best effort: the request is made already
+            with self._lock:
+                self.store.log(None, None, "release",
+                               public(f"#{request_id} musicbrainz not asked: {type(e).__name__}: {e}"))
+                self.store.commit()
+
     def _marked(self, request_id: int) -> dict:
         """The request after mark_in_library: Navidrome is asked outside the lock (a long album, a slow scan)."""
         requests_.mark_in_library(self.store, self.api, request_id, lock=self._lock)
@@ -290,9 +304,10 @@ class CrateApp:
     def _request(self, request_id: str) -> dict:
         if not re.fullmatch(r"\d+", request_id, re.ASCII):
             raise ApiError(400, f"request id must be a number, not {request_id!r}")
-        req = self.store.request(int(request_id))
+        digits = request_id.lstrip("0") or "0"
+        req = self.store.request(int(digits)) if len(digits) <= 18 else None    # longer: past sqlite's integer
         if req is None:
-            raise ApiError(404, f"no request #{int(request_id)}")
+            raise ApiError(404, f"no request #{digits}")
         return req
 
     def _actionable(self, request_id: str, nothing: str) -> dict:

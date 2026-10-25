@@ -296,6 +296,33 @@ def test_planned_fetch_polls_the_jobs_transfer_without_searching_or_enqueueing(w
     # `ok` shows the stale `Completed, Errored` record was not taken for this download (S1-04)
 
 
+def test_a_planned_fetch_waits_out_one_slskd_drop_on_the_same_transfer(world, tmp_path, not_in_library):
+    """A VPN drop while polling (slskd unreachable, S1-06) is not the folder's failure: fetch waits retry_pause_s and
+    polls the job's transfer again, so the album is not switched away from a good folder."""
+    from sourcing.slskd_client import SlskdError
+    store, req = world["store"], request(world)
+    resp, data = album_folder(tmp_path, req["rows"])
+    first = req["rows"][0]
+    with FakeSlskdServer([resp], world["dl"], files=data) as srv:
+        c = common(world, srv, tmp_path, retry_pause_s=7)
+        album_job.plan_request(store, c["slskd"], req["id"], poll_s=0.01)
+        cand = store.preview(f"req-{req['id']}")["assign"][first["song_id"]]["candidate"]
+        before = {t["id"] for t in transfer_files(c["slskd"].downloads(PEER))}
+        c["slskd"].enqueue(PEER, [{"filename": cand["filename"], "size": cand["size"]}])
+        real, drops, slept = c["slskd"].downloads, [1], []
+
+        def downloads(peer=None):
+            if drops:
+                drops.pop()
+                raise SlskdError("GET", "/transfers/downloads/<peer>", None, "URLError: no route")
+            return real(peer)
+        c["slskd"].downloads = downloads
+        r = fetch(first["song_id"], approve=True, planned=True, prefer=cand, enqueued=before,
+                  sleep=lambda s: slept.append(s), **c)
+    assert (r.status, r.again) == ("ok", False), r.reason
+    assert 7 in slept and srv.posts == [(PEER, 1)]                          # waited, and nothing enqueued again
+
+
 def test_planned_fetch_needs_the_records_before_the_enqueue(world, tmp_path, not_in_library):
     store, req = world["store"], request(world)
     with FakeSlskdServer([], world["dl"], files={}) as srv:

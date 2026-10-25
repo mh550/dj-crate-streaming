@@ -386,7 +386,7 @@
         "S3-06",
         "S3-R1"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "S4-02",
@@ -423,7 +423,7 @@
         "S3-R1",
         "S4-01"
       ],
-      "passes": false
+      "passes": true
     }
   ]
 }

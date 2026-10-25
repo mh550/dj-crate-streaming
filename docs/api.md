@@ -37,12 +37,18 @@ Downloads nothing. The same link again answers the existing request.
 
 ```json
 {"request": {"id": 1, "kind": "album", "source": "https://open.spotify.com/album/2nTlIPIQ7fHOnNN7BRch0Z",
-             "artist": "Al Green", "album": "I'm Still in Love With You", "year": null, "mbReleaseId": null,
+             "artist": "Al Green", "album": "I'm Still in Love With You", "year": null,
+             "mbReleaseId": "3c9a52ee-ee0a-3362-a563-d9d28b02a53e",
              "status": "open", "createdAt": 1790000000.0},
  "rows": [{"id": "ext-1", "trackNo": 1, "artist": "Al Green", "title": "I'm Still In Love With You",
            "album": "I'm Still in Love With You", "year": null, "durationS": 196, "status": "needs_source",
-           "reason": null, "librarySongId": null, "mbRecordingId": null}]}
+           "reason": null, "librarySongId": null, "mbRecordingId": "cdac1a50-8ba6-4edd-8137-618928580d38"}]}
 ```
+
+An album link is matched to its MusicBrainz release before the answer (the release whose tracks are the rows one to
+one): `mbReleaseId`, each row's `mbRecordingId`, and `year` from the release group when Spotify gave none (the
+example is the tests' reply, whose release has no release group; live, this album answers `1972`). No such
+release, or MusicBrainz unreachable, leaves them `null` (still 201); a track or playlist link asks MusicBrainz nothing.
 
 (nine rows for this album; `source`/`createdAt` shown with the test's link and any timestamp). A track request has
 `kind: "track"`, `album: null`, one row, `trackNo: null`. A playlist request has `kind: "playlist"`, `album` = the
@@ -124,7 +130,8 @@ downloads, verifies and files them. Approving without a preview is fine: the job
 `candidate: null` means the job plans that row (or goes per track). A playlist request's album groups (3 or more
 open rows of one artist and album) get `album` approvals with their planned files, as an album request does; its
 other rows get per-track approvals (`candidate: null`).
-Afterwards `request.status` is `approved`. A row waiting for a version pick is not approved with its album.
+Afterwards `request.status` is `approved`, or `partly` when some rows were `ok` already. A row waiting for a version
+pick is not approved with its album.
 
 | Status | Reason text |
 |---|---|
@@ -133,7 +140,8 @@ Afterwards `request.status` is `approved`. A row waiting for a version pick is n
 
 ## `GET /api/catalog/search`
 
-Query: `?q=<text>&kind=album|track`.
+Query: `?q=<text>&kind=album|track`. `Artist - Title` (a spaced hyphen, en or em dash) asks for that artist and
+that title; any other text matches its words against titles and artists.
 
 What a client searches before it asks for a request. Every registered provider is asked (MusicBrainz, the only one
 in this build; Spotify is the next, after `scripts/capture_spotify.py`'s capture). `inLibrary` is `true`/`false` from Navidrome, `null` when Navidrome could

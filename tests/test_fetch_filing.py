@@ -605,3 +605,24 @@ def test_the_tagged_record_is_committed_before_beets_runs(world, tmp_path, not_i
     fresh = {"album": None, "albumartist": None, "track": None, "tracktotal": None}
     assert seen == [(False, [fresh])]
     assert album_events(store) == [fresh]
+
+
+def test_forget_new_goes_on_past_a_delete_slskd_refuses():
+    """A switch cancels the rest of a folder (S2-05): one refused DELETE must not leave the others queued."""
+    from sourcing.fetch import forget_new
+    from sourcing.slskd_client import SlskdError
+
+    class Slskd:
+        removed = []
+
+        def downloads(self, peer):
+            return [{"username": peer, "directories": [{"directory": "d", "files": [
+                {"id": f"t{i}", "filename": f"d\\0{i}.flac", "state": "Queued, Remotely"} for i in (1, 2, 3)]}]}]
+
+        def remove_download(self, peer, tid):
+            if tid == "t1":
+                raise SlskdError("DELETE", "/transfers/downloads/<peer>/<id>", 500, "Internal Server Error")
+            self.removed.append(tid)
+    s = Slskd()
+    forget_new(s, "peer", {"d\\01.flac", "d\\02.flac", "d\\03.flac"}, set())
+    assert s.removed == ["t2", "t3"]

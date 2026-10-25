@@ -284,6 +284,8 @@ def rq_cli(tmp_path, monkeypatch, capsys):
         spotify["calls"] += 1
         return spotify["entity"]
     monkeypatch.setattr(cli, "fetch_entity", fetch)
+    from tests.test_requests import MusicBrainzStub, stub_mb
+    monkeypatch.setattr(cli, "MusicBrainz", lambda **kw: stub_mb(MusicBrainzStub()))   # offline: the captured CD
     with FakeSubsonicServer() as nd:
         _env(monkeypatch, nd, db)
 
@@ -335,6 +337,7 @@ def test_request_add_json_is_the_apis_shape(rq_cli):
     rc, out, _ = rq_cli("add", ALBUM_URL, "--json")
     body = json.loads(out)
     assert rc == 0 and set(body) == {"request", "rows"} and body["request"]["id"] == 1
+    assert body["request"]["mbReleaseId"] == "3c9a52ee-ee0a-3362-a563-d9d28b02a53e"     # matched at add (S2-03)
     detail = _app(rq_cli.db).request_detail("1")
     assert body["request"] == detail["request"]
     assert body["rows"] == [{k: v for k, v in r.items() if k != "approval"} for r in detail["rows"]]
@@ -373,8 +376,8 @@ def test_request_list_and_show(rq_cli):
     assert rc == 0 and lines[0] == "request 1: Al Green – I'm Still in Love With You (album, 9 rows, 0 in library) open"
     assert "  source https://open.spotify.com/album/2nTlIPIQ7fHOnNN7BRch0Z" in lines
     assert "  musicbrainz release 3c9a52ee-ee0a-3362-a563-d9d28b02a53e" in lines
-    assert ROW_1 in lines and "/srv/music" not in out
-    assert any(x.startswith("  02 ext-2  ") and x.endswith("  failed: no source: x.flac was a transcode")
+    assert ROW_1 + "  recording cdac1a50-8ba6-4edd-8137-618928580d38" in lines and "/srv/music" not in out
+    assert any(x.startswith("  02 ext-2  ") and "  failed: no source: x.flac was a transcode  recording " in x
                for x in lines)
     assert lines[-1] == "no plan yet: request preview 1"
     rc, out, _ = rq_cli("show", "1", "--json")

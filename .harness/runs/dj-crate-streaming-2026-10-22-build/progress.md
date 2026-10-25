@@ -9,6 +9,78 @@ Michael steers from `INBOX.md` on this branch (status line `run | pause | stop`;
 session reads it at startup. Policy: **build-only** (`.harness/config.sh`) and the brief in `brief.md`: nothing live,
 no docker, no `/srv`, no network, no client UI, PRs only (open, never merge).
 
+### 2026-10-23 verify S4
+
+| Feature | Step | What you ran or read | What you saw | Holds |
+|---|---|---|---|---|
+| S4-01 | 1 | `pytest tests/test_downloads_checklist_doc.py`; read `test_sections_4_and_6_each_have_a_check_and_an_undo`, `test_every_live_run_command_is_a_python_module_and_every_write_holds_the_lock` | 9 tests in file pass; they assert sections 4/6/Captures, Check/Undo, `scripts/live-run.sh python3 -m` prefix, flock on writes; grep of the doc agrees | yes |
+| S4-01 | 2 | Read checklist §4 (lines 103-222) | add/preview/approve with Check lines (9 rows, ≥8 of 9, no peer name, events plan/pick/filed/ok, ≤1 switch), path with year only if MB matched (D53), Undo `wanted reopen`, rollback `<the sha step 2 deployed>` | yes |
+| S4-01 | 3 | Read checklist §6 | Spotify app, capture command, Check greps (secret via pipe, access_token, tok_ = 0), git add of the two fixtures, Undo with rotate, secret location left as a question | yes |
+| S4-01 | 4 | Read `## Captures for the fixtures` | enqueue, transfer states, `?remove=true` captures, each with fixture file and reading test; peer-name scrub rule | yes |
+| S4-01 | 5 | grep morning checklist, architecture, next-todos | morning line 103 `PR #16 must be on main first` once; link to checklist §4/§6 at line 302 (§9 starts 238); architecture §4(e) and next-todos State say not deployed, PRs open; items 11, 12 present | yes |
+| S4-01 | 6 | `python3 -m sourcing.cli request --help`; `python3 -m scripts.capture_spotify --help` | both exit 0; checklist commands only `--help`-verified, no docker/live | yes |
+| S4-01 | 7 | harness `check.sh` | "green (cached, 2369 tests)", up from 2361 | yes |
+| S4-02 | 1 | Read progress entry S4-02 | review of `1eb4259..HEAD`: 0 Critical, 9 Important (8 fixed, A4 kept per spec), 23 Minor, each with what it became | yes |
+| S4-02 | 2 | `git diff 1eb4259..HEAD` on trash/playlist_edit/placement; grep D-numbers; spec Built lines | no diff in those files; D48-D53 each present (origin/main tops at D47, no gap); Built lines at spec lines 62, 101, 196, 235; docs say not deployed; approve tests in `tests/test_approvals.py`, `test_album_job.py` | yes |
+| S4-02 | 3 | `pytest tests/test_python310_syntax.py`; `grep -rn "/srv/" sourcing/album*.py sourcing/requests.py sourcing/catalog.py scripts/capture_spotify.py` | passes; grep printed nothing | yes |
+| S4-02 | 4 | Read progress S4-02 entry | tests 2361 → 2369, run 1906 → 2369; PRs #27-29 open, draft PR command given; questions collected | yes |
+| S4-02 | 5 | harness `check.sh` | green, 2369 tests | yes |
+
+### 2026-10-23 09:34 · S4-02 · passes
+
+- **Changed.** Whole-run Opus review of `git diff 1eb4259..HEAD` (`run.diff`, 11,315 lines, split in two for two reviewers), then an Opus review of the fixes. Results: **0 Critical, 9 Important (8 fixed), 23 Minor**. Fixes are in `crates/service.py`, `crates/store.py`, `sourcing/requests.py`, `sourcing/musicbrainz.py`, `sourcing/catalog.py`, `sourcing/fetch.py`, docs (`api.md`, `architecture.md` §4(e), `next-todos.md` State, downloads checklist §4, spec S4 `**Built**` line) and **D53 *default*** in the pivot spec. Tests 2361 → 2369; **the run: 1906 → 2369**.
+- **Important, each fixed red → green:**
+  - (B1) `POST /api/requests` / `request add` with a Spotify album link now runs `match_request_release`, outside the app lock and best effort: MusicBrainz down → ids null, one `release` event `#<id> musicbrainz not asked: …`, still 201. This closes S4-01's gap (1).
+  - (B2) Release lookups ask `inc=recordings artist-credits release-groups`. Without `artist-credits`, a `mbReleaseId` pick made a request with `artist=""`.
+  - (B3) A catalog query without " - " sends `release:(words) OR artist:(words)` (Lucene-escaped; uppercase AND/OR/NOT become words), not one title phrase that finds nothing. `api.md` documents `Artist - Title`.
+  - (A1) A first match before any approval fills an unknown `requests.year` from the release group's `first-release-date`, so the folder is `… (1972)` (D53 *default*). This closes gap (2) and question (a).
+  - (A2) In planned mode, one slskd transport error (unreachable or 5xx) is waited out with `retry_pause_s` on the same transfer, instead of distrusting a good folder.
+  - (A3) `forget_new` cancels each record in its own `try`.
+  - (R1, the fix review) The year is not filled after a row was approved, so one album never lands in two folders.
+  - (R2, the fix review) The `rq` test fixture reached musicbrainz.org after B1; it now uses the offline stub.
+- **Important, not fixed: (A4).** A verified file whose AcoustID recordings lack the release's exact `mb_recording_id` (a remaster's own recording) is a hard `recording` finding and distrusts the folder. Spec S2-03 and S2-05 prescribe exactly this ("the existing hard AcoustID check applies", a wrong recording distrusts the folder), so I kept it. Proposed: treat an id mismatch whose AcoustID title `can_be_song` as a warning. It is a question for Michael, below.
+- **Minor fixed:** request ids longer than 18 digits → 404 (were OverflowError/ValueError); `_release` catches any error like `mark_in_library`; `api.md` approve says `approved` or `partly`; the example's year is noted.
+- **Minor listed, each with its reason:**
+  - (B4/A8) A track request's preview/approve searches the bare artist: it works, and it's slow. Next: a plain `download` approval for a track request.
+  - (B6) An odd MusicBrainz search reply → 400, not 502. It is rare, and the message names the KeyError.
+  - (B8, = S3's M7) Searches are cached for the process's life. It's Michael's question.
+  - (B9) A request's approvals are not one transaction: the window is milliseconds and the worst case is two jobs.
+  - (B10) The peer-name test checks paths only.
+  - (A5) `listed_lengths` is never passed (same-release preference inert when the folders share no track): it needs a design for which lengths.
+  - (A6) An ordinary finding in a trusted folder gets no per-track try: a plan choice (S2-05c).
+  - (A7) Filing or import failures count toward a folder's 2.
+  - (A9) A stalled peer's folders stay failed for the request.
+  - (A10) An album job runs inline before play-now.
+  - (A11) The restart test does not interrupt a running job.
+  - (R) Repeat adds query MusicBrainz again; the planned timeout can double after a drop.
+  - Each of these is a next-run item: none loses a file or downloads without an approval.
+- **Cross-run checks:**
+  - No new trash path and placement is unchanged, so the four CLAUDE.md safety invariants are untouched.
+  - D7 holds: every enqueue comes from a claimed approval, `album` included, and preview only searches.
+  - No peer name or `/srv` path appears in any payload, event or doc example (`store.public`, basenames).
+  - D48–D53 follow `origin/main`'s D47 with no gap or clash (checked on every `origin/*` branch).
+  - S2, S3 and S4 carry `**Built**` lines.
+  - `tests/test_python310_syntax.py` is green.
+  - `grep -rn "/srv/" sourcing/album*.py sourcing/requests.py sourcing/catalog.py scripts/capture_spotify.py` finds nothing.
+- **Verified.** Each new test failed before its fix (red seen for B1, B2, B3, A1, A2, A3, R1 and the id). The touched files pass (190 + 98 + 225). Full suite: `check: green in 928 s, 2369 tests`.
+- **PRs.** PRs are open, none merged: #27 (S1), #28 (S2), #29 (S3); the harness opens S4's from this branch (`gh pr create --base main --head harness/dj-crate-streaming-2026-10-22-build --draft` if it does not). PR #16 (draft) must reach `main` first (checklist step 1).
+- **Questions for Michael (the whole run):**
+  - (1) D51/D53: is it OK that a Spotify album takes MusicBrainz's first-release year, and that it clears the year when there is none?
+  - (2) D52: should a second playlist URL with the same name join the first (now), or get a 409?
+  - (3) A4: should a recording-id mismatch whose title fits become a warning?
+  - (4) Should MusicBrainz searches skip the cache (B8)?
+  - (5) Where does the Spotify secret live for good?
+  - (6) Question B (the client UI) is still open.
+  - (7) The defaults in the initializer entry: rows are filed as they land; the status words; one distrusting finding or 2 failures switch a folder.
+
+### 2026-10-23 17:40 · S4-01 · passes
+
+- **Changed.** `docs/plans/2026-10-22-downloads-checklist.md` gains **§4 Album request through the request API** (merge cases + rollback per case, snapshot before the deploy, `dj_album:1:` key check, `seed-spotify --musicbrainz` then `request add|preview`, one row first, then `request approve`, `request show`, a distinct-`album_id` check on a fresh snapshot, another album if Al Green has nothing left), **§6 Spotify developer app and the capture** (worktree from `origin/main` after the run's PR, the docstring command, secret checks without the secret on argv, commit + draft PR, rotate), and **Captures for the fixtures** (enqueue / transfer states / `?remove=true`, each with its fixture, its masking and `tests/test_fake_slskd.py` as its future reader). Morning checklist §9 links §4 and §6 (its PR #16 line kept, once). Architecture §4 (e) and next-todos State say **not deployed, PRs open**, items 11–12 added. New `tests/test_downloads_checklist_doc.py` (9 tests). Tests 2352 → 2361.
+- **Verified.** Doc test red first (8/8), then green; 4 mutations (lock dropped, non-module live-run, drifted output, missing Undo) each turn it red. `python3 -m sourcing.cli request --help` and `python3 -m scripts.capture_spotify --help` exit 0. Nothing live: no docker, no `scripts/*.sh`, nothing under `/srv`. Opus review: 0 Critical, 2 Important (the album-tags plan's staged live steps were missing; the capture PR would have carried the whole unmerged run), 16 Minor; all fixed. Full suite green: 2361 tests, 926 s.
+- **Next session (S4-02) must know.** Two code gaps the checklist works around: (1) `POST /api/requests` / `request add` with a Spotify album link never calls `match_request_release`, so its rows have no recording ids and verify skips the recording check (only `seed-spotify --musicbrainz` matches); (2) a release match stores no year, so a Spotify album request always files at `Artist/Album/` without ` (year)` (D51 clears it). Both are worth a test-first fix in S4-02; the checklist's `seed-spotify` step stays harmless after (1) is fixed.
+- **Proposed change (S4-01 step 2).** It expected `Al Green/I'm Still in Love With You (1972)/`; the code files at `…/I'm Still in Love With You/` (the embed's `releaseDate` is null, gap 2 above). Written as the code does it. It also said `request add` alone; `seed-spotify --musicbrainz` comes first because of gap 1.
+- **Questions for Michael.** (a) Should a matched MusicBrainz release's year become the request's year (folder `… (1972)`)? It also settles D51's question (clear an unknown year, or take one). (b) Where should the Spotify secret live for good (`/srv/docker/.env` plus compose, or elsewhere)? Only once the provider is built.
+
 ### 2026-10-23 15:30 · verify S3
 
 All 8 features hold (50 step rows). Ran the 10 S3 test files (380 passed, 242 s); the full 2352-test suite is the harness's cached green run, not re-run here. No `passes` flags changed.

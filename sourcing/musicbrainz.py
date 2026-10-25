@@ -246,7 +246,7 @@ class MusicBrainz:
 
     def release(self, mbid: str) -> dict | None:
         """The release with its media, tracks and their recordings; None when MusicBrainz has no such release."""
-        return self.get(f"release/{mbid}", inc="recordings")
+        return self.get(f"release/{mbid}", inc="recordings artist-credits release-groups")    # no artist-credit without the inc
 
 
 # ---- the release an album request is (S2-03) --------------------------------------------------------------------
@@ -267,6 +267,7 @@ class ReleaseMatch:
     format: str
     date: str
     tracks: tuple[ReleaseTrack, ...]                         # tracks[i] is the row with track_no i + 1
+    first_year: int | None = None                            # its release group's first-release-date (D53)
 
 
 def _format(release: dict) -> str:
@@ -310,5 +311,7 @@ def match_release(rows: Sequence[dict], releases: Sequence[dict],
         if all(t.recording_id and _title_key(t.title, row.get("artist"))
                == _title_key(row.get("asked_title") or row.get("title"), row.get("artist"))
                for t, row in ((t, by_no[t.position]) for t in tracks)):
-            return ReleaseMatch(rel["id"], _format(rel), rel.get("date") or "", tracks)
+            first = ((body.get("release-group") or {}).get("first-release-date") or "")[:4]
+            return ReleaseMatch(rel["id"], _format(rel), rel.get("date") or "", tracks,
+                                int(first) if first.isdigit() and int(first) > 0 else None)
     return None

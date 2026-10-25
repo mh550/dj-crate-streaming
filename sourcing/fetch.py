@@ -159,13 +159,17 @@ def forget_finished(slskd: SlskdClient, peer: str, names: set[str]) -> set[str]:
 
 def forget_new(slskd: SlskdClient, peer: str, names: set[str], before: set[str]) -> None:
     """Best effort: cancel and forget (remove=true) the records of `names` made since `before`, so none lands
-    unfiled later."""
+    unfiled later. Each record on its own: one refused DELETE leaves the others still cancelled."""
     try:
-        for t in transfer_files(slskd.downloads(peer)):
-            if t.get("filename") in names and t.get("id") and t["id"] not in before:
-                slskd.remove_download(peer, t["id"])
+        listed = transfer_files(slskd.downloads(peer))
     except SlskdError:
-        pass
+        return
+    for t in listed:
+        if t.get("filename") in names and t.get("id") and t["id"] not in before:
+            try:
+                slskd.remove_download(peer, t["id"])
+            except SlskdError:
+                pass
 
 
 def to_download(row: dict | None) -> bool:
@@ -631,6 +635,14 @@ def fetch(wanted_id: str, *, store: CrateStore, slskd: SlskdClient, navidrome: S
             if e.status is not None and e.status < 500:
                 raise                         # a 4xx is ours to fix, not the peer's: the row fails as before
             got = None, f"{type(e).__name__}: {e}", True
+            if planned:                       # not the folder's fault: wait the drop out once, on the same transfer
+                sleep(retry_pause_s)          # (the album job would switch a good folder away, S2-05)
+                try:
+                    got = download()
+                except SlskdError as e2:
+                    if e2.status is not None and e2.status < 500:
+                        raise
+                    got = None, f"{type(e2).__name__}: {e2}", True
         if got[0] is None and before is not None:
             forget_new(slskd, cand.username, {cand.filename}, before)
         return got

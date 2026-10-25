@@ -114,8 +114,8 @@ CD = "3c9a52ee-ee0a-3362-a563-d9d28b02a53e"
 class MusicBrainzStub:
     """An opener for `MusicBrainz(opener=…)`: the captured search for any release search, the captured release for
     the ids in `releases`, 404 for everything else. Records the paths asked."""
-    def __init__(self, releases=(CD,), search="musicbrainz_release_search_al-green.json"):
-        self.releases, self.search, self.paths = set(releases), search, []
+    def __init__(self, releases=(CD,), search="musicbrainz_release_search_al-green.json", group=None):
+        self.releases, self.search, self.paths, self.group = set(releases), search, [], group
 
     def __call__(self, req, timeout=None):
         path = urllib.parse.urlparse(req.full_url).path.removeprefix("/ws/2/")
@@ -124,6 +124,8 @@ class MusicBrainzStub:
             body = (FIXTURES / self.search).read_text()
         elif path.removeprefix("release/") in self.releases:
             body = (FIXTURES / "musicbrainz_release_al-green-still-in-love.json").read_text()
+            if self.group is not None:                       # the lookup's release-group (inc=release-groups)
+                body = json.dumps({**json.loads(body), "release-group": self.group})
         else:
             raise urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, io.BytesIO(b"{}"))
         return io.BytesIO(body.encode())
@@ -146,6 +148,35 @@ def test_album_request_gets_its_release_and_every_row_its_recording():
     [ev] = [e for e in store.events(limit=100) if e["kind"] == "release"]
     assert f"musicbrainz release {CD} (CD 1993)" in ev["detail"] and ev["detail"].startswith(f"#{req['id']} ")
     assert opener.paths[0] == "release" and opener.paths[-1] == f"release/{CD}"
+    assert req["year"] is None                    # no release group in the reply: the year stays unknown (D51)
+
+
+def test_a_matched_release_gives_a_request_without_a_year_its_first_release_year():
+    """D53 *default*: the release group's first-release-date (the album's year, not a reissue's) fills an unknown
+    year, so the album files at `$album ($year)/`; a year the request has is kept."""
+    store = CrateStore()
+    req = rq.add_spotify(store, ALBUM_URL, fetch=lambda url: _album())
+    assert req["year"] is None
+    group = {"id": "rg", "first-release-date": "1972-10"}
+    assert rq.match_request_release(store, req["id"], stub_mb(MusicBrainzStub(group=group))) is True
+    assert store.request(req["id"])["year"] == 1972
+    other = CrateStore()
+    req = rq.add_spotify(other, ALBUM_URL, fetch=lambda url: _album())
+    other.db.execute("UPDATE requests SET year=1975 WHERE id=?", (req["id"],))
+    assert rq.match_request_release(other, req["id"], stub_mb(MusicBrainzStub(group=group))) is True
+    assert other.request(req["id"])["year"] == 1975
+
+
+def test_a_release_matched_after_a_row_was_approved_leaves_the_year_unknown():
+    """D53: once a row has gone to download its file may be filed under `$album/` (D51); a year now would split the
+    album into two folders, so only a first match before any approval fills it."""
+    store = CrateStore()
+    req = rq.add_spotify(store, ALBUM_URL, fetch=lambda url: _album())
+    store.db.execute("INSERT INTO approvals(wanted_id, approved_by, tier, ts) VALUES(?, 'michael', 'lossless', 0)",
+                     (req["rows"][0]["song_id"],))
+    group = {"id": "rg", "first-release-date": "1972-10"}
+    assert rq.match_request_release(store, req["id"], stub_mb(MusicBrainzStub(group=group))) is True
+    assert store.request(req["id"])["mb_release_id"] == CD and store.request(req["id"])["year"] is None
 
 
 def test_no_one_to_one_release_stores_nothing_and_the_request_goes_on():
