@@ -1,19 +1,24 @@
 ## Outcome
-All 33 features pass, up from 17 at the earlier segment end. Tests went from 1,120 to 1,523, at $103.74 over 14.07 h and 75 sessions (47 real, 28 environmental). Milestones N1 through N4 are verified and merged (PRs #9–#12 for H3, N2, N3, N4). N5 (N5-01 and N5-02) passed but is unverified and unmerged, because the 2026-10-19 08:06 deadline hit first. The earlier segment was held up for about 1.5 days (2026-10-17 21:09 to 2026-10-19 01:53) by H3-04, which was waiting on Michael's INBOX answer.
+All 33 of 33 features passed, and all 9 milestones were verified and merged (PRs #5–#13, tags `run/dj-2026-10-17/*`). Tests rose from 1,120 to 1,523. The run cost $104.62 over 14.29 h wall time (4 continuations) and 79 sessions (51 real, 28 environmental). It ended "done" at 2026-10-19 10:06. Two stalls cost time. The first was about 28 h behind H3-04 (2026-10-17 21:09 to 2026-10-19 01:53), which needed Michael's "gatus vars set" INBOX answer. The second was the 08:06 deadline, which cut N5 off before it was verified. N5 was then verified and merged in a later segment.
 
 ## Non-passing features by cause
-No features are non-passing and no feature has a cause, so there is nothing to assign. Two things are still open:
-- **N5-01 and N5-02** are passing but unverified, because the deadline ended the run before verify ran. Cause: deadline, not a failure.
-- **H3-04** was the only failed gate in the run. It ended `passes=false` twice (30 and 9 min) on a missing "gatus vars set" INBOX entry. Evidence: "H3-04 is blocked until Michael sets the two vars" (progress.md:321). The cause was a human dependency that was known before the feature was scheduled.
+No feature is non-passing, and `summary.json` has `cause: null` for all 33. Two features needed extra attempts:
+- **H3-04** took 4 sessions. This was a human dependency known in advance: "H3-04 is blocked until Michael sets the two vars" (progress.md, H3-02 entry).
+- **N5-01** took 2 sessions. The verify re-check failed once and the retry passed. I did not read the failure reason.
 
 ## Harness behaviour
-- **Guards:** repairs 0, red_unpass 0, limit_waits 0, escalations 0. `verify_failed` fired once, correctly. The H3 verify (2026-10-19 02:22) failed H3-04, and the re-attempt took 1 min and passed. The 8 merges after verify were clean.
-- **Wasted work:** the second H3-04 session (9 min) only re-read INBOX and reached the same conclusion as the first. The driver ended the run at 21:09 with 14 features (N2–N5) unattempted, though they didn't depend on H3-04. This is a repeat of the earlier retro for this run id.
-- **Summary bug:** `summary.json` reports `end_reason: "no feature left to try"`. The driver log says "blocked on H3-04" and later "deadline". The ledger row for the first segment carries the same label.
-- **Verify depth:** the verify sessions (N1F through N4) ran 7–11 turns each and cost $2.10 in total. That is too few to have re-run each feature's steps. The suite alone takes about 7 minutes. Verify looks like a suite re-run plus a read of the progress entries, and no per-step evidence rows were found. The earlier retro recorded "Live checks: not run". The one real failure, H3-04, came from an observable live-state check, so verify can catch things when the steps are observable.
-- **Cost mix:** build was $47.94 and review $35.15, so review cost 73% of build. Review sessions ran 3.79 h in total. Verify was 2% of cost.
+- **Guards:**
+  - Repairs 0, red_unpass 0, limit_waits 0, escalations 0.
+  - `verify_failed` fired twice, correctly (H3-04 at 02:22, N5-01 at 09:54). Each retry passed in 1 and 9 min.
+- **Waste:**
+  - The driver ended the first segment at 21:09 ("blocked on H3-04") with 14 features (N2–N5) unattempted.
+  - The harness-log line at 09:53 says milestones from N1F on have "no after list, so each waits on every earlier feature". That gate is why the unrelated N2–N5 were held. The feature list never declared real dependencies.
+  - The second H3-04 session only re-read INBOX, 9 min. The agent itself proposed: "skip H3-04 … while INBOX lacks 'gatus vars set'".
+  - `summary.json` and the ledger row from the first segment record `end_reason: "no feature left to try"`. That is wrong, since the real reason was a block.
+  - Review cost $35.15, which is 73% of build ($47.94).
+- **Verify depth:** the 9 verify sessions ran 7–9 turns, took 55–611 s and cost $2.65 in total. The one I read (N1F) reports "all 11 steps hold" with a suite run and test reads. I found no per-step evidence rows. Verify did catch two real failures, so it works on observable steps.
 
 ## Proposed harness changes
-1. **Skip blocked features and keep going** (driver scheduler). When a feature is given up on a human dependency, continue with features whose declared dependencies are met, and set `end_reason` from the last driver event. Evidence: N2–N5 sat idle behind H3-04 for about 1.5 days, and the summary shows the wrong end reason. The earlier retro for this run id proposed both the skip and the summary fix. They are still not implemented.
-2. **Hold human-gated features until the INBOX answer exists** (planner and feature_list). Evidence: H3-04 burned 2 sessions and about $2.43 on a gate the H3-03 review had already flagged. The earlier retro for this run id proposed it, and it is still open.
-3. **Make verify record one evidence row per step** (verify prompt and `summary.json`). Evidence: verify sessions ran 7–11 turns, with no row count to compare against the steps. This has not been proposed before.
+1. **Parked-feature skip (driver).** When a feature is blocked on an INBOX answer, park it and continue with features whose `after` list doesn't include it. Evidence: 28 h lost, 14 features unattempted, one 9-min no-op session. The pathways run `threads-2026-10-17` hit the same S-02 stall, and its retro already proposed this. This is a repeat.
+2. **Implicit dependencies (init and the driver).** Init should write an explicit `after` list for each milestone. The driver should not default to "waits on every earlier feature" without a warning at init. Evidence: the 09:53 log line. Not proposed before.
+3. **Honest `end_reason` (summary builder).** Report "blocked on <id>" or "deadline" instead of "no feature left to try", and record why a verify re-check failed. Evidence: the ledger row for this run. Not proposed before.
