@@ -19,7 +19,7 @@
 #
 # Versions: we source the exact track the playlist row names (the Soulseek-style label stays in the title:
 # "Title (Extended Mix)"). No version is preferred and none stands in for another, so there is no [versions.*]
-# table. (Docs: docs/specs/2026-10-17-amperfy-pivot.md.)
+# table. (Docs: docs/decisions.md D26.)
 
 [tiers.low]
 allow = ["flac", "wav", "aiff", "alac", "m4a", "mp3"]

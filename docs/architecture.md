@@ -4,7 +4,7 @@ Written 2026-10-16 from the code on `overnight2/2026-10-15` at `e73e803`. Where 
 file says what the code does (see §10b). History of M1–M5: [`RECAP-M1-M5.md`](../../RECAP-M1-M5.md).
 Legend: **built** = in the code; **live** = also running on the box; **planned** = only in a plan.
 
-> **2026-10-17 pivot** ([`specs/2026-10-17-amperfy-pivot.md`](specs/2026-10-17-amperfy-pivot.md)): one download quality
+> **2026-10-17 pivot** ([`specs/2026-10-17-amperfy-pivot.md`](specs/2026-10-17-amperfy-pivot.md); decisions in [`decisions.md`](decisions.md)): one download quality
 > (lossless, or lossy at 256 kbps or more), no 12" preference or stand-in (exact track), and **the crates app owns the
 > crate flag** (`CRATES_OWNER=app`; no `#tier` or `#crate` in playlist comments). Text below that describes the
 > comment-owned design (D21, tiers, D16) is the retired design, kept where the code still has it.
@@ -17,8 +17,8 @@ Legend: **built** = in the code; **live** = also running on the box; **planned**
 | H1-H3 (snapshots, heartbeat, healthchecks, backup job, Gatus, disk timer) | **live** (image `dj-crates:f4882ab85b`), except the H3-03 timer and H3-05's changes to it (merged, not installed) |
 | M7 live proposal (Task 12), gated apply (Task 13) | not done; Task 13 waits for you |
 | M8 lifecycle (Parts A–D: replacement, proposals, play-now; ownership changed by the pivot) | **built, live** since 2026-10-17; the trash-move probe in §9 has not been run (it needs the first real replacement) |
-| N1-N4 (run `dj-2026-10-17`: duplicate cleanup, imported marker in crates.db, vanished-playlist cleanup, placement) | merged into `main`, **not live** except N1's code (never run); live steps in `docs/plans/2026-10-22-morning-checklist.md` |
-| R1-R7 (run `dj-crate-streaming-2026-10-21`: doc truth, `live-run.sh`, D35 lossless pairs, guards, playlist health and history, M9 small items, identity picker) | built on `harness/dj-crate-streaming-2026-10-21`, **not deployed**; live steps in `docs/plans/2026-10-22-morning-checklist.md` |
+| N1-N4 (run `dj-2026-10-17`: duplicate cleanup, imported marker in crates.db, vanished-playlist cleanup, placement) | merged into `main`, **not live** except N1's code (never run); live steps in `docs/runbooks/2026-10-22-morning-checklist.md` |
+| R1-R7 (run `dj-crate-streaming-2026-10-21`: doc truth, `live-run.sh`, D35 lossless pairs, guards, playlist health and history, M9 small items, identity picker) | built on `harness/dj-crate-streaming-2026-10-21`, **not deployed**; live steps in `docs/runbooks/2026-10-22-morning-checklist.md` |
 | M9 | [`docs/specs/2026-10-17-m9-remaining-ownership.md`](specs/2026-10-17-m9-remaining-ownership.md): item 3 built (N1, not run live), item 1 placement built (N4, not deployed), items 5a, 6, 7 and 8a/8b/8c/8h built (R7, R4, R5, R6; not deployed); the rest not built |
 
 Checked live (read-only) when this was written: the worker image has no `deploy/policy.toml` and no
@@ -282,7 +282,7 @@ Runs in the worker (`scripts/identity_backfill.py`), because it has `/srv/music`
 
 Built in S2 and S3 (run `dj-crate-streaming-2026-10-22-build`) against the fakes: **not deployed, PRs open**. Spec
 S2/S3, plan `plans/2026-10-22-s2-album-requests.md`; the live steps for Michael are
-`plans/2026-10-22-downloads-checklist.md` sections 4 (a request, its album job) and 6 (the Spotify capture).
+`runbooks/2026-10-22-downloads-checklist.md` sections 4 (a request, its album job) and 6 (the Spotify capture).
 Entry points (S3), the HTTP routes and the CLI calling the same `CrateApp` methods, so add, preview and approve have
 one implementation each:
 - HTTP (`crates/service.py`, documented for clients in [`api.md`](api.md)): `POST /api/requests` (`{url}` →
@@ -444,7 +444,7 @@ docker compose stop worker / start worker          # pause / resume (a stop mid-
 | Identity apply | `… identity_backfill apply /data/identity/identity-proposal.json --dry-run`, then `--yes [--limit 5] [--classes …] [--only GLOB]` |
 | Undo apply | `… identity_backfill revert /data/identity/apply-<time>.jsonl` |
 | Duplicate cleanup | `docker compose exec -T worker python3 -m scripts.duplicate_cleanup plan`, then `repoint [--dry-run] [--limit N]`; with the worker stopped `scripts/live-run.sh python3 -m scripts.duplicate_cleanup trash [--dry-run] [--limit N]` (the deployed image, D45); staged runbook and undo in `docs/worker.md` "Duplicate cleanup" |
-| Tests | `cd ~/projects/dj-crate-streaming && ~/.local/bin/pytest -q` (1,750 tests, about 11 minutes) |
+| Tests | `.harness/check.sh` from a checkout (pytest, paths in scratch, live credentials unset; about 12 minutes) |
 | Offline demo | `python3 -m crates.cli demo` → http://127.0.0.1:4580 |
 
 Where to look: worker stdout (`docker compose logs worker`), the web client's log tab (`events`), approvals'

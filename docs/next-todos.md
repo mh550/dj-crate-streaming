@@ -2,7 +2,7 @@
 
 Written 2026-10-17. Michael approved this plan; items 1-4 are built on branch `harness/dj-2026-10-17` (not live), the rest
 is not built. Read first:
-[`specs/2026-10-17-amperfy-pivot.md`](specs/2026-10-17-amperfy-pivot.md) (decisions D24–D34),
+[`specs/2026-10-17-amperfy-pivot.md`](specs/2026-10-17-amperfy-pivot.md) (decisions D24 on, now in [`decisions.md`](decisions.md)),
 [`hard-won-facts.md`](hard-won-facts.md), [`architecture.md`](architecture.md). Deploy with `scripts/deploy.sh`.
 Anything that trashes files or writes tags needs a reviewed plan file and a reverse log, as in M3/M8.
 
@@ -20,7 +20,7 @@ Anything that trashes files or writes tags needs a reviewed plan file and a reve
   migrate` (dry run first, then `--apply`) still pending on the two old playlists (N2). (3) Cleanup of a vanished
   playlist's rows at reconcile (N3). (4) Placement of filed downloads at their Spotify position by the worker (N4).
   Also on the branch: snapshots, heartbeat and healthchecks (H1), the backup job in git (H2), Gatus and the disk timer
-  (H3). The live steps in order, each with its undo: [`plans/2026-10-17-morning-checklist.md`](plans/2026-10-17-morning-checklist.md).
+  (H3). The live steps in order, each with its undo: [`runbooks/2026-10-17-morning-checklist.md`](runbooks/2026-10-17-morning-checklist.md).
 - **2026-10-21:** the live image is `dj-crates:f4882ab85b` (crates + worker). It contains N1, N1F, H1, H2 and
   H3-01..04. PRs #5-#13 are merged into `main`. H1-H3 are live, except the H3-03 timer and
   H3-05's changes to it (merged, not installed). N2-N5 are merged, not
@@ -36,7 +36,7 @@ Anything that trashes files or writes tags needs a reviewed plan file and a reve
   `_playlists/.history/<date>/`, kept 30 days. (R6) AcoustID cache and a shared 3 req/s limiter, "99 Luftballons",
   disambiguation-only version labels, and a re-import reuses a failed unfiled row. (R7) The Identity tab writes `identity-choices.json`;
   `identity_backfill apply --choices` merges it (D47). The live steps in order, each with its check and undo:
-  [`plans/2026-10-22-morning-checklist.md`](plans/2026-10-22-morning-checklist.md).
+  [`runbooks/2026-10-22-morning-checklist.md`](runbooks/2026-10-22-morning-checklist.md).
 - **2026-10-22, run `dj-soulsync-review-2026-10-22` (docs only):** [SoulSync review](research/2026-10-22-soulsync/README.md); verdict: port pieces, never adopt SoulSync.
 - **2026-10-22, run `dj-crate-streaming-2026-10-22-fixes` (branch `harness/dj-crate-streaming-2026-10-22-fixes`,
   milestone S1 of `specs/2026-10-22-downloads-and-requests.md`):** built and tested against the fakes, **not deployed,
@@ -46,7 +46,7 @@ Anything that trashes files or writes tags needs a reviewed plan file and a reve
   (S1-04); slskd errors name the step and endpoint, never the peer (S1-05); one more peer on a transfer error or a VPN
   drop (S1-06); the library is asked before downloading (S1-07); `crates.cli wanted reopen` (S1-08, D49). The live
   steps, each with its check and undo:
-  [`plans/2026-10-22-downloads-checklist.md`](plans/2026-10-22-downloads-checklist.md) (S1-09).
+  [`runbooks/2026-10-22-downloads-checklist.md`](runbooks/2026-10-22-downloads-checklist.md) (S1-09).
 - **2026-10-23, run `dj-crate-streaming-2026-10-22-build` (branch `harness/dj-crate-streaming-2026-10-22-build`,
   milestone S2 of `specs/2026-10-22-downloads-and-requests.md`):** built and tested against the fakes, **not
   deployed**. Album requests sourced album-first: a `requests` table whose status is derived from its rows (S2-01); a
@@ -70,7 +70,7 @@ Anything that trashes files or writes tags needs a reviewed plan file and a reve
   live: a request (album, track or playlist, `requests` rows over its `external_wanted` rows), its album plan and the
   album job the worker runs from Michael's approval, through `/api/requests` (`api.md`) or `python -m sourcing.cli
   request add | list | show | preview | approve`. The live steps, each with its check and undo:
-  [`plans/2026-10-22-downloads-checklist.md`](plans/2026-10-22-downloads-checklist.md) sections 4 (the Al Green
+  [`runbooks/2026-10-22-downloads-checklist.md`](runbooks/2026-10-22-downloads-checklist.md) sections 4 (the Al Green
   album as a request) and 6 (the Spotify capture), then "Captures for the fixtures" (three slskd shapes).
   The whole-run review (S4-02) fixed 6 of its 7 Important findings, not deployed either: an album link is matched to its
   MusicBrainz release at `request add` too, and a match fills an unknown year from the release group (D53 *default*);

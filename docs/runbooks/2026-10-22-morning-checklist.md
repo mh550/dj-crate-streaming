@@ -1,6 +1,6 @@
 # Morning checklist v2: the live steps after run dj-crate-streaming-2026-10-21
 
-For Michael. It replaces `docs/plans/2026-10-17-morning-checklist.md`. Everything of runs `dj-2026-10-17` (N1–N5,
+For Michael. It replaces `docs/runbooks/2026-10-17-morning-checklist.md`. Everything of runs `dj-2026-10-17` (N1–N5,
 H3-05) and `dj-crate-streaming-2026-10-21` (R1–R7) is merged into `main` and tested against the fakes; **none of it
 has run live**. Live today: `crates` and `worker` on `dj-crates:f4882ab85b` (N1, N1F, H1, H2, H3-01..04), the H3-03
 timer not enabled. Do the steps in order and stop at the first surprise: undo that step, run **check**, and ask.
@@ -100,7 +100,7 @@ Undo: `cp -p /srv/docker/.env.pre-2026-10-22 /srv/docker/.env`.
 
 ## 4. Deploy `main` from a fresh worktree
 
-PR #16 must be on main first (see `docs/plans/2026-10-22-downloads-checklist.md` step 1).
+PR #16 must be on main first (see `docs/runbooks/2026-10-22-downloads-checklist.md` step 1).
 
 Do the "Snapshots first" checks of the conventions now. Then:
 
@@ -299,6 +299,6 @@ All of it arrives with step 4.
   not matter.
 - **Requests and album jobs (S2/S3, run `dj-crate-streaming-2026-10-22-build`).** Not part of step 4's deploy unless
   that run's PR was merged before it; otherwise they arrive with a later deploy of `main`. The live steps, each with its check and undo, are
-  in `docs/plans/2026-10-22-downloads-checklist.md` section 4 ("Album request through the request API": `sourcing.cli
+  in `docs/runbooks/2026-10-22-downloads-checklist.md` section 4 ("Album request through the request API": `sourcing.cli
   request add | preview | approve` of the Al Green album) and section 6 ("Spotify developer app and the capture":
   `scripts/capture_spotify.py` on the host, for the next catalog provider).

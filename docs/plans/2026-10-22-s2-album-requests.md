@@ -218,7 +218,7 @@ switch forgets with `remove=true`; the planned mode cannot loop (`fail_enqueue` 
 ## Live steps
 
 None in this run (build-only). Every live step of S2 (the migration on the live crates.db at the first deploy, the
-first album request, the beets path) goes into `docs/plans/2026-10-22-downloads-checklist.md` with S4-01, with its
+first album request, the beets path) goes into `docs/runbooks/2026-10-22-downloads-checklist.md` with S4-01, with its
 snapshot, stages and undo. The migration is additive: an older image ignores the new table and columns, so rolling
 back the image is the undo for S2-01. From S2-05a on it is not the whole undo: an older worker would spend unused
 `album` approvals as plain per-track downloads (still Michael's approvals, so D7 holds, but outside the album job).
