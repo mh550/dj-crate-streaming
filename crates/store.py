@@ -12,6 +12,8 @@ Tables
   verifications the last download check per wanted id
   approvals     who allowed which download (D23); the worker consumes the unused ones
   previews      the last search-and-rank result per wanted id, so the Wanted tab can show the pick
+  requests      one per album, playlist or track request (spec S2-01); its rows are the external_wanted rows naming
+                it in `request_id`, and its status is derived from them (request_status), never stored
   replacements  copy replacements (sourcing.replace): old and new song and path, recorded before the first step,
                 and the step reached, so a crash at any step is resumed by the worker, never forgotten
   proposals     questions about one playlist slot (crates.proposals, D23): "replace X with Y in P at n?". Not
@@ -29,7 +31,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from sourcing.identity import lead_artist, loose
+from sourcing.identity import can_be_song, lead_artist, loose
 from sourcing.policy import DEFAULT_TIER, STREAM_DEFAULT, check_stream, check_tier, max_tier
 
 SCHEMA = """
@@ -72,7 +74,19 @@ CREATE TABLE IF NOT EXISTS external_wanted (
   library_song_id TEXT,                           -- the Navidrome song filed for this row
   provisional INTEGER NOT NULL DEFAULT 0,         -- 1: this row's file is (or is being fetched as) play-now's fast
                                                   -- low copy, never its final file; the upgrade waits for approval
+  request_id  INTEGER,                            -- the request (requests.id) that first asked for this row, or NULL
+  track_no    INTEGER,                            -- its track number on the requested album
+  mb_recording_id TEXT,                           -- MusicBrainz recording the file must be (S2-03; verify's recording id)
   created_at  REAL NOT NULL, updated_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS requests (             -- one per request (S2-01); status is derived from its rows
+  id INTEGER PRIMARY KEY,
+  kind TEXT NOT NULL CHECK (kind IN ('album','playlist','track')),
+  source TEXT,                                    -- the URL asked for, or 'search'
+  artist TEXT, album TEXT, year INTEGER,          -- a playlist request: album is the playlist's name (S2-07)
+  mb_release_id TEXT,                             -- the MusicBrainz release matched one to one (S2-03), or NULL
+  tracktotal INTEGER,                             -- an album's highest track number as listed (S2-06), or NULL
+  created_at REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS imported_entries (     -- every song import-playlist ever added to a playlist,
   playlist_id TEXT NOT NULL, song_id TEXT NOT NULL, -- so a track Michael removes by hand is never re-added
@@ -106,6 +120,7 @@ CREATE TABLE IF NOT EXISTS approvals (            -- one row per "yes, download 
   id INTEGER PRIMARY KEY, wanted_id TEXT NOT NULL, approved_by TEXT NOT NULL,  -- michael | policy:<name> | agent:<id>
   candidate TEXT, tier TEXT NOT NULL, ts REAL NOT NULL, used_at REAL, result TEXT,
   purpose TEXT NOT NULL DEFAULT 'download');      -- download | play-now (D20: one fast provisional copy at `tier`)
+                                                  -- | album (S2-05: one row of a request, sourcing.album_job)
 CREATE TABLE IF NOT EXISTS previews (song_id TEXT PRIMARY KEY, result TEXT NOT NULL, ts REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS replacements (         -- one per copy replacement (sourcing.replace)
   id INTEGER PRIMARY KEY, wanted_id TEXT NOT NULL,
@@ -127,8 +142,11 @@ CREATE TABLE IF NOT EXISTS proposals (            -- one question per playlist s
   decision TEXT, result TEXT);                     -- accepted | declined | stale; result: what happened
 """
 
-REPLACEMENT_OPEN = ("repoint", "trash", "scan")
-APPROVAL_PURPOSES = ("download", "play-now")       # play-now (D20): one fast provisional copy, scored at its tier    # the worker advances these; done and blocked are final
+REPLACEMENT_OPEN = ("repoint", "trash", "scan")   # the worker advances these; done and blocked are final
+APPROVAL_PURPOSES = ("download", "play-now", "album")   # play-now (D20): one fast provisional copy, scored at its
+                                                        # tier; album (S2-05): a request's row, run by the album job
+REQUEST_KINDS = ("album", "playlist", "track")
+REQUEST_STATUSES = ("done", "failed", "partly", "approved", "open")    # request_status's rules, in order
 
 PROPOSAL_KINDS = ("version_swap", "unproven_copy")
 DECISIONS = ("accepted", "declined", "stale")
@@ -176,6 +194,34 @@ def held_by(reason: str | None) -> str | None:
     return m.group(1) if m else None
 
 
+def request_status(rows: list[dict]) -> str:
+    """A request's status from its rows (wanted_row dicts: `status`, `reason`, `approval`), the first that applies
+    (plan S2, "Request status"): `done` every row ok; `failed` no row ok and none open; `partly` some row ok;
+    `approved` some row is going (_going); `open`. A row is open unless it is `ok` or a `failed` row that is not
+    going. A `removed` row (superseded) is not the request's any more and counts for nothing; a request without
+    rows is `open`."""
+    live = [r for r in rows if r["status"] != "removed"]
+    ok = [r for r in live if r["status"] == "ok"]
+    open_ = [r for r in live if r["status"] not in ("ok", "failed") or _going(r)]
+    if live and len(ok) == len(live):
+        return "done"
+    if live and not ok and not open_:
+        return "failed"
+    if ok:
+        return "partly"
+    if any(_going(r) for r in open_):
+        return "approved"
+    return "open"
+
+
+def _going(row: dict) -> bool:
+    """A row on its way to a file: being fetched or filed (`sourcing`, `verify`, a `failed` row whose file is in the
+    library: filed_path), or with an approval waiting or being fetched (approval_in_progress's rule)."""
+    a = row.get("approval")
+    return (row["status"] in ("sourcing", "verify") or filed_path(row.get("reason")) is not None
+            or (a is not None and (a["used_at"] is None or a["result"] == "started")))
+
+
 def in_flight(status: str, reason: str | None) -> bool:
     """A row reconcile must not touch, whatever its tier or verdict: a download under way (`sourcing`), a filed file
     Navidrome has not indexed (`verify`, or `failed` with a filed path), a question for Michael (`review`, except a
@@ -186,10 +232,12 @@ def in_flight(status: str, reason: str | None) -> bool:
 
 
 # A `review` row is a question. Copy replacement (sourcing.replace / fetch) and proposals leave rows in `review` with
-# one of these reasons when a better copy was filed but did not replace the old one; approving such a row is a fresh
-# download attempt. Any other review reason (import-playlist's "ambiguous …": several library versions fit) waits
-# for a pick between versions that already exist, and a download would not answer it.
-RETRYABLE_REVIEW = re.compile(r"kept beside |declined replacement #\d+|replacement #\d+ not made:|filed beside ")
+# one of these reasons when a better copy was filed but did not replace the old one, and fetch when Navidrome lists the
+# filed file as another song than the one asked for (S1-03); approving such a row is a fresh download attempt. Any
+# other review reason (import-playlist's "ambiguous …": several library versions fit) waits for a pick between versions
+# that already exist, and a download would not answer it.
+RETRYABLE_REVIEW = re.compile(r"kept beside |declined replacement #\d+|replacement #\d+ not made:|filed beside |"
+                              r"filed .+ as .+, asked for ")
 
 
 def retryable_review(reason: str | None) -> bool:
@@ -292,9 +340,12 @@ class CrateStore:
         have = {r[1] for r in self.db.execute("PRAGMA table_info(external_wanted)")}
         for col, typ in (("playlist_id", "TEXT"), ("position", "INTEGER"), ("tier", "TEXT NOT NULL DEFAULT 'crate'"),
                          ("asked_artist", "TEXT"), ("asked_title", "TEXT"), ("library_song_id", "TEXT"),
-                         ("provisional", "INTEGER NOT NULL DEFAULT 0")):
+                         ("provisional", "INTEGER NOT NULL DEFAULT 0"), ("request_id", "INTEGER"),
+                         ("track_no", "INTEGER"), ("mb_recording_id", "TEXT")):
             if col not in have:
                 self.db.execute(f"ALTER TABLE external_wanted ADD COLUMN {col} {typ}")
+        if "tracktotal" not in {r[1] for r in self.db.execute("PRAGMA table_info(requests)")}:
+            self.db.execute("ALTER TABLE requests ADD COLUMN tracktotal INTEGER")
         if "purpose" not in {r[1] for r in self.db.execute("PRAGMA table_info(approvals)")}:
             self.db.execute("ALTER TABLE approvals ADD COLUMN purpose TEXT NOT NULL DEFAULT 'download'")
         if "tier" not in {r[1] for r in self.db.execute("PRAGMA table_info(crates)")}:
@@ -455,7 +506,8 @@ class CrateStore:
         ext = self.db.execute(f"SELECT * FROM external_wanted WHERE status IN {live} ORDER BY id")
         rows = self._crate_wanted(f"t.status IN {live}") + [self._ext_row(r) for r in ext]
         checks = dict(self.db.execute("SELECT song_id, result FROM verifications").fetchall())   # parse only rows shown
-        previews = dict(self.db.execute("SELECT song_id, result FROM previews").fetchall())
+        previews = dict(self.db.execute("SELECT song_id, result FROM previews "        # not a request's plan
+                                         "WHERE song_id NOT LIKE 'req-%'").fetchall())
         for row in rows:
             self._decorate(row, checks.get(row["song_id"]), previews.get(row["song_id"]))
         return rows
@@ -633,6 +685,10 @@ class CrateStore:
         self.db.execute("UPDATE approvals SET used_at=?, result=? WHERE id=?", (time.time(), result, approval_id))
         self.db.commit()
 
+    def approval_by_id(self, approval_id: int) -> dict | None:
+        r = self.db.execute("SELECT * FROM approvals WHERE id=?", (approval_id,)).fetchone()
+        return self._approval_row(r) if r else None
+
     def approval(self, wanted_id: str) -> dict | None:
         """The latest approval for a wanted id, used or not."""
         r = self.db.execute("SELECT * FROM approvals WHERE wanted_id=? ORDER BY id DESC LIMIT 1", (wanted_id,)).fetchone()
@@ -668,13 +724,19 @@ class CrateStore:
     def add_external_wanted(self, artist: str, title: str, album: str | None = None, duration_s: float | None = None,
                             year: int | None = None, source: str | None = None,
                             playlist_id: str | None = None, position: int | None = None, tier: str | None = None,
-                            default_tier: str = DEFAULT_TIER, reask: str | None = None) -> str:
+                            default_tier: str = DEFAULT_TIER, reask: str | None = None,
+                            request_id: int | None = None, track_no: int | None = None) -> str:
         """Returns the existing id when the same artist/title is already queued (re-running a seed is a no-op);
         a playlist position or a tier, when given, is (re)recorded on that row. A new row without a tier gets
         default_tier (crate; imports pass medium, D15). Without `reask` a failed row is re-queued as a new row, as
-        seed-spotify always did; with it (import-playlist passes the playlist's name), see _reask (M9 §8h)."""
+        seed-spotify always did; with it (import-playlist passes the playlist's name), see _reask (M9 §8h).
+        A `request_id` (with its `track_no`) is recorded on a row that has none: a row belongs to the first request
+        that asked for it, so a later request never takes a row out of an album job under way; only a playlist's
+        request holds it loosely (takeable, S2-07)."""
         check_tier(tier or check_tier(default_tier))
         existing = self.find_external(artist, title, include_failed=reask is not None)
+        if existing and request_id is not None and existing["status"] == "removed":
+            existing = None                      # superseded: a request gets a row of its own, never a removed one
         if existing:
             if existing["status"] == "failed" and filed_path(existing["reason"]) is None:
                 self._reask(existing, reask, artist, title, album, duration_s, playlist_id, tier or default_tier)
@@ -683,8 +745,15 @@ class CrateStore:
                                 (playlist_id, position, time.time(), _ext_pk(existing["song_id"])))
             if tier is not None:
                 self.set_external_tier(existing["song_id"], tier)
+            if request_id is not None and existing["request_id"] != request_id and self.takeable(existing):
+                if existing["request_id"] is not None:
+                    self.log(None, existing["song_id"], "request", f"#{existing['request_id']} → #{request_id}")
+                self.db.execute("UPDATE external_wanted SET request_id=?, track_no=?, album=COALESCE(album, ?), "
+                                "year=COALESCE(year, ?), updated_at=? WHERE id=?",
+                                (request_id, track_no, album, year, time.time(), _ext_pk(existing["song_id"])))
             return existing["song_id"]
-        return self._insert_external(artist, title, album, duration_s, year, source, playlist_id, position, tier or default_tier)
+        return self._insert_external(artist, title, album, duration_s, year, source, playlist_id, position,
+                                     tier or default_tier, request_id, track_no)
 
     def _reask(self, row: dict, by: str, artist, title, album, duration_s, playlist_id, tier) -> None:
         """Ask a failed, unfiled row again instead of queuing a second one: back to needs_source with its own id,
@@ -714,12 +783,14 @@ class CrateStore:
             self.db.execute("UPDATE external_wanted SET tier=?, updated_at=? WHERE id=?", (tier, time.time(), _ext_pk(ext_id)))
             self.log(None, ext_id, "tier", f"{old} → {tier}")
 
-    def _insert_external(self, artist, title, album, duration_s, year, source, playlist_id, position, tier) -> str:
+    def _insert_external(self, artist, title, album, duration_s, year, source, playlist_id, position, tier,
+                         request_id=None, track_no=None) -> str:
         now = time.time()
         cur = self.db.execute(
-            "INSERT INTO external_wanted(artist,title,album,year,duration,source,playlist_id,position,tier,created_at,updated_at) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-            (artist, title, album, year, int(duration_s) if duration_s else None, source, playlist_id, position, tier, now, now))
+            "INSERT INTO external_wanted(artist,title,album,year,duration,source,playlist_id,position,tier,request_id,"
+            "track_no,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (artist, title, album, year, int(duration_s) if duration_s else None, source, playlist_id, position, tier,
+             request_id, track_no, now, now))
         self.log(None, f"ext-{cur.lastrowid}", "wanted", f"{artist} — {title}")
         return f"ext-{cur.lastrowid}"
 
@@ -979,6 +1050,82 @@ class CrateStore:
         request for a better file now (fetch refuses a `removed` row)."""
         self.set_external_status(ext_id, "removed", self.SUPERSEDED)
 
+    def reopen_external(self, ext_id: str, apply: bool) -> dict:
+        """Put an external row filed as the wrong song (ext-74, S1-08) back to `needs_source`: the asked names return
+        (a row without them keeps its own), the library song and the provisional flag clear, its placements go so the
+        right file is placed when it arrives (D49; the wrong song's playlist entries stay), and its preview goes so an
+        approval cannot reuse the wrong pick. One `reopened` event holds the old values as JSON: the reverse. Touches
+        crates.db only. Refused (ValueError): not an `ext-<n>` id, no such row, a `removed` row, a row in flight
+        (in_flight: a download, a filed file not yet indexed, a question; a retryable `review` is not one), an
+        approval waiting or being fetched, an open copy replacement, a placement being written, a row already open.
+        Returns {id, old, new, playlists, applied}, `playlists` being every import slot the row will be placed into;
+        changes nothing unless `apply`, which checks and writes under one write lock (the worker writes too)."""
+        if not re.fullmatch(r"ext-\d+", ext_id or ""):
+            raise ValueError(f"{ext_id!r} is not an external row id (ext-<n>)")
+        began = apply and not self.db.in_transaction
+        if began:
+            self.db.execute("BEGIN IMMEDIATE")
+        try:
+            plan = self._reopen_plan(ext_id)
+            if apply:
+                old, new = plan["old"], plan["new"]
+                self.db.execute("UPDATE external_wanted SET artist=?, title=?, library_song_id=NULL, provisional=0, "
+                                "updated_at=? WHERE id=?", (new["artist"], new["title"], time.time(), _ext_pk(ext_id)))
+                self.set_external_status(ext_id, "needs_source", new["reason"])
+                self.db.execute("DELETE FROM placements WHERE wanted_id=?", (ext_id,))
+                self.db.execute("DELETE FROM previews WHERE song_id=?", (ext_id,))
+                self.log(plan["playlist_id"], ext_id, "reopened", json.dumps(old))
+                self.commit()
+        except BaseException:
+            if began:
+                self.db.rollback()
+            raise
+        del plan["playlist_id"]
+        return plan | {"applied": apply}
+
+    def _reopen_plan(self, ext_id: str) -> dict:
+        row = self.external(ext_id)
+        if row is None:
+            raise ValueError(f"{ext_id}: no such row")
+        status, reason = row["status"], row["reason"]
+        if status == "removed":
+            raise ValueError(f"{ext_id} is removed ({reason or ''})")
+        if in_flight(status, reason) and not (status == "review" and retryable_review(reason)):
+            raise ValueError(f"{ext_id} is {status} ({reason or ''}): " + (
+                "a download is in flight; wait for its outcome" if status in ("sourcing", "verify") else
+                "its file is filed; the worker re-checks it" if status == "failed" else
+                "a question waits; answer it first"))
+        approval = self.approval_in_progress(ext_id)
+        if approval:
+            raise ValueError(f"{ext_id}: approval #{approval['id']} is waiting or being fetched; wait for its outcome")
+        job = self.db.execute(f"SELECT id, state FROM replacements WHERE wanted_id=? AND state IN "
+                              f"({','.join('?' * len(REPLACEMENT_OPEN))}) ORDER BY id LIMIT 1",
+                              (ext_id, *REPLACEMENT_OPEN)).fetchone()
+        if job:
+            raise ValueError(f"{ext_id}: copy replacement #{job['id']} is at {job['state']}; wait for it to finish")
+        places = [dict(r) for r in self.db.execute(
+            "SELECT playlist_id, song_id, state, attempts, detail, updated_at FROM placements WHERE wanted_id=? "
+            "ORDER BY playlist_id", (ext_id,))]
+        writing = [p["playlist_id"] for p in places if p["state"] == "writing"]
+        if writing:
+            raise ValueError(f"{ext_id}: its placement into {', '.join(writing)} is writing; try after the worker's next tick")
+        artist = row["asked_artist"] if row["asked_artist"] is not None else row["artist"]
+        title = row["asked_title"] if row["asked_title"] is not None else row["title"]
+        if row["provisional"] and row["library_song_id"] and can_be_song(row["title"], title):
+            # play-now's low copy of the asked song: reopened, the library check (S1-07) would take it as the row's
+            raise ValueError(f"{ext_id}: its provisional copy {row['library_song_id']} is the asked song; "
+                             "it waits for its upgrade, nothing to reopen")
+        filed = row["library_song_id"] is not None or (artist, title) != (row["artist"], row["title"])
+        if status == "needs_source" and not filed and not places:
+            raise ValueError(f"{ext_id} is already needs_source with its asked names; nothing to reopen")
+        old = {k: row[k] for k in ("artist", "title", "library_song_id", "provisional", "status", "reason")}
+        old["placements"] = places
+        new_reason = f"reopened: was {status}" + (f" (filed as {row['artist']} – {row['title']})" if filed else "")
+        new = {"artist": artist, "title": title, "library_song_id": None, "provisional": 0, "status": "needs_source",
+               "reason": new_reason, "placements": []}
+        playlists = [(o["playlist_id"], o["position"]) for o in self.import_order_for(ext_id)]
+        return {"id": ext_id, "old": old, "new": new, "playlists": playlists, "playlist_id": row["playlist_id"]}
+
     def set_external_status(self, ext_id: str, status: str, reason: str | None = None) -> None:
         assert status in STATUSES, status
         self.db.execute("UPDATE external_wanted SET status=?, reason=?, updated_at=? WHERE id=?",
@@ -991,6 +1138,99 @@ class CrateStore:
         d["song_id"] = f"ext-{d.pop('id')}"
         d["crates"], d["external"] = [], True
         return d
+
+    # --- requests (S2-01): an album, playlist or track asked for as one; its rows are external_wanted rows
+    def add_request(self, *, kind: str, source: str | None, artist: str | None, album: str | None,
+                    year: int | None, tracktotal: int | None = None) -> int:
+        """Record a request and return its id; its rows are added with add_external_wanted(request_id=…).
+        `tracktotal`: an album's highest listed track number, which a row held by another request cannot lower."""
+        if kind not in REQUEST_KINDS:
+            raise ValueError(f"unknown request kind {kind!r}")
+        cur = self.db.execute("INSERT INTO requests(kind, source, artist, album, year, tracktotal, created_at) "
+                              "VALUES(?,?,?,?,?,?,?)", (kind, source, artist, album, year, tracktotal, time.time()))
+        self.log(None, None, "request", f"#{cur.lastrowid} {kind}: {' — '.join(x for x in (artist, album) if x)}")
+        self.db.commit()
+        return cur.lastrowid
+
+    def attach_request(self, request_id: int, ext_ids: list[str]) -> None:
+        """Make these external rows the request's (S2-07): only a row of no request, never a `removed` one. The
+        caller commits."""
+        self.db.executemany("UPDATE external_wanted SET request_id=?, updated_at=? WHERE id=? AND request_id IS NULL "
+                            "AND status!='removed'", [(request_id, time.time(), _ext_pk(e)) for e in ext_ids])
+
+    def detach_request(self, request_id: int, keep: list[str]) -> None:
+        """Release the request's rows not in `keep` that nothing is doing yet (a track its playlist no longer lists,
+        S2-07); a row being fetched or filed stays. The caller commits."""
+        for r in (self.request(request_id) or {"rows": []})["rows"]:
+            if r["song_id"] not in keep and r["status"] not in ("ok", "removed") and not _going(r):
+                self.db.execute("UPDATE external_wanted SET request_id=NULL, updated_at=? WHERE id=?",
+                                (time.time(), _ext_pk(r["song_id"])))
+
+    def takeable(self, row: dict) -> bool:
+        """Whether an album or track request may make this external row its own: a row of no request, or one a
+        playlist request holds (S2-07: so an album asked for later files as one) that nothing is doing yet (not ok,
+        not going: no approval waiting or being fetched, not being fetched or filed)."""
+        if row.get("request_id") is None:
+            return True
+        kind = self.db.execute("SELECT kind FROM requests WHERE id=?", (row["request_id"],)).fetchone()
+        r = self.wanted_row(row["song_id"])
+        return kind is not None and kind[0] == "playlist" and r is not None and r["status"] != "ok" and not _going(r)
+
+    def find_playlist_request(self, name: str) -> int | None:
+        """The playlist request of the playlist named `name` (the import's target), or None."""
+        r = self.db.execute("SELECT id FROM requests WHERE kind='playlist' AND album=? ORDER BY id LIMIT 1",
+                            (name,)).fetchone()
+        return r[0] if r else None
+
+    def find_request(self, source: str) -> int | None:
+        """The first request made from this source (a re-run of the same URL finds it), or None."""
+        r = self.db.execute("SELECT id FROM requests WHERE source=? ORDER BY id LIMIT 1", (source,)).fetchone()
+        return r[0] if r else None
+
+    def set_release_id(self, request_id: int, mb_release_id: str | None) -> None:
+        """The MusicBrainz release an album request matched one to one (S2-03)."""
+        self.db.execute("UPDATE requests SET mb_release_id=? WHERE id=?", (mb_release_id, request_id))
+        self.db.commit()
+
+    def set_recording_id(self, ext_id: str, mb_recording_id: str | None) -> None:
+        """The MusicBrainz recording a request's row must be (S2-03); fetch hands it to verify."""
+        self.db.execute("UPDATE external_wanted SET mb_recording_id=?, updated_at=? WHERE id=?",
+                        (mb_recording_id, time.time(), _ext_pk(ext_id)))
+        self.db.commit()
+
+    def any_approval(self, wanted_ids: list[str]) -> bool:
+        """Whether any of these rows was ever approved (used or not)."""
+        return any(self.db.execute("SELECT 1 FROM approvals WHERE wanted_id=? LIMIT 1", (w,)).fetchone()
+                   for w in wanted_ids)
+
+    def set_request_release(self, request_id: int, mb_release_id: str, recordings: dict[int, str],
+                            year: int | None = None) -> None:
+        """S2-03 in one transaction: every row of the request that is not `removed` gets the recording of its track
+        number (a re-seeded row and the failed one it replaced alike), then the request its release, and `year`
+        when it has none (D53). `updated_at` stays: it times stale-row recovery and re-checks, and this is no change
+        of state."""
+        for track_no, rec in recordings.items():
+            self.db.execute("UPDATE external_wanted SET mb_recording_id=? WHERE request_id=? AND track_no=? "
+                            "AND status!='removed'", (rec, request_id, track_no))
+        self.db.execute("UPDATE requests SET mb_release_id=?, year=COALESCE(year, ?) WHERE id=?",
+                        (mb_release_id, year, request_id))
+        self.db.commit()
+
+    def request(self, request_id: int) -> dict | None:
+        """The request, its rows (wanted_row dicts, by track number, then playlist position) and its derived
+        status; None when unknown."""
+        r = self.db.execute("SELECT * FROM requests WHERE id=?", (request_id,)).fetchone()
+        if r is None:
+            return None
+        ids = [f"ext-{i}" for (i,) in self.db.execute(
+            "SELECT id FROM external_wanted WHERE request_id=? ORDER BY track_no IS NULL, track_no, position, id",
+            (request_id,))]
+        rows = [self.wanted_row(i) for i in ids]
+        return {**dict(r), "rows": rows, "status": request_status(rows)}
+
+    def requests(self) -> list[dict]:
+        """Every request as request() shows it, newest first."""
+        return [self.request(i) for (i,) in self.db.execute("SELECT id FROM requests ORDER BY id DESC").fetchall()]
 
     # --- replacements (sourcing.replace): a copy replacement's steps, durable so a crash is resumed
     @staticmethod

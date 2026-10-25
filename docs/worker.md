@@ -67,9 +67,34 @@ path in its reason, so the re-check picks it up and nothing downloads a second c
 2. Press **Approve**. The row reads "approved · waiting for worker" until the next tick takes it, then
    "worker: <outcome>".
 
+One approval may try a second source. When the transfer ends `Completed, Errored|TimedOut|Rejected|Cancelled`, or
+slskd is unreachable or answers 5xx (a VPN drop), the worker downloads the next acceptable candidate from another
+peer, after a 20 s pause (`RETRY_PAUSE_S`: gluetun's drop logs slskd out for about 10 s). A `retry` event says so
+("<file>: <why>; trying another peer"). A second failure fails the row with both attempts in the reason. Our own
+timeout, a 4xx and a verify failure are never retried this way. A failed attempt (our timeout included) cancels and
+forgets its own transfer in slskd (`?remove=true`), so a late file can't land unfiled.
+
+Before searching for an external row, Preview and Approve ask Navidrome as `import-playlist` does
+(`import_playlist.match`, no stand-ins). A same-recording or same-version hit makes the row `ok` ("already in the
+library: <title> (<song id>)") with that library song and a `matched` event; nothing is downloaded, and placement
+puts it in its imported playlist. A doubt (several versions, another length or label) or Navidrome being down
+searches as before; the outage is a `matched` event "library not asked: …". `wanted reopen` (below) undoes a wrong link.
+
+A download whose filed song can't be the asked one (ext-74: asked "I'm Still In Love With You", Navidrome lists
+"One of These Good Old Days") is not renamed and not placed: the row becomes `review` "filed <X> as <rel>, asked for
+<Y>" with a `wrong_song` event (path and song id). Approving it again downloads again (D48); `wanted reopen` (below)
+puts it back to `needs_source` instead. The events these steps leave, none naming a peer: `matched` (library hit or
+"library not asked"), `retry` (the second source), `wrong_song` (filed as another song), `reopened` (the reverse of a
+reopen).
+
 Every download carries an approval record (D23): who approved, the candidate, the tier and the time. Today the only
 `approved_by` value is `michael` (the Approve button, and `sourcing.cli fetch --approve`). Later values are
 `policy:<name>` and `agent:<id>`: new approvers, not a redesign.
+
+Each approval has a `purpose`: an ordinary download, `play-now` (see "Play-now") or `album`. Approving an album
+request (`sourcing.album_job.approve_request`) records one `album` approval per open row, with that row's planned file
+as the candidate (none for a row going per track); the worker runs them together as one album job (below), not one
+fetch each.
 
 `sourcing.cli fetch --wanted <id> --approve` only records the approval, with the same rules as the Approve button
 (the previewed pick if there is one; refused for a row that is `sourcing` or `verify`), and prints "approved; the
@@ -99,6 +124,96 @@ path; library paths are relative to `/srv/music`.
 Approvals are claimed atomically. A second approval for the same row supersedes the first; a superseded or already
 taken approval is skipped, with a `skipped <id>: approval #N already used` line in the log.
 
+### Reopen a row filed as the wrong song
+
+`python3 -m crates.cli wanted reopen <ext-id> [--apply]` (S1-08, ext-74) puts an external row back to `needs_source`:
+the asked names return (a row without them keeps its own), `library_song_id` and `provisional` clear, the reason
+reads `reopened: was <status> (filed as <artist> – <title>)`, and its preview goes, so an Approve cannot reuse the
+wrong pick. Its `placements` rows are deleted, so placement puts the right file into its imported playlists when it
+arrives (D49). It talks to crates.db only: no file is touched, and the wrong song's playlist entries stay (remove one
+by hand if it should go). Without `--apply` it prints the plan and ends `dry run: add --apply to write this`. It
+refuses (exit 1, the reason on stderr) a row that is not `ext-<n>`, missing or `removed`; a download in flight
+(`sourcing`, `verify`); a filed file Navidrome has not indexed yet (`failed` "Navidrome never indexed …", re-checked,
+never downloaded again); a question (`review` other than a retryable one, such as an import's "ambiguous …"); an
+approval waiting or being fetched; an open copy replacement; a placement `writing`; a play-now row whose provisional
+copy is the asked song (it waits for its upgrade; the library check would take that copy as the row's); and a row
+already `needs_source` with its asked names. A `CRATES_DB`/`--db` with no file there is refused, not created. `--apply` checks and writes under one crates.db write lock; a worker holding it too long gives
+"database is locked" and exit 1, nothing written. The plan lists every import slot the row will be placed into once
+the right file arrives: a slot another import queued while the row bore the wrong names is among them.
+
+The reverse is the `reopened` event, whose detail is the JSON of the old `artist`, `title`, `library_song_id`,
+`provisional`, `status`, `reason` and `placements`. Read it with
+`SELECT detail FROM events WHERE kind='reopened' AND song_id='ext-<n>' ORDER BY id DESC LIMIT 1`, then, with the
+worker stopped, put the values back by hand:
+`UPDATE external_wanted SET artist=?, title=?, library_song_id=?, provisional=?, status=?, reason=? WHERE id=<n>`
+and one `INSERT INTO placements(wanted_id, playlist_id, song_id, state, attempts, detail, updated_at) VALUES('ext-<n>', …)`
+per listed placement. A preview is not restored; Preview searches again.
+
+## Album jobs
+
+An album request (a Spotify album URL, `sourcing.requests`) is sourced album-first by `sourcing/album_job.py`.
+Nothing is enqueued without Michael's approval of the request (D7): the plan only searches.
+
+**The morning path, without a client** (S3-04): `python -m sourcing.cli request …`, run in the worker container
+(`cd /srv/docker && docker compose exec -T worker python -m sourcing.cli request <command>`; it refuses without
+`CRATES_DB`). Each command is what `/api/requests` does, through the same `CrateApp` methods and rules.
+1. `request add <link>`: a Spotify album, track or playlist link, or `https://musicbrainz.org/release/<id>` /
+   `…/recording/<id>`. Prints `request 1: Al Green – I'm Still in Love With You (album, 9 rows, 0 in library)` and
+   one line per row (`  01 ext-1  I'm Still In Love With You  needs_source`); the same link again prints the same
+   request, `; already requested`.
+2. `request list`, `request show <id>`: status, each row's status and reason, MusicBrainz ids, approvals and the
+   cached plan. No peer name and no absolute path, as in the API.
+3. `request preview <id>` (needs `--slskd`/`$SLSKD_URL` and the API key, else exit 2): the plan below, printed by
+   folder label, coverage and row → file. Nothing is enqueued.
+4. `request approve <id>`: Michael's click (D7). It records the approvals and prints
+   `approved 9 rows of request 1; the worker downloads them on its next tick`. A row in progress is refused with the
+   API's 409 text, exit 1. The command never downloads.
+
+`--json` on each prints the API's JSON.
+
+- **Plan** (`plan_request`, also what a preview shows): one search for `"<artist> <album>"`, the open rows planned
+  over its folders (`sourcing.album.plan_album`: a primary folder, a same-release secondary, rows no folder covers
+  per track) and cached as the preview `req-<id>`. One `plan` event: `#<id> folder 1: 8 of 9; 1 row per track`.
+  Folders are named by label and files by basename, never by peer.
+- **One tick, for a request's `album` approvals** (the worker groups them by request): claim them all; link each row
+  the library already has (a `matched` event, `ok`, nothing downloaded); plan again if the cached plan is older than
+  `ALBUM_PLAN_MAX_AGE_S` (3600 s); enqueue each peer's planned files in one POST; then run each row through fetch in
+  planned mode (no search, no enqueue of its own: it polls the job's transfer), verify, file and finish as any
+  download. The rows no folder covers go per track: an ordinary fetch of `"<artist> <title>"` (a `pick` event
+  `per track: <basename>`), and so does a row whose own tier rejects its planned file (the plan is made at the first
+  row's tier).
+- **Switch triggers.** Trouble with a planned file switches the rest of that folder's unfiled rows (the failed one
+  included) to another folder: a transfer error another peer may fix (`Completed, Errored|TimedOut|Rejected|Cancelled`,
+  slskd away) or a planned transfer that timed out (`download_timeout_s`); a peer that has started none of its files `ALBUM_START_TIMEOUT_S` (600 s) after the enqueue; one
+  verify finding of the "not what it claims" kind (`transcode`, `fake_24bit`, `fake_hires`, `recording`: fakes come
+  as folders); or 2 failed rows in one folder. An ordinary finding (`duration`, `truncated`) alone fails only its
+  row. On a switch, the folder's queued transfers of unfiled rows are cancelled and forgotten (`?remove=true`), and
+  the moved rows are planned again over the first search plus one fresh album search, without the failed folders,
+  preferring the release already being filed. Rows already filed stay. One `switch` event per failed folder:
+  `#<id> folder 1 distrusted: transcode (<basename>); 8 rows → folder 2`. The cached plan keeps the failed folders and
+  goes stale: approving the request again plans afresh without them (S2-R1).
+- **Caps.** A row gets at most its planned folder, one switched folder and one per-track fetch, which never takes a
+  file from a peer whose folder failed in this job (S1-06's second source included). Then it fails, every attempt in
+  its reason, in order: `folder 1: transcode (<basename>); folder 2: download ended: Completed, Errored; per track: no
+  acceptable candidate from another peer`. A row moved along with its folder names the folder's cause
+  (`folder 1: no transfer started within 600 s`). A row that fails an ordinary check in its switched folder ends
+  there, both folders in its reason. The approval's outcome is `failed: <that reason>`.
+- **The request's status** follows its rows: `done` when every row is `ok`, `partly` when some are, `failed` when
+  none is and none is open.
+- **A playlist in one go** (S2-07). `python -m sourcing.cli import-playlist --request <source>` imports as before, then
+  records the import's wanted rows (its last `import_order`) as one `playlist` request, found again by the
+  playlist's name, and prints `request <id>: <name> (<n> open rows; approve with sourcing.cli request approve <id>)`
+  (the morning path above). A re-import's new rows join; rows it no longer
+  lists leave unless going. A row another request holds stays with it; the playlist holds its rows loosely: an
+  album or track request asked for later takes those with nothing going yet (an `request` event `#3 → #4`), so
+  an album files as one. Approving gives each album with 3 or more open rows (same artist and album,
+  `identity.loose`) `album` approvals, run as one album job as above (its own search `"<artist> <album>"`, plan
+  cached as `req-<id>:<loose artist>/<loose album>`, e.g. `req-7:algreen/imstillinlovewithyou`, events
+  `#<id> <artist> — <album>: folder 1: 4 of 4`); the other rows get ordinary `download` approvals, fetched per
+  track. An ambiguous import row (`review`) is neither. Only an Exportify CSV or a SpotiFLAC report carries
+  albums: a Spotify playlist URL's embed has none, so all its rows go per track. Rows file as singles
+  (`$artist/Singles`, no album tags: those are an album request's); Placement puts them at their positions.
+
 ## Filing
 
 The verified download is never imported from slskd's folder. It moves to its own
@@ -116,6 +231,27 @@ The verified download is never imported from slskd's folder. It moves to its own
   tags are untouched. `beet update -M` refreshes the index from the tags.
 - **Missing tags.** An empty artist or title tag is filled from the wanted row before import, and a `tagged` event
   says so.
+- **Album requests (S2-06, D50).** A row of an `album` request (primary folder, switched folder or per-track
+  fallback alike) carries the request's identity: `album`, `albumartist` (the request's artist), `track` (the row's
+  track number), `tracktotal` (the album's highest listed track number), `year` and `mb_albumid` (the
+  matched release). A request without a year clears the file's year, month and day (D51 *default*), and one without
+  a release clears the uploader's `mb_albumid` and `mb_albumartistid`, so every file of the album lands in one folder
+  and one Navidrome album. `comp` is set to false only where the file says true. Only the fields that differ are
+  written, with `write_minimal`, on the staged file before beets sees it (never on a library file), and the import
+  gets `--set dj_album=1`. `deploy/beets.yaml`'s `dj_album:1:` path (before `singleton:`) then files it at
+  `$albumartist/$album ($year)/$track - $title` (`Al Green/I'm Still in Love With You/01 - ….flac` without a year).
+  The flag lives in beets' `library.db`, not the file. Plain rows and `track`/`playlist` requests stay in
+  `$artist/Singles/$title`. A confirmed MusicBrainz match still runs `beet write` (D22).
+- **The album write's record and reverse.** Before the write, one `tagged` event holds the old values as a JSON
+  object with sorted keys (`{"album": null, "albumartist": null, "track": null, "tracktotal": null}` for a fresh
+  file; `null` means the tag was absent), committed before the file is touched. A file that already agrees is not
+  written and gets no event. The filed file's record is the row's last `tagged` event starting with `{` before its
+  `filed` event. The reverse, with the worker stopped, the backup and snapshot preconditions met and the live lock
+  held (`docs/plans/2026-10-22-S2-album-tags.md` → `## Reverse`):
+  `scripts.tag_cleanup.restore_fields(<path>, <old>)` (one save; a `null` field is deleted), then
+  `beet -c <yaml> modify -W -M -y path:<abs> dj_album!` and `beet -c <yaml> update -M path:<abs>`, start the worker
+  and let Navidrome scan. Moving the file back to `Singles` (`beet move path:<abs>`) is a separate pass after that
+  scan, never between the same two scans as the retag.
 - **`duplicate_action: keep`.** Copies and versions of one song coexist in this library. `skip` would silently drop
   every copy upgrade, so beets keeps both and the new file lands next to the old one.
 - **Names copied back.** Once Navidrome has indexed the new file, its artist and title go back onto the wanted row
@@ -659,6 +795,7 @@ profile for `dj-crates-web` decides. It is the default only for a database that 
 - Before the first `docker compose up`, create `/srv/incoming/soulseek` and `/srv/incoming/soulseek/.incomplete`
   as uid 1000 (`mkdir -p /srv/incoming/soulseek/.incomplete`, no sudo). Otherwise compose creates the mount source as
   root, and slskd checks for the incomplete folder but does not create it: it refuses to start and restarts in a loop.
+- The request HTTP API for a client: [`docs/api.md`](api.md).
 - Soulseek peer names never appear in events, logs or the web client: file basenames only.
 - Events the worker writes (crates.db `events`, the web client's log tab): `status`, `attrs`, `reconcile`,
   `playlist_gone` (reconcile); `pick`, `tagged`, `filed`, `renamed`, `reference`, `kept_both`, `upgrade_queued`,

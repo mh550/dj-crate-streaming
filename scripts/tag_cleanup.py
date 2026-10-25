@@ -105,6 +105,28 @@ def remove_ids(path, fields) -> None:
     m.save()
 
 
+ALBUM_TAG_FIELDS = ("year", "month", "day", "album", "albumartist", "track", "tracktotal", "mb_albumid",
+                    "mb_albumartistid", "comp")
+
+
+def restore_fields(path, old: dict) -> None:
+    """The reverse of an album row's tag write (sourcing.filer.album_changes; its `tagged` event holds `old`): in
+    one save, set each field that had a value and delete each that was None. The date goes first and in the order
+    year, month, day: setting month or day on a file without a year drops the date (mediafile's date tuple).
+    write_minimal(path, old) would not do: None is mediafile's none value, so a FLAC would keep ALBUM= and
+    TRACKNUMBER=0. Not restored: ID3 album-artist aliases write_minimal deleted (they were not recorded)."""
+    if set(old) - set(ALBUM_TAG_FIELDS):
+        raise ValueError(f"restore_fields restores only the album fields, not {sorted(set(old) - set(ALBUM_TAG_FIELDS))}")
+    path = str(path)
+    m = MediaFile(path, id3v23=_id3_v23(path))
+    for k in sorted(old, key=ALBUM_TAG_FIELDS.index):
+        if old[k] is None:
+            delattr(m, k)
+        else:
+            setattr(m, k, old[k])
+    m.save()
+
+
 class NotScanned(Exception):
     """Navidrome has not yet seen pass 1's tags; moving now would give those songs new ids."""
 

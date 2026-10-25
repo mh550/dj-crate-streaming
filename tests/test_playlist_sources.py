@@ -145,3 +145,53 @@ def test_track_lead_survives_sys_exit_from_next_data(monkeypatch):
     monkeypatch.setattr(spotify_csv, "_next_data", boom)
     assert ps.track_lead("abc") is None
     assert spotify_csv.lead_artist({"subtitle": "Earth, Wind & Fire", "uri": "spotify:track:x"}) == "Earth"
+
+
+def _album_entity():
+    return json.loads((FIXTURES / "spotify_embed_album_al-green-still-in-love.json").read_text())
+
+
+def test_spotify_album_rows_carry_album_track_no_and_year():
+    entity = _album_entity()                      # captured with "releaseDate": null
+    rows = ps.rows_from_spotify(entity)
+    assert len(rows) == 9
+    assert all(r.album == "I'm Still in Love With You" for r in rows)
+    assert [r.track_no for r in rows] == [r.position for r in rows] == list(range(1, 10))
+    assert rows[5].title == "Oh ,Pretty Woman"    # as Spotify spells it
+    assert all(r.year is None for r in rows)
+    dated = {**entity, "releaseDate": "1972-10-23"}
+    assert {r.year for r in ps.rows_from_spotify(dated)} == {1972}
+
+
+def test_spotify_playlist_rows_have_no_album_track_no_or_year():
+    entity = json.loads((FIXTURES / "spotify_embed_tea-tent-1.json").read_text())
+    rows = ps.rows_from_spotify(entity)
+    assert rows and all(r.album is None and r.track_no is None and r.year is None for r in rows)
+
+
+def test_spotify_track_entity_is_one_row():
+    # Shape as track_lead reads a track's embed (`artists[0].name`); no track embed is captured yet (S4 checklist).
+    entity = {"type": "track", "name": "Love And Happiness", "uri": "spotify:track:6NW0y8AxOfqqC7FxRjWTGF",
+              "artists": [{"name": "Al Green"}], "duration": 303306}
+    [r] = ps.rows_from_spotify(entity)
+    assert (r.position, r.title, r.artist, r.duration_s, r.spotify_id) == \
+        (1, "Love And Happiness", "Al Green", 303, "6NW0y8AxOfqqC7FxRjWTGF")
+    assert r.album is None and r.track_no is None
+
+
+def test_spotify_url_names_a_track_too():
+    from sourcing.spotify_csv import URL
+    assert URL.search("https://open.spotify.com/track/6NW0y8AxOfqqC7FxRjWTGF?si=x").groups() == \
+        ("track", "6NW0y8AxOfqqC7FxRjWTGF")
+
+
+def test_load_refuses_a_track_url():
+    import pytest
+    with pytest.raises(SystemExit, match="seed-spotify"):     # a one-track playlist is not what import-playlist is for
+        ps.load("https://open.spotify.com/track/6NW0y8AxOfqqC7FxRjWTGF", fetch=lambda url: {"type": "track"})
+
+
+def test_spotify_entity_without_a_track_list_is_a_key_error():
+    import pytest
+    with pytest.raises(KeyError):
+        ps.rows_from_spotify({"type": "playlist", "name": "x"})

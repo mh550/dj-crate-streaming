@@ -191,3 +191,14 @@ def test_status_playlist_health_goes_through_public(svc):
     fake, app, srv = svc
     app.store.set_playlist_health([{"id": "pl-1", "name": "from /srv/music/_playlists/old.m3u8", "missing": 2}])
     assert get(srv.url + "/api/status")[2]["playlistHealth"] == [{"id": "pl-1", "name": "from old.m3u8", "missing": 2}]
+
+
+@pytest.mark.parametrize("body", [[1], "s", 5, None])
+@pytest.mark.parametrize("path", ["/api/wanted/ext-1/approve", "/api/playlists/pl-1/crate", "/api/playlists/pl-1/tier",
+                                  "/api/playlists/pl-1/songs", "/api/playlists", "/api/stream-tier", "/api/requests"])
+def test_a_body_that_is_not_a_json_object_is_400_on_every_post(svc, path, body):
+    """S3-R1: `[1]`, `"s"`, `5` or `null` answered nothing at all (an AttributeError dropped the connection)."""
+    fake, app, srv = svc
+    tier = app.store.stream_tier()
+    assert post(srv.url + path, body) == (400, {"error": "body must be a JSON object"})
+    assert app.store.stream_tier() == tier

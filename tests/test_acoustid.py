@@ -79,6 +79,58 @@ def test_verify_records_acoustid_and_fails_only_on_disagreement(audio):
     assert verify(audio, tier="medium", recording_id=None, lookup=look).ok
 
 
+# ext-74 (S1-02): the 10-21 Al Green row filed track 9; AcoustID knew it, but no recording id was there to compare.
+EXT74 = [{"id": "83f06455-c0d5-4321-a0e4-89b7e249e6c0", "title": "One of These Good Old Days", "score": 0.958,
+          "acoustid": "5c1e2f4a-0b7d-4c55-9a43-1f2e3d4c5b6a"}]
+STILL = "I'm Still In Love With You"
+
+
+def test_a_confident_acoustid_title_that_is_not_the_asked_song_fails_without_a_recording_id(audio):
+    v = verify(audio, tier="medium", recording_id=None, lookup=lambda p: EXT74, asked_title=STILL)
+    assert not v.ok
+    assert "AcoustID says this is One of These Good Old Days, not I'm Still In Love With You" in v.problems
+    assert v.measurements["acoustid"]["asked"] == STILL
+
+
+def test_any_returned_recording_of_the_asked_song_passes_whatever_its_spelling_or_label(audio):
+    for title in ("Love and Happiness", "Love and Happiness (Live)", "Love & Happiness"):
+        recs = [{"id": "r9", "title": "Belle", "score": 0.95}, {"id": "r3", "title": title, "score": 0.95}]
+        v = verify(audio, tier="medium", lookup=lambda p: recs, asked_title="Love And Happiness")
+        assert v.ok, (title, v.problems)
+
+
+def test_credits_unknown_labels_and_a_prefixed_navidrome_title_are_still_the_asked_song(audio):
+    """One base title inside the other is the same song: a false hard finding would throw a good file away."""
+    for asked, got in (("Song ft. X", "Song"), ("Song (Acoustic)", "Song (Acoustic Version)"),
+                       ("Love And Happiness", "Love and Happiness (Acoustic)"),
+                       ("Al Green - Love and Happiness", "Love and Happiness"), ("01 Love and Happiness", "Love and Happiness")):
+        v = verify(audio, tier="medium", lookup=lambda p: [{"id": "r", "title": got, "score": 0.95}], asked_title=asked)
+        assert v.ok, (asked, got, v.problems)
+
+
+def test_an_unconfident_or_untitled_acoustid_result_never_fails_on_the_asked_title(audio):
+    low = [dict(EXT74[0], score=0.5)]
+    assert verify(audio, tier="medium", lookup=lambda p: low, asked_title=STILL).ok
+    untitled = [dict(EXT74[0], title=None)]
+    assert verify(audio, tier="medium", lookup=lambda p: untitled, asked_title=STILL).ok
+
+
+def test_a_known_recording_id_is_still_the_only_rule_when_there_is_one(audio):
+    """The asked-title rule is for rows with no recording id; with one, the id decides, as before."""
+    v = verify(audio, tier="medium", recording_id=EXT74[0]["id"], lookup=lambda p: EXT74, asked_title=STILL)
+    assert v.ok, v.problems
+
+
+def test_without_an_asked_title_a_lookup_error_and_an_empty_result_stay_warnings(audio):
+    def down(p):
+        raise urllib.error.URLError("down")
+
+    v = verify(audio, tier="medium", lookup=down, asked_title=STILL)
+    assert v.ok and any("AcoustID lookup failed" in w for w in v.warnings)
+    v = verify(audio, tier="medium", lookup=lambda p: [], asked_title=STILL)
+    assert v.ok and "fingerprint not in AcoustID" in v.warnings
+
+
 def test_verify_lookup_error_is_a_warning(audio):
     def down(p):
         raise urllib.error.URLError("down")

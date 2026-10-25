@@ -1,0 +1,195 @@
+{
+  "run": "dj-crate-streaming-2026-10-22-fixes",
+  "branch": "harness/dj-crate-streaming-2026-10-22-fixes",
+  "features": [
+    {
+      "id": "S1-01",
+      "milestone": "S1",
+      "kind": "build",
+      "model": "opus",
+      "description": "A Soulseek candidate whose title slot (the words after the last ` - NN - ` or `_NN_` in the file name) names another song than the wanted title is `rejected` (\"title slot is <X>\"), so a peer offering only track 09 of the same-named album gives no acceptable candidate for \"I'm Still In Love With You\" (spec S1-01, ext-74).",
+      "steps": [
+        "Failing test first, in tests/test_scorer.py: `rank` on one response in the shape of fixtures/search_responses.sample.json from peer `a` whose only file is `@@music\\Al Green\\I’m Still in Love With You (1972)\\Al Green - I’m Still in Love With You - 09 - One of These Good Old Days.flac` (size, extension flac, bitRate 900, length 195) for `Wanted(\"Al Green\", \"I'm Still In Love With You\", duration_s=196)` gives a list whose every candidate has `rejected` starting with `title slot is` and `next((c for c in cands if not c.rejected), None) is None`. Run `.harness/check.sh tests/test_scorer.py` and see it fail on the merged tree (today that candidate is ok at about 84.5).",
+        "sourcing/scorer.py: `score_candidate` (or a helper `title_slot(c) -> str | None` beside `name_match`, which already computes the slot) parses the slot with `identity.parse_filename(slot, w.artist, w.title)` and compares `identity.loose(got.base)` with `identity.loose(parse_title(w.title, w.artist).base)`; different → `c.rejected = f\"title slot is {slot as written}\"`, score 0. The version key (`Title.key`, labels) is not part of this test: `... - 03 - Good Times (12'' Version).flac` for wanted `Good Times` is still handled by the existing version rules (D26), and a file with no track-number slot is unchanged.",
+        "Tests that still pass unchanged: all of tests/test_scorer.py (including `test_a_title_track_wanted_never_matches_another_track_through_the_album_name`, `test_the_title_slot_after_a_track_number_still_matches_and_numbers_in_titles_survive`, `test_99_luftballons_is_a_title_match`, `test_a_track_number_equal_to_a_numeric_title_is_still_a_track_number`), tests/test_scorer_versions.py, tests/test_fetch.py. Add one scorer case that `Al Green - I’m Still in Love With You - 03 - Love and Happiness.flac` is still acceptable for wanted `Love And Happiness` (same base, other spelling) and one that `Al Green - Greatest Hits - 01 - Love and Happiness (Live).flac` for wanted `Love And Happiness` is not rejected by this rule (its `rejected`, if any, does not start with `title slot is`).",
+        "`sourcing.scorer.explain` shows the new rejection text (the `✗ title slot is …` line); `python3 -m sourcing.cli rank --fixture <a temp fixture with the ext-74 response> --artist 'Al Green' --title \"I'm Still In Love With You\" --duration 196` prints no acceptable pick.",
+        "Commit `S1-01: reject a candidate whose title slot names another song`.",
+        "`.harness/check.sh` is green (full suite, about 1,750 tests, 10-11 min); the commit is pushed to harness/dj-crate-streaming-2026-10-22-fixes"
+      ],
+      "after": [],
+      "passes": true
+    },
+    {
+      "id": "S1-02",
+      "milestone": "S1",
+      "kind": "build",
+      "model": "opus",
+      "description": "With no recording id known, a confident AcoustID result (top score ≥ 0.8) that names no recording whose base title matches the asked title is the hard `recording` finding (\"AcoustID says this is <title>, not <asked>\"), and fetch passes the row's asked title to verify (spec S1-02, ext-74).",
+      "steps": [
+        "Failing test first, in tests/test_acoustid.py beside `test_verify_records_acoustid_and_fails_only_on_disagreement` (its module-scoped `audio` fixture from `tests.helpers.make_audio` and the `look = lambda p: [...]` stub are the pattern; the file's tests skip without ffmpeg/flac, which is how they run here): `verify(audio, tier=\"medium\", recording_id=None, lookup=lambda p: RECS, asked_title=\"I'm Still In Love With You\")`, where RECS is the `sourcing.acoustid.parse` shape `[{\"id\": \"83f06455-c0d5-4321-a0e4-89b7e249e6c0\", \"title\": \"One of These Good Old Days\", \"score\": 0.958, \"acoustid\": \"<any uuid>\"}]` (the ids from the 10-21 row and fixtures/musicbrainz_release_al-green-still-in-love.json track 9), gives `ok False` and a problem `AcoustID says this is One of These Good Old Days, not I'm Still In Love With You`. Today `verify` has no `asked_title` and `_acoustid_check` returns no finding without a recording id.",
+        "sourcing/verify.py: `verify(..., asked_title: str | None = None)` passes it to `_acoustid_check(path, lookup, recording_id, findings, m, asked_title)`. New rule there, only when `recording_id is None` and `asked_title` is given: `top.get(\"score\") or 0 >= 0.8` and no returned recording whose `identity.loose(parse_title(r[\"title\"]).base)` equals `loose(parse_title(asked_title).base)` → `findings.append((\"recording\", f\"AcoustID says this is {top title}, not {asked_title}\"))`; `m[\"acoustid\"][\"asked\"]` records the asked title. A match on any returned recording (same base, other spelling or label: `Love and Happiness` for `Love And Happiness`, `Love and Happiness (Live)` too, D26 versions are judged elsewhere) gives no finding; a top score below 0.8 gives no finding; a lookup error and an empty result stay the `acoustid` warning as today; the existing `recording_id is not None` rule is unchanged. `recording` is already in `HARD_EVERY_TIER`.",
+        "sourcing/fetch.py: when a `lookup` is configured, `extra` also carries `asked_title=row.get(\"asked_title\") or row[\"title\"]`. Update tests/test_fetch_filing.py `test_lookup_is_passed_to_verify_with_no_recording_id_when_navidrome_has_none` and `test_lookup_and_recording_id_reach_verify_only_when_a_lookup_is_configured` (their `kw ==` asserts) and add one: an external row renamed earlier (`store.set_wanted_names` after seeding, so `asked_title` differs from `title`) passes the asked title, not the current one.",
+        "Tests: the three cases above (finding; same base another spelling → no finding; score 0.5 → no finding) plus the unchanged existing verify tests (`tests/test_acoustid.py` (the `recording_id=None` case of the existing disagreement test now passes no asked title and stays ok), `tests/test_verify.py`, `tests/test_verify_rows.py`, `tests/test_fetch_intent.py`).",
+        "Commit `S1-02: an AcoustID disagreement without a recording id is a hard finding`.",
+        "`.harness/check.sh` is green (full suite, about 1,750 tests, 10-11 min); the commit is pushed to harness/dj-crate-streaming-2026-10-22-fixes"
+      ],
+      "after": [],
+      "passes": true
+    },
+    {
+      "id": "S1-03",
+      "milestone": "S1",
+      "kind": "build",
+      "model": "opus",
+      "description": "`fetch.finish` never renames a row onto another song: when the filed song's base title differs from the asked title's, the row becomes `review` (\"filed <X> as <rel>, asked for <Y>\"), keeps its names and `library_song_id`, gets no `renamed` event and is not placed; the same base in another spelling is renamed as today (spec S1-03, ext-74).",
+      "steps": [
+        "Failing test first, in tests/test_fetch.py with its `world` fixture: an external row (`store.add_external_wanted(\"Al Green\", \"I'm Still In Love With You\", duration_s=196)`), a fake slskd response (fixture shape) and a filer whose `fake_beet` files `Al Green/Singles/One of These Good Old Days.flac` with title `One of These Good Old Days`, and `new_song`-style Navidrome entry titled `One of These Good Old Days`; after `run(world, srv, approve=True, wanted_id=ext)`: the row is `review` with reason `filed One of These Good Old Days as Al Green/Singles/One of These Good Old Days.flac, asked for I'm Still In Love With You`, `store.external(ext)[\"title\"]` is still `I'm Still In Love With You`, `library_song_id` is None, no `renamed` event, `store.due_placements()` has no row for it. Today it goes `ok` and is renamed.",
+        "sourcing/fetch.py `finish`: after `locate_in_navidrome` finds `new`, compare `identity.loose(parse_title(new.title, new.artist).base)` with `loose(parse_title(asked, asked_artist).base)` where `asked = row.get(\"asked_title\") or row[\"title\"]` (external rows; a crate row's own title); different → `set_status(\"review\", f\"filed {new.title} as {rel}, asked for {asked}\")`, one `wrong_song` event naming `rel` and `new.id` (so the song is findable later), `store.commit()`, return `FetchResult(\"review\", …, new_song_id=new.id)`; no `set_wanted_names`, no `set_library_song`, no proposals. Same base (`Love And Happiness` → `Love and Happiness`): the existing `renamed` path, unchanged.",
+        "crates/store.py `RETRYABLE_REVIEW` and the mirrored `RETRYABLE_REVIEW` in web/app.js (line ~125, one regex edit, no UI change) accept the new reason (`^filed .+ as .+, asked for `), so Michael can approve the row for a fresh download; `filed_path(reason)` returns None for it (test), so it is never treated as a filed re-check. The `verify` re-check path (`finish` with `check > 0`) goes through the same guard (test: a `verify` row whose file Navidrome then lists under another title ends `review`, not `ok`).",
+        "Tests: the failing test above, the same-base rename test, `filed_path` None, `retryable_review` True; `tests/test_fetch.py`, `tests/test_fetch_filing.py`, `tests/test_placement.py`, `tests/test_web_m8.py` stay green.",
+        "Commit `S1-03: never rename a row onto another song`.",
+        "`.harness/check.sh` is green (full suite, about 1,750 tests, 10-11 min); the commit is pushed to harness/dj-crate-streaming-2026-10-22-fixes"
+      ],
+      "after": [],
+      "passes": true
+    },
+    {
+      "id": "S1-04",
+      "milestone": "S1",
+      "kind": "build",
+      "model": "opus",
+      "description": "slskd transfer hygiene: `remove_download` sends `?remove=true` (a 404 is \"already gone\"), the fake keeps a record on a plain DELETE as slskd 0.26.1 does and lists transfers in an order nothing may rely on, and fetch identifies its own transfer as the record for its file whose id was not there before the enqueue, never `mine[-1]` (spec S1-04).",
+      "steps": [
+        "Fake first (sourcing/fake_slskd.py): `do_DELETE` splits the query with `urllib.parse.urlsplit`; `DELETE /api/v0/transfers/downloads/<user>/<id>` without `remove=true` keeps the record (an `InProgress` one becomes `Completed, Cancelled`, a completed one stays as it is) and answers 204 with no body (the client's `_req` already reads an empty body as None); with `remove=true` it deletes the record; an unknown id answers 404. `seed_transfer(username, filename, state, transfer_id=None)` lets a test choose the id. `_user_view` lists a user's transfers sorted by id with a comment that slskd's real order is not captured, so no code may rely on it. tests/test_fake_slskd.py: `test_remove_download_deletes_the_record` becomes the `remove=true` case; add the plain-DELETE-keeps-it and unknown-id-404 cases.",
+        "Failing test in tests/test_fetch.py, before the fetch change: `srv.seed_transfer(\"vinylhead77\", GOOD, \"Completed, Errored\", transfer_id=\"~stale\")` (sorts after every uuid) and an approved fetch of the fixture file from the same peer; expected `ok` with one enqueue and `srv.transfers` holding no `~stale` record afterwards. On the merged tree it fails: the old client's DELETE no longer removes the record, and `mine[-1]` is the stale `Errored` one, so the row fails with `download ended: Completed, Errored`.",
+        "sourcing/slskd_client.py `remove_download`: `DELETE /transfers/downloads/{user}/{id}?remove=true`; an `HTTPError` 404 returns quietly. Module docstring line updated. sourcing/fetch.py: before the enqueue, `before = {t[\"id\"] for t in transfer_files(slskd.downloads(peer)) if t[\"filename\"] == best.filename}` (after the forget loop, which now really forgets); the poll takes `mine = [t for t in … if t[\"filename\"] == best.filename and t[\"id\"] not in before]`; until one appears the loop keeps waiting (the download timeout still bounds it); the enqueue response is not read.",
+        "Tests: the failing test above now passes; `test_stale_completed_record_does_not_short_circuit_a_retry` still passes; a new test that a stale `Completed, Succeeded` record for the same file with `complete=False` ends `download timed out` (not a false success on the old record); tests/test_fake_slskd.py and tests/test_worker.py green.",
+        "Commit `S1-04: slskd transfer hygiene: remove=true, own transfer by new id, fake keeps records`.",
+        "`.harness/check.sh` is green (full suite, about 1,750 tests, 10-11 min); the commit is pushed to harness/dj-crate-streaming-2026-10-22-fixes"
+      ],
+      "after": [],
+      "passes": true
+    },
+    {
+      "id": "S1-05",
+      "milestone": "S1",
+      "kind": "build",
+      "model": "opus",
+      "description": "An HTTP or connection error from slskd becomes a reason that names the step and the endpoint, like `slskd GET /transfers/downloads/<peer>: HTTP 404` or `slskd POST /searches: connection refused`, never the peer's name and never the API key (spec S1-05).",
+      "steps": [
+        "Failing tests first (tests/test_fake_slskd.py or a new tests/test_slskd_client.py, and tests/test_fetch.py): `SlskdClient(srv.url, \"k\").search_state(\"nope\")` raises `SlskdError` whose `str` is exactly `slskd GET /searches/<id>: HTTP 404`; with `FakeSlskdServer(..., fail_enqueue=True)` an approved fetch leaves the row `failed` with reason `SlskdError: slskd POST /transfers/downloads/<peer>: HTTP 500` and `\"vinylhead77\" not in reason`; a client pointed at a closed port (`SlskdClient(\"http://127.0.0.1:1\", \"secret-key-7f3a\")`) raises `SlskdError` starting with `slskd POST /searches: ` and containing neither `secret-key-7f3a` nor `127.0.0.1:1`'s path beyond the endpoint. Today they raise `urllib.error.HTTPError` / `URLError` with `HTTP Error 404: Not Found` in the reason.",
+        "sourcing/slskd_client.py: `class SlskdError(OSError)` with `method`, `endpoint`, `status` (None for a connection error); `_req(method, path, body, *, endpoint)` where every caller passes its template (`/searches`, `/searches/<id>`, `/searches/<id>/responses`, `/transfers/downloads`, `/transfers/downloads/<peer>`, `/transfers/downloads/<peer>/<id>`); `HTTPError` → `SlskdError(f\"slskd {method} {endpoint}: HTTP {code}\")`, `URLError`/`OSError`/`TimeoutError` → `SlskdError(f\"slskd {method} {endpoint}: {e.reason or type(e).__name__}\")`. `downloads()`' 404-as-empty and `remove_download`'s 404-as-gone (S1-04) catch `SlskdError` with `status == 404`. Nothing else in the client's behaviour changes.",
+        "sourcing/fetch.py and sourcing/worker.py need no new handling (their `except Exception` already writes `f\"{type(e).__name__}: {e}\"`), but grep both for `HTTPError` and `urllib` and remove what is now dead. tests/test_fake_slskd.py's 404 test asserts on `SlskdError`, not `HTTPError`.",
+        "Tests: the three above plus `tests/test_fetch.py`, `tests/test_worker.py`, `tests/test_approvals.py` green; a grep test (or assert in the fetch test) that the reason string holds no `@` and no `X-API-Key` value.",
+        "Commit `S1-05: slskd errors name the step and the endpoint, never the peer`.",
+        "`.harness/check.sh` is green (full suite, about 1,750 tests, 10-11 min); the commit is pushed to harness/dj-crate-streaming-2026-10-22-fixes"
+      ],
+      "after": [
+        "S1-04"
+      ],
+      "passes": true
+    },
+    {
+      "id": "S1-06",
+      "milestone": "S1",
+      "kind": "build",
+      "model": "opus",
+      "description": "A transfer that ends `Completed, Errored|TimedOut|Rejected|Cancelled`, or a connection error or 5xx from slskd during the download, makes fetch try the next acceptable candidate from another peer once per approval; a second failure fails the row with both attempts in the reason; a verify failure is not retried (spec S1-06, the VPN drops).",
+      "steps": [
+        "Fake first (sourcing/fake_slskd.py): `FakeSlskdServer(..., errored_peers: set[str] = frozenset())` makes an enqueue to one of those peers record a transfer that ends `Completed, Errored` with no file written; `fail_enqueue` may also be a set of peers (500 for those only; `True` keeps today's meaning). Tested in tests/test_fake_slskd.py.",
+        "Failing test first, tests/test_fetch.py: responses in the fixture shape with two peers each offering an acceptable flac for the wanted track (peer `p-vpn` ranked first, in `errored_peers`; peer `p-ok` with the fixture file bytes); an approved fetch ends `ok`, `srv.enqueued == [(\"p-vpn\", …), (\"p-ok\", …)]`, and the events hold one `retry` whose detail names the first basename and `download ended: Completed, Errored` and no peer name. Today the row fails after the first peer.",
+        "sourcing/fetch.py: the download section (forget → enqueue → poll → landed) becomes `attempt(cand) -> tuple[Path | None, str]`; triggers for one more source: a final state `Completed, Errored|TimedOut|Rejected|Cancelled`, or an `SlskdError` with `status is None or status >= 500` from the enqueue or the poll. On a trigger: `store.log(None, wanted_id, \"retry\", f\"{cand.basename}: {why}; trying another peer\")`, `set_status(\"sourcing\", f\"downloading {next.basename}\")`, and the next candidate is the first unrejected one with `username != cand.username` (one switch per fetch call, so one per approval); none left → fail with the first reason. A second trigger → `fail(f\"{why1} ({c1.basename}); then {why2} ({c2.basename})\")`. `download timed out` (our own timeout), a 4xx, a success whose file is missing, and every verify finding stay as today (no second source). `intent`/`expected`/`listed_length_s` are computed for the candidate actually downloaded; the approval's `prefer` applies to the first attempt only.",
+        "Tests: the switch succeeds; both peers errored → `failed` with both basenames and reasons in order; a verify failure on the first peer does not try the second (one enqueue); `fail_enqueue={\"p-vpn\"}` (500) switches; a 404-class `SlskdError` (status 404) does not switch; `tests/test_fetch.py`, `tests/test_fetch_intent.py`, `tests/test_fetch_filing.py`, `tests/test_worker.py` stay green. docs/worker.md \"Approvals\" gets three lines on the second source and the `retry` event.",
+        "Commit `S1-06: one more source on a transfer error`.",
+        "`.harness/check.sh` is green (full suite, about 1,750 tests, 10-11 min); the commit is pushed to harness/dj-crate-streaming-2026-10-22-fixes"
+      ],
+      "after": [
+        "S1-04",
+        "S1-05"
+      ],
+      "passes": true
+    },
+    {
+      "id": "S1-07",
+      "milestone": "S1",
+      "kind": "build",
+      "model": "opus",
+      "description": "Before searching Soulseek for an external row, fetch asks Navidrome with the import's own matcher (`import_playlist.match` / `choose`, same rules, no stand-ins); a same-recording or same-version hit makes the row `ok` with that `library_song_id` and a `matched` event, and nothing is downloaded (spec S1-07, ext-81's second copy).",
+      "steps": [
+        "Failing test first, tests/test_fetch.py (`world` fixture): the fake Navidrome gets a song `One of These Good Old Days` by `Al Green`, 195 s, flac (as if ext-74 had filed it); an external row `store.add_external_wanted(\"Al Green\", \"One Of These Good Old Days\", duration_s=197)`; a fake slskd whose responses would offer the file. After `run(world, srv, approve=True, wanted_id=ext)`: `srv.enqueued == []`, the row is `ok` with reason starting `already in the library:`, `library_song_id` is that song's id, one `matched` event; `store.due_placements()` lists it for its imported playlist when it has one. Today it downloads a second copy.",
+        "sourcing/fetch.py: for an external row with `copy_of(row) is None` that is about to be searched (after the status gate, before `slskd.search`): build `playlist_sources.Row(position=row.get(\"position\") or 0, title=row.get(\"asked_title\") or row[\"title\"], artist=row.get(\"asked_artist\") or row.get(\"artist\") or \"\", duration_s=row.get(\"duration\"), album=row.get(\"album\"))` and call `import_playlist.match(navidrome, that_row)` (default `accept=frozenset()`, D26). `status == \"matched\"` and `how in (\"same recording\", \"same version\")` → `store.set_library_song`, `set_status(\"ok\", f\"already in the library: {m.title} ({m.song_id})\")`, `store.log(None, wanted_id, \"matched\", f\"{m.how}: {m.title}\")`, commit, `FetchResult(\"ok\", \"already in the library; nothing downloaded\", new_song_id=m.song_id)`. `ambiguous`, `missing` and an other-version `how` fall through to the search as today. A Navidrome error (`SubsonicError`, `OSError`) is logged as a `matched` event detail `library not asked: …` and the search goes on. The check runs in previews too (`approve=False`): a library hit is the truth and `wanted reopen` (S1-08) reverses it.",
+        "Placement follows from the `ok` row (crates/placement.py reads `ok` rows with a song: test that `due_placements` includes the row when it belongs to an imported playlist with an `import_order`).",
+        "Tests: the failing test; `I'm Still In Love With You` asked while the library has only `One of These Good Old Days` → the search runs (one enqueue); a same-name song of another length (ambiguous) → the search runs; a Navidrome outage during the check → the search runs and the event says so; `tests/test_fetch.py`, `tests/test_import_playlist.py`, `tests/test_approvals.py`, `tests/test_worker.py`, `tests/test_play_now.py` green. docs/worker.md \"Approvals\" gets a line.",
+        "Commit `S1-07: ask the library before downloading`.",
+        "`.harness/check.sh` is green (full suite, about 1,750 tests, 10-11 min); the commit is pushed to harness/dj-crate-streaming-2026-10-22-fixes"
+      ],
+      "after": [],
+      "passes": true
+    },
+    {
+      "id": "S1-08",
+      "milestone": "S1",
+      "kind": "build",
+      "model": "opus",
+      "description": "`python3 -m crates.cli wanted reopen <ext-id> [--apply]` puts a row filed as the wrong song back to `needs_source`: the asked names return, `library_song_id` clears, its placement rows are deleted so the right file is placed later, a `reopened` event holds every old value as the reverse; no file and no playlist is touched; dry run by default (spec S1-08, ext-74).",
+      "steps": [
+        "Failing tests first, tests/test_crates.py or a new tests/test_wanted_reopen.py on a `CrateStore()` in memory: a row seeded as `Al Green` / `I'm Still In Love With You`, renamed by `set_wanted_names(ext, \"Al Green\", \"One of These Good Old Days\")`, `set_library_song(ext, \"s9\")`, status `ok`, and a `placements` row `done` for playlist `pl-2`; `store.reopen_external(ext, apply=False)` returns the plan (old and new values) and changes nothing; `apply=True` leaves `artist`/`title` = the asked names, `asked_*` kept, `library_song_id` None, `provisional` 0, status `needs_source` with reason `reopened: was ok (filed as …)`, no `placements` row for the id, and one `reopened` event whose detail is the JSON of `{\"artist\", \"title\", \"library_song_id\", \"status\", \"reason\", \"placements\": [...]}` as they were. Today neither the method nor the command exists.",
+        "crates/store.py `reopen_external(ext_id, apply) -> dict`: refuses (ValueError) a non-`ext-` id, a missing row, and a row in `sourcing` or `verify` (a download in flight); a row without asked names keeps its names. crates/cli.py: `wanted` gains a sub-command `reopen <id> [--apply]` (keep `wanted --json` working: the sub-parser is optional) that prints the plan, `dry run: add --apply` or `reopened <id>`, exit 0; a refusal prints the reason and exits 1. The module docstring lists the command.",
+        "Untouched: the test asserts the fake Navidrome's playlists and the music dir are unchanged after `--apply` (the command talks only to crates.db), and that no `trash` or `renamed` event appears. The reverse is written into docs/worker.md \"Approvals\" (or a short \"Reopen\" section): the event's old values, and `UPDATE external_wanted …` by hand to put them back.",
+        "Record the placement reset as a decision: a new row at the end of the table in docs/specs/2026-10-17-amperfy-pivot.md, `D<n> *default*` with the next free number across `origin/main` and this branch (D47 is taken: run `git fetch -q; git show origin/main:docs/specs/2026-10-17-amperfy-pivot.md | grep -o '^| D[0-9]*' | tail -1` first), saying: reopen deletes the row's `placements` rows so the right file is placed when it arrives; the wrong song's playlist entry stays (no playlist edit); the alternative is leaving placement done.",
+        "Tests: the above, `python3 -m crates.cli wanted reopen ext-1` through `crates.cli.main` with a store on a temp path (CLI tests exist in tests/test_playlist_admin.py / tests/test_imported_migrate.py to copy from); `tests/test_crates.py`, `tests/test_placement.py` green.",
+        "Commit `S1-08: crates.cli wanted reopen`.",
+        "`.harness/check.sh` is green (full suite, about 1,750 tests, 10-11 min); the commit is pushed to harness/dj-crate-streaming-2026-10-22-fixes"
+      ],
+      "after": [
+        "S1-03"
+      ],
+      "passes": true
+    },
+    {
+      "id": "S1-R1",
+      "milestone": "S1",
+      "kind": "review",
+      "model": "opus",
+      "description": "S1 review and simplify: an Opus reviewer reads the S1 diff from a file against the spec's eight items and the project's rules (no peer names or keys in reasons and events, D26, D7, every destructive step reversible), Critical/Important findings are fixed test-first, simplifications applied, and the docs the milestone touches are updated.",
+      "steps": [
+        "`git diff 307d62b...HEAD -- . ':!.harness/runs' > <scratch>/s1.diff`; an Opus review subagent reads that file plus docs/specs/2026-10-22-downloads-and-requests.md S1 and reports findings as Critical / Important / Minor with file:line; the progress entry lists every finding and what was done with it.",
+        "Every Critical and Important finding is fixed with a failing test first, then green; Minor ones are fixed or listed as left. In particular the reviewer checks: no reason, event or API payload names a Soulseek peer (grep the new reason strings and `store.log` calls added since 307d62b), `?remove=true` is sent on every forget, the second-source switch happens at most once per fetch call, the library check never runs for a copy upgrade, and `wanted reopen` writes nothing outside crates.db.",
+        "Simplification pass (the `simplify` skill or by hand) over sourcing/fetch.py's download section (the `attempt` helper from S1-06 and the own-transfer poll from S1-04 read as one path), sourcing/slskd_client.py and sourcing/fake_slskd.py; no behaviour change (the suite proves it).",
+        "Docs: docs/worker.md (\"Approvals\": the library check, the second source and the `retry`, `matched`, `wrong_song`, `reopened` events; a \"Reopen\" paragraph), docs/architecture.md §4 (the fetch flow lines: library first; retry once) and §7 (the new guards), docs/hard-won-facts.md (slskd 0.26.1: a DELETE without `remove=true` cancels and keeps the record; the per-peer 404; a confident AcoustID result can name another song of the same length), docs/next-todos.md \"State at hand-off\" (a 2026-10-22 paragraph: S1 built against fakes, not deployed, PR open), the spec's S1 header marked built with the commit range; CLAUDE.md's test count if it moved by more than 50.",
+        "Commit `S1-R1: review and simplify the download fixes`.",
+        "`.harness/check.sh` is green (full suite, about 1,750 tests, 10-11 min); the commit is pushed to harness/dj-crate-streaming-2026-10-22-fixes"
+      ],
+      "after": [
+        "S1-01",
+        "S1-02",
+        "S1-03",
+        "S1-04",
+        "S1-05",
+        "S1-06",
+        "S1-07",
+        "S1-08"
+      ],
+      "passes": true
+    },
+    {
+      "id": "S1-09",
+      "milestone": "S1",
+      "kind": "docs",
+      "model": "opus",
+      "description": "docs/plans/2026-10-22-downloads-checklist.md lists the S1 live steps for Michael (the spec's \"Morning checklist addition\" steps 1-3, 5 and 7), each with its check and its undo, every command verified to exist at this commit; nothing is run live.",
+      "steps": [
+        "docs/plans/2026-10-22-downloads-checklist.md exists with: a header saying what it is, that S1 was built on this branch against fakes and never run live, and the conventions by reference to docs/plans/2026-10-22-morning-checklist.md (flock on `/srv/docker/crates/live.lock`, no live write 03:15-04:30 or while the backup is active, backup status + **check** + snapshots first, `scripts/live-check.sh` as check, `scripts/live-run.sh` for one-off worker commands). Then, in this order, each with `Check:` and `Undo:` lines: (1) PR #16 on main before any deploy from main: `git -C ~/projects/dj-crate-streaming fetch -q && git -C ~/projects/dj-crate-streaming merge-base --is-ancestor 59c6f6a origin/main && echo ok`, else `gh pr ready 16 && gh pr merge 16 --merge` (a merge commit, not a squash), and the S1 PR of this run merged after it; (2) the 10-21 checklist's deploy step (section 4 of docs/plans/2026-10-22-morning-checklist.md) with rollback tag `dj-crates:41fcc5bc01`; (3) after S1 is deployed, not before: `scripts/live-run.sh python3 -m crates.cli wanted reopen ext-74` dry run, then `--apply`; approve ext-74 and ext-78 in the web client; expect ext-74 = track 01 (191-196 s) and ext-78 = \"Oh, Pretty Woman\"; `/api/events` shows `pick`/`filed`/`ok` and no `renamed` to another title and no `wrong_song`; Navidrome's Al Green album shows all 9 titles; undo = the `reopened` event's old values and, for a new download, the N1 duplicate cleanup or the trash; (5) `scripts/live-run.sh python3 -m scripts.duplicate_cleanup plan` for the `.1.flac` copy (`docs/worker.md` → \"Duplicate cleanup\"), plan only; (7) gluetun: `docker logs dj-gluetun-1 | grep 'port forwarding'`, Michael's compose, with the note that S1-06 makes a drop cost one retry. A closing line says steps 4 and 6 of the spec's addition belong to the S2-S4 run.",
+        "Every `python3 -m <module> <cmd>` in the file is in that module's `--help` at this commit (run `python3 -m crates.cli wanted reopen --help`, `python3 -m scripts.duplicate_cleanup --help` from the worktree with the suite's env: `MUSIC_ROOT`, `CRATES_DB` etc. pointed into a temp dir, no live paths); `scripts/live-run.sh` and `scripts/live-check.sh` exist and are executable; `--print` is not run (it inspects docker).",
+        "docs/plans/2026-10-22-morning-checklist.md gets one line before its section 4 (deploy): \"PR #16 must be on main first (see docs/plans/2026-10-22-downloads-checklist.md step 1)\"; docs/next-todos.md's 2026-10-22 paragraph links the new file.",
+        "No live command was run by this session (no docker, no scripts/*.sh executed, nothing read or written under /srv): the progress entry says so explicitly.",
+        "Commit `S1-09: downloads checklist (S1 live steps)`.",
+        "`.harness/check.sh` is green (full suite, about 1,750 tests, 10-11 min); the commit is pushed to harness/dj-crate-streaming-2026-10-22-fixes"
+      ],
+      "after": [
+        "S1-R1"
+      ],
+      "passes": true
+    }
+  ]
+}

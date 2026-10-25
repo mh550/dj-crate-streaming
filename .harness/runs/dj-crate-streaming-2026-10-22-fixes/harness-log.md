@@ -1,0 +1,15 @@
+- 2026-10-22 16:41 · feature list written: 0/10 passing
+- 2026-10-22 17:11 · S1-01 · claude-opus-5-5 · passes=true · 18 min · 1/10 passing
+- 2026-10-22 17:28 · S1-02 · claude-opus-5-5 · passes=true · 16 min · 2/10 passing
+- 2026-10-22 17:50 · S1-03 · claude-opus-5-5 · passes=true · 22 min · 3/10 passing
+- 2026-10-22 18:17 · S1-04 · claude-opus-5-5 · passes=true · 26 min · 4/10 passing
+- 2026-10-22 18:38 · S1-05 · claude-opus-5-5 · passes=true · 21 min · 5/10 passing
+- 2026-10-22 19:07 · S1-06 · claude-opus-5-5 · passes=true · 28 min · 6/10 passing
+- 2026-10-22 20:15 · S1-07 · claude-opus-5-5 · passes=true · 67 min · 7/10 passing
+- 2026-10-22 20:33 · S1-08 · claude-opus-5-5 · passes=true · 18 min · 8/10 passing
+- 2026-10-22 21:09 · S1-R1 · claude-opus-5-5 · passes=true · 35 min · 9/10 passing
+- 2026-10-22 21:28 · S1-09 · claude-opus-5-5 · passes=true · 18 min · 10/10 passing
+- 2026-10-22 21:37 · S1 verified and tagged run/dj-crate-streaming-2026-10-22-fixes/S1
+- 2026-10-22 21:37 · S1 proposed for merging · https://github.com/mh550/dj-crate-streaming/pull/27
+- 2026-10-22 21:37 · every feature passes
+- 2026-10-22 21:37 · run ended (done): 10/10 passing · 12 sessions (12 real) · 10 features passed · $38.96 · 5.0 h · by kind: init 1 ($8.01), coding 10 ($30.12), verify 1 ($0.83) · by model: claude-fable-5-1 1 ($8.01), claude-opus-5-5 10 ($30.12), claude-sonnet-5-5 1 ($0.83)

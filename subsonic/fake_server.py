@@ -91,6 +91,7 @@ class FakeState:
         self.username, self.password = username, password
         self.db_path = Path(db_path) if db_path else None
         self.missing: set[str] = set()                   # song ids whose file is "gone": hidden, rows kept
+        self.unscanned: set[str] = set()                 # song ids filed since the last scan: unknown until startScan
         self.smart: set[str] = set()                     # playlist ids with rules: track edits refused
         self.songs = {s["id"]: dict(s) for s in SAMPLE_SONGS}
         self.playlists = {p["id"]: dict(p, songs=list(p["songs"])) for p in SAMPLE_PLAYLISTS}
@@ -123,7 +124,7 @@ class FakeState:
                 [(i, s.get("path", ""), s.get("title", ""), s.get("artist", ""), s.get("album", ""), s.get("duration", 0),
                   s.get("suffix", ""), s.get("size", 0), int(i in self.missing), s.get("musicBrainzId", ""),
                   s.get("albumArtist", ""), s.get("year", 0), s.get("bitRate", 0))
-                 for i, s in self.songs.items()])
+                 for i, s in self.songs.items() if i not in self.unscanned])
             for pid, p in self.playlists.items():
                 con.execute("INSERT INTO playlist (id, name, comment, owner_id, rules) VALUES (?,?,?,?,?)",
                             (pid, p["name"], p.get("comment", ""), p.get("owner", ""), "{}" if pid in self.smart else None))
@@ -132,7 +133,7 @@ class FakeState:
 
     def visible(self, song_ids) -> list[dict]:
         """What Navidrome shows: songs it knows and whose file is not missing."""
-        return [self.songs[s] for s in song_ids if s in self.songs and s not in self.missing]
+        return [self.songs[s] for s in song_ids if s in self.songs and s not in self.missing | self.unscanned]
 
     def auth_ok(self, q: dict) -> bool:
         if q.get("u") != self.username:
@@ -230,6 +231,7 @@ def make_handler(state: FakeState):
                                              "lastScan": _go_time(state.last_scan)}}))
 
         def m_startScan(self, q, m):
+            state.unscanned.clear()
             state.sync()            # a scan is when navidrome.db learns of songs (a test adds them to state.songs)
             state.scans += 1        # and is over at once, unless a test sets state.scanning
             state.end_scan()
@@ -277,7 +279,7 @@ def make_handler(state: FakeState):
 
         def m_getSong(self, q, m):
             s = state.songs.get(q.get("id", ""))
-            if not s or s["id"] in state.missing:
+            if not s or s["id"] in state.missing | state.unscanned:
                 return self._send(_resp(error=(70, "Song not found")))
             self._send(_resp({"song": dict(s, isDir=False, type="music")}))
 

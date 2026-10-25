@@ -15,7 +15,7 @@ from sourcing.slskd_client import SlskdClient
 from sourcing.worker import Worker
 from subsonic.fake_server import FakeSubsonicServer
 from tests.helpers import beets_items_db, fake_beet
-from tests.test_fetch import GOOD, RESPONSES, good_flac_bytes, header_only, new_song, run, world  # noqa: F401  (world: fixture)
+from tests.test_fetch import GOOD, RESPONSES, good_flac_bytes, header_only, new_song, run, world, not_in_library  # noqa: F401  (fixtures)
 from tests.test_tier_rows import _cli_env
 
 def worker(world, srv, lines=None, **kw):
@@ -657,6 +657,7 @@ def _kinds(world, kind):
     return [e for e in world["store"].events(limit=1000) if e["kind"] == kind]
 
 
+@pytest.mark.usefixtures("not_in_library")
 def test_a_fetched_external_row_is_placed_in_the_same_tick(world, tmp_path):
     store, lines = world["store"], []
     ext = _imported_pl1(store)

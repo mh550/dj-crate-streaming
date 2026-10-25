@@ -59,6 +59,9 @@ response shape: use `fixtures/search_responses.sample.json`, `fixtures/spotify_e
 (the enqueue response, `/users/*`), don't depend on it. A shape you'd need goes into the checklist as a capture step.
 
 ## S1: download fixes from the Al Green attempts (after: [])
+**Built 2026-10-22** (run `dj-crate-streaming-2026-10-22-fixes`, commits `0493bc2`…S1-R1 on branch
+`harness/dj-crate-streaming-2026-10-22-fixes`, base `307d62b`): against the fakes only, not deployed, PR open. Decisions
+D48 and D49 (*default*) in the pivot spec.
 1. **S1-01 Reject a file whose title slot names another song** (`sourcing/scorer.py`). After the hotfix's title-slot
    rule, a candidate whose title slot parses (`identity.parse_filename`) to a different song key than the wanted title
    (`parse_title(...).key`, labels and case ignored; D26 versions stay as they are) is `rejected` ("title slot is <X>"),
@@ -95,6 +98,10 @@ response shape: use `fixtures/search_responses.sample.json`, `fixtures/spotify_e
    playlist. Dry run by default; the reverse is in the event. Tests on a fake store.
 
 ## S2: album requests, sourced album-first (after: [S1-01, S1-02])
+**Built 2026-10-23** (run `dj-crate-streaming-2026-10-22-build`, commits `88eba88`…S2-R1 on branch
+`harness/dj-crate-streaming-2026-10-22-build`, base `1eb4259`): against the fakes only, not deployed. Plans
+`docs/plans/2026-10-22-s2-album-requests.md` and `docs/plans/2026-10-22-S2-album-tags.md`; decisions D50 and D51
+(*default*) in the pivot spec. Approving a request from a client is S3's.
 The need (Michael, 2026-10-22): one album in one go. Ideally one source (one peer's folder) has every track and all
 come from it. On any trouble, switch, and ideally to **one other folder for the rest**, not track by track. Per-track
 sourcing is the last resort, for what no folder has. Why this order: one folder is one master (the same lengths,
@@ -186,6 +193,10 @@ releases, as the 10-21 Al Green album did (5 peers, 4 releases, a 393 s best-of 
    - Tests: a mixed playlist.
 
 ## S3: request API, client-agnostic (after: [S2-01])
+**Built 2026-10-23** (run `dj-crate-streaming-2026-10-22-build`, commits `ea4823a`…S3-R1 on branch
+`harness/dj-crate-streaming-2026-10-22-build`): against the fakes only, not deployed, no client UI. The endpoints are
+in `docs/api.md`, the CLI in `docs/worker.md` ("The morning path, without a client"), both in `docs/architecture.md`
+§4 (e); decision D52 (*default*) in the pivot spec. `scripts/capture_spotify.py` is written and never run.
 Server side only. Any client (the current web client, Amperfy's successor, a phone shortcut) can drive it. **No UI in
 this run** (concern B is open).
 1. **S3-01 `POST /api/requests`** `{"url": …}`:
@@ -221,6 +232,9 @@ this run** (concern B is open).
    - Usage in its docstring.
 
 ## S4: checklist and whole-run review (after: [S1-01, S1-02, S1-03, S1-04, S1-05, S1-06, S1-07, S1-08, S2-01, S2-02, S2-03, S2-04, S2-05, S2-06, S2-07, S3-01, S3-02, S3-03, S3-04, S3-05, S3-06])
+**Built 2026-10-23** (run `dj-crate-streaming-2026-10-22-build`, S4-01 `b3658c9` and S4-02 on branch
+`harness/dj-crate-streaming-2026-10-22-build`): the checklist (§4, §6, Captures) and the whole-run review, its
+Important findings fixed test-first; not deployed, PRs open. Decision D53 (*default*) in the pivot spec.
 1. **S4-01** `docs/plans/2026-10-22-downloads-checklist.md`, each step with its check and undo, from "Morning checklist
    addition" below. Link it from `docs/plans/2026-10-22-morning-checklist.md` (the 10-21 run's R8) when that file is on
    main. Add a line before that checklist's deploy step: "PR #16 must be on main first". Update `docs/architecture.md`

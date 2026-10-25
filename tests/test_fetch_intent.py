@@ -9,7 +9,7 @@ from sourcing.verify import verify
 from sourcing.slskd_client import SlskdClient
 from subsonic.client import SubsonicError
 from tests.helpers import convert, make_audio
-from tests.test_fetch import GOOD, RESPONSES, good_flac_bytes, new_song, run, world  # noqa: F401  (world: fixture)
+from tests.test_fetch import GOOD, RESPONSES, good_flac_bytes, new_song, run, world, not_in_library  # noqa: F401  (fixtures)
 
 TWELVE_FILE = '@@music\\Chic\\Risqué (1979) [FLAC]\\03 - Good Times (12" Version).flac'
 
@@ -41,6 +41,7 @@ def test_crate_row_is_verified_as_a_copy(world, tmp_path):
     assert seen["kw"]["intent"] == "copy"
 
 
+@pytest.mark.usefixtures("not_in_library")
 def test_external_row_getting_the_same_version_has_no_intent(world, tmp_path):
     ext = world["store"].add_external_wanted("Chic", "Good Times", album="Risqué", duration_s=501, year=1979)
     flac, seen = good_flac_bytes(tmp_path), {}

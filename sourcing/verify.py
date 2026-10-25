@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
+from .identity import can_be_song, parse_title
 from .policy import DEFAULT_TIER, TIERS, check_tier
 
 TEXT = {"text": True, "encoding": "utf-8", "errors": "replace"}   # ffmpeg echoes tags in whatever code page they're in
@@ -96,11 +97,12 @@ class Verdict:
     info: AudioInfo | None
     warnings: list[str] = field(default_factory=list)
     measurements: dict = field(default_factory=dict)
+    kinds: list[str] = field(default_factory=list)      # each problem's check (`duration`, `transcode`, ...), in order
 
     def as_dict(self, tier: str | None) -> dict:
         """The record `fetch` keeps per wanted row and `cli verify --json` prints (JSON-safe)."""
         return {"ok": self.ok, "tier": tier, "problems": self.problems, "warnings": self.warnings,
-                "measurements": self.measurements}
+                "measurements": self.measurements, "kinds": self.kinds}
 
 
 # ---- decoded analysis ----
@@ -236,10 +238,11 @@ HARD_WHEN_STRICT = {"transcode", "fake_24bit", "fake_hires", "implied_kbps", "sa
 def verify(path: Path, expected_duration_s: float | None = None, tier: str | None = None, reference: Path | None = None,
            tolerance_s: float | None = None, min_lossless_kbps: int | None = None, recording_id: str | None = None,
            lookup: Callable[[Path], list[dict]] | None = None, intent: str | None = None,
-           listed_length_s: float | None = None) -> Verdict:
+           listed_length_s: float | None = None, asked_title: str | None = None) -> Verdict:
     """Header checks always; with a `tier`, the decoded checks too (module docstring). The tier's policy sets the
     thresholds and how strict it is. Without a tier: header checks only, judged like crate (pre-M5 behaviour).
-    With a tier and a `lookup` (AcoustID), the file's recording is looked up and compared with `recording_id`.
+    With a tier and a `lookup` (AcoustID), the file's recording is looked up and compared with `recording_id`,
+    or, with no recording id, its title with `asked_title` (the song the row asked for).
     `intent` (M7) says what the download is for: "copy" is a better copy of the owned recording, so it should be
     compared with that copy (`reference`); "version" is another version of the song, which has no reference to
     match (its fingerprint is not expected to), so the recording check is the AcoustID lookup alone."""
@@ -255,11 +258,13 @@ def verify(path: Path, expected_duration_s: float | None = None, tier: str | Non
     m: dict = {}
 
     def verdict(info: AudioInfo | None) -> Verdict:
-        problems, warnings = [], []
+        problems, warnings, kinds = [], [], []
         for check, msg in findings:
             if check == "implied_kbps" and full_band(m):     # the measured spectrum outranks the size guess
                 check, msg = "low_kbps", f"{msg}, but the full spectrum is there: quiet or simple material"
             (problems if check in hard else warnings).append(msg)
+            if check in hard:
+                kinds.append(check)
         if intent == "copy":
             # M8 deletes the old copy when this is True, so it implies ok: the fingerprint matched over the overlap
             # (a truncated prefix matches perfectly, hence the length test against the reference), the reference is
@@ -274,7 +279,7 @@ def verify(path: Path, expected_duration_s: float | None = None, tier: str | Non
             if not problems and m.get("reference_compared") and not decoded_s:
                 warnings.append("not replaceable: the decoded length was not measured (decoded checks skipped), "
                                 "so the download may be a truncated prefix of the reference")
-        return Verdict(not problems, problems, info, warnings, finite(m))
+        return Verdict(not problems, problems, info, warnings, finite(m), kinds)
 
     if not path.exists():
         findings.append(("missing", "file missing"))
@@ -329,7 +334,7 @@ def verify(path: Path, expected_duration_s: float | None = None, tier: str | Non
     elif intent == "copy":
         findings.append(("reference", "copy upgrade without a reference: the recording was not compared"))
     if lookup is not None:
-        _acoustid_check(path, lookup, recording_id, findings, m)
+        _acoustid_check(path, lookup, recording_id, findings, m, asked_title)
     return verdict(info)
 
 
@@ -384,10 +389,15 @@ def _recording_check(path: Path, reference: Path, findings: list, m: dict, whole
                                       f"(fingerprint bit-error rate {ber:.2f}; same audio is under {MAX_SAME_BER:.2f})"))
 
 
+ACOUSTID_CONFIDENT = 0.8       # docs/identity.md: a result scoring this much names the file's recording
+
+
 def _acoustid_check(path: Path, lookup: Callable[[Path], list[dict]], recording_id: str | None,
-                    findings: list, m: dict) -> None:
+                    findings: list, m: dict, asked_title: str | None = None) -> None:
     """A failed lookup (no network, bad key, no fpcalc) is only a warning; a *disagreement* with the recording
-    Navidrome knows is the hard `recording` finding. Nothing known (no recording_id) or nothing found never fails."""
+    Navidrome knows is the hard `recording` finding. With no recording id, a confident result none of whose
+    recordings (any score) can be the asked song (identity.can_be_song) is that finding too (S1-02, ext-74).
+    Nothing asked or nothing found never fails."""
     try:
         recs = lookup(path)
     except Exception as e:
@@ -402,6 +412,11 @@ def _acoustid_check(path: Path, lookup: Callable[[Path], list[dict]], recording_
     elif recording_id is not None and recording_id not in m["acoustid"]["ids"]:
         findings.append(("recording", f"AcoustID says this is {top.get('title')} ({top['id']}), "
                                       f"not recording {recording_id}"))
+    elif recording_id is None and asked_title:
+        m["acoustid"]["asked"] = asked_title
+        sure = [r for r in recs if r.get("title") and (r.get("score") or 0) >= ACOUSTID_CONFIDENT]
+        if sure and not any(can_be_song(r["title"], asked_title) for r in recs if r.get("title")):
+            findings.append(("recording", f"AcoustID says this is {sure[0]['title']}, not {asked_title}"))
 
 
 def _decoded_checks(info: AudioInfo, a: dict, findings: list, m: dict) -> None:

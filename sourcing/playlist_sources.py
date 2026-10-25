@@ -17,6 +17,7 @@ from __future__ import annotations
 import csv
 import io
 import re
+import sys
 from pathlib import Path
 
 from dataclasses import dataclass, replace
@@ -36,17 +37,37 @@ class Row:
     note: str | None = None    # report rows: "success" | "skipped" | "error: <message>"
     sep: str = ", "            # how the source joins several artists: ", " (Spotify, Exportify) or "; " (reports)
     isrc: str | None = None    # Exportify's ISRC: the recording itself, whatever the titles say (M7)
+    track_no: int | None = None   # album rows: the position on the album in embed order (S2-02); a second disc
+                                  # runs on from the first (no disc number in the embed)
+    year: int | None = None
 
 
 def rows_from_spotify(entity: dict) -> list[Row]:
+    """Rows of a playlist, album or track embed. An album's rows also carry the album name, their track number and
+    the year (`releaseDate` is null in some captures: then no year). A track embed lists its artists, not a
+    subtitle (the shape track_lead reads)."""
+    album = entity["name"].strip() if entity.get("type") == "album" else None
+    year = _year(entity.get("releaseDate")) if album else None
+    if entity.get("type") != "track":
+        tracks = entity["trackList"]
+    else:
+        tracks = [{**entity, "title": entity["name"], "subtitle": ",\xa0".join(a["name"] for a in entity["artists"])}]
     out = []
-    for i, t in enumerate(entity["trackList"], 1):
+    for i, t in enumerate(tracks, 1):
         # The embed joins separate artists with ",\xa0" and keeps a band's own comma as ", "
         # ("Earth, Wind & Fire"; fixtures/spotify_embed_ewf_artist.json), so the split is exact offline.
         artist = "; ".join(a.strip() for a in t["subtitle"].split(",\xa0"))
         sid = t.get("uri", "").split(":")[-1] or None
-        out.append(Row(i, t["title"].strip(), artist, round(t["duration"] / 1000), sid, sep="; "))
+        out.append(Row(i, t["title"].strip(), artist, round(t["duration"] / 1000), sid, album, sep="; ",
+                       track_no=i if album else None, year=year))
     return out
+
+
+def _year(release_date) -> int | None:
+    """'1972-10-23' → 1972; a dict with an isoString (other embeds) too; null or odd → None."""
+    if isinstance(release_date, dict):
+        release_date = release_date.get("isoString")
+    return int(release_date[:4]) if isinstance(release_date, str) and release_date[:4].isdigit() else None
 
 
 _STATUS = re.compile(r"^\[(SUCCESS|SKIPPED)\] (.*)$")
@@ -122,6 +143,8 @@ def concat(groups: list[list[Row]]) -> list[Row]:
 
 def load(src: str, fetch=fetch_entity) -> tuple[str, list[Row]]:
     if SPOTIFY_URL.search(src):
+        if SPOTIFY_URL.search(src).group(1) == "track":
+            sys.exit("a track is not a playlist: queue it with seed-spotify")
         entity = fetch(src)
         return entity["name"].strip(), rows_from_spotify(entity)
     p = Path(src)
