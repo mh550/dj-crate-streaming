@@ -47,3 +47,7 @@
 - 2026-10-22 06:07 · R8-01 · claude-opus-5-5 · passes=true · 41 min · 25/26 passing
 - 2026-10-22 06:35 · R8-02 · claude-opus-5-5 · passes=true · 28 min · 26/26 passing
 - 2026-10-22 06:35 · merged main into harness/dj-crate-streaming-2026-10-21
+- 2026-10-22 06:36 · R8 verified and tagged run/dj-crate-streaming-2026-10-21/R8
+- 2026-10-22 06:36 · R8 merged into main · https://github.com/mh550/dj-crate-streaming/pull/22
+- 2026-10-22 06:36 · every feature passes
+- 2026-10-22 06:36 · run ended (done): 26/26 passing · 36 sessions (35 real) · 26 features passed · $65.91 · 9.6 h · by kind: init 1 ($5.30), coding 27 ($58.57), verify 8 ($2.04) · by model: claude-fable-5-1 1 ($5.30), claude-sonnet-5-5 9 ($2.23), claude-opus-5-5 26 ($58.38)
