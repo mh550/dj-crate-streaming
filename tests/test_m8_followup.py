@@ -9,7 +9,7 @@ import urllib.request
 import pytest
 
 from crates.reconcile import Reconciler
-from crates.store import CrateStore, retryable_review
+from crates.store import CrateStore, filed_path, retryable_review
 from sourcing.fake_slskd import FakeSlskdServer
 from subsonic.client import SubsonicClient
 from subsonic.fake_server import FakeSubsonicServer
@@ -22,6 +22,7 @@ RETRYABLE = [
     "declined replacement #3; approve a different candidate to retry (the new copy stays in the library as A/B/x.flac)",
     "replacement #2 not made: slot 1 no longer holds s4; approve a different candidate to retry",
     "filed beside A/B/x.mp3; request withdrawn, both copies kept (the new copy is A/B/x.flac)",
+    "filed One of These Good Old Days as Al Green/Singles/One of These Good Old Days.flac, asked for I'm Still In Love With You",
 ]
 NOT_RETRYABLE = [
     None, "", "keep both?", "ambiguous (3 library versions): A, B, C",
@@ -212,3 +213,9 @@ def test_wanted_lists_a_reimported_failed_row_once_and_approve_accepts_it(svc): 
     code, body = post(srv.url + f"/api/wanted/{ext}/approve", {})
     assert code == 200, body
     assert app.store.approval(ext)["wanted_id"] == ext
+
+
+def test_a_wrong_song_review_is_retryable_but_never_a_filed_recheck():
+    """S1-03: approving it downloads again (the wrong file stays as its own song); it never reads as a filed path."""
+    reason = RETRYABLE[-1]
+    assert retryable_review(reason) and filed_path(reason) is None

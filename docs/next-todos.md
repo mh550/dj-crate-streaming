@@ -38,6 +38,44 @@ Anything that trashes files or writes tags needs a reviewed plan file and a reve
   `identity_backfill apply --choices` merges it (D47). The live steps in order, each with its check and undo:
   [`plans/2026-10-22-morning-checklist.md`](plans/2026-10-22-morning-checklist.md).
 - **2026-10-22, run `dj-soulsync-review-2026-10-22` (docs only):** [SoulSync review](research/2026-10-22-soulsync/README.md); verdict: port pieces, never adopt SoulSync.
+- **2026-10-22, run `dj-crate-streaming-2026-10-22-fixes` (branch `harness/dj-crate-streaming-2026-10-22-fixes`,
+  milestone S1 of `specs/2026-10-22-downloads-and-requests.md`):** built and tested against the fakes, **not deployed,
+  PR open**. The download fixes from the Al Green attempts: a title slot naming another song is rejected (S1-01); a
+  confident AcoustID title that can't be the asked one fails verify (S1-02); a row is never renamed onto another song,
+  it goes to `review` (S1-03, D48); slskd forgets with `?remove=true` and fetch follows only its own new transfer
+  (S1-04); slskd errors name the step and endpoint, never the peer (S1-05); one more peer on a transfer error or a VPN
+  drop (S1-06); the library is asked before downloading (S1-07); `crates.cli wanted reopen` (S1-08, D49). The live
+  steps, each with its check and undo:
+  [`plans/2026-10-22-downloads-checklist.md`](plans/2026-10-22-downloads-checklist.md) (S1-09).
+- **2026-10-23, run `dj-crate-streaming-2026-10-22-build` (branch `harness/dj-crate-streaming-2026-10-22-build`,
+  milestone S2 of `specs/2026-10-22-downloads-and-requests.md`):** built and tested against the fakes, **not
+  deployed**. Album requests sourced album-first: a `requests` table whose status is derived from its rows (S2-01); a
+  Spotify album or track URL is one request (S2-02) matched to its MusicBrainz release (S2-03); the album planner
+  `sourcing/album.py` (one folder, a same-release second, per track last, S2-04); the album job `sourcing/album_job.py`
+  (one `album` approval per row, one enqueue per peer, folder switches, per-row attempt caps, S2-05); album rows filed
+  with the request's tags at `Artist/Album (Year)/NN - Title` via `dj_album=1` (S2-06, D50, D51 *default*); a playlist
+  import as one request whose album groups go as album jobs (S2-07). Closing review S2-R1. Architecture §4 (e).
+- **2026-10-23, same run, milestone S3 (request API, client-agnostic):** built and tested against the fakes, **not
+  deployed, no client UI** (question B open). `POST /api/requests` takes a Spotify album, track or playlist link
+  (S3-01, D52 *default*) or a catalog pick's `mbReleaseId`/`mbRecordingId` (S3-01b), rows already in the library
+  marked; `GET /api/catalog/search?q=&kind=album|track` over MusicBrainz through `sourcing/catalog.py`'s one-provider
+  interface (S3-02); `GET /api/requests`, `GET /api/requests/<id>`, `POST …/preview` (the album plan, no peer) and
+  `POST …/approve` (S2-05's approvals; the worker downloads) (S3-03); `python -m sourcing.cli request add | list |
+  show | preview | approve` through the same methods (S3-04); [`api.md`](api.md) for a client (S3-05);
+  `scripts/capture_spotify.py`, never run (S3-06). Closing review S3-R1. Architecture §4 (e).
+  - **Spotify provider: after S3-06's capture.** Michael runs `scripts/capture_spotify.py` with his own app's
+    credentials (usage in its docstring); the next run builds a `SpotifyCatalog` against the two captured fixtures.
+- **2026-10-23, same run, milestone S4:** S2 and S3 are **not deployed, PRs open**: the run's PR (branch
+  `harness/dj-crate-streaming-2026-10-22-build`, which contains S1) merges after PR #16 and S1's PR. What it brings
+  live: a request (album, track or playlist, `requests` rows over its `external_wanted` rows), its album plan and the
+  album job the worker runs from Michael's approval, through `/api/requests` (`api.md`) or `python -m sourcing.cli
+  request add | list | show | preview | approve`. The live steps, each with its check and undo:
+  [`plans/2026-10-22-downloads-checklist.md`](plans/2026-10-22-downloads-checklist.md) sections 4 (the Al Green
+  album as a request) and 6 (the Spotify capture), then "Captures for the fixtures" (three slskd shapes).
+  The whole-run review (S4-02) fixed 6 of its 7 Important findings, not deployed either: an album link is matched to its
+  MusicBrainz release at `request add` too, and a match fills an unknown year from the release group (D53 *default*);
+  release lookups ask `artist-credits`; a catalog query without " - " matches words, not one title phrase; a slskd
+  drop while a planned file downloads is waited out once; a refused cancel no longer stops a switch's other cancels.
 
 ## In order
 
@@ -83,5 +121,10 @@ Anything that trashes files or writes tags needs a reviewed plan file and a reve
    idea; note it reverses "no hashtags in names", so ask first) or kept in the crates app.
 10. **When the custom client replaces Amperfy:** remove the vestigial tier code (`crates.tier`, `crates/attrs.py`,
     `crates/migrate_attrs.py`, stream presets in `sourcing/policy.py`) and build the client features listed in the pivot spec.
+11. **Spotify provider (after the S3-06 capture):** a `SpotifyCatalog` in `sourcing/catalog.py`'s `PROVIDERS`, built
+    against `fixtures/spotify_search.captured.json` and `fixtures/spotify_album.captured.json` once Michael has run
+    `scripts/capture_spotify.py` (downloads checklist section 6). Where its secret lives is decided then.
+12. **client UI (question B):** a search bar, a request screen and album progress over `/api/requests` and
+    `/api/catalog/search` (`api.md`), once Michael answers B. Not before.
 
 ## Michael's open items (not for the agent): `~/projects/TODO-MICHAEL.md`

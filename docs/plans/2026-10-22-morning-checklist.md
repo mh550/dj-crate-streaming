@@ -100,6 +100,8 @@ Undo: `cp -p /srv/docker/.env.pre-2026-10-22 /srv/docker/.env`.
 
 ## 4. Deploy `main` from a fresh worktree
 
+PR #16 must be on main first (see `docs/plans/2026-10-22-downloads-checklist.md` step 1).
+
 Do the "Snapshots first" checks of the conventions now. Then:
 
 ```
@@ -295,3 +297,8 @@ All of it arrives with step 4.
   The default classes of next-todos item 6 (`confirmed`, `isrc`, `acoustid`) are a separate apply without
   `--choices`, staged the same way (`docs/worker.md` → "Identity backfill"); their order relative to the picks does
   not matter.
+- **Requests and album jobs (S2/S3, run `dj-crate-streaming-2026-10-22-build`).** Not part of step 4's deploy unless
+  that run's PR was merged before it; otherwise they arrive with a later deploy of `main`. The live steps, each with its check and undo, are
+  in `docs/plans/2026-10-22-downloads-checklist.md` section 4 ("Album request through the request API": `sourcing.cli
+  request add | preview | approve` of the Al Green album) and section 6 ("Spotify developer app and the capture":
+  `scripts/capture_spotify.py` on the host, for the next catalog provider).

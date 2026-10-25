@@ -19,7 +19,7 @@ import re
 from dataclasses import asdict, dataclass, field, replace
 from difflib import SequenceMatcher
 
-from .identity import NEUTRAL, Title, parse_filename, parse_title, stands_in, strip_trackno, words
+from .identity import NEUTRAL, Title, lead_artist, loose, parse_filename, parse_title, stands_in, strip_trackno, words
 from .policy import QualityPolicy, DEFAULT_POLICY
 
 
@@ -88,6 +88,35 @@ def ratio(a: str, b: str) -> float:
 
 # ---------- name matching (soularr-style: several passes, take the best) ----------
 
+# A track number between separators: " - 09 - ", " – 09 – ", "_09_", " - 09. ".
+_SLOT_NUMBER = re.compile(r"(?:\s[-–]\s|_)\d{1,3}(?:\s[-–]\s|_|\.\s)")
+_CREDIT = re.compile(r"(?:\s+|\s*[(\[])(?:feat|ft|featuring)\b.*$", re.I)       # "Good Times feat. Nile Rodgers"
+
+
+def title_slot(basename: str) -> str | None:
+    """"Artist - Album - 09 - Title" / "Artist_Album_09_Title": the words after the last track number between
+    separators, as written (underscores read as spaces); None when the name has no such number."""
+    raw = re.sub(r"\.[^.]+$", "", basename)
+    nums = list(_SLOT_NUMBER.finditer(raw))
+    return (raw[nums[-1].end():].replace("_", " ").strip(" -–") or None) if nums else None
+
+
+def slot_names_another_song(c: Candidate, w: Wanted) -> str | None:
+    """The title slot when it names another song than the wanted title (base titles compared, credits and labels
+    ignored: which version it is stays with the version rules). A compilation's slot credits an artist around the
+    title ("Chic - Good Times", "Good Times - Chic & Nile Rodgers", "Chic Good Times"): any " - " part, or the
+    slot without the wanted artist in front, may be the title."""
+    slot = title_slot(c.basename)
+    if slot is None:
+        return None
+    song = lambda t: loose(_CREDIT.sub("", t))
+    got = parse_filename(slot, w.artist, w.title).base
+    names = {song(got)} | {song(part) for part in re.split(r"\s[-–]\s", got)}
+    if artist := loose(lead_artist(w.artist)):
+        names |= {n[len(artist):] for n in names if n.startswith(artist)}
+    return None if song(parse_title(w.title, w.artist).base) in names else slot
+
+
 def name_match(c: Candidate, w: Wanted) -> tuple[float, str]:
     """0..1 similarity between the file (name + folder) and the wanted track."""
     base = strip_trackno(norm(re.sub(r"\.[^.]+$", "", c.basename)), w.title)
@@ -96,12 +125,9 @@ def name_match(c: Candidate, w: Wanted) -> tuple[float, str]:
 
     artist_in_path = 1.0 if artist and (artist in folder or artist in base or artist in norm(c.filename)) else 0.0
     title_only = ratio(base, title)
-    # "Artist - Album - 09 - Title" / "Artist_Album_09_Title": the words after a track number between separators
-    # are the title slot. A wanted album title track ("I'm Still in Love With You") is in every file of that
-    # album, so only that slot counts.
-    raw = re.sub(r"\.[^.]+$", "", c.basename)
-    nums = list(re.finditer(r"(?:\s-\s|_)\d{1,3}(?:\s-\s|_)", raw))
-    slot = norm(raw[nums[-1].end():]) if nums else ""
+    # A wanted album title track ("I'm Still in Love With You") is in every file of that album, so when the name
+    # has a title slot only that slot counts.
+    slot = norm(title_slot(c.basename) or "")
     title_in_name = 1.0 if title and title in (slot or base) else 0.0
     artist_title = ratio(base, f"{artist} {title}")
     if not artist_in_path:
@@ -154,6 +180,10 @@ def score_candidate(c: Candidate, w: Wanted, policy: QualityPolicy = DEFAULT_POL
     nm, how = name_match(c, w)
     if nm < 0.55:
         c.rejected = f"name match too weak ({nm:.2f} via {how})"; c.score = 0; return c
+    # The title slot names another song (ext-74: track 09 of the album the wanted title track is named after):
+    # the wrong record, so never downloaded, not merely ranked lower.
+    if (slot := slot_names_another_song(c, w)) is not None:
+        c.rejected = f"title slot is {slot}"; c.score = 0; return c
     s = 45 * nm
     c.reasons.append(f"name {nm:.2f} ({how})")
 
