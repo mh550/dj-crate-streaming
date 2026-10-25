@@ -385,7 +385,7 @@ wishlist run (`SoulSync:core/discovery/sync.py:59`, `SoulSync:core/discovery/syn
   (`SoulSync:database/music_database.py:807-817`), and a request is grouped back into an album only for display
   (`SoulSync:core/requests/music.py:50-99`). Ours plans the album as a first-class record (S2-01 `requests`,
   `track_no`, `mb_release_id`) so S2-04/05 can source one folder; SoulSync's shape is the one that produced our
-  10-21 "5 peers, 4 releases" outcome, and its album batches do pin one folder when one covers ≥ 80 % of the requested tracks and scores ≥ 0.62 (04-soulseek.md, `SoulSync:core/downloads/master.py:460`, `SoulSync:core/downloads/master.py:1372-1382`), but the album identity on the wishlist row is still lost.
+  10-21 "5 peers, 4 releases" outcome, and its album batches do pin one folder when one covers ≥ 80 % of the requested tracks and scores ≥ 0.62 (04-soulseek.md, `SoulSync:core/downloads/master.py:460` for 80 %, `SoulSync:core/downloads/master.py:43` for 0.62, `SoulSync:core/downloads/master.py:1372-1382`), but the album identity on the wishlist row is still lost.
 - Mirrors that refresh on a schedule and auto-wishlist whatever is new are the opposite of D7 for us; the
   fingerprint skip and "keep stored tracks on a failed refresh" rules (`SoulSync:core/automation/handlers/sync_playlist.py:378-452`,
   `SoulSync:tests/automation/test_handlers_playlist.py:373-376`) are worth having for any re-import, with approval

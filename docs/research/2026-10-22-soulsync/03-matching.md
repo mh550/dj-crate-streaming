@@ -105,7 +105,7 @@ Soulseek only) duration strings. Ids decide only in the watchlist and in the imp
   skips a file only on an exact MBID/ISRC pairing ("a false 'already owned' is silent data loss",
   `SoulSync:core/imports/library_check.py:12-17`, `SoulSync:core/imports/library_check.py:202-225`).
 - **Albums.** Album ownership is `check_album_exists_with_editions` + `check_album_completeness` (owned ≥ expected)
-  (`SoulSync:database/music_database.py:13401-13438`, `SoulSync:database/music_database.py:12918-12936`), scored 0.5
+  (`SoulSync:database/music_database.py:13401-13431`, `SoulSync:database/music_database.py:12918-12936`), scored 0.5
   title + 0.5 artist with an edition bonus/penalty (`SoulSync:database/music_database.py:13779-13817`).
   `find_best_album_match` in the engine (≥ 0.8, `SoulSync:core/matching_engine.py:1697-1716`) has no caller outside
   tests (grep, *absence inferred*).
@@ -343,7 +343,7 @@ Walking SoulSync's Soulseek path over it (hand estimate; the peer's path prefix 
 
 So SoulSync would most likely have **rejected** ext-74's file as it was laid out (an album folder), by a 0.025 margin
 in step 2, on the per-track search path; on the folder-reuse path it would have accepted it (step 4). It would have **accepted** the same wrong file under a flat "Artist - Album - NN - Title" name. Step 3 is a
-stronger net, but it is off by default and steps aside for non-ASCII titles. Our planned S1-01 (`ours:docs/specs/2026-10-22-downloads-and-requests.md:61-66`) is the
+stronger net, but it is off by default and steps aside for non-ASCII titles. Our planned S1-01 (`ours:docs/specs/2026-10-22-downloads-and-requests.md:62-67`) is the
 exact version of step 2: the title slot's song key must equal the wanted key, with no threshold.
 
 **Against D26 (the exact track).**

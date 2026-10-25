@@ -19,3 +19,11 @@
 - 2026-10-22 13:42 · V2 proposed for merging · https://github.com/mh550/dj-crate-streaming/pull/24
 - 2026-10-22 14:03 · V3-01 · claude-opus-5-5 · passes=true · 21 min · 12/15 passing
 - 2026-10-22 14:27 · V3-02 · claude-opus-5-5 · passes=true · 23 min · 13/15 passing
+- 2026-10-22 14:29 · V3 verified and tagged run/dj-soulsync-review-2026-10-22/V3
+- 2026-10-22 14:29 · V3 proposed for merging · https://github.com/mh550/dj-crate-streaming/pull/25
+- 2026-10-22 15:15 · V4-01 · claude-opus-5-5 · passes=true · 46 min · 14/15 passing
+- 2026-10-22 15:37 · V4-02 · claude-opus-5-5 · passes=true · 22 min · 15/15 passing
+- 2026-10-22 15:39 · verify V4: V4-01 failed the re-check, back in the queue (one more attempt)
+- 2026-10-22 15:39 · verify V4: V4-02 failed the re-check, back in the queue (one more attempt)
+- 2026-10-22 16:00 · V4-01 · claude-opus-5-5 · passes=true · 21 min · 14/15 passing
+- 2026-10-22 16:15 · V4-02 · claude-opus-5-5 · passes=true · 14 min · 15/15 passing

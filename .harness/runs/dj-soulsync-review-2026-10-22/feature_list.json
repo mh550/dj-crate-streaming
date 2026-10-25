@@ -298,7 +298,7 @@
       "after": [
         "V3"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "V4-02",
@@ -315,7 +315,7 @@
         "Every section file 01-09 and README.md is linked from README.md `## Sections` and each link resolves; the report nowhere contains a copied secret or credential value (`grep -rnE '[A-Za-z0-9]{32,}' docs/research/2026-10-22-soulsync/` shows only commit shas or nothing).",
         ".harness/check.sh is green (docs only, so it must be: every test passes, none newly skipped)"
       ],
-      "passes": false
+      "passes": true
     }
   ]
 }

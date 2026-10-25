@@ -113,8 +113,9 @@ CI, module map, license, maintenance health); the comparison with ours comes aft
   and a toggle route (`SoulSync:api/automations.py:93`, `SoulSync:api/automations.py:117`,
   `SoulSync:api/automations.py:153`, `SoulSync:api/automations.py:176`).
 - **Consequence.** Everything shares one address space: in-process locks, module globals and ~20 polling loops. That
-  is why `workers = 1` is fixed: a second gunicorn worker would start a second set of threads and timers
-  (*unverified*: inferred from the import-time starts above; no comment in `gunicorn.conf.py` says so). Peer speed
+  is why `workers = 1` is fixed: a second gunicorn worker would start a second set of threads and timers, since
+  `wsgi.py` starts the services in each worker that imports it (`SoulSync:wsgi.py:3-6`), and SoulSync's own note ties
+  its in-process jobs to "the current single-worker deployment" (`SoulSync:docs/performance-1245.md:51`). Peer speed
   memory, for one, is process-local with a one-hour TTL (`SoulSync:core/downloads/peer_observation.py:1`,
   `SoulSync:core/downloads/peer_observation.py:11-12`) and is lost on restart.
 
@@ -226,7 +227,7 @@ Skipped as non-music: `audiobook_routes` (`SoulSync:database/music_database.py:8
   own client** rather than embedded: Qobuz `app_id`/`app_secret` are extracted from the Qobuz web player's
   `bundle.js` (`SoulSync:core/qobuz_client.py:218-244`); Tidal downloads go through the `tidalapi` library
   (`SoulSync:core/tidal_download_client.py:28`), whose own client id is not in SoulSync's tree (*unverified*: inside
-  the library); and `spotipyFree` itself exists to track the client-auth headers Spotify's web player rotates
+  the library; reading the pinned `tidalapi`'s `Session` config, `SoulSync:requirements.txt:81`, would verify it); and `spotipyFree` itself exists to track the client-auth headers Spotify's web player rotates
   (`SoulSync:core/spotify_public_api.py:4-9`). All three are terms-of-service questions for 02-intake and
   05-other-sources.
 
@@ -386,7 +387,7 @@ Nezreka stops, the project effectively stops (we would be maintaining a fork). I
 names* are led by "BoulderBadgeDad" (917 of the 1,592 commits), then "Nez" (260), Thundernerd (167), "Claude" (42),
 mandos21 (39), from `gh api --paginate 'repos/Nezreka/SoulSync/commits?since=2026-09-22T00:00:00Z&per_page=100' --jq '.[].commit.author.name' | sort | uniq -c | sort -rn`.
 That the "BoulderBadgeDad" and "Nez" names belong to the Nezreka login is *unverified* (the API's login field was not
-compared with author names); the "Claude" commits show AI-assisted authoring is in use.
+compared with author names; comparing `.author.login` with `.commit.author.name` in the same `gh api` call would verify it); the "Claude" commits show AI-assisted authoring is in use.
 
 ### Issues, PRs, stars
 
@@ -449,7 +450,7 @@ factor and the unreviewed `:latest` publication are the two risks for any "run S
   `ThreadingHTTPServer` (`ours:crates/service.py:25`, `ours:crates/service.py:511`) with no library mount; `worker`
   runs `python -m sourcing.cli worker` (`ours:sourcing/cli.py:145`), refuses to start outside its container
   (`ours:sourcing/cli.py:243`), and is the only process that downloads, runs beets or moves files into `/srv/music`
-  (`ours:docs/architecture.md:72-75`, D18 at `ours:docs/specs/2026-10-13-next-session-design.md:72`). One-off
+  (`ours:docs/architecture.md:76-77`, D18 at `ours:docs/specs/2026-10-13-next-session-design.md:72`). One-off
   commands that write take the worker's lock (`ours:sourcing/worker.py:84-86`). slskd runs in gluetun's VPN
   namespace (`ours:docs/architecture.md:65-66`).
 - **Data stores.** `crates.db` (SQLite WAL, `ours:crates/store.py:286`) with 14 tables
@@ -462,7 +463,7 @@ factor and the unreviewed `:latest` publication are the two risks for any "run S
 - **Deployment.** One image for `crates` and `worker`: `python:3.12-slim` + ffmpeg, flac, fpcalc and pinned beets
   1.6.0 (`ours:Dockerfile:1-5`), tagged with the commit it was built from (`ours:deploy/compose.yml:39`); Navidrome and
   gatus pinned (`ours:deploy/compose.yml:13`, `ours:deploy/compose.yml:120`).
-- **Tests and CI.** 67 test files, 1,615 tests in `.harness/check.sh` (init output of this run); no `.github/`
+- **Tests and CI.** 70 test files, 1,757 tests in `.harness/check.sh` (the suite on this run's base after the 2026-10-22 merge of `main`; 67 and 1,615 at the run's start); no `.github/`
   directory, so no CI: the harness runs the suite before every merge.
 
 ## The difference that matters
