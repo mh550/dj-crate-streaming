@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(scripts/deploy.sh:*)",
+      "Bash(bash scripts/deploy.sh:*)",
+      "Bash(flock -n /srv/docker/crates/live.lock scripts/deploy.sh:*)",
+      "Bash(flock -n /srv/docker/crates/live.lock docker compose:*)",
+      "Bash(scripts/snapshot-crates-db.sh:*)"
+    ],
+    "deny": [
+      "Edit(//srv/docker/compose*)",
+      "Bash(restic:*)"
+    ]
+  }
+}

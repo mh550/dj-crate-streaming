@@ -26,11 +26,13 @@ Navidrome, slskd and beets. It runs live on this box (compose project `dj`, from
 - Plans: `docs/plans/<date>-<milestone>-<topic>.md`; a flow that trashes files or writes tags needs a reviewed plan.
 
 ## Off-limits
-- `/srv/incoming/**`, the `amperfy` account, Soulseek transfers (D7); secrets (`/srv/docker/.env`, `/etc/restic/env`).
-- Other checkouts: `~/projects` and `~/projects/dj-crate-streaming` belong to other sessions.
+- The `amperfy` account and Soulseek transfers (D7). `/srv/incoming/**` and the secrets (`/srv/docker/.env`,
+  `/etc/restic/env`) are user-level denies.
 
 ## Live system
 Live: Navidrome, the `crates` and `worker` containers, `/srv/music`, `/srv/_trash`. Run `docker compose` from `/srv/docker`.
+`.claude/settings.json` allows `scripts/deploy.sh`, the snapshot script and `flock -n <LIVE_LOCK>`-wrapped `deploy.sh`
+and `docker compose`; every other live command, `scripts/live-run.sh` included, goes past auto mode's classifier.
 
 ### Check
 `scripts/live-check.sh` (from the worktree). It runs, through `scripts/live-run.sh` (one-off worker commands in the
@@ -52,6 +54,8 @@ long (2026-10-17: 03:39–03:41, snapshot `da26a815` of /srv/music, /srv/docker,
 - **Status:** `systemctl show restic-backup.service -p ExecMainExitTimestamp -p ExecMainStatus`. Pass:
   `ExecMainStatus=0` and less than 26 h old; otherwise no live writes this session. A skipped backup (HDD not
   mounted) exits 1, so status 0 means a snapshot was saved (`/usr/local/sbin/restic-backup`, checked 2026-10-17).
+  After a reboot the timestamp is empty: `journalctl -u restic-backup.service -n 3 -o short-iso` then gives the last
+  run (pass: "Finished restic-backup.service", less than 26 h old).
 - **Window:** no live write and no deploy from 03:15 to 04:30, or while `systemctl is-active restic-backup.service`
   prints `active`.
 - **Lock:** the live-writer lock is `/srv/docker/crates/live.lock` (`LIVE_LOCK` in `.harness/config.sh`), so the
@@ -62,7 +66,7 @@ long (2026-10-17: 03:39–03:41, snapshot `da26a815` of /srv/music, /srv/docker,
   `docker image ls dj-crates`. That tag is the rollback.
 - Deploy: `scripts/deploy.sh` from the run's worktree, on a pushed commit. It refuses a dirty tree, builds
   `crates` + `worker` and tags `dj-crates:<10-char sha>`.
-- After: `docker compose ps` shows `crates` and `worker` up (healthy, once healthchecks exist), then **Check** green.
+- After: `docker compose ps` shows `crates` and `worker` up and healthy, then **Check** green.
 - Rollback (the `deploy.sh` header's form; old image gone → `scripts/deploy.sh` from a worktree at the old commit):
   `GIT_SHA=<old> CRATES_SRC=$PWD docker compose --project-directory /srv/docker -f deploy/compose.yml up -d --no-build crates worker`
 
@@ -77,6 +81,7 @@ long (2026-10-17: 03:39–03:41, snapshot `da26a815` of /srv/music, /srv/docker,
   `~/projects/agent-harness/journal/runs/dj-2026-10-17.md`.
 
 ### Never
-- Soulseek transfers (`fetch --approve`, D7); writes under `/srv/incoming` (not backed up); the `amperfy` account and its playlists.
-- Reading `/srv/docker/.env` or `/etc/restic/env`; `sudo`; restic `restore`, `forget` or `prune`.
-- Editing `/srv/docker/compose*`; deploying from `~/projects/dj-crate-streaming`.
+- Soulseek transfers (D7); the `amperfy` account and its playlists.
+- `restic` (`restore`, `forget` and `prune` can't be undone) and editing `/srv/docker/compose*`: denied in
+  `.claude/settings.json`.
+- Deploying from `~/projects/dj-crate-streaming`.
