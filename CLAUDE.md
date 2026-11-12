@@ -33,6 +33,7 @@ Navidrome, slskd and beets. It runs live on this box (compose project `dj`, from
 - A fact a fresh session would otherwise rediscover → one line in `## Gotchas`, edited in place; beets, Navidrome,
   slskd and tool facts → `docs/hard-won-facts.md`.
 - Tonight's scope → the run brief, never this file. How to work here → Michael's: propose it (`proposed_changes`).
+- A finished change → `main`, merged by the session that made it once the suite is green (push, `gh pr merge --merge` or merge locally, delete the branch, remove the worktree), never left on a branch. In a harness run the harness merges.
 - Anything the code, git or the suite can tell (test counts, file lists, constants) → nowhere.
 
 ## Gotchas
